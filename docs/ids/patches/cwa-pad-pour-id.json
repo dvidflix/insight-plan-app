@@ -1,0 +1,11 @@
+{
+  "id": "cwa-pad-pour-id",
+  "name": "Pad Pour ID Number to 4 digits",
+  "description": "Adds leading zeros to Pour ID Number / Pour ID / PourID until it has 4 digits (389 becomes 0389). The value is written as text. Values that are not whole numbers, or have more than 4 digits, are left alone.",
+  "fixes": [{ "ids": "Custom rules", "specification": "CWA-POUR-ID-4-DIGITS" }],
+  "operation": {
+    "type": "pad-property",
+    "properties": ["Pour ID Number", "Pour ID", "PourID"],
+    "digits": 4
+  }
+}

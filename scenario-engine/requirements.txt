@@ -1,0 +1,8 @@
+# requirements.txt
+ifcopenshell>=0.8.0         # core IFC library
+pandas>=2.0.0
+openpyxl>=3.1.0
+ifcclash>=0.0.4             # optional but used for clash detection
+
+# Optional / nice to have
+tqdm                        # if you want progress bars later

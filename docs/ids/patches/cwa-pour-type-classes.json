@@ -1,0 +1,28 @@
+{
+  "id": "cwa-pour-type-classes",
+  "name": "Reclassify proxies by CWA Pour Type",
+  "description": "Changes IfcBuildingElementProxy elements to the IFC class their CWA Pour / Pour Type names (WALL → IfcWall, SLAB → IfcSlab…). Pour types with no better class (BOSS, SPECIAL, PEDESTAL, GULLIES, UPSTAND) stay proxies. Ported from ifc_class_fixer.py.",
+  "fixes": [{ "ids": "Minimum-requirements-for-planning.ids", "specification": "CWA-POUR-CLASS" }],
+  "operation": {
+    "type": "reclassify",
+    "from": ["IFCBUILDINGELEMENTPROXY"],
+    "property": { "pset": "CWA Pour", "name": "Pour Type" },
+    "map": {
+      "SLAB": "IfcSlab",
+      "MAIN_SLAB": "IfcSlab",
+      "REMOVABLE_ELEMENT": "IfcSlab",
+      "LANDING": "IfcSlab",
+      "BEAM": "IfcBeam",
+      "CORBEL": "IfcBeam",
+      "RAFT": "IfcFooting",
+      "PIT": "IfcFooting",
+      "PITS & RAFT": "IfcFooting",
+      "SCREED": "IfcCovering",
+      "HEAVY_PRECAST": "IfcMember",
+      "PARAPET": "IfcWall",
+      "WALL": "IfcWall",
+      "COLUMN": "IfcColumn",
+      "STAIR": "IfcStair"
+    }
+  }
+}

@@ -1,0 +1,10 @@
+{
+  "id": "CWA-ONE-BUILDING",
+  "name": "One building, named Unit + Building",
+  "description": "Each model has a single IfcBuilding, named after its pour elements' Unit + Building (1HN, 9HVD), not the zones or groups the export made into buildings (CONNECTED_HL, DISCONNECTED…).",
+  "instructions": "Run the linked patch: it merges the buildings into the first one and renames it.",
+  "type": "single-building",
+  "psets": ["CWA Pour", "CWA Codes", "CWA Documentation", "CWA_Planning"],
+  "building": "Building",
+  "unit": "Unit"
+}

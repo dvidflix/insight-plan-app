@@ -1,0 +1,10 @@
+{
+  "id": "cwa-name-from-pour-id",
+  "name": "Name elements after their pour ID",
+  "description": "Sets each failing element's Name to the first of Full Pour ID String, Full Pour ID, FullPourID, Pour ID Number, Pour ID, PourID it has (in any property set).",
+  "fixes": [{ "ids": "Custom rules", "specification": "CWA-NAME-IS-POUR-ID" }],
+  "operation": {
+    "type": "name-from-property",
+    "properties": ["Full Pour ID String", "Full Pour ID", "FullPourID", "Pour ID Number", "Pour ID", "PourID"]
+  }
+}

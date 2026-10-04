@@ -1,0 +1,41 @@
+{
+  "name": "insight-plan-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview",
+    "lint": "eslint ."
+  },
+  "dependencies": {
+    "@thatopen/components": "^3.4.8",
+    "@thatopen/components-front": "^3.4.4",
+    "@thatopen/fragments": "^3.4.7",
+    "@thatopen/ui": "^3.4.11",
+    "@thatopen/ui-obc": "^3.4.2",
+    "dompurify": "^3.4.16",
+    "marked": "^18.0.14",
+    "mp4-muxer": "^5.2.2",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "three": "^0.186.0",
+    "web-ifc": "^0.0.77",
+    "xlsx": "^0.18.5",
+    "zustand": "^5.0.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.4",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "@types/three": "^0.186.0",
+    "@typescript-eslint/eslint-plugin": "^8.15.0",
+    "@typescript-eslint/parser": "^8.15.0",
+    "@vitejs/plugin-react": "^4.3.3",
+    "eslint": "^9.14.0",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.11",
+    "vite-plugin-static-copy": "^2.3.2"
+  }
+}

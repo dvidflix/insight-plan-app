@@ -1,0 +1,35 @@
+<!-- order: 3 -->
+<!-- group: App pages -->
+# Models
+
+The 3D viewer (That Open Engine) with a Trimble Connect–style toolbar and side pane.
+
+**Toolbar.** Icon buttons with tooltips; anything switched on is filled with the accent colour. Split buttons open a menu from their ▾.
+
+| Control | |
+| --- | --- |
+| Select | The normal pick tool (Ctrl+click adds to the selection) |
+| Measure ▾ | Length (point to point), length of an edge, area (polygon / rectangle / face), angle, volume of an object, **point coordinates** (double-click a point, it snaps to corners: its X / Y / Z in project axes, metres, is written in the view in large type and copied to the clipboard; the copy icon beside the label copies it again; Delete removes the last); *Delete all measurements* |
+| Section ▾ | Double-click the model to cut it; planes can be switched off, hidden or all deleted |
+| Clear / Hide / Isolate / Fit | Act on the selection (Fit frames everything when nothing is selected) |
+| Select \| Isolate, Ghost, Pin | What selecting does: highlight only, or isolate. **Ghost** fades everything outside the selection. **Pin** keeps the isolated / un-ghosted set while the selection changes |
+| Show all objects | Undo every hide / isolate |
+| Orthogonal / perspective | Camera projection |
+| Views ▾ | Axon, Top, Front, Left, Back, Right, Bottom |
+| Visibility ▾ | Section planes, grid, and **IFC element types** (show / hide each class, with object counts) |
+
+**Split view.** Two 3D views side by side, or stacked under a **compare slider**. Each view has its own models, display settings (style, edges, ambient occlusion, background, grid), storey slide and colouring; cameras can be linked. Picking in either view selects in the app.
+
+**Side pane tabs**
+
+| Tab | |
+| --- | --- |
+| **Selection Tree** | IFC structure (Structure / Types / Layers) with name and description columns. Clicking a row selects its objects, keeps the row highlighted and opens it one level; double-click zooms. A pick in 3D reveals its row. |
+| **Properties** | The selected object's property sets (or the aggregate over several / all objects: one value, or each value with its count). Click a value to select the objects that have it. *Show / hide properties* picks which sets and properties the table shows. *Edit properties* writes a property value onto the selected objects in the IFC (queue several, then write them in one go); see [Model checks](model-checks.md#editing-properties). |
+| **Search sets** | Named sets of objects, in folders, reorderable. **Search sets** are conditions (any property; *is any of* with value counts, contains, equals, starts / ends with, regex, >, <, between, has / has no value; match all or any) that run again on whatever is loaded. **Selection sets** are saved selections kept by model name + GlobalId, so they survive reloading or re-converting a model; add, remove or replace objects with the current selection. Clicking a set selects its objects (in the viewer's Select / Isolate / Ghost mode); the Up / Down arrows step through the sets; Shift+click (or Shift+arrows) selects a run of sets and Ctrl+click adds or removes one, and their objects are selected together. Like Blender's collections, each set and each folder has an **eye** that hides or shows its objects in the 3D view (the 4D timeline keeps them hidden; Show all brings them back), and the space bar turns the selected sets on or off. The sliders button in the toolbar chooses which buttons show on each row (count, eye, edit, duplicate, delete), like Blender's restriction toggles; the choice is remembered. A search's matches can be frozen as a selection set. |
+| **Data table** | Shows or hides the table under the 3D view, and sets it up like the Programme table: **Columns** (any property), **Filters** (the same conditions as Search sets; load a search set as the filter or save the filter as one), **Group** (nested levels), **Sort** (several keys), **Colour** (row colour rules, or one colour per value). **Totals and subtotals**: a totals row and group subtotals, each column summed as sum / average / min / max / count. The table is virtualised (100k+ rows), searchable, with per-column filter boxes and two-way selection with the 3D view. **Twin model**: for two models that share geometry but no properties, pick the model whose objects the table lists and its twin model; each object is paired with the object of the other model whose bounding box agrees on every side (tolerance in metres, same IFC class preferred; several equally good matches are left blank). In the Columns list every property has two checkboxes, the main model's on the left and the twin's on the right (greyed out where that model lacks the property). The twin's properties are columns ("Twin ·"), usable in filters, groups, sorting, colours and totals, e.g. GlobalId and Volume of both models side by side. **Export CSV** (table toolbar) saves the rows shown, with the shown columns, as a CSV file (search and filters applied, groups flattened). **Presets** keep the table's whole setup (columns and widths, filters, groups, sorting, colours, totals, scope, twin models) under a name. |
+| **Views** | Saved views (camera, visibility, colours, section planes, style — and which of these a view restores), view settings per view (projection, style, edges, AO, anti-aliasing, background, grid, realistic sun & concrete, view cube, north arrow), camera **fly-through** (keyframes on a smooth path), then floor plans and storeys. |
+| **3D & Related** | **Model placement** (move each model in project axes, with presets — lines several buildings up; storey slide pulls storeys apart vertically), **Touching the selection**: *Below*, *Above*, *Beside* or *All* selects the elements touching the selection in that direction (click again to go one step further; *Keep the selection* adds instead of replacing, *Include other models* takes linked elements too), read instantly from the Clashes & contacts results; and **Clashes & contacts**: every loaded model is checked against itself and against every other model, by itself in the background, and the results are kept in the project database so they are ready the next time. **Touching elements** lists the pairs within one model, **Linked elements** the pairs across two models (e.g. project A against project B, once aligned). Click one to select those elements and list the pairs: the gap, and where the second element sits vertically (below / beside / above), with a filter and CSV export. *Settings*: tolerance, *Exact geometry* (the real triangles, three-mesh-bvh; off, only bounding boxes) and automatic updates. |
+| **Colour** | Colour the models by any property: palette or random colours, per-value colour, *other values* colour. In a split, each view is coloured on its own. Click a value to select its objects. |
+| **Model checks** | Checks the models against IDS files (`docs/ids`) and fixes failures with linked patches, writing a `_FIXED` IFC and loading it: see [Model checks (IDS)](model-checks.md). |
+| **Topics** | BCF topics and comments. |

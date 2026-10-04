@@ -1,0 +1,12 @@
+{
+  "id": "cwa-merge-buildings",
+  "name": "Merge buildings into one, named Unit + Building",
+  "description": "Keeps the first IfcBuilding, renamed to the first pour element's Unit + Building, and moves the other buildings' storeys and contents under it. Storeys with the same name are merged (their elements put together) and ordered by elevation; the emptied buildings and storeys are removed.",
+  "fixes": [{ "ids": "Custom rules", "specification": "CWA-ONE-BUILDING" }],
+  "operation": {
+    "type": "merge-buildings",
+    "psets": ["CWA Pour", "CWA Codes", "CWA Documentation", "CWA_Planning"],
+    "building": "Building",
+    "unit": "Unit"
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "id": "CWA-POUR-ID-4-DIGITS",
+  "name": "Pour ID Number is 4 digits",
+  "description": "A Pour ID Number (or Pour ID) is exactly 4 digits, with leading zeros (0389, not 389), so it matches the pour ID in the generated programme's activity IDs and the Link Groups can link by it.",
+  "instructions": "Run the linked patch: it pads the number with leading zeros to 4 digits.",
+  "type": "property-digits",
+  "properties": ["Pour ID Number", "Pour ID", "PourID"],
+  "digits": 4
+}

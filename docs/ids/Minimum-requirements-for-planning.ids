@@ -1,0 +1,107 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<ids xmlns="http://standards.buildingsmart.org/IDS" xmlns:xs="http://www.w3.org/2001/XMLSchema" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://standards.buildingsmart.org/IDS http://standards.buildingsmart.org/IDS/1.0/ids.xsd">
+  <info>
+    <title>Minimum requirements for planning</title>
+    <description>What the CWA structural models need for 4D sequencing.</description>
+    <author>david.felixx@gmail.com</author>
+    <version>1</version>
+  </info>
+  <specifications>
+    <specification name="Pour elements have a specific IFC class" identifier="CWA-POUR-CLASS" ifcVersion="IFC2X3 IFC4" description="An element with a CWA Pour Type that names a building element (slab, wall, beam…) must use that element's IFC class, not IfcBuildingElementProxy." instructions="Export the element with its proper class, or run the linked patch.">
+      <applicability minOccurs="0" maxOccurs="unbounded">
+        <property>
+          <propertySet><simpleValue>CWA Pour</simpleValue></propertySet>
+          <baseName><simpleValue>Pour Type</simpleValue></baseName>
+          <value>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="SLAB"/>
+              <xs:enumeration value="MAIN_SLAB"/>
+              <xs:enumeration value="REMOVABLE_ELEMENT"/>
+              <xs:enumeration value="BEAM"/>
+              <xs:enumeration value="CORBEL"/>
+              <xs:enumeration value="RAFT"/>
+              <xs:enumeration value="SCREED"/>
+              <xs:enumeration value="HEAVY_PRECAST"/>
+              <xs:enumeration value="PARAPET"/>
+              <xs:enumeration value="WALL"/>
+              <xs:enumeration value="COLUMN"/>
+              <xs:enumeration value="LANDING"/>
+              <xs:enumeration value="STAIR"/>
+              <xs:enumeration value="PIT"/>
+              <xs:enumeration value="PITS &amp; RAFT"/>
+            </xs:restriction>
+          </value>
+        </property>
+      </applicability>
+      <requirements>
+        <entity>
+          <name>
+            <xs:restriction base="xs:string">
+              <xs:enumeration value="IFCSLAB"/>
+              <xs:enumeration value="IFCBEAM"/>
+              <xs:enumeration value="IFCFOOTING"/>
+              <xs:enumeration value="IFCCOVERING"/>
+              <xs:enumeration value="IFCMEMBER"/>
+              <xs:enumeration value="IFCWALL"/>
+              <xs:enumeration value="IFCCOLUMN"/>
+              <xs:enumeration value="IFCSTAIR"/>
+            </xs:restriction>
+          </name>
+        </entity>
+      </requirements>
+    </specification>
+    <specification name="Pour elements have a Pour Type" identifier="CWA-POUR-TYPE" ifcVersion="IFC2X3 IFC4" description="Every element exported as a pour object carries CWA Pour / Pour Type, which the sequencing and the class patch rely on." instructions="Fill in Pour Type in the authoring model.">
+      <applicability minOccurs="0" maxOccurs="unbounded">
+        <entity><name><simpleValue>IFCBUILDINGELEMENTPROXY</simpleValue></name></entity>
+        <attribute>
+          <name><simpleValue>Name</simpleValue></name>
+          <value><simpleValue>PourObject</simpleValue></value>
+        </attribute>
+      </applicability>
+      <requirements>
+        <property cardinality="required">
+          <propertySet><simpleValue>CWA Pour</simpleValue></propertySet>
+          <baseName><simpleValue>Pour Type</simpleValue></baseName>
+        </property>
+      </requirements>
+    </specification>
+    <specification name="Pour elements are contained in a building storey" identifier="CWA-SPATIAL-CONTAINED" ifcVersion="IFC2X3 IFC4" description="Every element with a CWA Pour Level sits directly in an IfcBuildingStorey, so the 4D sequence and storey slide can find it by level." instructions="Run the linked patch: it rebuilds site, buildings and storeys from CWA Pour / Level.">
+      <applicability minOccurs="0" maxOccurs="unbounded">
+        <property>
+          <propertySet><simpleValue>CWA Pour</simpleValue></propertySet>
+          <baseName><simpleValue>Level</simpleValue></baseName>
+        </property>
+      </applicability>
+      <requirements>
+        <partOf relation="IFCRELCONTAINEDINSPATIALSTRUCTURE" cardinality="required">
+          <entity><name><simpleValue>IFCBUILDINGSTOREY</simpleValue></name></entity>
+        </partOf>
+      </requirements>
+    </specification>
+    <specification name="Storeys are not Undefined" identifier="CWA-SPATIAL-STOREY-NAME" ifcVersion="IFC2X3 IFC4" description="No building storey is left named Undefined (what an export makes of elements without a level)." instructions="Give those elements a Level in the authoring model, then run the linked patch.">
+      <applicability minOccurs="0" maxOccurs="unbounded">
+        <entity><name><simpleValue>IFCBUILDINGSTOREY</simpleValue></name></entity>
+      </applicability>
+      <requirements>
+        <attribute cardinality="prohibited">
+          <name><simpleValue>Name</simpleValue></name>
+          <value><simpleValue>Undefined</simpleValue></value>
+        </attribute>
+      </requirements>
+    </specification>
+    <specification name="Pour elements say whether they are external" identifier="CWA-IS-EXTERNAL" ifcVersion="IFC2X3 IFC4" description="Every pour element carries CWA Pour / Is External? (YES or NO): the programme splits external and internal walls by it." instructions="Set it in the authoring model, or run the linked patch to add NO where it is missing.">
+      <applicability minOccurs="0" maxOccurs="unbounded">
+        <property>
+          <propertySet><simpleValue>CWA Pour</simpleValue></propertySet>
+          <baseName><simpleValue>Pour Type</simpleValue></baseName>
+        </property>
+      </applicability>
+      <requirements>
+        <property cardinality="required">
+          <propertySet><simpleValue>CWA Pour</simpleValue></propertySet>
+          <baseName><simpleValue>Is External?</simpleValue></baseName>
+        </property>
+      </requirements>
+    </specification>
+  </specifications>
+</ids>

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="currentColor" class="mi-solid mi-workers-queue" viewBox="0 0 24 24">
+  <path d="M5.804 5.333h6.609V7H5.804zm0 3.334h4.13v1.666h-4.13zM19.022 17H21.5v1.667h-2.478zm0-11.667H21.5V7h-2.478zM19.848 7H21.5v10h-1.652zm-4.131 11.667h3.305v1.666h-3.305zm0-15h3.305v1.666h-3.305z"/>
+  <path d="M17.37 5.333h1.652v13.334H17.37zm-14.87 15h13.217V22H2.5zM2.5 2h13.217v1.667H2.5zm11.565 1.667h1.652v16.666h-1.652zm-11.565 0h1.652v16.666H2.5z"/>
+</svg>

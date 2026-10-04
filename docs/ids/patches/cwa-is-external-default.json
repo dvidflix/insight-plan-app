@@ -1,0 +1,14 @@
+{
+  "id": "cwa-is-external-default",
+  "name": "Add Is External? = NO where missing",
+  "description": "Gives every failing pour element CWA Pour / Is External? = NO (IfcLabel). Elements that already have a value keep it; an element without a CWA Pour set gets one.",
+  "fixes": [{ "ids": "Minimum-requirements-for-planning.ids", "specification": "CWA-IS-EXTERNAL" }],
+  "operation": {
+    "type": "set-property",
+    "pset": "CWA Pour",
+    "name": "Is External?",
+    "value": "NO",
+    "valueType": "IfcLabel",
+    "overwrite": false
+  }
+}

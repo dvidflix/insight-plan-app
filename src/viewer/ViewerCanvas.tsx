@@ -1,0 +1,418 @@
+import { useEffect, useRef, useState } from 'react';
+import { isTwoViewLayout, pageOfLayout, useViewSettingsStore } from '../state/viewSettingsStore';
+import { useViewerEngine } from './ViewerEngineContext';
+import { createViewerShell, type ViewerLayout, type ViewerShell } from './viewerUI';
+import { useModelsStore } from '../state/modelsStore';
+import { useSelectionStore } from '../state/selectionStore';
+import { useModelPlacementStore, ZERO_OFFSET } from '../state/modelPlacementStore';
+import { useSequenceUiStore } from '../state/sequenceUiStore';
+import { useFlythroughStore } from '../state/flythroughStore';
+import { tagCss, useTagsStore } from '../state/tagsStore';
+import { renderTag } from '../schedule/tagTemplate';
+
+/** Hosts the That Open UI shell (bim-grid > bim-viewport / bim-toolbar /
+    bim-panel). The shell and engine are created once and live for the whole
+    app session — React only mounts the grid element and switches its layout. */
+export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
+  const engine = useViewerEngine();
+  const hostRef = useRef<HTMLDivElement>(null);
+  const shellRef = useRef<ViewerShell | null>(null);
+  const [ready, setReady] = useState(false);
+  const [contextLost, setContextLost] = useState(false);
+
+  useEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    if (!shellRef.current) {
+      const shell = createViewerShell();
+      shellRef.current = shell;
+      host.append(shell.grid);
+      engine.init(shell.viewport).then(() => {
+        engine.onSelectionChange = (map) => {
+          // Mirror the Highlighter's selection into the 4D page's store.
+          const [modelId, ids] = Object.entries(map)[0] ?? [];
+          if (modelId && ids) useModelsStore.getState().select(modelId, null);
+          const byModel = Object.fromEntries(Object.entries(map).map(([id, set]) => [id, [...set]]));
+          useSelectionStore.getState().setSelection(ids ? [...ids] : [], byModel);
+        };
+        engine.onModelRegistered = (info) => useModelsStore.getState().addModel(info);
+        engine.onModelDisposed = (modelId) => useModelsStore.getState().removeModel(modelId);
+        shell.attach(engine);
+        useSequenceUiStore.setState({ modelPanels: shell.modelPanels });
+        // A lost WebGL context (the GPU ran out of memory or was reset) leaves the
+        // canvas blank without any error — say so instead of showing nothing.
+        const canvas = engine.world.renderer?.three.domElement;
+        canvas?.addEventListener('webglcontextlost', (e) => { e.preventDefault(); setContextLost(true); });
+        canvas?.addEventListener('webglcontextrestored', () => { setContextLost(false); void engine.forceUpdate(); });
+        setReady(true);
+      }).catch((e) => console.error('Viewer failed to start', e));
+    } else if (!host.contains(shellRef.current.grid)) {
+      host.append(shellRef.current.grid);
+    }
+  }, [engine]);
+
+  useEffect(() => {
+    shellRef.current?.setLayout(layout);
+  }, [layout, ready]);
+
+  // The second 3D view exists only while a page is split (it holds its
+  // own copy of every model, so it is released as soon as it is not shown).
+  // Each page (Models / 4D Sequencing) has its own view setup.
+  const page = pageOfLayout(layout);
+  useEffect(() => {
+    useViewSettingsStore.setState({ activePage: page });
+  }, [page]);
+  // The compare slider only makes sense with both views on the same camera.
+  const slider = layout.endsWith('Slider');
+  const linked = useViewSettingsStore((s) => s.pages[page].linked) || slider;
+  useEffect(() => {
+    const shell = shellRef.current;
+    if (!ready || !shell) return;
+    if (!isTwoViewLayout(layout)) {
+      void engine.closeSecondary();
+      return;
+    }
+    let cancelled = false;
+    // Wait a frame so the grid has laid the second viewport out at its size.
+    requestAnimationFrame(() => {
+      if (cancelled) return;
+      engine.openSecondary(shell.viewport2).then((view) => {
+        const pv = useViewSettingsStore.getState().pages[page];
+        view.setCubeVisible(pv.showCube);
+        view.setLinked(pv.linked || layout.endsWith('Slider'));
+        view.apply(pv.second);
+        view.onContextLost = () => useViewSettingsStore.getState().patchPage(page, { split: false });
+      }).catch((e) => console.error('Second view failed to start', e));
+    });
+    return () => { cancelled = true; };
+  }, [layout, ready, engine]);
+  const mainSettings = useViewSettingsStore((s) => s.pages[page].main);
+  const secondSettings = useViewSettingsStore((s) => s.pages[page].second);
+  useEffect(() => {
+    if (ready) void engine.applyViewSettings(mainSettings);
+  }, [engine, ready, mainSettings]);
+  // The second view takes its own settings whenever it appears or they change.
+  useEffect(() => {
+    engine.secondary?.apply(secondSettings);
+  }, [engine, secondSettings, layout, ready]);
+  // Per-model translate: each model sits at its saved offset (by name).
+  const models = useModelsStore((s) => s.models);
+  // Models turned off on Inputs: left out of both views as whole objects, so
+  // nothing element-level (Show all, Hide / Isolate, the 4D sequence) can
+  // bring them back.
+  const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
+  const offsets = useModelPlacementStore((s) => s.offsets);
+  const appliedOffsets = useRef(new Map<string, string>());
+  useEffect(() => {
+    if (!ready) return;
+    for (const m of models) {
+      const o = offsets[m.name] ?? ZERO_OFFSET;
+      const sig = `${o.x}|${o.y}|${o.z}|${o.rot ? `${o.rot.deg},${o.rot.px},${o.rot.py},${o.rot.pz}` : ''}`;
+      const prev = appliedOffsets.current.get(m.modelId);
+      if (prev === sig || (prev === undefined && sig === '0|0|0|')) continue;
+      appliedOffsets.current.set(m.modelId, sig);
+      void engine.setModelOffset(m.modelId, o);
+    }
+  }, [engine, ready, models, offsets]);
+
+  // Realistic look (main view): fixed sun & shadows, and concrete — each on its own switch.
+  const realistic = !!mainSettings.realistic;
+  const concrete = mainSettings.concrete ?? realistic;
+  const realism = useViewSettingsStore((s) => s.realism);
+  useEffect(() => {
+    if (ready) engine.setRealism(realistic ? realism : null);
+  }, [engine, ready, realistic, realism]);
+  useEffect(() => {
+    if (ready) engine.setConcrete(concrete ? realism : null);
+  }, [engine, ready, concrete, realism]);
+
+  // Real-time sky (needs the sun) and the material classes, per view.
+  const skyOn = realistic && !!mainSettings.sky;
+  const materialsOn = !!mainSettings.materials;
+  useEffect(() => {
+    if (ready) engine.setSky(skyOn, realism);
+  }, [engine, ready, skyOn, realism]);
+  useEffect(() => {
+    if (ready) engine.setMaterials(materialsOn);
+  }, [engine, ready, materialsOn]);
+  useEffect(() => {
+    if (ready) engine.setClassChoices(realism.mapping ?? {});
+  }, [engine, ready, realism.mapping]);
+
+  // Bumped when the split's right view is created, so it gets its settings.
+  const [secondaryTick, setSecondaryTick] = useState(0);
+  useEffect(() => {
+    const onChange = () => setSecondaryTick((t) => t + 1);
+    engine.onSecondaryChange.add(onChange);
+    return () => { engine.onSecondaryChange.remove(onChange); };
+  }, [engine]);
+
+  // The split's right view: its own sun & shadows and concrete switches
+  // (same sun position and strengths as the main view's).
+  const secondRealistic = !!secondSettings.realistic;
+  const secondConcrete = secondSettings.concrete ?? secondRealistic;
+  useEffect(() => {
+    if (ready) engine.secondary?.setRealism(secondRealistic ? realism : null);
+  }, [engine, ready, secondRealistic, realism, secondaryTick]);
+  useEffect(() => {
+    if (ready) engine.secondary?.setConcrete(secondConcrete ? realism : null);
+  }, [engine, ready, secondConcrete, realism, secondaryTick]);
+
+  const secondSky = secondRealistic && !!secondSettings.sky;
+  const secondMaterials = !!secondSettings.materials;
+  useEffect(() => {
+    if (ready) engine.secondary?.setSky(secondSky, realism);
+  }, [engine, ready, secondSky, realism, secondaryTick]);
+  useEffect(() => {
+    if (!ready) return;
+    engine.secondary?.setMaterials(secondMaterials);
+    if (secondMaterials) void engine.ensureMaterialEntries();
+  }, [engine, ready, secondMaterials, secondaryTick]);
+
+  // Storey slide per model — a setting of each view (3D tab), so the
+  // left and right views, and the Models / 4D pages, can each differ.
+  const mainSlides = mainSettings.storeySlides;
+  const secondSlides = secondSettings.storeySlides;
+  useEffect(() => {
+    if (!ready) return;
+    for (const m of models) {
+      const step = mainSlides[m.name] ?? 0;
+      if (engine.getStoreySlide(m.modelId).step !== step) void engine.setStoreySlide(m.modelId, step);
+    }
+  }, [engine, ready, models, mainSlides]);
+  useEffect(() => {
+    const view = engine.secondary;
+    if (!ready || !view) return;
+    for (const m of models) void view.setStoreySlide(m.modelId, secondSlides[m.name] ?? 0);
+  }, [engine, ready, models, secondSlides, layout, secondaryTick]);
+
+  // Models loaded or removed while split: the right view copies / drops them too.
+  useEffect(() => {
+    if (ready) void engine.secondary?.syncModels();
+  }, [engine, ready, models, secondaryTick]);
+
+  // Models each view leaves out (by name, like the storey slides) — a
+  // split's choice ("Models in this view"): one view shows every model, or
+  // a model left out there would stay hidden with no picker to bring it back.
+  const twoViews = isTwoViewLayout(layout);
+  const mainHidden = twoViews ? mainSettings.hiddenModels : undefined;
+  const secondHidden = secondSettings.hiddenModels;
+  useEffect(() => {
+    if (!ready) return;
+    const names = new Set(mainHidden ?? []);
+    engine.setViewHiddenModels(models.filter((m) => names.has(m.name) || hiddenModelIds.has(m.modelId)).map((m) => m.modelId));
+  }, [engine, ready, models, mainHidden, hiddenModelIds]);
+  useEffect(() => {
+    const view = engine.secondary;
+    if (!ready || !view) return;
+    const names = new Set(secondHidden ?? []);
+    view.setHiddenModels(models.filter((m) => names.has(m.name) || hiddenModelIds.has(m.modelId)).map((m) => m.modelId));
+  }, [engine, ready, models, secondHidden, hiddenModelIds, layout, secondaryTick]);
+
+  // Camera fly-through: keyframes and path display from the Fly-through tab.
+  // Redrawn when models change too, since the path is sized to them.
+  const flyKeys = useFlythroughStore((s) => s.keys);
+  const showPath = useFlythroughStore((s) => s.showPath);
+  useEffect(() => {
+    if (ready) engine.flythrough?.setKeys(flyKeys);
+  }, [engine, ready, flyKeys, models]);
+  useEffect(() => {
+    if (ready) engine.flythrough?.setPathVisible(showPath);
+  }, [engine, ready, showPath]);
+
+  const showCube = useViewSettingsStore((s) => s.pages[page].showCube);
+  const showNorth = useViewSettingsStore((s) => s.pages[page].showNorth ?? true);
+  const northRotation = useViewSettingsStore((s) => s.pages[page].northRotation ?? 0);
+  useEffect(() => {
+    const opts = { visible: showNorth, rotation: northRotation, belowCube: showCube };
+    shellRef.current?.setNorthArrow(opts);
+    engine.secondary?.setNorthArrow(opts);
+  }, [showNorth, northRotation, showCube, layout, ready, engine, secondaryTick]);
+  useEffect(() => {
+    shellRef.current?.setViewCubeVisible(showCube);
+    engine.secondary?.setCubeVisible(showCube);
+  }, [showCube, layout, ready, engine]);
+  useEffect(() => {
+    engine.secondary?.setLinked(linked);
+  }, [linked, layout, ready, engine]);
+
+  return (
+    <div className="viewer-canvas">
+      <div ref={hostRef} className="viewer-canvas__container viewer-shell" />
+      {ready && slider && shellRef.current && (
+        <CompareSlider
+          page={page}
+          viewport2={shellRef.current.viewport2}
+          leftLabel={shownNames(models, mainHidden)}
+          rightLabel={shownNames(models, secondHidden)}
+        />
+      )}
+      {ready && twoViews && !slider && models.length > 0 && (
+        <>
+          <ViewModelsStrip page={page} view="main" />
+          <ViewModelsStrip page={page} view="second" />
+        </>
+      )}
+      {ready && page === 'model' && <HoverTag />}
+      {!ready && <div className="viewer-canvas__loading">Starting viewer…</div>}
+      {contextLost && (
+        <div className="viewer-canvas__loading viewer-canvas__lost" role="alert">
+          <strong>The 3D graphics were lost</strong>
+          <span>The GPU ran out of memory or was reset. Close the split view or unload models to free memory; if the view stays blank, reload the page.</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Models page, "Tag on hover" (toolbar eye menu): once the pointer rests
+    on an object in the main view, the chosen tag next to it, its {Obj:…}
+    tokens filled from that object (task tokens stay empty: no timeline here). */
+function HoverTag() {
+  const engine = useViewerEngine();
+  const tag = useTagsStore((s) => s.tags.find((t) => t.id === s.hoverTagId));
+  const models = useModelsStore((s) => s.models);
+  const [label, setLabel] = useState<{ x: number; y: number; text: string } | null>(null);
+
+  useEffect(() => {
+    setLabel(null);
+    const dom = engine.world.renderer?.three.domElement;
+    if (!tag || !dom) return;
+    let timer = 0;
+    let seq = 0;
+    const hide = () => {
+      window.clearTimeout(timer);
+      seq++;
+      setLabel(null);
+    };
+    const onMove = (e: PointerEvent) => {
+      hide();
+      if (e.buttons) return; // orbiting / panning
+      const { clientX: x, clientY: y } = e;
+      const mine = seq;
+      timer = window.setTimeout(async () => {
+        const hit = await engine.elementAt(x, y);
+        if (mine !== seq || !hit) return;
+        const el = models.find((m) => m.modelId === hit.modelId)?.elements.find((e) => e.localId === hit.localId);
+        const text = el ? renderTag(tag.template, { activeCount: 1, elements: [el], basis: 'planned' }).trim() : '';
+        if (text) setLabel({ x, y, text });
+      }, 250);
+    };
+    dom.addEventListener('pointermove', onMove);
+    dom.addEventListener('pointerleave', hide);
+    dom.addEventListener('pointerdown', hide);
+    dom.addEventListener('wheel', hide, { passive: true });
+    return () => {
+      hide();
+      dom.removeEventListener('pointermove', onMove);
+      dom.removeEventListener('pointerleave', hide);
+      dom.removeEventListener('pointerdown', hide);
+      dom.removeEventListener('wheel', hide);
+    };
+  }, [engine, tag, models]);
+
+  return label ? <div className="hover-tag" style={{ ...tagCss(tag), left: label.x + 14, top: label.y + 14 }}>{label.text}</div> : null;
+}
+
+/** Side-by-side split: the models each view shows, along its bottom
+    (which ones: View settings > Models in this view). */
+function ViewModelsStrip({ page, view }: { page: 'model' | 'sequence'; view: 'main' | 'second' }) {
+  const models = useModelsStore((s) => s.models);
+  const hiddenIds = useModelsStore((s) => s.hiddenModelIds);
+  const hidden = useViewSettingsStore((s) => s.pages[page][view].hiddenModels);
+  const out = new Set(hidden ?? []);
+  const shown = models.filter((m) => !out.has(m.name) && !hiddenIds.has(m.modelId));
+  if (!shown.length) return null;
+  return (
+    <div className={`view-models view-models--${view === 'main' ? 'left' : 'right'}`}>
+      {shown.map((m) => (
+        <span key={m.modelId} className="view-models__chip" title={m.name}>
+          {m.name.replace(/\.(ifc|frag)$/i, '')}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+const shownNames = (models: { name: string }[], hidden: string[] | undefined) => {
+  const out = new Set(hidden ?? []);
+  return models.filter((m) => !out.has(m.name)).map((m) => m.name).join(', ');
+};
+
+/** The compare slider's divider: the right view is stacked over the main
+    (left) one and clipped left of the divider, so dragging it wipes between
+    the two. Clip and handle move together on every pointer move; the store
+    (persisted) only takes the position on release. */
+function CompareSlider({ page, viewport2, leftLabel, rightLabel }: { page: 'model' | 'sequence'; viewport2: HTMLElement; leftLabel: string; rightLabel: string }) {
+  const engine = useViewerEngine();
+  const saved = useViewSettingsStore((s) => s.pages[page].sliderPos ?? 0.5);
+  const patchPage = useViewSettingsStore((s) => s.patchPage);
+  const [pos, setPos] = useState(saved);
+  const rootRef = useRef<HTMLDivElement>(null);
+  useEffect(() => setPos(saved), [saved]);
+
+  useEffect(() => {
+    viewport2.style.clipPath = `inset(0 0 0 ${pos * 100}%)`;
+    engine.compareSlider = pos;
+  }, [viewport2, engine, pos]);
+  useEffect(() => () => {
+    viewport2.style.clipPath = '';
+    engine.compareSlider = null;
+  }, [viewport2, engine]);
+
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  const fromEvent = (e: React.PointerEvent) => {
+    const area = rootRef.current?.parentElement?.getBoundingClientRect();
+    return area && area.width ? clamp((e.clientX - area.left) / area.width) : pos;
+  };
+  const onDown = (e: React.PointerEvent) => {
+    e.currentTarget.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  };
+  const onMove = (e: React.PointerEvent) => {
+    if (e.currentTarget.hasPointerCapture(e.pointerId)) setPos(fromEvent(e));
+  };
+  const onUp = (e: React.PointerEvent) => {
+    if (!e.currentTarget.hasPointerCapture(e.pointerId)) return;
+    e.currentTarget.releasePointerCapture(e.pointerId);
+    patchPage(page, { sliderPos: fromEvent(e) });
+  };
+  const onKey = (e: React.KeyboardEvent) => {
+    const step = e.shiftKey ? 0.1 : 0.02;
+    const next = e.key === 'ArrowLeft' ? pos - step : e.key === 'ArrowRight' ? pos + step : e.key === 'Home' ? 0 : e.key === 'End' ? 1 : null;
+    if (next === null) return;
+    e.preventDefault();
+    patchPage(page, { sliderPos: clamp(next) });
+  };
+  const drag = { onPointerDown: onDown, onPointerMove: onMove, onPointerUp: onUp, onPointerCancel: onUp, onDoubleClick: () => patchPage(page, { sliderPos: 0.5 }) };
+
+  // Each side's models, in that side's bottom corner (the cube has the top right).
+  return (
+    <>
+      {leftLabel && pos > 0.08 && (
+        <div className="compare-slider__label compare-slider__label--left" style={{ maxWidth: `calc(${pos * 100}% - 32px)` }} title={leftLabel}>{leftLabel}</div>
+      )}
+      {rightLabel && pos < 0.92 && (
+        <div className="compare-slider__label compare-slider__label--right" style={{ maxWidth: `calc(${(1 - pos) * 100}% - 32px)` }} title={rightLabel}>{rightLabel}</div>
+      )}
+    <div ref={rootRef} className="compare-slider" style={{ left: `${pos * 100}%` }}>
+      <div className="compare-slider__line" />
+      <div className="compare-slider__grab" {...drag} />
+      <div
+        className="compare-slider__knob"
+        role="slider"
+        tabIndex={0}
+        aria-label="Compare slider: left view / right view"
+        aria-valuemin={0}
+        aria-valuemax={100}
+        aria-valuenow={Math.round(pos * 100)}
+        title="Drag to compare the left and right views. Double-click to centre."
+        onKeyDown={onKey}
+        {...drag}
+      >
+        &lsaquo;&rsaquo;
+      </div>
+    </div>
+    </>
+  );
+}

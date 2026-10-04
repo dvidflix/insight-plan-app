@@ -1,0 +1,8 @@
+{
+  "id": "CWA-NAME-IS-POUR-ID",
+  "name": "Element names are their pour ID",
+  "description": "An element with a pour ID (Full Pour ID String, Pour ID Number or Pour ID, in any property set) is named with one of them, so it can be found by its pour in the model tree and in other tools. Spelling variants from the different exports count too (Full Pour ID, FullPourID, PourID).",
+  "instructions": "Run the linked patch: it copies the pour ID into the element's Name.",
+  "type": "name-matches-property",
+  "properties": ["Full Pour ID String", "Full Pour ID", "FullPourID", "Pour ID Number", "Pour ID", "PourID"]
+}

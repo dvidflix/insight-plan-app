@@ -1,0 +1,241 @@
+import { useMemo, useState } from 'react';
+import { COLUMN_GROUPS, COLUMN_PRESETS, type ColumnDef } from '../../schedule/columns';
+import { IconSectionChevron } from '../icons';
+import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
+import { CalcColumnsEditor } from './CalcColumnsEditor';
+import { queryMatcher } from '../../schedule/search';
+
+export interface ColumnView {
+  id: string;
+  label: string;
+  /** Visible column ids, in display order. */
+  selected: string[];
+  defaults: string[];
+  onChange: (ids: string[]) => void;
+}
+
+/** What the picker needs of a column (the schedule's ColumnDef, or the
+    Models data table's properties). */
+type PickColumn = Pick<ColumnDef, 'id' | 'label' | 'group'>;
+
+interface ColumnsPanelProps {
+  catalog: PickColumn[];
+  views: ColumnView[];
+  /** One-click column sets (default: the schedule's). */
+  presets?: { id: string; label: string; ids: string[] }[];
+  /** Groups listed first, in this order (default: the schedule's). */
+  groupOrder?: readonly string[];
+  /** Groups that start closed. */
+  closedGroups?: string[];
+  /** Offer "Calculated columns" (formulas over the activity columns). */
+  calculated?: boolean;
+  /** Saving the shown columns as a named preset (listed in `presets`). */
+  onSavePreset?: (name: string, ids: string[]) => void;
+  onDeletePreset?: (id: string) => void;
+  /** The rows of the "Available" list, when they are not every catalog entry
+      (the catalog still names every column that can be shown). */
+  listed?: PickColumn[];
+  /** Twin layout: each listed property gets two checkboxes, the main model's
+      (left) and the twin model's (right, its column id from `twinOf`). */
+  twin?: {
+    titles: [string, string];
+    /** Tooltips of the two titles (the models' names). */
+    hints?: [string, string];
+    twinOf: (id: string) => string | null;
+    /** Whether the main model has the property. */
+    hasOwn: (id: string) => boolean;
+  };
+}
+
+/** Column picker for the Configuration pane: a reorderable "Shown" list on
+    top, then every available column grouped the way P6 groups them. */
+export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOrder = COLUMN_GROUPS, closedGroups = ['Relationships', 'Resources & Cost', 'Constraints'], onSavePreset, onDeletePreset, listed, twin, calculated }: ColumnsPanelProps) {
+  const [presetName, setPresetName] = useState('');
+  const [viewId, setViewId] = useState(views[0]?.id);
+  const view = views.find((v) => v.id === viewId) ?? views[0];
+  const [search, setSearch] = useState('');
+  const [closed, setClosed] = useState<Set<string>>(() => new Set(closedGroups));
+  const [dragId, setDragId] = useState<string | null>(null);
+
+  const byId = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
+  const shown = useMemo(() => (view ? view.selected.filter((id) => byId.has(id)) : []), [view, byId]);
+  const shownSet = useMemo(() => new Set(shown), [shown]);
+  const q = search.trim().toLowerCase();
+  const hit = queryMatcher(search);
+
+  const groups = useMemo(() => {
+    const map = new Map<string, PickColumn[]>();
+    for (const c of listed ?? catalog) (map.get(c.group) ?? map.set(c.group, []).get(c.group)!).push(c);
+    const order: string[] = [...groupOrder, ...[...map.keys()].filter((g) => !groupOrder.includes(g))];
+    return order.filter((g) => map.has(g)).map((g) => ({ name: g, columns: map.get(g)! }));
+  }, [catalog, listed, groupOrder]);
+
+  if (!view) return null;
+  const set = (ids: string[]) => view.onChange(ids);
+  const toggle = (id: string) => set(shownSet.has(id) ? shown.filter((x) => x !== id) : [...shown, id]);
+  const move = (id: string, delta: number) => {
+    const from = shown.indexOf(id);
+    const to = from + delta;
+    if (from < 0 || to < 0 || to >= shown.length) return;
+    const next = [...shown];
+    next.splice(from, 1);
+    next.splice(to, 0, id);
+    set(next);
+  };
+  const drop = (targetId: string) => {
+    if (!dragId || dragId === targetId) return;
+    const next = shown.filter((x) => x !== dragId);
+    next.splice(next.indexOf(targetId) + (shown.indexOf(dragId) < shown.indexOf(targetId) ? 1 : 0), 0, dragId);
+    set(next);
+  };
+  const toggleGroup = (name: string) =>
+    setClosed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(name)) next.add(name);
+      return next;
+    });
+  /** The column ids a listed property stands for: its own and, in the twin layout, its twin's. */
+  const idsOf = (c: PickColumn) => {
+    if (!twin) return [c.id];
+    const t = twin.twinOf(c.id);
+    return [...(twin.hasOwn(c.id) ? [c.id] : []), ...(t ? [t] : [])];
+  };
+  const setGroup = (cols: PickColumn[], on: boolean) => {
+    const all = cols.flatMap(idsOf);
+    const ids = new Set(all);
+    set(on ? [...shown, ...all.filter((id) => !shownSet.has(id))] : shown.filter((id) => !ids.has(id)));
+  };
+
+  return (
+    <div className="cols">
+      {views.length > 1 && (
+        <div className="cols__views" role="tablist">
+          {views.map((v) => (
+            <button key={v.id} type="button" role="tab" aria-selected={v.id === view.id} className={v.id === view.id ? 'active' : ''} onClick={() => setViewId(v.id)}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      <div className="cols__presets">
+        <span className="cols__hint">Presets</span>
+        <button type="button" onClick={() => set(view.defaults.filter((id) => byId.has(id)))}>Default</button>
+        {presets.map((p) =>
+          onDeletePreset ? (
+            <span key={p.id} className="scn-preset">
+              <button type="button" onClick={() => set(p.ids.filter((id) => byId.has(id)))} title="Apply preset">{p.label}</button>
+              <button type="button" className="scn-preset__x" onClick={() => onDeletePreset(p.id)} title="Delete preset" aria-label={`Delete preset ${p.label}`}>✕</button>
+            </span>
+          ) : (
+            <button key={p.id} type="button" onClick={() => set(p.ids.filter((id) => byId.has(id)))}>{p.label}</button>
+          ),
+        )}
+      </div>
+      {onSavePreset && (
+        <form
+          className="scn-row cols__save"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (!presetName.trim()) return;
+            onSavePreset(presetName.trim(), shown);
+            setPresetName('');
+          }}
+        >
+          <input value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="Save shown columns as preset…" />
+          <button className="btn btn--small" type="submit" disabled={!presetName.trim()}>Save</button>
+        </form>
+      )}
+
+      <div className="cols__heading">
+        <span>Shown <b>{shown.length}</b></span>
+        {shown.length > 0 && <button type="button" className="cols__link" onClick={() => set([])}>Clear all</button>}
+      </div>
+      <div className="cols__shown">
+        {shown.length === 0 && <div className="cols__empty">No columns shown — add some below.</div>}
+        {shown.map((id, i) => (
+          <div
+            key={id}
+            className={`cols__row${dragId === id ? ' dragging' : ''}`}
+            draggable
+            onDragStart={(e) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => { e.preventDefault(); drop(id); setDragId(null); }}
+            onDragEnd={() => setDragId(null)}
+          >
+            <span className="cols__grip" aria-hidden="true">⋮⋮</span>
+            <span className="cols__label" title={byId.get(id)!.label}>{byId.get(id)!.label}</span>
+            <button type="button" className="cols__icon" disabled={i === 0} onClick={() => move(id, -1)} aria-label={`Move ${byId.get(id)!.label} up`} title="Move up">↑</button>
+            <button type="button" className="cols__icon" disabled={i === shown.length - 1} onClick={() => move(id, 1)} aria-label={`Move ${byId.get(id)!.label} down`} title="Move down">↓</button>
+            <button type="button" className="cols__icon cols__icon--remove" onClick={() => toggle(id)} aria-label={`Hide ${byId.get(id)!.label}`} title="Hide column">✕</button>
+          </div>
+        ))}
+      </div>
+
+      {calculated && <CalcColumnsEditor catalog={catalog as unknown as ColumnDef[]} />}
+      <div className="cols__heading"><span>Available columns <b>{(listed ?? catalog).length}</b></span></div>
+      <div className="cols__searchrow">
+        <input className="cols__search" type="search" placeholder="Search columns…" value={search} onChange={(e) => setSearch(e.target.value)} />
+        <ExpandCollapseToggle
+          className="btn btn--small"
+          collapsed={groups.length > 0 && groups.every((g) => closed.has(g.name))}
+          onCollapse={() => setClosed(new Set(groups.map((g) => g.name)))}
+          onExpand={() => setClosed(new Set())}
+        />
+      </div>
+      {groups.map((g) => {
+        const matches = q ? g.columns.filter((c) => hit(c.label)) : g.columns;
+        if (matches.length === 0) return null;
+        const open = q ? true : !closed.has(g.name);
+        const slots = g.columns.flatMap(idsOf);
+        const on = slots.filter((id) => shownSet.has(id)).length;
+        return (
+          <div className="cols__group" key={g.name}>
+            <div className="cols__group-head">
+              <button type="button" className="cols__group-toggle" onClick={() => toggleGroup(g.name)} aria-expanded={open}>
+                <IconSectionChevron className="section-chevron" />
+                <span className="cols__group-name">{g.name}</span>
+                <span className="cols__count">{on}/{slots.length}</span>
+              </button>
+              <button type="button" className="cols__link" onClick={() => setGroup(g.columns, true)}>All</button>
+              <button type="button" className="cols__link" onClick={() => setGroup(g.columns, false)}>None</button>
+            </div>
+            {open && twin && (
+              <div className="cols__group-body">
+                <div className="cols__pair cols__pair--head">
+                  <span title={twin.hints?.[0]}>{twin.titles[0]}</span>
+                  <span title={twin.hints?.[1]}>{twin.titles[1]}</span>
+                </div>
+                {matches.map((c) => {
+                  const other = twin.twinOf(c.id);
+                  const own = twin.hasOwn(c.id);
+                  return (
+                    <div className="cols__pair" key={c.id}>
+                      <label className={`cols__check${own ? '' : ' is-off'}`}>
+                        <input type="checkbox" disabled={!own} checked={own && shownSet.has(c.id)} onChange={() => toggle(c.id)} />
+                        <span title={c.label}>{c.label}</span>
+                      </label>
+                      <label className={`cols__pair-twin${other ? '' : ' is-off'}`} title={other ? `${c.label} of the twin model` : 'The twin model does not have this property'}>
+                        <input type="checkbox" disabled={!other} checked={!!other && shownSet.has(other)} onChange={() => other && toggle(other)} />
+                      </label>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+            {open && !twin && (
+              <div className="cols__group-body">
+                {matches.map((c) => (
+                  <label className="cols__check" key={c.id}>
+                    <input type="checkbox" checked={shownSet.has(c.id)} onChange={() => toggle(c.id)} />
+                    <span title={c.label}>{c.label}</span>
+                  </label>
+                ))}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}

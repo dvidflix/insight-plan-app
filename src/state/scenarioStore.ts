@@ -1,0 +1,477 @@
+import { create } from 'zustand';
+import { useModelsStore } from './modelsStore';
+import { reloadFromDb, useProjectDbStore } from './projectDbStore';
+import {
+  downloadText,
+  fetchProject,
+  fetchSequence,
+  fetchXml,
+  loadIntoInputs,
+  deleteScenarioOnServer,
+  saveScenario,
+  scenarioFileName,
+  updateScenario,
+  warmScenario,
+  type CrewOptions,
+  type ProjectInfo,
+  type ScenarioCrew,
+  type ScenarioFlag,
+  type ScenarioRelation,
+} from '../scenarios/api';
+import { fromSheet, stepNumbers, toSheet, type PourRow } from '../scenarios/pourOrder';
+import { parseXml } from '../schedule/parsers/xml';
+import { xmlToXer } from '../schedule/xmlToXer';
+import { filterXmlText } from '../schedule/exportFilter';
+import { DEFAULT_SCN_TABLE, type ScnTableConfig } from '../scenarios/tableView';
+import type { ScnConfigTab } from '../components/scenarios/ScenarioTableConfig';
+
+/** The Scenarios work in progress — project, scenario, pour order, unsaved
+    edits, undo/redo, selection, table view — in one store, so the Scenarios
+    tab and the Scenarios panel of 4D Sequencing show (and edit) the same
+    thing, and switching between them loses nothing. The loading side lives
+    in ScenarioSync (mounted by whichever of the two is showing). */
+
+export const NO_ROWS: PourRow[] = [];
+const NO_RELATIONS: ScenarioRelation[] = [];
+const NO_CREWS: ScenarioCrew[] = [];
+const NO_FLAGS: Record<string, FlagState> = {};
+
+/** Review flag on a pour (its GUID) or a group (its key): to fix, or fixed. */
+export type FlagState = 'flag' | 'done';
+const flagsOf = (list: ScenarioFlag[] | undefined): Record<string, FlagState> => (list?.length ? Object.fromEntries(list.map((f) => [f.Key, f.State])) : NO_FLAGS);
+const flagList = (flags: Record<string, FlagState>): ScenarioFlag[] => Object.entries(flags).map(([Key, State]) => ({ Key, State }));
+const NAME_RE = /^[^<>:"/\\|?*\x00-\x1f]+$/;
+
+export interface LoadedOrder {
+  root: string;
+  scenario: string;
+  stem: string;
+  headers: string[];
+  /** Base (project) step of each row (0 = not in its sequence), for the
+      "Base" / shift columns and the moved count. */
+  baseStep: Map<string, number>;
+}
+
+type Message = { kind: 'ok' | 'error' | 'warn'; text: string } | null;
+export type ScenarioCfgTab = 'scenario' | 'links' | 'crews' | ScnConfigTab;
+/** Tabs showing the table configuration (the others are cards). */
+export const isTableCfgTab = (tab: ScenarioCfgTab): tab is ScnConfigTab => tab !== 'scenario' && tab !== 'links' && tab !== 'crews';
+
+// Same localStorage keys (and JSON format) the Scenarios tab used before.
+function load<T>(key: string, fallback: T): T {
+  try {
+    const v = localStorage.getItem(key);
+    return v === null ? fallback : (JSON.parse(v) as T);
+  } catch {
+    return fallback;
+  }
+}
+function save(key: string, value: unknown) {
+  try {
+    localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // not remembered
+  }
+}
+
+interface ScenarioState {
+  startDate: string;
+  scenario: string | null;
+  pickedStem: string | null;
+  tableCfg: ScnTableConfig;
+  cfgTab: ScenarioCfgTab;
+
+  project: ProjectInfo | null;
+  projectError: string | null;
+  drafts: string[];
+  loaded: LoadedOrder | null;
+  rows: PourRow[];
+  savedRows: PourRow[];
+  undo: PourRow[][];
+  redo: PourRow[][];
+  selected: Set<string>;
+  filter: string;
+  collapsedGroups: Set<string>;
+  /** Recording the order objects are picked in 3D (row keys, in pick order). */
+  recordPicks: boolean;
+  pickOrder: string[];
+  busy: string | null;
+  message: Message;
+  log: string;
+  showLog: boolean;
+  /** "Copy the order on screen" hands its rows to the next load. */
+  copy: { scenario: string; stem: string; loaded: LoadedOrder; rows: PourRow[] } | null;
+  /** Bumped after each successful Generate (4D refreshes from it). */
+  generation: number;
+  /** Regenerate 4D automatically a moment after each change to the order. */
+  autoUpdate: boolean;
+  /** The order, links and crews the programme in 4D was last updated from. */
+  updatedFrom: { rows: PourRow[]; relations: ScenarioRelation[]; crews: ScenarioCrew[] } | null;
+  /** The scenario's manual links and crews (saved with it), and as last
+      saved (for the unsaved flag). */
+  relations: ScenarioRelation[];
+  crews: ScenarioCrew[];
+  savedRelations: ScenarioRelation[];
+  savedCrews: ScenarioCrew[];
+  /** Review flags (pour GUID / group key -> state), saved with the scenario; and the table showing only the flagged. */
+  flags: Record<string, FlagState>;
+  savedFlags: Record<string, FlagState>;
+  flaggedOnly: boolean;
+  /** The generator's trades, crew phases and default crews (crew editor). */
+  crewOptions: CrewOptions | null;
+}
+
+export const useScenarioStore = create<ScenarioState>(() => ({
+  startDate: load('scenarios.startDate', ''),
+  scenario: load<string | null>('scenarios.current', null),
+  pickedStem: load<string | null>('scenarios.model', null),
+  tableCfg: load('scenarios.table', DEFAULT_SCN_TABLE),
+  cfgTab: load<ScenarioCfgTab>('scenarios.cfgTab', 'scenario'),
+  project: null,
+  projectError: null,
+  drafts: [],
+  loaded: null,
+  rows: NO_ROWS,
+  savedRows: NO_ROWS,
+  undo: [],
+  redo: [],
+  selected: new Set(),
+  filter: '',
+  collapsedGroups: new Set(),
+  recordPicks: false,
+  pickOrder: [],
+  busy: null,
+  message: null,
+  log: '',
+  showLog: false,
+  copy: null,
+  generation: 0,
+  autoUpdate: load('scenarios.autoUpdate', false),
+  updatedFrom: null,
+  relations: NO_RELATIONS,
+  crews: NO_CREWS,
+  savedRelations: NO_RELATIONS,
+  savedCrews: NO_CREWS,
+  flags: NO_FLAGS,
+  savedFlags: NO_FLAGS,
+  flaggedOnly: false,
+  crewOptions: null,
+}));
+
+const PERSISTED: [keyof ScenarioState, string][] = [
+  ['startDate', 'scenarios.startDate'],
+  ['scenario', 'scenarios.current'],
+  ['pickedStem', 'scenarios.model'],
+  ['tableCfg', 'scenarios.table'],
+  ['cfgTab', 'scenarios.cfgTab'],
+  ['autoUpdate', 'scenarios.autoUpdate'],
+];
+useScenarioStore.subscribe((s, prev) => {
+  for (const [field, key] of PERSISTED) if (s[field] !== prev[field]) save(key, s[field]);
+});
+
+const get = () => useScenarioStore.getState();
+const set = useScenarioStore.setState;
+
+// ---- the building (stem): the IFC loaded in Inputs ----
+
+export const stemsInInputs = (models: { name: string }[]) => models.map((m) => m.name.replace(/\.(ifc|frag)$/i, ''));
+
+/** Scenarios are worked one building at a time: the picked one if it is
+    loaded in Inputs, else the first loaded. */
+export function useScenarioStem(): string | null {
+  const models = useModelsStore((s) => s.models);
+  const picked = useScenarioStore((s) => s.pickedStem);
+  const stems = stemsInInputs(models);
+  return picked && stems.includes(picked) ? picked : stems[0] ?? null;
+}
+function currentStem(): string | null {
+  const stems = stemsInInputs(useModelsStore.getState().models);
+  const picked = get().pickedStem;
+  return picked && stems.includes(picked) ? picked : stems[0] ?? null;
+}
+
+export function scenarioNamesFor(project: ProjectInfo | null, drafts: string[], stem: string | null): string[] {
+  const own = project?.scenarios.filter((s) => s.models.some((m) => m.stem === stem)).map((s) => s.name) ?? [];
+  return [...new Set([...own, ...drafts])].sort((a, b) => a.localeCompare(b));
+}
+
+// ---- loading ----
+
+export async function refreshProject(root = useProjectDbStore.getState().root) {
+  if (!root) return;
+  try {
+    set({ projectError: null, project: await fetchProject(root) });
+  } catch (e) {
+    set({ project: null, projectError: e instanceof Error ? e.message : String(e) });
+  }
+}
+
+/** Loads the scenario's pour order (and the project's base order) — unless
+    that same order is already loaded, so edits survive switching between
+    the Scenarios tab and 4D. */
+let loadingOrder: { key: string; run: Promise<void> } | null = null;
+
+export async function loadOrder(stem: string | null) {
+  const { project, scenario } = get();
+  // Already loading this one (e.g. the tab was left and opened again while
+  // the building is being prepared): wait for it instead of asking again.
+  const key = `${project?.root}|${scenario}|${stem}`;
+  if (loadingOrder?.key === key) return loadingOrder.run;
+  const run = loadOrderNow(stem);
+  loadingOrder = { key, run };
+  try {
+    await run;
+  } finally {
+    if (loadingOrder?.run === run) loadingOrder = null;
+  }
+}
+
+async function loadOrderNow(stem: string | null) {
+  const { project, scenario, loaded, copy } = get();
+  if (!project || !scenario || !stem || !project.models.some((m) => m.stem === stem)) {
+    if (loaded) set({ loaded: null });
+    return;
+  }
+  if (loaded && loaded.root === project.root && loaded.scenario === scenario && loaded.stem === stem) return;
+  if (copy && copy.scenario === scenario && copy.stem === stem) {
+    set({ copy: null, loaded: { ...copy.loaded, scenario, root: project.root }, rows: copy.rows, savedRows: [], undo: [], redo: [], savedRelations: NO_RELATIONS, savedCrews: NO_CREWS, flags: NO_FLAGS, savedFlags: NO_FLAGS });
+    return;
+  }
+  set({ busy: 'Loading order…', copy: null });
+  try {
+    const [own, base] = await Promise.all([fetchSequence(project.root, stem, scenario), fetchSequence(project.root, stem, null)]);
+    // Still the one asked for?
+    if (get().scenario !== scenario || get().project?.root !== project.root || currentStem() !== stem) return;
+    const baseOrder = fromSheet(base.headers, base.rows);
+    const baseSteps = stepNumbers(baseOrder.rows);
+    const order = fromSheet(own.headers, own.rows);
+    set({
+      loaded: { root: project.root, scenario, stem, headers: own.headers, baseStep: new Map(baseOrder.rows.map((r, i) => [r.key, baseSteps[i]])) },
+      relations: own.relations ?? NO_RELATIONS,
+      crews: own.crews ?? NO_CREWS,
+      savedRelations: own.relations ?? NO_RELATIONS,
+      savedCrews: own.crews ?? NO_CREWS,
+      flags: flagsOf(own.flags),
+      savedFlags: flagsOf(own.flags),
+      crewOptions: { trades: own.trades ?? [], phases: own.phases ?? [], defaultCrews: own.defaultCrews ?? [] },
+      rows: order.rows,
+      savedRows: order.rows,
+      undo: [],
+      redo: [],
+      selected: new Set(),
+      message: null,
+    });
+  } catch (e) {
+    set({ message: { kind: 'error', text: e instanceof Error ? e.message : String(e) } });
+  } finally {
+    set({ busy: null });
+  }
+}
+
+// ---- editing ----
+
+export const isDirty = (s: Pick<ScenarioState, 'rows' | 'savedRows' | 'relations' | 'savedRelations' | 'crews' | 'savedCrews' | 'flags' | 'savedFlags'>) =>
+  s.rows !== s.savedRows || s.relations !== s.savedRelations || s.crews !== s.savedCrews || s.flags !== s.savedFlags;
+export const confirmDiscard = () => !isDirty(get()) || window.confirm('Discard the unsaved changes to this scenario (order, links, crews)?');
+
+/** Manual links and crews are edited in place; Save stores them. */
+export const setRelations = (relations: ScenarioRelation[]) => set({ relations });
+export const setCrews = (crews: ScenarioCrew[]) => set({ crews });
+
+/** Sets (or, with null, clears) the review flag of these pours / groups. */
+export const setFlags = (keys: string[], state: FlagState | null) => {
+  const next = { ...get().flags };
+  for (const k of keys) {
+    if (state) next[k] = state;
+    else delete next[k];
+  }
+  set({ flags: Object.keys(next).length ? next : NO_FLAGS });
+};
+
+/** Drops the loaded order so it is read again (after changes made to the
+    database elsewhere). Asks first when there are unsaved edits. */
+export function reloadOrder(): boolean {
+  if (!confirmDiscard()) return false;
+  set({ loaded: null });
+  return true;
+}
+
+export function applyRows(next: PourRow[]) {
+  const { rows, undo } = get();
+  if (next === rows) return;
+  set({ undo: [...undo.slice(-99), rows], redo: [], rows: next });
+}
+export function undoRows() {
+  const { rows, undo, redo } = get();
+  if (!undo.length) return;
+  set({ redo: [rows, ...redo], rows: undo[undo.length - 1], undo: undo.slice(0, -1) });
+}
+export function redoRows() {
+  const { rows, undo, redo } = get();
+  if (!redo.length) return;
+  set({ undo: [...undo, rows], rows: redo[0], redo: redo.slice(1) });
+}
+export const setSelected = (selected: Set<string>) => set({ selected });
+
+// ---- actions ----
+
+const xmlCache = new Map<string, string>();
+
+async function run(label: string, fn: () => Promise<void>) {
+  set({ busy: label, message: null });
+  try {
+    await fn();
+  } catch (e) {
+    const text = e instanceof Error ? e.message : String(e);
+    const [first, ...more] = text.split('\n');
+    set({ message: { kind: 'error', text: first } });
+    if (more.join('').trim()) set({ log: text });
+  } finally {
+    set({ busy: null });
+  }
+}
+
+function request() {
+  const { project, scenario, loaded, rows, relations, crews, flags } = get();
+  return { root: project!.root, scenario: scenario!, stem: loaded!.stem, headers: loaded!.headers, rows: toSheet({ headers: loaded!.headers, rows }), relations, crews, flags: flagList(flags) };
+}
+
+export const saveOrder = () =>
+  run('Saving…', async () => {
+    const { rows, scenario, relations, crews, flags } = get();
+    await saveScenario(request());
+    set({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedFlags: flags });
+    // Drop the draft only once the refreshed project lists the scenario:
+    // in between it would be in neither list and be taken as deleted.
+    await refreshProject(get().project!.root);
+    set((s) => ({ drafts: s.drafts.filter((n) => n !== scenario) }));
+    set({ message: { kind: 'ok', text: `Saved "${scenario}" to the project database.` } });
+  });
+
+/** "Update 4D": the programme for the order on screen from the long-running
+    generator (about a second once warm), straight into 4D. The order is not
+    saved (Save does that) unless the scenario needed a full run first. */
+export const updateFourD = () =>
+  run('Updating 4D…', async () => {
+    const { rows, scenario, startDate, loaded, relations, crews, flags } = get();
+    const stem = loaded!.stem;
+    const res = await updateScenario({ ...request(), startDate: startDate || null });
+    xmlCache.set(`${scenario}|${stem}`, res.xml);
+    await loadIntoInputs(res.xml, stem, scenario!);
+    set((s) => ({
+      updatedFrom: { rows, relations, crews },
+      generation: s.generation + 1,
+      log: res.log || s.log,
+      message: {
+        kind: 'ok',
+        text: res.fast
+          ? `4D updated in ${res.seconds ?? '?'} s — "${scenarioFileName(stem, scenario!)}".`
+          : `First run for this scenario done (it builds the cache for fast updates) — 4D updated.`,
+      },
+    }));
+    if (!res.fast) {
+      set((s) => ({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedFlags: flags, drafts: s.drafts.filter((n) => n !== scenario) }));
+      await refreshProject(get().project!.root);
+    }
+  });
+
+/** The order, links or crews changed since 4D was last updated. */
+export const needsUpdate = (s: Pick<ScenarioState, 'rows' | 'relations' | 'crews' | 'updatedFrom'>) =>
+  !s.updatedFrom || s.updatedFrom.rows !== s.rows || s.updatedFrom.relations !== s.relations || s.updatedFrom.crews !== s.crews;
+
+// Auto-update: one run a moment after the last change, never two at once.
+let autoTimer: ReturnType<typeof setTimeout> | null = null;
+export function scheduleAutoUpdate() {
+  if (autoTimer) clearTimeout(autoTimer);
+  autoTimer = setTimeout(async () => {
+    autoTimer = null;
+    const s = get();
+    if (!s.autoUpdate || !s.loaded || !needsUpdate(s)) return;
+    if (s.busy) return scheduleAutoUpdate();
+    await updateFourD();
+    // Changed again while updating: go once more.
+    const after = get();
+    if (after.autoUpdate && needsUpdate(after)) scheduleAutoUpdate();
+  }, 700);
+}
+
+/** Loads the model and workbook into the long-running generator early. */
+export function warmUp() {
+  const { project, scenario, loaded } = get();
+  if (project && scenario && loaded) void warmScenario({ root: project.root, scenario, stem: loaded.stem });
+}
+
+async function currentXml() {
+  const { project, scenario, loaded } = get();
+  const key = `${scenario}|${loaded!.stem}`;
+  const hit = xmlCache.get(key);
+  if (hit) return hit;
+  const xml = await fetchXml(project!.root, scenario!, loaded!.stem);
+  xmlCache.set(key, xml);
+  return xml;
+}
+
+export const loadGenerated = () =>
+  run('Loading into Inputs…', async () => {
+    const { scenario, loaded } = get();
+    await loadIntoInputs(await currentXml(), loaded!.stem, scenario!);
+    set({ message: { kind: 'ok', text: `Loaded "${scenarioFileName(loaded!.stem, scenario!)}" into Inputs.` } });
+  });
+
+export const download = (format: 'xml' | 'xer') =>
+  run(`Preparing ${format.toUpperCase()}…`, async () => {
+    const { scenario, loaded } = get();
+    const xml = await currentXml();
+    const name = scenarioFileName(loaded!.stem, scenario!);
+    const out = filterXmlText(xml);
+    if (format === 'xml') downloadText(`${name}.xml`, out, 'application/xml');
+    else downloadText(`${name}.xer`, xmlToXer(parseXml(out)), 'text/plain;charset=utf-8');
+  });
+
+/** Creates a scenario (a draft until saved); returns an error message or null. */
+export function createScenario(rawName: string, from: 'base' | 'current'): string | null {
+  const name = rawName.trim();
+  const { project, drafts, loaded, rows } = get();
+  if (!NAME_RE.test(name) || name === '.' || name === '..') return 'Scenario names cannot contain < > : " / \\ | ? *';
+  if (scenarioNamesFor(project, drafts, currentStem()).includes(name)) return `There is already a scenario called "${name}".`;
+  if (from === 'current' && loaded) {
+    set({ copy: { scenario: name, stem: loaded.stem, loaded, rows }, drafts: [...drafts, name], scenario: name });
+    return null;
+  }
+  if (!confirmDiscard()) return null;
+  set({ drafts: [...drafts, name], scenario: name, loaded: null });
+  return null;
+}
+
+/** Deletes a scenario after asking: a draft only disappears from the list; a
+    saved one is removed from the project database with its generated programme. */
+export async function deleteScenario(name: string): Promise<void> {
+  const { project, drafts, scenario } = get();
+  const saved = !!project?.scenarios.some((s) => s.name === name);
+  const what = saved ? 'its saved order, links, crews and generated programme' : 'this unsaved scenario';
+  if (!window.confirm(`Delete the scenario "${name}"? This removes ${what}. It cannot be undone.`)) return;
+  const wasCurrent = scenario === name;
+  try {
+    if (saved && project) await deleteScenarioOnServer({ root: project.root, scenario: name });
+  } catch (e) {
+    set({ message: { kind: 'error', text: e instanceof Error ? e.message : String(e) } });
+    return;
+  }
+  set({ drafts: drafts.filter((d) => d !== name), ...(wasCurrent ? { scenario: null, loaded: null } : {}) });
+  if (saved) {
+    await refreshProject();
+    // Its programme is gone from the database: the lists read it again.
+    void reloadFromDb();
+  }
+}
+
+export function pickScenario(name: string) {
+  if (name === get().scenario || !confirmDiscard()) return;
+  set({ scenario: name, loaded: null });
+}
+
+export function pickStem(stem: string) {
+  if (stem === currentStem() || !confirmDiscard()) return;
+  set({ pickedStem: stem, loaded: null });
+}

@@ -1,0 +1,571 @@
+import { useDataTableStore } from '../state/dataTableStore';
+import { useFocusStore } from '../state/focusStore';
+import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { create } from 'zustand';
+import type * as OBC from '@thatopen/components';
+import * as THREE from 'three';
+import { useViewerEngine } from '../viewer/ViewerEngineContext';
+import type { MeasureKind, ViewerTool } from '../viewer/ViewerEngine';
+import { useSelectionStore } from '../state/selectionStore';
+import { useModelsStore } from '../state/modelsStore';
+import { useViewSettingsStore } from '../state/viewSettingsStore';
+import { useTagsStore } from '../state/tagsStore';
+import { useSequenceLabelStore } from '../state/sequenceLabelStore';
+import { usePersistedState } from '../utils/persistedState';
+import { elementValue, prettyClass } from '../viewer/bimTables';
+import { useIndexTick } from './modelFields';
+import {
+  IconBoxSelect, IconCategory, IconLocationPoint, IconNavigationArrow, IconShortText, IconTagOutline, IconViewCube, IconChevronDown, IconChevronRight, IconFullscreen, IconCube, IconCursor, IconDeleteAll, IconFilter, IconGhost, IconGrid, IconMeasureArea, IconMeasureLength,
+  IconMeasurePerimeter, IconMeasureSlope, IconMeasureVertical, IconModelOrtho, IconViewTable, IconPerspective, IconPin, IconSection, IconSelectionSet, IconSelectOff, IconSinglePane, IconTransparency, IconTwoPane, IconViewAxon, IconViewBack,
+  IconViewBottom, IconViewFront, IconViewLeft, IconViewRight, IconViewShowAll, IconViewTop, IconVisibility, IconVisibilityOff, IconZoomToSelected,
+} from './icons';
+
+type IconC = (p: React.SVGProps<SVGSVGElement>) => ReactNode;
+
+// ---- building blocks ---------------------------------------------------------
+
+/** A dark label under the hovered control (rendered on <body>, so the
+    toolbar's own scrolling never clips it). */
+function Tip({ anchor, text }: { anchor: HTMLElement | null; text: string }) {
+  if (!anchor) return null;
+  const r = anchor.getBoundingClientRect();
+  return createPortal(<div className="vtb-tip" style={{ left: r.left + r.width / 2, top: r.bottom + 6 }}>{text}</div>, document.body);
+}
+
+function useTip(text: string) {
+  const [anchor, setAnchor] = useState<HTMLElement | null>(null);
+  return {
+    props: { onMouseEnter: (e: React.MouseEvent<HTMLElement>) => setAnchor(e.currentTarget), onMouseLeave: () => setAnchor(null), onMouseDown: () => setAnchor(null), 'aria-label': text },
+    tip: <Tip anchor={anchor} text={text} />,
+  };
+}
+
+/** An icon button; `active` fills it with the accent colour (a toggle that's on, or the tool in use). */
+function Btn({ icon: I, tip, active, disabled, onClick, ownGesture, size = 20 }: { icon: IconC; tip: string; active?: boolean; disabled?: boolean; onClick: () => void; ownGesture?: boolean; size?: number }) {
+  const t = useTip(tip);
+  return (
+    <>
+      <button type="button" className={`vtb-btn${active ? ' is-on' : ''}`} aria-pressed={active} disabled={disabled} onClick={onClick} data-own-gesture={ownGesture || undefined} {...t.props}>
+        <I width={size} height={size} />
+      </button>
+      {t.tip}
+    </>
+  );
+}
+
+// Full screen (as F11 does), in step with Esc / F11 / the browser. Entered
+// from a toolbar it also hides the app's top bar (the page tabs), for the
+// most room; leaving full screen any way (Esc, F11) brings it back. One
+// state for every toolbar showing the button (3D viewer, Programmes).
+const useFullscreenStore = create<{ on: boolean }>(() => ({
+  on: !!document.fullscreenElement && document.body.classList.contains('viewer-fullscreen'),
+}));
+function setTopBarHidden(hidden: boolean) {
+  document.body.classList.toggle('viewer-fullscreen', hidden);
+  useFullscreenStore.setState({ on: hidden });
+}
+document.addEventListener('fullscreenchange', () => {
+  if (!document.fullscreenElement) setTopBarHidden(false);
+});
+function toggleFullscreen() {
+  if (useFullscreenStore.getState().on) {
+    setTopBarHidden(false);
+    if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
+    return;
+  }
+  setTopBarHidden(true);
+  // Already full screen (e.g. on start): just hide the top bar.
+  if (!document.fullscreenElement) void document.documentElement.requestFullscreen().catch(() => setTopBarHidden(false));
+}
+
+/** Enter / exit full screen mode (also hides the page tabs). */
+export function FullscreenButton() {
+  const on = useFullscreenStore((st) => st.on);
+  return <Btn icon={IconFullscreen} size={24} tip={on ? 'Exit full screen mode' : 'Enter full screen mode'} active={on} ownGesture onClick={toggleFullscreen} />;
+}
+
+export interface MenuItem {
+  key: string;
+  label: string;
+  icon?: IconC;
+  /** A tick box (checked / not). */
+  checked?: boolean;
+  /** Highlighted as the current choice. */
+  current?: boolean;
+  disabled?: boolean;
+  separator?: boolean;
+  onClick?: () => void;
+  /** A flyout with more items. */
+  items?: MenuItem[];
+  /** Keep the menu open after clicking (tick boxes). */
+  keepOpen?: boolean;
+}
+
+/** A dropdown under `anchor` (on <body>); closes on a click outside or Esc. */
+function Menu({ anchor, items, onClose, sub }: { anchor: DOMRect; items: MenuItem[]; onClose: () => void; sub?: boolean }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [flyout, setFlyout] = useState<{ key: string; rect: DOMRect } | null>(null);
+  const [pos, setPos] = useState({ left: sub ? anchor.right : anchor.left, top: sub ? anchor.top : anchor.bottom + 2 });
+  useLayoutEffect(() => {
+    // Keep it on screen.
+    const el = ref.current;
+    if (!el) return;
+    const w = el.offsetWidth;
+    const h = el.offsetHeight;
+    let left = sub ? anchor.right : anchor.left;
+    if (left + w > window.innerWidth - 8) left = sub ? anchor.left - w : window.innerWidth - 8 - w;
+    const top = Math.max(8, Math.min(sub ? anchor.top : anchor.bottom + 2, window.innerHeight - 8 - h));
+    setPos({ left, top });
+  }, [anchor, sub, items.length]);
+  useEffect(() => {
+    if (sub) return;
+    const onDown = (e: PointerEvent) => {
+      if (!(e.target as Element).closest?.('.vtb-menu')) onClose();
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('pointerdown', onDown, true);
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('pointerdown', onDown, true);
+      window.removeEventListener('keydown', onKey);
+    };
+  }, [onClose, sub]);
+  return createPortal(
+    <div ref={ref} className="vtb-menu" role="menu" style={pos}>
+      {items.map((it) => {
+        if (it.separator) return <div key={it.key} className="vtb-menu__sep" role="separator" />;
+        const I = it.icon;
+        return (
+          <button
+            key={it.key}
+            type="button"
+            role={it.checked === undefined ? 'menuitem' : 'menuitemcheckbox'}
+            aria-checked={it.checked}
+            className={`vtb-menu__item${it.current ? ' is-current' : ''}${flyout?.key === it.key ? ' is-open' : ''}`}
+            disabled={it.disabled}
+            onMouseEnter={(e) => setFlyout(it.items ? { key: it.key, rect: e.currentTarget.getBoundingClientRect() } : null)}
+            onClick={(e) => {
+              if (it.items) { setFlyout({ key: it.key, rect: e.currentTarget.getBoundingClientRect() }); return; }
+              it.onClick?.();
+              if (!it.keepOpen) onClose();
+            }}
+          >
+            {it.checked !== undefined && <input type="checkbox" readOnly tabIndex={-1} checked={it.checked} />}
+            {I && <I width={18} height={18} />}
+            <span className="vtb-menu__label">{it.label}</span>
+            {it.items && <IconChevronRight className="vtb-menu__more" width={14} height={14} />}
+          </button>
+        );
+      })}
+      {flyout && (() => {
+        const it = items.find((x) => x.key === flyout.key);
+        return it?.items ? <Menu anchor={flyout.rect} items={it.items} onClose={onClose} sub /> : null;
+      })()}
+    </div>,
+    document.body,
+  );
+}
+
+/** A button with a ▾ beside it for its menu; `onClick` null: the button opens the menu too. */
+function Split({ icon, tip, menuTip, active, disabled, onClick, items }: { icon: IconC; tip: string; menuTip: string; active?: boolean; disabled?: boolean; onClick: (() => void) | null; items: MenuItem[] }) {
+  const [open, setOpen] = useState<DOMRect | null>(null);
+  const root = useRef<HTMLSpanElement>(null);
+  const caret = useTip(menuTip);
+  const toggle = () => setOpen((o) => (o ? null : root.current!.getBoundingClientRect()));
+  return (
+    <span className={`vtb-split${active ? ' is-on' : ''}${open ? ' is-open' : ''}`} ref={root}>
+      <Btn icon={icon} tip={tip} active={active} disabled={disabled} onClick={onClick ?? toggle} />
+      <button type="button" className={`vtb-caret${active ? ' is-on' : ''}`} aria-haspopup="menu" aria-expanded={!!open} onClick={toggle} {...caret.props}>
+        <IconChevronDown width={12} height={12} />
+      </button>
+      {caret.tip}
+      {open && <Menu anchor={open} items={items} onClose={() => setOpen(null)} />}
+    </span>
+  );
+}
+
+const Sep = () => <span className="vtb-sep" aria-hidden="true" />;
+
+// ---- the toolbar -------------------------------------------------------------
+
+interface MeasureChoice {
+  id: string;
+  kind: MeasureKind | 'point';
+  mode?: string;
+  label: string;
+  icon: IconC;
+  tip: string;
+}
+
+/** What the viewer can measure (That Open's measurement tools and their modes). */
+const MEASURES: MeasureChoice[] = [
+  { id: 'length', kind: 'length', mode: 'free', label: 'Length (point to point)', icon: IconMeasureLength, tip: 'Double-click two points. Delete removes one, Esc cancels.' },
+  { id: 'edge', kind: 'length', mode: 'edge', label: 'Length of an edge', icon: IconMeasureVertical, tip: 'Double-click an edge of an object.' },
+  { id: 'area', kind: 'area', mode: 'free', label: 'Area (polygon)', icon: IconMeasureArea, tip: 'Double-click each corner, then the first again.' },
+  { id: 'square', kind: 'area', mode: 'square', label: 'Area (rectangle)', icon: IconMeasurePerimeter, tip: 'Double-click three corners of a rectangle.' },
+  { id: 'face', kind: 'area', mode: 'face', label: 'Area of a face', icon: IconMeasureArea, tip: 'Double-click a face of an object.' },
+  { id: 'angle', kind: 'angle', label: 'Angle', icon: IconMeasureSlope, tip: 'Double-click start, vertex and end.' },
+  { id: 'point', kind: 'point', label: 'Point coordinates', icon: IconLocationPoint, tip: 'Double-click a point (it snaps to corners): its X, Y, Z (project axes, metres) is written in the view and copied. Delete removes the last one.' },
+  { id: 'volume', kind: 'volume', label: 'Volume of an object', icon: IconCube, tip: 'Double-click an object.' },
+];
+
+const VIEWS: { id: string; label: string; icon: IconC; dir: THREE.Vector3 }[] = [
+  { id: 'axon', label: 'Axon view', icon: IconViewAxon, dir: new THREE.Vector3(1, 0.8, 1) },
+  { id: 'top', label: 'Top view', icon: IconViewTop, dir: new THREE.Vector3(0, 1, 0) },
+  { id: 'front', label: 'Front view', icon: IconViewFront, dir: new THREE.Vector3(0, 0, 1) },
+  { id: 'left', label: 'Left view', icon: IconViewLeft, dir: new THREE.Vector3(-1, 0, 0) },
+  { id: 'back', label: 'Back view', icon: IconViewBack, dir: new THREE.Vector3(0, 0, -1) },
+  { id: 'right', label: 'Right view', icon: IconViewRight, dir: new THREE.Vector3(1, 0, 0) },
+  { id: 'bottom', label: 'Bottom view', icon: IconViewBottom, dir: new THREE.Vector3(0, -1, 0) },
+];
+
+/** The 3D viewer's toolbar (Models and 4D Sequencing): icon buttons, the
+    ones switched on filled with the accent colour, and split buttons with
+    a menu for the measure types, the standard views and what is shown. */
+export function ViewerToolbar() {
+  const engine = useViewerEngine();
+  const byModel = useSelectionStore((s) => s.byModel);
+  const hasSelection = Object.values(byModel).some((ids) => ids.length > 0);
+  const models = useModelsStore((s) => s.models);
+  const tick = useIndexTick();
+  const page = useViewSettingsStore((s) => s.activePage);
+  const main = useViewSettingsStore((s) => s.pages[page].main);
+  const patchView = useViewSettingsStore((s) => s.patch);
+  const patchPage = useViewSettingsStore((s) => s.patchPage);
+  const showCube = useViewSettingsStore((s) => s.pages[page].showCube);
+  const showNorth = useViewSettingsStore((s) => s.pages[page].showNorth ?? true);
+  // 4D Sequencing overlays (set up in its Label tab).
+  const tagsShown = useTagsStore((s) => s.shown);
+  const setTagsShown = useTagsStore((s) => s.setShown);
+  const tagList = useTagsStore((s) => s.tags);
+  const hoverTagId = useTagsStore((s) => s.hoverTagId);
+  const setHoverTagId = useTagsStore((s) => s.setHoverTagId);
+  const dateLabel = useSequenceLabelStore((s) => s.enabled);
+  const ignoreTimeliner = useIgnoreTimelinerStore((s) => s.ignore);
+  const dataTableOpen = useDataTableStore((s) => s.open);
+  const setDataTableOpen = useDataTableStore((s) => s.setOpen);
+  const focus = useFocusStore((s) => s.focus);
+  const setDateLabel = useSequenceLabelStore((s) => s.setEnabled);
+
+  // Tools and what they left behind.
+  const [tool, setToolState] = useState<ViewerTool>(() => engine.getActiveTool());
+  const [measureId, setMeasureId] = usePersistedState('viewer.toolbar.measure', 'length');
+  const measure = MEASURES.find((m) => m.id === measureId) ?? MEASURES[0];
+  const [, bump] = useState(0);
+  useEffect(() => {
+    const onChange = () => bump((n) => n + 1);
+    engine.onToolContentChange.add(onChange);
+    return () => { engine.onToolContentChange.remove(onChange); };
+  }, [engine]);
+  const setTool = (next: ViewerTool) => {
+    engine.setActiveTool(next);
+    setToolState(next);
+  };
+  const pickMeasure = (m: MeasureChoice) => {
+    setMeasureId(m.id);
+    if (m.mode && m.kind !== 'point') engine.setMeasureMode(m.kind, m.mode);
+    setTool(m.kind);
+  };
+  const measuring = tool !== 'select' && tool !== 'section' && tool !== 'box';
+
+  // Select / Isolate, Ghost on top, Pin.
+  const [baseMode, setBaseMode] = useState<'select' | 'isolate'>(() => (engine.getInteractionMode() === 'isolate' ? 'isolate' : 'select'));
+  const [ghost, setGhost] = useState(() => engine.getInteractionMode() === 'reveal');
+  const [pinned, setPinned] = useState(() => engine.isRevealPinned());
+  useEffect(() => {
+    const onPin = (p: boolean) => setPinned(p);
+    engine.onRevealPinChange.add(onPin);
+    return () => { engine.onRevealPinChange.remove(onPin); };
+  }, [engine]);
+  const [xray, setXray] = useState(() => engine.isXray());
+  useEffect(() => {
+    const onXray = (on: boolean) => setXray(on);
+    engine.onXrayChange.add(onXray);
+    return () => { engine.onXrayChange.remove(onXray); };
+  }, [engine]);
+  const applyMode = (base: 'select' | 'isolate', g: boolean) => {
+    setBaseMode(base);
+    setGhost(g);
+    void engine.setInteractionMode(g ? 'reveal' : base);
+  };
+
+  // Ignoring the timeliner (Scenarios toolbar) isolates + ghosts; following it again goes back to select and shows all objects.
+  const firstIgnoreRun = useRef(true);
+  const skipFocusEffect = useRef(false);
+  useEffect(() => {
+    if (firstIgnoreRun.current) { firstIgnoreRun.current = false; return; }
+    if (ignoreTimeliner) {
+      applyMode('isolate', true);
+      return;
+    }
+    void (async () => {
+      // Following the 4D dates again ends Focus: unpin first, then back to Select.
+      if (useFocusStore.getState().focus) {
+        skipFocusEffect.current = true;
+        useFocusStore.getState().setFocus(false);
+        await engine.setRevealPinned(false);
+      }
+      applyMode('select', false);
+      void showAll();
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ignoreTimeliner]);
+
+  // Focus (Scenarios toolbar): isolate the selection with no ghost and pin it; off = the regular ghost, unpinned.
+  const firstFocusRun = useRef(true);
+  useEffect(() => {
+    if (firstFocusRun.current) { firstFocusRun.current = false; return; }
+    if (skipFocusEffect.current) { skipFocusEffect.current = false; return; }
+    void (async () => {
+      if (focus) {
+        setBaseMode('isolate');
+        setGhost(false);
+        await engine.setInteractionMode('isolate');
+        await engine.setRevealPinned(true);
+      } else {
+        await engine.setRevealPinned(false);
+        setGhost(true);
+        await engine.setInteractionMode('reveal');
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [focus]);
+
+  // Selection actions.
+  const selection = () => engine.highlighter.selection.select;
+  // Select similar: the objects that match the first selected one on every one of `keys` (a class, a property).
+  const firstSelected = () => {
+    for (const [modelId, ids] of Object.entries(byModel)) {
+      const el = ids.length ? engine.getIndexes().get(modelId)?.elements.get(ids[0]) : undefined;
+      if (el) return el;
+    }
+    return undefined;
+  };
+  const selectSimilar = (keys: string[]) => {
+    const first = firstSelected();
+    if (!first) return;
+    const want = keys.map((k) => elementValue(first, k));
+    const out: Record<string, number[]> = {};
+    for (const [modelId, index] of engine.getIndexes()) {
+      for (const [id, e] of index.elements) if (keys.every((k, i) => elementValue(e, k) === want[i])) (out[modelId] ??= []).push(id);
+    }
+    void engine.selectElements(out, false);
+  };
+  const similarItems = (): MenuItem[] => {
+    const first = firstSelected();
+    const cls = 'Attributes.Class';
+    const items: MenuItem[] = [
+      { key: 'class', label: 'Same class', onClick: () => selectSimilar([cls]) },
+      { key: 'name', label: 'Same name', onClick: () => selectSimilar(['Attributes.Name']) },
+    ];
+    if (!first) return items;
+    const named = Object.keys(first.props).filter((k) => /^(Pour Type|Concrete Stage|Level|General Level \d|Building|Building Zone|Logic Group \d)$/i.test(k.slice(k.indexOf('.') + 1)) && String(first.props[k] ?? '').trim());
+    if (named.length) items.push({ key: 'sep', label: '', separator: true });
+    for (const k of named) {
+      const label = k.slice(k.indexOf('.') + 1);
+      items.push({ key: `p:${k}`, label: `Same ${label} (${String(first.props[k])})`, onClick: () => selectSimilar([k]) });
+      items.push({ key: `cp:${k}`, label: `Same class and ${label}`, onClick: () => selectSimilar([cls, k]) });
+    }
+    return items;
+  };
+  const hide = async () => {
+    await engine.hider.set(false, selection());
+    engine.onExternalVisibilityChange.trigger();
+    await engine.highlighter.clear('select');
+  };
+  const isolate = async () => {
+    await engine.hider.isolate(selection());
+    engine.onExternalVisibilityChange.trigger();
+  };
+  const [hiddenClasses, setHiddenClasses] = useState<Set<string>>(new Set());
+  const showAll = async () => {
+    await engine.hider.set(true);
+    engine.onExternalVisibilityChange.trigger();
+    setHiddenClasses(new Set());
+  };
+
+  // IFC element types in the loaded models, with how many objects each.
+  const classes = useMemo(() => {
+    const m = new Map<string, Record<string, number[]>>();
+    for (const [modelId, index] of engine.getIndexes()) {
+      for (const [id, e] of index.elements) {
+        const byM = m.get(e.category) ?? m.set(e.category, {}).get(e.category)!;
+        (byM[modelId] ??= []).push(id);
+      }
+    }
+    return [...m].map(([category, ids]) => ({ category, label: prettyClass(category), ids, count: Object.values(ids).reduce((n, l) => n + l.length, 0) }))
+      .sort((a, b) => a.label.localeCompare(b.label));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, models, tick]);
+  const toggleClass = async (category: string, ids: Record<string, number[]>) => {
+    const hidden = hiddenClasses.has(category);
+    const map: OBC.ModelIdMap = Object.fromEntries(Object.entries(ids).map(([k, l]) => [k, new Set(l)]));
+    await engine.hider.set(hidden, map);
+    engine.onExternalVisibilityChange.trigger();
+    setHiddenClasses((prev) => {
+      const next = new Set(prev);
+      if (hidden) next.delete(category); else next.add(category);
+      return next;
+    });
+  };
+
+  const ortho = main.projection === 'Orthographic';
+  const split = useViewSettingsStore((s) => s.pages[page].split);
+  const linked = useViewSettingsStore((s) => s.pages[page].linked || (s.pages[page].compare ?? 'side') === 'slider');
+  /** Fit / standard views: the main view, and the split's right view too
+      (linked, it follows the main camera; unlinked, it is framed the same way). */
+  const fitViews = async (map?: OBC.ModelIdMap, dir?: THREE.Vector3) => {
+    const second = engine.secondary;
+    if (second && linked) second.followMain();
+    await engine.fit(map, true, dir?.clone());
+    if (second && !linked) await second.fitTo(map, dir?.clone());
+  };
+
+  const hasSections = engine.isInitialized && engine.hasSections();
+
+  return (
+    <div className="vtb" role="toolbar" aria-label="3D viewer tools">
+      <Btn icon={IconCursor} tip="Select objects (Ctrl+click adds)" active={tool === 'select'} onClick={() => setTool('select')} />
+      <Btn
+        icon={IconBoxSelect}
+        tip="Box select: drag left to right for objects fully inside, right to left for objects touched. Ctrl / Shift adds."
+        active={tool === 'box'}
+        onClick={() => setTool(tool === 'box' ? 'select' : 'box')}
+      />
+      <Split
+        icon={measure.icon}
+        tip={`${measure.label}: ${measure.tip}`}
+        menuTip="Measure"
+        active={measuring}
+        onClick={() => (measuring ? setTool('select') : pickMeasure(measure))}
+        items={[
+          ...MEASURES.map((m): MenuItem => ({ key: m.id, label: m.label, icon: m.icon, current: measuring && m.id === measure.id, onClick: () => pickMeasure(m) })),
+          { key: 'sep', label: '', separator: true },
+          { key: 'clear', label: 'Delete all measurements', icon: IconDeleteAll, disabled: !(engine.isInitialized && engine.hasMeasurements()), onClick: () => engine.clearMeasurements() },
+        ]}
+      />
+      <Split
+        icon={IconSection}
+        tip="Section: double-click the model to cut it there. Delete removes the plane under the cursor."
+        menuTip="Section planes"
+        active={tool === 'section'}
+        onClick={() => setTool(tool === 'section' ? 'select' : 'section')}
+        items={[
+          { key: 'cut', label: 'Planes cut the model', checked: engine.isInitialized && engine.sectionsActive, keepOpen: true, disabled: !hasSections, onClick: () => engine.setSectionsActive(!engine.sectionsActive) },
+          { key: 'handles', label: 'Show the planes', checked: engine.isInitialized && engine.sectionHandlesVisible, keepOpen: true, onClick: () => engine.setSectionHandlesVisible(!engine.sectionHandlesVisible) },
+          { key: 'sep', label: '', separator: true },
+          { key: 'clear', label: 'Delete all section planes', icon: IconDeleteAll, disabled: !hasSections, onClick: () => engine.clearSections() },
+        ]}
+      />
+      <Sep />
+      <Btn icon={IconSelectOff} tip="Clear the selection" disabled={!hasSelection} onClick={() => void engine.highlighter.clear('select')} />
+      <Split
+        icon={IconSelectionSet}
+        tip="Select similar: every object with the same class as the selection"
+        menuTip="Select similar by…"
+        disabled={!hasSelection}
+        onClick={() => selectSimilar(['Attributes.Class'])}
+        items={similarItems()}
+      />
+      <Btn icon={IconVisibilityOff} tip="Hide the selected objects" disabled={!hasSelection} onClick={() => void hide()} />
+      <Btn icon={IconFilter} tip="Isolate the selected objects (hide the rest)" disabled={!hasSelection} onClick={() => void isolate()} />
+      <Btn icon={IconViewShowAll} tip="Show all objects" onClick={() => void showAll()} />
+      <Sep />
+      <div className="vtb-seg" role="radiogroup" aria-label="What selecting does">
+        <button type="button" role="radio" aria-checked={baseMode === 'select'} className={baseMode === 'select' ? 'is-on' : ''} onClick={() => applyMode('select', baseMode === 'select' ? ghost : false)} title="Selecting only highlights">Select</button>
+        <button type="button" role="radio" aria-checked={baseMode === 'isolate'} className={baseMode === 'isolate' ? 'is-on' : ''} onClick={() => applyMode('isolate', baseMode === 'isolate' ? ghost : true)} title="Only the selection stays visible">Isolate</button>
+      </div>
+      <Btn icon={IconGhost} tip="Toggle ghost mode: everything outside the selection faded" active={ghost} onClick={() => applyMode(baseMode, !ghost)} />
+      <Btn
+        icon={IconPin}
+        tip="Pin: keep the isolated / un-ghosted objects while the selection changes"
+        active={pinned}
+        disabled={!ghost && baseMode === 'select'}
+        onClick={() => void engine.setRevealPinned(!pinned)}
+      />
+      <Sep />
+      <Btn
+        icon={ortho ? IconPerspective : IconModelOrtho}
+        tip={ortho ? 'Orthogonal view (click for perspective)' : 'Perspective view (click for orthogonal)'}
+        onClick={() => {
+          const projection = ortho ? 'Perspective' : 'Orthographic';
+          patchView(page, 'main', { projection });
+          patchView(page, 'second', { projection });
+        }}
+      />
+      <Btn icon={IconTransparency} tip="X-ray: see through the model (the selection stays solid)" active={xray} onClick={() => engine.setXray(!xray)} />
+      <Split
+        icon={IconViewAxon}
+        tip="Axon view"
+        menuTip="Standard views"
+        onClick={() => void fitViews(undefined, VIEWS[0].dir)}
+        items={VIEWS.map((v) => ({ key: v.id, label: v.label, icon: v.icon, onClick: () => void fitViews(undefined, v.dir) }))}
+      />
+      <Btn icon={IconZoomToSelected} tip={hasSelection ? 'Fit the selection' : 'Fit all models'} onClick={() => void fitViews(hasSelection ? selection() : undefined)} />
+      <Split
+        icon={IconVisibility}
+        tip="What is shown"
+        menuTip="What is shown"
+        onClick={null}
+        items={[
+          {
+            key: 'sections',
+            label: 'Section planes',
+            icon: IconSection,
+            items: [
+              { key: 'cut', label: 'Planes cut the model', checked: engine.isInitialized && engine.sectionsActive, keepOpen: true, disabled: !hasSections, onClick: () => engine.setSectionsActive(!engine.sectionsActive) },
+              { key: 'handles', label: 'Show the planes', checked: engine.isInitialized && engine.sectionHandlesVisible, keepOpen: true, onClick: () => engine.setSectionHandlesVisible(!engine.sectionHandlesVisible) },
+            ],
+          },
+          // Both views of a split (the grid has no switch of its own in View settings).
+          { key: 'grid', label: 'Grid', icon: IconGrid, checked: main.grid, keepOpen: true, onClick: () => { patchView(page, 'main', { grid: !main.grid }); patchView(page, 'second', { grid: !main.grid }); } },
+          { key: 'cube', label: 'View cube', icon: IconViewCube, checked: showCube, keepOpen: true, onClick: () => patchPage(page, { showCube: !showCube }) },
+          { key: 'north', label: 'North arrow', icon: IconNavigationArrow, checked: showNorth, keepOpen: true, onClick: () => patchPage(page, { showNorth: !showNorth }) },
+          ...(page === 'sequence'
+            ? [
+                { key: 'tags', label: 'Tags', icon: IconTagOutline, checked: tagsShown, keepOpen: true, onClick: () => setTagsShown(!tagsShown) },
+                { key: 'date', label: 'Date label', icon: IconShortText, checked: dateLabel, keepOpen: true, onClick: () => setDateLabel(!dateLabel) },
+              ]
+            : [
+                {
+                  key: 'hovertag',
+                  label: 'Tag on hover',
+                  icon: IconTagOutline,
+                  items: tagList.length
+                    ? [
+                        { key: 'off', label: 'Off', checked: !hoverTagId, onClick: () => setHoverTagId(null) },
+                        ...tagList.map((t) => ({ key: t.id, label: t.name, checked: hoverTagId === t.id, onClick: () => setHoverTagId(t.id) })),
+                      ]
+                    : [{ key: 'none', label: 'No tags yet (4D Sequencing › Label)', disabled: true }],
+                },
+              ]),
+          {
+            key: 'types',
+            label: 'IFC element types',
+            icon: IconCategory,
+            items: classes.length
+              ? classes.map((c) => ({ key: c.category, label: `${c.label} (${c.count.toLocaleString()})`, checked: !hiddenClasses.has(c.category), keepOpen: true, onClick: () => void toggleClass(c.category, c.ids) }))
+              : [{ key: 'none', label: 'No models loaded', disabled: true }],
+          },
+        ]}
+      />
+      <Sep />
+      <Btn
+        icon={split ? IconSinglePane : IconTwoPane}
+        tip={split ? 'Back to a single view' : 'Split into two views'}
+        active={split}
+        onClick={() => patchPage(page, { split: !split })}
+      />
+      <Btn icon={IconViewTable} tip={dataTableOpen ? 'Hide the data table' : 'Show the data table'} active={dataTableOpen} onClick={() => setDataTableOpen(!dataTableOpen)} />
+      {document.fullscreenEnabled && (
+        <>
+          <Sep />
+          {/* Its own click: the full-screen-on-first-click setting must not act on it too. */}
+          <FullscreenButton />
+        </>
+      )}
+    </div>
+  );
+}

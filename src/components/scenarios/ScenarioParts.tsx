@@ -1,0 +1,776 @@
+import { InfoTip } from '../InfoTip';
+import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
+import { FlagToggle } from './FlagToggle';
+import { useFocusStore } from '../../state/focusStore';
+import { useIgnoreTimelinerStore } from '../../state/ignoreTimelinerStore';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useModelsStore } from '../../state/modelsStore';
+import {
+  applyRows,
+  createScenario,
+  deleteScenario,
+  download,
+  isDirty,
+  isTableCfgTab,
+  loadGenerated,
+  loadOrder,
+  needsUpdate,
+  pickScenario,
+  pickStem,
+  redoRows,
+  refreshProject,
+  saveOrder,
+  scheduleAutoUpdate,
+  setFlags,
+  setSelected,
+  stemsInInputs,
+  undoRows,
+  updateFourD,
+  useScenarioStem,
+  warmUp,
+  useScenarioStore,
+  type ScenarioCfgTab,
+} from '../../state/scenarioStore';
+import { applySteps, moveDown, moveTo, moveToStep, moveUp, orderByPicks, reorderLike, separate, startTogether, unsequence } from '../../scenarios/pourOrder';
+import { BASE_COL, rowColor, SHIFT_COL, STEP_COL } from '../../scenarios/tableView';
+import { useScenarioView } from '../../scenarios/useScenarioView';
+import { ScenarioTableConfig, scnTabBadges } from './ScenarioTableConfig';
+import { ScenarioCrewsEditor, ScenarioLinksEditor } from './ScenarioLinksCrews';
+import { IconArrowDown, IconArrowUp, IconClose, IconColumns, IconFilter, IconGroup, IconLink, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconDownload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash } from '../icons';
+import { openProject, useProjectDbStore } from '../../state/projectDbStore';
+import type { SidePaneTab } from '../SidePane';
+import { AddModelToProject, ModelCheckCard } from './ScenarioModelCheck';
+import { fetchDefaultRoot } from '../../scenarios/api';
+import { useSearchSetsStore } from '../../state/searchSetsStore';
+import { useViewerEngine } from '../../viewer/ViewerEngineContext';
+import { stepGuids, stepSetsOf } from '../../viewer/importSteps';
+
+/** Loads the project and the scenario's pour order from the store's
+    choices. Mount it once wherever Scenarios is showing (the Scenarios tab,
+    or 4D's Scenarios panel) — an order already loaded is kept. */
+export function ScenarioSync() {
+  const root = useProjectDbStore((s) => s.root);
+  const project = useScenarioStore((s) => s.project);
+  const scenario = useScenarioStore((s) => s.scenario);
+  const loaded = useScenarioStore((s) => s.loaded);
+  const { scenarioNames } = useScenarioView();
+  const stem = useScenarioStem();
+  const modelsKey = project?.models.map((m) => m.stem).join('|') ?? '';
+
+  useEffect(() => {
+    void refreshProject(root);
+  }, [root]);
+  useEffect(() => {
+    if (project && stem && scenario && !scenarioNames.includes(scenario)) useScenarioStore.setState({ scenario: null });
+  }, [project, stem, scenario, scenarioNames]);
+  // Keyed on the folder + model names only: refreshing the project after a
+  // save/generate returns new objects but must not reload the order.
+  useEffect(() => {
+    void loadOrder(stem);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [project?.root, modelsKey, scenario, stem, loaded === null]);
+  // Load the model into the long-running generator while the order is being
+  // edited, so the first Update 4D is quick too.
+  useEffect(() => {
+    if (loaded) warmUp();
+  }, [loaded]);
+  // Auto-update: regenerate a moment after each edit to the order.
+  const stale = useScenarioStore((s) => isDirty(s) && needsUpdate(s));
+  const autoUpdate = useScenarioStore((s) => s.autoUpdate);
+  const rows = useScenarioStore((s) => s.rows);
+  const relations = useScenarioStore((s) => s.relations);
+  const crews = useScenarioStore((s) => s.crews);
+  useEffect(() => {
+    if (autoUpdate && loaded && stale) scheduleAutoUpdate();
+  }, [autoUpdate, loaded, stale, rows, relations, crews]);
+  return null;
+}
+
+/** Filter and the move / step / undo buttons. `compact`: smaller, wrapping
+    onto more rows when narrow (4D panel). */
+export function ScenarioToolbar({ compact }: { compact?: boolean }) {
+  const rows = useScenarioStore((s) => s.rows);
+  const selected = useScenarioStore((s) => s.selected);
+  const filter = useScenarioStore((s) => s.filter);
+  const undo = useScenarioStore((s) => s.undo);
+  const redo = useScenarioStore((s) => s.redo);
+  const busy = useScenarioStore((s) => s.busy);
+  const dirty = useScenarioStore((s) => isDirty(s));
+  const stale = useScenarioStore((s) => needsUpdate(s));
+  const autoUpdate = useScenarioStore((s) => s.autoUpdate);
+  const { loaded, modelInfo, reordered, view } = useScenarioView();
+  const collapsedGroups = useScenarioStore((s) => s.collapsedGroups);
+  const flaggedOnly = useScenarioStore((s) => s.flaggedOnly);
+  const groupKeys = view.flatMap((x) => (x.kind === 'group' ? [x.key] : []));
+  const [stepInput, setStepInput] = useState('');
+  const engine = useViewerEngine();
+  const searchSets = useSearchSetsStore((s) => s.sets);
+  const recordPicks = useScenarioStore((s) => s.recordPicks);
+  const pickOrder = useScenarioStore((s) => s.pickOrder);
+  const hasSelection = selected.size > 0;
+  const ignoreTimeliner = useIgnoreTimelinerStore((s) => s.ignore);
+  const setIgnoreTimeliner = useIgnoreTimelinerStore((s) => s.setIgnore);
+  const setIgnoreAppearance = useIgnoreTimelinerStore((s) => s.setIgnoreAppearance);
+  const focus = useFocusStore((s) => s.focus);
+  const setFocus = useFocusStore((s) => s.setFocus);
+  const stepSets = useMemo(() => stepSetsOf(searchSets), [searchSets]);
+  if (!loaded) return null;
+  const updating = busy?.startsWith('Updating 4D') ?? false;
+  return (
+    <div className={compact ? 'scn-tools scn-tools--compact' : 'scn-tools'}>
+      <div className="scn-tools__row scn-tools__row--small">
+      <div className="scn-grp">
+      <input className="scn-filter" type="search" value={filter} onChange={(e) => useScenarioStore.setState({ filter: e.target.value })} placeholder="Filter (any column)…" />
+      </div>
+      <div className="scn-grp scn-grp--span2">
+      <form
+        className="scn-row"
+        onSubmit={(e) => {
+          e.preventDefault();
+          const n = Number(stepInput);
+          if (hasSelection && Number.isFinite(n) && n >= 1) applyRows(moveToStep(rows, selected, n));
+        }}
+      >
+        <input className="scn-step-input" value={stepInput} onChange={(e) => setStepInput(e.target.value.replace(/\D/g, ''))} placeholder="Step" />
+        <button className="btn scn-icon-btn" type="submit" disabled={!hasSelection || !stepInput} title="Move the selection to this step (Enter)" aria-label="Move to step"><IconReroute width={16} height={16} /></button>
+      </form>
+      <button
+        className="btn"
+        disabled={stepSets.length === 0}
+        onClick={() => {
+          if (window.confirm(`Order the items by the ${stepSets.length} steps (Models > Search sets > Steps)? Items in a step start together; items in no step leave the sequence.`)) {
+            applyRows(applySteps(rows, stepSets.map((s) => stepGuids(engine.getIndexes(), s))));
+          }
+        }}
+        title={stepSets.length ? 'Follow the Steps sets: the items of each step start together, in step order' : 'No Steps yet: import them in Models > Search sets'}
+      >
+        From steps
+      </button>
+      <button className="btn" onClick={() => applyRows(reorderLike(rows, loaded.baseStep))} title="Reset to baseline: put every item back in the project's baseline order">Baseline</button>
+      </div>
+      <div className="scn-grp">
+      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveUp(rows, selected))} title="Move up one step (Alt+↑)" aria-label="Move up one step"><IconArrowUp width={16} height={16} /></button>
+      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveDown(rows, selected))} title="Move down one step (Alt+↓)" aria-label="Move down one step"><IconArrowDown width={16} height={16} /></button>
+      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(unsequence(rows, selected))} title="Remove from sequence: blank the Index so the generator orders these items by its automatic rules" aria-label="Remove from sequence"><IconClose width={16} height={16} /></button>
+      <button className="btn scn-icon-btn" disabled={!undo.length} onClick={undoRows} title="Undo (Ctrl+Z)" aria-label="Undo"><IconUndo width={16} height={16} /></button>
+      <button className="btn scn-icon-btn" disabled={!redo.length} onClick={redoRows} title="Redo (Ctrl+Y)" aria-label="Redo"><IconRedo width={16} height={16} /></button>
+      <button
+        className={`btn scn-icon-btn${flaggedOnly ? ' primary' : ''}`}
+        aria-pressed={flaggedOnly}
+        onClick={() => useScenarioStore.setState({ flaggedOnly: !flaggedOnly })}
+        title={flaggedOnly ? 'Showing only the flagged pours and groups (click to show all)' : 'Show only the flagged pours and groups'}
+        aria-label="Flagged only"
+      >
+        <IconFlag width={16} height={16} />
+      </button>
+      <ExpandCollapseToggle
+        className="btn scn-icon-btn"
+        disabled={!groupKeys.length}
+        collapsed={groupKeys.length > 0 && groupKeys.every((k) => collapsedGroups.has(k))}
+        onCollapse={() => useScenarioStore.setState({ collapsedGroups: new Set(groupKeys) })}
+        onExpand={() => useScenarioStore.setState({ collapsedGroups: new Set() })}
+      />
+      </div>
+        <span style={{ marginLeft: 'auto' }}>
+          <InfoTip>
+            {reordered
+              ? 'Sorted / grouped view (Configuration): drag is off; the move buttons still work on the order. Clear Sort and Group to drag again.'
+              : 'Select with click / Ctrl / Shift, then drag or use the buttons (Alt+↑/↓, Alt+S / Alt+F for SS / FS, Ctrl+Z/Y). Same step = start together.'}{' '}
+            Pours in one step start together; each step waits for the previous one to finish. Dropping inside a bracketed step joins it. Highlighted Base cells moved against the baseline.
+          </InfoTip>
+        </span>
+      </div>
+      <div className="scn-tools__row">
+      <div className="scn-grp scn-grp--fill">
+      <button className="btn scn-link-btn" disabled={selected.size < 2} onClick={() => applyRows(startTogether(rows, selected))} title="Make the selected items one step: they start together (Start-to-Start) (Alt+S)">SS</button>
+      <button className="btn scn-link-btn" disabled={!hasSelection} onClick={() => applyRows(separate(rows, selected))} title="Give each selected item its own step, one after another (Finish-to-Start) (Alt+F)">FS</button>
+      </div>
+      <div className="scn-grp scn-grp--span2">
+      <button className={`btn${recordPicks ? ' primary' : ''}`} aria-pressed={recordPicks} onClick={() => useScenarioStore.setState({ recordPicks: !recordPicks })} title="Record the order objects are picked in the 3D view, one at a time">
+        {recordPicks ? `Recording (${pickOrder.length})` : 'Record picks'}
+      </button>
+      <button className="btn" disabled={pickOrder.length === 0} onClick={() => {
+          applyRows(orderByPicks(rows, pickOrder));
+          useScenarioStore.setState({ pickOrder: [] });
+        }} title="Put the picked items first, one step each, in the order they were picked">Sort by picks</button>
+      <button className="btn" disabled={pickOrder.length === 0} onClick={() => useScenarioStore.setState({ pickOrder: [] })} title="Forget the recorded picks">Clear picks</button>
+      </div>
+      <div className="scn-grp">
+      <button
+        className={`btn scn-icon-btn scn-ignore-btn${focus ? ' primary' : ''}`}
+        aria-pressed={focus}
+        disabled={!hasSelection && !focus}
+        onClick={() => setFocus(!focus)}
+        title={focus ? 'Focus on: the selection is isolated and pinned (click to release)' : hasSelection ? 'Focus: isolate and pin the selected items, no ghost' : 'Focus: select rows in the table first'}
+        aria-label="Focus"
+      >
+        <IconCubeFocus width={18} height={18} />
+      </button>
+      <button
+        className={`btn scn-icon-btn scn-ignore-btn${ignoreTimeliner ? '' : ' primary'}`}
+        aria-pressed={!ignoreTimeliner}
+        onClick={() => {
+          const on = !ignoreTimeliner;
+          setIgnoreTimeliner(on);
+          setIgnoreAppearance(on);
+        }}
+        title={ignoreTimeliner ? 'Timeliner ignored' : 'Timeliner active'}
+        aria-label={ignoreTimeliner ? 'Timeliner ignored' : 'Timeliner active'}
+      >
+        {ignoreTimeliner ? <IconVideoCameraSlash width={18} height={18} /> : <IconVideoCamera width={18} height={18} />}
+      </button>
+      <button
+        className={`btn scn-icon-btn scn-ignore-btn${autoUpdate ? ' primary' : ''}`}
+        aria-pressed={autoUpdate}
+        onClick={() => useScenarioStore.setState({ autoUpdate: !autoUpdate })}
+        title={autoUpdate ? 'Auto-update on: 4D follows each change' : 'Auto-update off: use Update 4D'}
+        aria-label="Auto-update 4D"
+      >
+        <IconSync width={18} height={18} />
+      </button>
+      </div>
+      <div className="scn-grp">
+      {/* Like "unsaved": only there while the order, links or crews changed since 4D was last updated (or an update is running); never with auto-update on. */}
+      {!autoUpdate && (stale || updating) && (
+        <button
+          className={`btn primary scn-sync${updating ? ' is-busy' : ''}`}
+          disabled={!!busy || !modelInfo?.hasSource}
+          onClick={() => void updateFourD()}
+          title="Update 4D: regenerate the programme for this order (about a second) and play it in 4D. Does not save the order."
+        >
+          <span className="scn-sync__icon" aria-hidden="true">⟳</span> Update 4D
+        </button>
+      )}
+      {dirty && (
+        <button type="button" className="scn-unsaved" disabled={!!busy} onClick={() => void saveOrder()} title="Unsaved changes to the order, links or crews: click to save them to the project database">
+          unsaved
+        </button>
+      )}
+      </div>
+      </div>
+    </div>
+  );
+}
+
+/** The pour order table: select (click / Ctrl / Shift), drag to reorder,
+    keyboard moves. `onPick`: a row click (4D selects those pours in 3D);
+    `onOpen`: a double-click on a row (4D jumps to that pour's start date). */
+export function ScenarioTable({ onPick, onOpen }: { onPick?: (keys: Set<string>) => void; onOpen?: (key: string) => void }) {
+  const focusColours = useFocusStore((s) => s.colours);
+  const flags = useScenarioStore((s) => s.flags);
+  const rows = useScenarioStore((s) => s.rows);
+  const selected = useScenarioStore((s) => s.selected);
+  const collapsedGroups = useScenarioStore((s) => s.collapsedGroups);
+  const v = useScenarioView();
+  const { loaded, shownColumns, fields, view, viewKeys, reordered, moved, steps, shiftOf, valueOf, tableCfg, unsequencedCount, firstUnsequencedKey } = v;
+  const anchorRef = useRef<string | null>(null);
+  /** The row the arrow keys moved to last (the end of a Shift range). */
+  const cursorRef = useRef<string | null>(null);
+  const [drop, setDrop] = useState<{ key: string; after: boolean } | null>(null);
+  const wrapRef = useRef<HTMLDivElement>(null);
+
+  // Rows selected from elsewhere (the 3D view) scroll into sight.
+  useEffect(() => {
+    const first = [...selected][0];
+    if (!first) return;
+    const tr = wrapRef.current?.querySelector(`tr[data-key="${CSS.escape(first)}"]`);
+    if (tr && !(tr as HTMLElement).matches(':hover')) tr.scrollIntoView({ block: 'nearest' });
+  }, [selected]);
+
+  if (!loaded) return null;
+  const pick = (next: Set<string>) => {
+    setSelected(next);
+    onPick?.(next);
+  };
+
+  const onRowClick = (e: React.MouseEvent, key: string) => {
+    if (e.shiftKey && anchorRef.current) {
+      const a = viewKeys.indexOf(anchorRef.current);
+      const b = viewKeys.indexOf(key);
+      if (a >= 0 && b >= 0) {
+        const range = viewKeys.slice(Math.min(a, b), Math.max(a, b) + 1);
+        pick(new Set(e.ctrlKey || e.metaKey ? [...selected, ...range] : range));
+        return;
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      const next = new Set(selected);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      pick(next);
+    } else pick(new Set([key]));
+    anchorRef.current = key;
+  };
+
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === 'z') {
+      e.preventDefault();
+      if (e.shiftKey) redoRows();
+      else undoRows();
+    } else if ((e.ctrlKey || e.metaKey) && k === 'y') {
+      e.preventDefault();
+      redoRows();
+    } else if ((e.ctrlKey || e.metaKey) && k === 'a') {
+      e.preventDefault();
+      pick(new Set(viewKeys));
+    } else if (e.altKey && e.key === 'ArrowUp') {
+      e.preventDefault();
+      applyRows(moveUp(rows, selected));
+    } else if (e.altKey && e.key === 'ArrowDown') {
+      e.preventDefault();
+      applyRows(moveDown(rows, selected));
+    } else if (!e.altKey && !e.ctrlKey && !e.metaKey && (e.key === 'ArrowDown' || e.key === 'ArrowUp') && viewKeys.length) {
+      // Next / previous row (Shift extends the selection from where it started).
+      e.preventDefault();
+      const dir = e.key === 'ArrowDown' ? 1 : -1;
+      const cursor = cursorRef.current && viewKeys.includes(cursorRef.current) ? cursorRef.current : [...selected].pop();
+      const at = cursor ? viewKeys.indexOf(cursor) : -1;
+      const to = viewKeys[Math.min(viewKeys.length - 1, Math.max(0, at < 0 ? (dir === 1 ? 0 : viewKeys.length - 1) : at + dir))];
+      cursorRef.current = to;
+      if (e.shiftKey) {
+        const from = viewKeys.indexOf(anchorRef.current && viewKeys.includes(anchorRef.current) ? anchorRef.current : to);
+        const [lo, hi] = [Math.min(from, viewKeys.indexOf(to)), Math.max(from, viewKeys.indexOf(to))];
+        pick(new Set(viewKeys.slice(lo, hi + 1)));
+      } else {
+        anchorRef.current = to;
+        pick(new Set([to]));
+      }
+      wrapRef.current?.querySelector(`tr[data-key="${CSS.escape(to)}"]`)?.scrollIntoView({ block: 'nearest' });
+    } else if (e.altKey && !e.ctrlKey && !e.metaKey && k === 's') {
+      e.preventDefault();
+      if (selected.size >= 2) applyRows(startTogether(rows, selected));
+    } else if (e.altKey && !e.ctrlKey && !e.metaKey && k === 'f') {
+      e.preventDefault();
+      if (selected.size) applyRows(separate(rows, selected));
+    }
+  };
+
+  const onDrop = () => {
+    if (!drop || selected.has(drop.key)) return setDrop(null);
+    let beforeKey: string | null = drop.key;
+    if (drop.after) {
+      const i = rows.findIndex((r) => r.key === drop.key);
+      beforeKey = rows.slice(i + 1).find((r) => !selected.has(r.key))?.key ?? null;
+    }
+    applyRows(moveTo(rows, selected, beforeKey));
+    setDrop(null);
+  };
+
+  const toggleGroup = (key: string) => {
+    const next = new Set(collapsedGroups);
+    if (!next.delete(key)) next.add(key);
+    useScenarioStore.setState({ collapsedGroups: next });
+  };
+
+  return (
+    <>
+      <div className="scn-table-wrap" tabIndex={0} onKeyDown={onKeyDown} ref={wrapRef}>
+        <table className="scn-table">
+          <thead>
+            <tr>
+              <th className="scn-flagcol" title="Review flags" aria-label="Flag" />
+              {shownColumns.map((id) => (
+                <th
+                  key={id}
+                  className={id.startsWith('#') ? 'scn-num' : undefined}
+                  title={id === STEP_COL ? 'Step (the Index written to SequenceOrder). Items sharing a step start together.' : id === BASE_COL ? "Step in the project's baseline SequenceOrder" : id === SHIFT_COL ? 'Steps moved against the baseline (- earlier, + later)' : undefined}
+                >
+                  {fields.find((f) => f.id === id)?.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody onDragLeave={() => setDrop(null)}>
+            {view.map((it) => {
+              if (it.kind === 'group') {
+                return (
+                  <tr key={it.key} className="scn-grouprow">
+                    <td colSpan={shownColumns.length + 1} style={{ paddingLeft: 8 + it.depth * 16 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', minWidth: 0 }}>
+                        <button type="button" className="scn-grouprow__toggle" onClick={() => toggleGroup(it.key)}>{it.collapsed ? <IconChevronRight width={14} height={14} /> : <IconExpandMore width={14} height={14} />}</button>
+                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {tableCfg.groups.length > 1 && <span className="scn-grouprow__field">{fields.find((f) => f.id === it.field)?.label}: </span>}
+                          {it.label}
+                          <span className="scn-grouprow__count">{it.count}</span>
+                        </span>
+                        {(() => {
+                          const keys = it.items.map((x) => x.r.key);
+                          const allIn = keys.length > 0 && keys.every((k) => selected.has(k));
+                          const max = it.items.reduce((m, x) => Math.max(m, steps[x.i] ?? 0), 0);
+                          // Pinned to the visible right edge, however the table is scrolled.
+                          return (
+                            <span style={{ position: 'sticky', right: 8, display: 'flex', alignItems: 'center', gap: 8, flexShrink: 0, marginLeft: 8, background: 'var(--bg-panel)' }}>
+                              <FlagToggle state={flags[it.key]} what="this group" onChange={(s) => setFlags([it.key], s)} />
+                              {max > 0 && <span className="mdt__group-count" title={`Max step: the group's last step is ${max}`}>{max}</span>}
+                              <button
+                                type="button"
+                                className={`mdt__mini${allIn ? ' is-on' : ''}`}
+                                style={{ minWidth: 62 }}
+                                onClick={() => pick(allIn ? new Set([...selected].filter((k) => !keys.includes(k))) : new Set([...selected, ...keys]))}
+                                title={allIn ? 'Deselect this group' : `Select the ${keys.length.toLocaleString()} pours in this group (added to the selection)`}
+                              >
+                                {allIn ? 'Deselect' : 'Select'}
+                              </button>
+                            </span>
+                          );
+                        })()}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              }
+              const { r, i } = it.item;
+              const base = loaded.baseStep.get(r.key) ?? 0;
+              const shift = shiftOf(r, i);
+              const focusColour = focusColours.get(r.key);
+              const color = focusColour ? `${focusColour}66` : rowColor(it.item, tableCfg.colors, valueOf);
+              const groupedPrev = r.step !== null && i > 0 && rows[i - 1].step === r.step;
+              const groupedNext = r.step !== null && i < rows.length - 1 && rows[i + 1].step === r.step;
+              const cls = [
+                'scn-tr',
+                selected.has(r.key) ? 'is-selected' : '',
+                moved.has(r.key) ? 'is-moved' : '',
+                r.step === null ? 'is-unsequenced' : '',
+                groupedPrev || groupedNext ? 'is-grouped' : '',
+                groupedPrev ? '' : 'is-step-start',
+                drop?.key === r.key ? (drop.after ? 'drop-after' : 'drop-before') : '',
+              ].join(' ');
+              const zoneHeader = !reordered && r.key === firstUnsequencedKey && (
+                <tr
+                  key="__zone"
+                  className={`scn-zone${drop?.key === '__zone' ? ' drop-before' : ''}`}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    if (drop?.key !== '__zone') setDrop({ key: '__zone', after: false });
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    applyRows(unsequence(rows, selected));
+                    setDrop(null);
+                  }}
+                >
+                  <td colSpan={shownColumns.length + 1}>
+                    Not in sequence ({unsequencedCount}) — blank Index; the generator orders these by its automatic rules. Drop pours here to remove them from the sequence.
+                  </td>
+                </tr>
+              );
+              return [
+                zoneHeader,
+                <tr
+                  key={r.key}
+                  data-key={r.key}
+                  className={cls}
+                  style={color ? { background: color } : undefined}
+                  draggable={!reordered}
+                  onClick={(e) => onRowClick(e, r.key)}
+                  onDoubleClick={() => onOpen?.(r.key)}
+                  onDragStart={(e) => {
+                    if (!selected.has(r.key)) pick(new Set([r.key]));
+                    e.dataTransfer.effectAllowed = 'move';
+                    e.dataTransfer.setData('text/plain', r.key);
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    const rect = e.currentTarget.getBoundingClientRect();
+                    const after = e.clientY > rect.top + rect.height / 2;
+                    if (drop?.key !== r.key || drop.after !== after) setDrop({ key: r.key, after });
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    onDrop();
+                  }}
+                  onDragEnd={() => setDrop(null)}
+                >
+                  <td className="scn-flagcol">
+                    <FlagToggle
+                      state={flags[r.key]}
+                      what={selected.has(r.key) && selected.size > 1 ? `the ${selected.size} selected pours` : 'this pour'}
+                      onChange={(s) => setFlags(selected.has(r.key) ? [...selected] : [r.key], s)}
+                    />
+                  </td>
+                  {shownColumns.map((id) => {
+                    if (id === STEP_COL) return <td key={id} className="scn-num scn-step">{r.step === null ? '—' : groupedPrev && !reordered ? '' : steps[i]}</td>;
+                    if (id === BASE_COL)
+                      return (
+                        <td key={id} className="scn-num scn-dim scn-base">
+                          {base || '—'}
+                          {shift ? <span className={shift < 0 ? 'scn-up' : 'scn-down'}>{shift < 0 ? ` ▲${-shift}` : ` ▼${shift}`}</span> : null}
+                        </td>
+                      );
+                    if (id === SHIFT_COL) return <td key={id} className="scn-num">{shift ? (shift > 0 ? `+${shift}` : shift) : ''}</td>;
+                    return <td key={id}>{valueOf(it.item, id)}</td>;
+                  })}
+                </tr>,
+              ];
+            })}
+          </tbody>
+        </table>
+      </div>
+    </>
+  );
+}
+
+/** What the main area shows instead of the table while nothing is ready. */
+export function ScenarioNotice() {
+  const { stem, project, scenario, modelInfo, ready } = useScenarioView();
+  const log = useScenarioStore((s) => s.log);
+  const showLog = useScenarioStore((s) => s.showLog);
+  if (!stem) return <div className="scn-empty">Load the building's IFC in Inputs first — scenarios reorder the elements of that model.</div>;
+  if (!project) return <NoProject stem={stem} />;
+  if (!modelInfo) return <AddModelToProject root={project.root} stem={stem} />;
+  if (!scenario) return <div className="scn-empty">Create or pick a scenario in the Scenario panel.</div>;
+  return (
+    <>
+      {showLog && log && <pre className="scn-log">{log}</pre>}
+      {modelInfo && !modelInfo.cached && (
+        <div className="scn-status scn-status--warn">
+          No enriched IFC / geometry cache for this building yet, so preparing its pour list runs class fixing and clash detection once (several minutes). After that, updates take about a second.
+        </div>
+      )}
+      {!ready && null}
+    </>
+  );
+}
+
+/** No project folder yet: pick one in the Scenario panel, or work in the
+    default one (Documents\Insight Plan\Default project). */
+function NoProject({ stem }: { stem: string }) {
+  const [error, setError] = useState<string | null>(null);
+  const start = async () => {
+    setError(null);
+    try {
+      useProjectDbStore.setState({ root: await fetchDefaultRoot() });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
+  return (
+    <div className="scn-addmodel">
+      <section className="scn-card">
+        <div className="scn-card__title">Generate a programme from this model</div>
+        <p className="scn-dim scn-editor__help">
+          Scenarios works in a project folder: the models it schedules, their scenarios and the project database. Pick your project's folder in the Scenario panel, or start in a default one (Documents\Insight Plan\Default project) — the model loaded in Inputs is added to it in the next step.
+        </p>
+        <div className="scn-row">
+          <button type="button" className="btn primary" onClick={() => void start()}>Start without a project folder</button>
+          {error && <span className="scn-error">{error}</span>}
+        </div>
+      </section>
+      <ModelCheckCard stem={stem} />
+    </div>
+  );
+}
+
+export function useScenarioTabs(): SidePaneTab<ScenarioCfgTab>[] {
+  const { ready, tableCfg, fields } = useScenarioView();
+  const relations = useScenarioStore((s) => s.relations);
+  const crews = useScenarioStore((s) => s.crews);
+  const badges = scnTabBadges(tableCfg, fields);
+  const all: SidePaneTab<ScenarioCfgTab>[] = [
+    { id: 'scenario', label: 'Scenario', icon: <IconSplit /> },
+    { id: 'links', label: 'Manual links', icon: <IconLink />, badge: relations.length || undefined },
+    { id: 'crews', label: 'Crews', icon: <IconTune />, badge: crews.length || undefined },
+    { id: 'columns', label: 'Columns', icon: <IconColumns /> },
+    { id: 'filters', label: 'Filters', icon: <IconFilter />, badge: badges.filters },
+    { id: 'group', label: 'Group', icon: <IconGroup />, badge: badges.group },
+    { id: 'sort', label: 'Sort', icon: <IconSort />, badge: badges.sort },
+    { id: 'color', label: 'Color', icon: <IconPalette />, badge: badges.color },
+  ];
+  return ready ? all : all.slice(0, 1);
+}
+
+/** The side panel's content for a tab: the scenario card (project folder,
+    building, start date, Save / Generate / Load / Download, scenario list,
+    new scenario), the manual links or crews, or one of the table
+    configuration tabs. */
+export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
+  const v = useScenarioView();
+  const { ready, project, scenario, stem, scenarioNames, modelInfo, generatedAt, loaded, view, tableCfg, fields, allColumnIds } = v;
+  const root = useProjectDbStore((s) => s.root);
+  const dbFile = useProjectDbStore((s) => s.db?.file ?? null);
+  const startDate = useScenarioStore((s) => s.startDate);
+  const projectError = useScenarioStore((s) => s.projectError);
+  const busy = useScenarioStore((s) => s.busy);
+  const dirty = useScenarioStore((s) => isDirty(s));
+  const autoUpdate = useScenarioStore((s) => s.autoUpdate);
+  const inputModels = useModelsStore((s) => s.models);
+  const inputStems = stemsInInputs(inputModels);
+  const [rootDraft, setRootDraft] = useState(root);
+  const [newName, setNewName] = useState('');
+  const [newFrom, setNewFrom] = useState<'base' | 'current'>('base');
+  const [createError, setCreateError] = useState<string | null>(null);
+  useEffect(() => setRootDraft(root), [root]);
+
+  if (ready && tab === 'links') return <ScenarioLinksEditor />;
+  if (ready && tab === 'crews') return <ScenarioCrewsEditor />;
+  if (ready && isTableCfgTab(tab)) {
+    return (
+      <ScenarioTableConfig
+        tab={tab}
+        cfg={tableCfg}
+        onChange={(next) => useScenarioStore.setState({ tableCfg: next })}
+        fields={fields}
+        defaultColumns={allColumnIds}
+        onCollapseAll={() => useScenarioStore.setState({ collapsedGroups: new Set(view.flatMap((x) => (x.kind === 'group' ? [x.key] : []))) })}
+        onExpandAll={() => useScenarioStore.setState({ collapsedGroups: new Set() })}
+      />
+    );
+  }
+
+  return (
+    <>
+      <section className="scn-card">
+        <div className="scn-card__title">Project folder</div>
+        <form
+          className="scn-row"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const next = rootDraft.trim();
+            if (next === root) {
+              void openProject(root);
+              void refreshProject(root);
+            } else useProjectDbStore.setState({ root: next });
+          }}
+        >
+          <input value={rootDraft} onChange={(e) => setRootDraft(e.target.value)} placeholder="C:\…\Project folder" title="The project folder: its models are in the models folder (added from here when missing), with 2-enriched-ifc and 4-schedule-xlsx if the full CWA workflow has run" />
+          <button className="btn" type="submit">Open</button>
+        </form>
+        {projectError && <div className="scn-error">{projectError}</div>}
+        {project && <div className="scn-dim">{project.models.length} models · scenarios saved in the project database</div>}
+        {dbFile && <div className="scn-dim scn-dbfile" title={dbFile}>{dbFile}</div>}
+      </section>
+
+      {stem && <ModelCheckCard stem={stem} compact />}
+
+      {scenario && (
+        <section className="scn-card">
+          <div className="scn-card__title">Current scenario</div>
+          <label className="scn-field">
+            <span>Building (from Inputs)</span>
+            {inputStems.length > 1 ? (
+              <select value={stem ?? ''} onChange={(e) => pickStem(e.target.value)}>
+                {inputStems.map((m) => (
+                  <option key={m} value={m}>{m}</option>
+                ))}
+              </select>
+            ) : (
+              <strong className="scn-building">{stem}</strong>
+            )}
+          </label>
+          <div className="scn-compact-row">
+          <label className="scn-inline scn-inline--head" title="Project start / data date for the CPM. Keep it the same across scenarios you want to compare. Blank = the day you generate.">
+            <span>Start date</span>
+            <input type="date" value={startDate} onChange={(e) => useScenarioStore.setState({ startDate: e.target.value })} />
+          </label>
+            <button
+              className="btn primary scn-update"
+              style={{ minWidth: 92 }}
+              disabled={!ready || !!busy || (modelInfo ? !modelInfo.hasSource : true)}
+              onClick={() => void updateFourD()}
+              title="Regenerate the programme for the order on screen (about a second) and play it in 4D straight away — no download or Inputs step needed. Does not save the order."
+            >
+              Update 4D
+            </button>
+            <button
+              type="button"
+              className={`btn scn-icon-btn${autoUpdate ? ' primary' : ''}`}
+              aria-pressed={autoUpdate}
+              onClick={() => useScenarioStore.setState({ autoUpdate: !autoUpdate })}
+              title={autoUpdate ? 'Auto-update on: 4D follows each change to the order' : 'Auto-update off: use Update 4D'}
+              aria-label="Auto-update 4D"
+            >
+              <IconSync width={16} height={16} />
+            </button>
+          </div>
+          <div className="scn-compact-row">
+            <button className="btn" disabled={!ready || !!busy || !dirty} onClick={() => void saveOrder()} title="Save the order, manual links and crews to the project database">Save</button>
+            <button className="btn scn-icon-btn" disabled={!ready || !!busy || !generatedAt} onClick={() => void loadGenerated()} title="Load the last generated XML into Inputs without regenerating" aria-label="Load last generated">
+              <IconUpload width={16} height={16} />
+            </button>
+            <button className="btn scn-icon-btn scn-dl" disabled={!ready || !!busy || !generatedAt} onClick={() => void download('xml')} title="Download the last generated programme as XML" aria-label="Download XML">
+              <IconDownload width={16} height={16} /> XML
+            </button>
+            <button className="btn scn-icon-btn scn-dl" disabled={!ready || !!busy || !generatedAt} onClick={() => void download('xer')} title="Download the last generated programme as XER" aria-label="Download XER">
+              <IconDownload width={16} height={16} /> XER
+            </button>
+          </div>
+        </section>
+      )}
+
+      {project && (
+        <section className="scn-card scn-card--grow">
+          <div className="scn-card__title">Scenarios</div>
+          <div className="scn-list">
+            {scenarioNames.length === 0 && <div className="scn-dim">No scenarios yet — create one below.</div>}
+            {scenarioNames.map((name) => {
+              const info = project.scenarios.find((s) => s.name === name);
+              const m = info?.models.find((x) => x.stem === stem);
+              return (
+                <div key={name} className={`scn-list__item${name === scenario ? ' active' : ''}`}>
+                  <button type="button" className="scn-list__pick" onClick={() => pickScenario(name)}>
+                    <span className="scn-list__name">{name}</span>
+                    <span className="scn-list__meta">
+                      {!m ? <span className="scn-chip">unsaved</span> : m.generated ? <span className="scn-chip scn-chip--ok">generated {new Date(m.generated).toLocaleString()}</span> : <span className="scn-chip">saved, not generated</span>}
+                    </span>
+                  </button>
+                  <button type="button" className="scn-list__delete" disabled={!!busy} title={`Delete the scenario "${name}"`} aria-label={`Delete the scenario ${name}`} onClick={() => void deleteScenario(name)}>
+                    <IconClose width={14} height={14} />
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+          <form
+            className="scn-new"
+            onSubmit={(e) => {
+              e.preventDefault();
+              const err = createScenario(newName, newFrom);
+              setCreateError(err);
+              if (!err) setNewName('');
+            }}
+          >
+            <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New scenario name" />
+            <div className="scn-row">
+              <select value={newFrom} onChange={(e) => setNewFrom(e.target.value as 'base' | 'current')}>
+                <option value="base">Start from the baseline order</option>
+                <option value="current" disabled={!loaded}>Copy the order on screen</option>
+              </select>
+              <button className="btn primary" type="submit" disabled={!newName.trim()}>Create</button>
+            </div>
+            {createError && <div className="scn-error">{createError}</div>}
+          </form>
+        </section>
+      )}
+    </>
+  );
+}
+
+/** Busy / result message, log toggle and the order's counts. */
+export function ScenarioStatus({ className, extra }: { className?: string; extra?: ReactNode }) {
+  const busy = useScenarioStore((s) => s.busy);
+  const message = useScenarioStore((s) => s.message);
+  const log = useScenarioStore((s) => s.log);
+  const showLog = useScenarioStore((s) => s.showLog);
+  const selected = useScenarioStore((s) => s.selected);
+  const { ready, rows, stepCount, unsequencedCount, moved } = useScenarioView();
+  return (
+    <footer className={className ?? 'app-statusbar scn-statusbar'}>
+      <span className={`scn-statusbar__msg${message && !busy ? ` scn-statusbar__msg--${message.kind}` : ''}`} title={busy ?? message?.text ?? ''}>
+        {busy ?? message?.text ?? (ready ? 'Ready' : '')}
+      </span>
+      {log && !busy && <button className="mini-btn" onClick={() => useScenarioStore.setState({ showLog: !showLog })}>{showLog ? 'Hide log' : 'Show log'}</button>}
+      {ready && (
+        <>
+          <span>Rows: <strong>{rows.length}</strong></span>
+          <span>Steps: <strong>{stepCount}</strong></span>
+          <span>Not in sequence: <strong>{unsequencedCount}</strong></span>
+          <span>Moved: <strong>{moved.size}</strong></span>
+          {selected.size > 0 && <span>Selected: <strong>{selected.size}</strong></span>}
+        </>
+      )}
+      {extra}
+    </footer>
+  );
+}
+

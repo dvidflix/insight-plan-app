@@ -1,0 +1,20 @@
+{
+  "id": "cwa-spatial-structure",
+  "name": "Rebuild site, buildings and storeys from CWA Level",
+  "description": "One IfcSite (Project Site), an IfcBuilding per Unit + Building code, an IfcBuildingStorey per CWA Level at level number × 3 m (in the file's units), and every pour element contained in its storey. Elements without a level go in the site. Ported from ifc_spatial_structure.py.",
+  "fixes": [
+    { "ids": "Minimum-requirements-for-planning.ids", "specification": "CWA-SPATIAL-CONTAINED" },
+    { "ids": "Minimum-requirements-for-planning.ids", "specification": "CWA-SPATIAL-STOREY-NAME" }
+  ],
+  "operation": {
+    "type": "spatial-structure",
+    "psets": ["CWA Pour", "CWA Codes", "CWA Documentation", "CWA_Planning"],
+    "level": ["Level", "General Level 1"],
+    "building": "Building",
+    "unit": "Unit",
+    "buildingNames": {},
+    "siteName": "Project Site",
+    "storeyHeight": 3.0,
+    "unknownLevels": ["Undefined", "Unknown"]
+  }
+}
