@@ -247,6 +247,9 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
       vp.setClippingVisibility(true);
     }
     if (a.visibility) jobs.push(vp.applyVisibility().then(() => engine.onExternalVisibilityChange.trigger()));
+    if (a.selection && vp.selectionComponents.size > 0) {
+      jobs.push(vp.getSelectionMap().then((map) => highlighter.highlightByID('select', map, true, false)));
+    }
     const patch: Partial<ViewSettings> = {};
     if (a.style && data.style) patch.style = data.style;
     if (a.display && data.display) Object.assign(patch, data.display);
@@ -266,6 +269,7 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
     await Promise.all(jobs);
   };
   let viewCount = 0;
+  let lastViewpoint: OBC.Viewpoint | null = null;
   const onNewView = async ({ target }: { target: BUI.Button }) => {
     target.loading = true;
     const viewpoint = viewpoints.create();
@@ -289,6 +293,12 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
         for (const guid of await fragments.modelIdMapToGuids(hiddenMap)) viewpoint.exceptionComponents.add(guid);
       }
     }
+    if (attrs.selection) {
+      const selected = highlighter.selection.select;
+      if (!OBC.ModelIdMapUtils.isEmpty(selected)) {
+        for (const guid of await fragments.modelIdMapToGuids(selected)) viewpoint.selectionComponents.add(guid);
+      }
+    }
     if (attrs.sections) viewpoint.updateClippingPlanes();
     if (attrs.style) viewpoint.customData.style = main.style;
     if (attrs.display) {
@@ -303,6 +313,7 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
     }
     // The views table's "go to" calls go(); open with the saved attributes instead.
     viewpoint.go = (config) => openSavedView(viewpoint, config?.transition ?? true);
+    lastViewpoint = viewpoint;
     updateViewpoints();
     target.loading = false;
   };
@@ -370,6 +381,40 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
     updateTopics();
     showComments();
   };
+  /** BCF: the newest saved view goes into the current topic, as the topic's viewpoint. */
+  const onLinkView = () => {
+    if (!currentTopic || !lastViewpoint) return;
+    currentTopic.viewpoints.add(lastViewpoint.guid);
+    updateTopics();
+  };
+  const onExportBcf = async ({ target }: { target: BUI.Button }) => {
+    target.loading = true;
+    try {
+      bcfTopics.updateViewpointReferences();
+      const blob = await bcfTopics.export();
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = 'insight-plan-topics.bcf';
+      link.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      target.loading = false;
+    }
+  };
+  const onImportBcf = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.bcf,.bcfzip,.zip';
+    input.onchange = async () => {
+      const file = input.files?.[0];
+      if (!file) return;
+      await bcfTopics.load(new Uint8Array(await file.arrayBuffer()));
+      updateTopics();
+      updateViewpoints();
+    };
+    input.click();
+  };
   const onAddComment = () => {
     const text = commentText.trim();
     if (!text || !currentTopic) return;
@@ -403,6 +448,9 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
         <bim-panel-section label="BCF topics">
           <bim-text-input label="Title" @input=${(e: Event) => (topicTitle = (e.target as BUI.TextInput).value)}></bim-text-input>
           <bim-button label="Create topic" icon="mdi:plus" @click=${onCreateTopic}></bim-button>
+          <bim-button label="Add the newest saved view to the topic" icon="mdi:camera-plus-outline" @click=${onLinkView}></bim-button>
+          <bim-button label="Export BCF" icon="mdi:export" @click=${onExportBcf}></bim-button>
+          <bim-button label="Import BCF" icon="mdi:import" @click=${onImportBcf}></bim-button>
           ${topicsTable}
         </bim-panel-section>
         <bim-panel-section label="Comments (latest topic)">

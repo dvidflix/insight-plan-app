@@ -10,6 +10,7 @@ import { NorthArrow } from './northArrow';
 import { attachBoxSelect, type ScreenPoint } from './boxSelect';
 import { configureSun, markBaseMaterials, newConcreteUniforms, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setMaterialsEnabled, setSkyUniforms, skyParamsFor, type RealismSettings, type SunLights } from './realism';
 import { SkyBackdrop } from './skyBackdrop';
+import { DEFAULT_QUALITY, applyRenderQuality, type AdaptiveResolution } from './renderQuality';
 import { applyXray } from './xray';
 import { hideFadedFromEdges } from './ghostEdges';
 
@@ -298,6 +299,7 @@ export class SecondaryView {
     post.smaaEnabled = s.antiAliasing;
     post.edgesPass.enabled = s.edgeLines;
     post.edgesPass.width = s.edgeWidth;
+    this.applyQuality(s);
     this.aoWanted = s.ambientOcclusion;
     post.aoPass.enabled = s.ambientOcclusion && !this.xray;
     this.bgColor = s.background;
@@ -306,6 +308,22 @@ export class SecondaryView {
     // A projection change resizes this view's frustum once it settles; match
     // the main view's scale again afterwards.
     if (this.linked) setTimeout(() => { if (!this.disposed && this.linked) this.copyCameraFromMain(); }, 60);
+  }
+
+  private adaptive: AdaptiveResolution | null = null;
+  private adaptiveWired = false;
+  private pixelRatioHeld = false;
+
+  /** This view's own render quality (occlusion, resolution, edge colour). */
+  private applyQuality(s: ViewSettings) {
+    const renderer = this.world.renderer;
+    if (!renderer || this.pixelRatioHeld) return;
+    const q = { ...DEFAULT_QUALITY, ...s.quality };
+    this.adaptive = applyRenderQuality(renderer, q, Math.min(window.devicePixelRatio || 1, 2), this.adaptive, EDGE_COLOR);
+    if (this.adaptive && !this.adaptiveWired) {
+      this.adaptiveWired = true;
+      renderer.onAfterUpdate.add(() => this.adaptive?.tick());
+    }
   }
 
   private lights: SunLights | null = null;

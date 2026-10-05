@@ -10290,3 +10290,5 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .matmap__label { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .matmap__label small { margin-left: 6px; color: var(--text-dim); }
 .matmap__row select { grid-column: 2; width: 100%; font-size: 12px; }
+.matmap__more { margin: 2px 0 8px; font-size: 12px; }
+.matmap__more summary { cursor: pointer; color: var(--text-dim); padding: 2px 0; }

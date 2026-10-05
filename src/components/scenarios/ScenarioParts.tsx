@@ -5,10 +5,12 @@ import { useFocusStore } from '../../state/focusStore';
 import { useIgnoreTimelinerStore } from '../../state/ignoreTimelinerStore';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useModelsStore } from '../../state/modelsStore';
+import { useScheduleStore } from '../../state/scheduleStore';
 import {
   applyRows,
   createScenario,
   deleteScenario,
+  type StartFrom,
   download,
   isDirty,
   isTableCfgTab,
@@ -587,6 +589,8 @@ export function useScenarioTabs(): SidePaneTab<ScenarioCfgTab>[] {
 export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
   const v = useScenarioView();
   const { ready, project, scenario, stem, scenarioNames, modelInfo, generatedAt, loaded, view, tableCfg, fields, allColumnIds } = v;
+  // Saved scenarios of this building: what a new scenario can copy.
+  const savedForStem = (project?.scenarios ?? []).filter((sc) => sc.models.some((m) => m.stem === stem)).map((sc) => sc.name);
   const root = useProjectDbStore((s) => s.root);
   const dbFile = useProjectDbStore((s) => s.db?.file ?? null);
   const startDate = useScenarioStore((s) => s.startDate);
@@ -598,7 +602,8 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
   const inputStems = stemsInInputs(inputModels);
   const [rootDraft, setRootDraft] = useState(root);
   const [newName, setNewName] = useState('');
-  const [newFrom, setNewFrom] = useState<'base' | 'current'>('base');
+  const [newFrom, setNewFrom] = useState<StartFrom>('base');
+  const loadedSchedules = useScheduleStore((s) => s.schedules);
   const [createError, setCreateError] = useState<string | null>(null);
   useEffect(() => setRootDraft(root), [root]);
 
@@ -725,16 +730,27 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
             className="scn-new"
             onSubmit={(e) => {
               e.preventDefault();
-              const err = createScenario(newName, newFrom);
-              setCreateError(err);
-              if (!err) setNewName('');
+              void createScenario(newName, newFrom).then((err) => {
+                setCreateError(err);
+                if (!err) setNewName('');
+              });
             }}
           >
             <input value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="New scenario name" />
             <div className="scn-row">
-              <select value={newFrom} onChange={(e) => setNewFrom(e.target.value as 'base' | 'current')}>
+              <select value={newFrom} onChange={(e) => setNewFrom(e.target.value as StartFrom)} disabled={!!busy}>
                 <option value="base">Start from the baseline order</option>
                 <option value="current" disabled={!loaded}>Copy the order on screen</option>
+                {savedForStem.length > 0 && (
+                  <optgroup label="Copy a saved scenario (order, links, crews)">
+                    {savedForStem.map((n) => <option key={n} value={`saved:${n}`}>{n}</option>)}
+                  </optgroup>
+                )}
+                {loadedSchedules.length > 0 && (
+                  <optgroup label="Order by a loaded programme's start dates">
+                    {loadedSchedules.map((s) => <option key={s.id} value={`programme:${s.id}`}>{s.project.name || s.sourceFileName}</option>)}
+                  </optgroup>
+                )}
               </select>
               <button className="btn primary" type="submit" disabled={!newName.trim()}>Create</button>
             </div>

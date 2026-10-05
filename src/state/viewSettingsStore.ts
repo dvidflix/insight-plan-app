@@ -1,8 +1,10 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { DEFAULT_REALISM, type RealismSettings } from '../viewer/realism';
+import type { RenderQuality } from '../viewer/renderQuality';
+import type { OutlineSettings, SectionStyle } from '../viewer/visualAids';
 
-export type ViewStyle = 'COLOR_PEN' | 'COLOR_PEN_SHADOWS';
+export type ViewStyle = 'COLOR' | 'PEN' | 'PEN_SHADOWS' | 'COLOR_PEN' | 'COLOR_SHADOWS' | 'COLOR_PEN_SHADOWS';
 export type Projection = 'Perspective' | 'Orthographic';
 
 /** How one 3D view looks — every 3D view (the main one, and the second one
@@ -24,6 +26,12 @@ export interface ViewSettings {
   /** Concrete colour and texture (main view). Unset follows `realistic`,
       which used to switch both. */
   concrete?: boolean;
+  /** Outline of the selection (main view). */
+  outline?: Partial<OutlineSettings>;
+  /** Styled section cuts: fill and outline colours, per kind of element (main view). */
+  sectionStyle?: Partial<SectionStyle>;
+  /** Render quality: occlusion, resolution, adaptive resolution, edge colour (unset fields use the defaults). */
+  quality?: Partial<RenderQuality>;
   /** A real-time sky behind the models, from the sun's bearing and height (needs Sun & shadows). */
   sky?: boolean;
   /** Material classes (brick, glass, timber...) matched from the models' names. */

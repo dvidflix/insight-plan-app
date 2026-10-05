@@ -1,5 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
+import { DEFAULT_QUALITY, QUALITY_PRESETS, type RenderQuality } from '../viewer/renderQuality';
+import { DEFAULT_OUTLINE, DEFAULT_SECTION_STYLE, SECTION_CATEGORY_DEFS, type OutlineSettings, type SectionStyle } from '../viewer/visualAids';
 import { MATERIAL_CLASSES, MATERIAL_CLASS_LABELS, type ClassChoice, type MaterialEntry } from '../viewer/materialClasses';
 import { useModelsStore } from '../state/modelsStore';
 import type { ViewId } from '../state/colorModeStore';
@@ -142,8 +144,12 @@ function DisplaySettings({ page, view }: { page: ViewPage; view: ViewKey }) {
       <label className="disp__row">
         <span>View style</span>
         <select value={s.style} onChange={(e) => set('style', e.target.value as ViewStyle)}>
-          <option value="COLOR_PEN">Color Pen</option>
-          <option value="COLOR_PEN_SHADOWS">Color Pen Shadows</option>
+          <option value="COLOR">Color</option>
+          <option value="PEN">Pen</option>
+          <option value="PEN_SHADOWS">Pen shadows</option>
+          <option value="COLOR_PEN">Color pen</option>
+          <option value="COLOR_SHADOWS">Color shadows</option>
+          <option value="COLOR_PEN_SHADOWS">Color pen shadows</option>
         </select>
       </label>
       <Switch label="Ambient occlusion" on={s.ambientOcclusion} onChange={(v) => set('ambientOcclusion', v)} />
@@ -154,6 +160,14 @@ function DisplaySettings({ page, view }: { page: ViewPage; view: ViewKey }) {
           <span>Edge width ({s.edgeWidth.toFixed(1)})</span>
           <input type="range" min={0.5} max={4} step={0.1} value={s.edgeWidth} onChange={(e) => set('edgeWidth', Number(e.target.value))} />
         </label>
+      )}
+      <RenderQualitySettings quality={s.quality} onChange={(quality) => set('quality', quality)} />
+      {view === 'main' && (
+        <>
+          <OutlineControls outline={s.outline} onChange={(outline) => set('outline', outline)} />
+          <SectionStyleControls style={s.sectionStyle} onChange={(sectionStyle) => set('sectionStyle', sectionStyle)} />
+          <PlanViews />
+        </>
       )}
       <label className="disp__row">
         <span>Background</span>
@@ -174,6 +188,146 @@ function DisplaySettings({ page, view }: { page: ViewPage; view: ViewKey }) {
 }
 
 const fmt = (n: number) => (Math.round(n * 100) / 100).toString();
+
+/** Outline of the selection: a line around it and a tinted fill (the Outliner). */
+function OutlineControls({ outline, onChange }: { outline: Partial<OutlineSettings> | undefined; onChange: (o: Partial<OutlineSettings>) => void }) {
+  const o: OutlineSettings = { ...DEFAULT_OUTLINE, ...outline };
+  const patch = (p: Partial<OutlineSettings>) => onChange({ ...outline, ...p });
+  return (
+    <>
+      <div className="cols__heading"><span>Selection outline <InfoTip>Draws a line around the selected objects and tints them, without changing their own colours. Main view.</InfoTip></span></div>
+      <Switch label="Outline the selection" on={o.enabled} onChange={(v) => patch({ enabled: v })} />
+      {o.enabled && (
+        <>
+          <label className="disp__row"><span>Line colour</span><input type="color" value={o.color} onChange={(e) => patch({ color: e.target.value })} /></label>
+          <label className="disp__row"><span>Fill colour</span><input type="color" value={o.fillColor} onChange={(e) => patch({ fillColor: e.target.value })} /></label>
+          <label className="disp__row">
+            <span>Fill opacity ({Math.round(o.fillOpacity * 100)}%)</span>
+            <input type="range" min={0} max={1} step={0.05} value={o.fillOpacity} onChange={(e) => patch({ fillOpacity: Number(e.target.value) })} />
+          </label>
+          <label className="disp__row">
+            <span>Line width ({o.thickness})</span>
+            <input type="range" min={1} max={5} step={0.5} value={o.thickness} onChange={(e) => patch({ thickness: Number(e.target.value) })} />
+          </label>
+        </>
+      )}
+    </>
+  );
+}
+
+/** Section cuts: the fill and outline of what a section plane cuts through (the ClipStyler). */
+function SectionStyleControls({ style, onChange }: { style: Partial<SectionStyle> | undefined; onChange: (s: Partial<SectionStyle>) => void }) {
+  const c: SectionStyle = { ...DEFAULT_SECTION_STYLE, ...style, categories: { ...DEFAULT_SECTION_STYLE.categories, ...style?.categories } };
+  const patch = (p: Partial<SectionStyle>) => onChange({ ...style, ...p });
+  return (
+    <>
+      <div className="cols__heading"><span>Section cuts <InfoTip>Fills and outlines what a section plane cuts through, like a drawn section: one fill, or a colour per kind of element. Floor plans use the per-kind colours.</InfoTip></span></div>
+      <Switch label="Styled cuts" on={c.enabled} onChange={(v) => patch({ enabled: v })} />
+      {c.enabled && (
+        <>
+          <Switch label="Colour per kind of element" on={c.byCategory} onChange={(v) => patch({ byCategory: v })} />
+          {!c.byCategory && <label className="disp__row"><span>Fill colour</span><input type="color" value={c.fill} onChange={(e) => patch({ fill: e.target.value })} /></label>}
+          <label className="disp__row"><span>Outline colour</span><input type="color" value={c.lineColor} onChange={(e) => patch({ lineColor: e.target.value })} /></label>
+          <label className="disp__row">
+            <span>Outline width ({c.lineWidth})</span>
+            <input type="range" min={0.5} max={6} step={0.5} value={c.lineWidth} onChange={(e) => patch({ lineWidth: Number(e.target.value) })} />
+          </label>
+        </>
+      )}
+      {c.byCategory && (
+        <details className="matmap__more">
+          <summary>Colours per kind of element</summary>
+          {SECTION_CATEGORY_DEFS.map((d) => (
+            <label key={d.id} className="disp__row">
+              <span>{d.label}</span>
+              <input type="color" value={c.categories[d.id] ?? d.color} onChange={(e) => patch({ categories: { ...c.categories, [d.id]: e.target.value } })} />
+            </label>
+          ))}
+        </details>
+      )}
+    </>
+  );
+}
+
+/** The floor plans made from the storeys: open one to see it cut at that level, with the cut styles. */
+function PlanViews() {
+  const engine = useViewerEngine();
+  const [names, setNames] = useState<string[]>(() => engine.planViewNames());
+  useEffect(() => {
+    const update = () => setNames(engine.planViewNames());
+    update();
+    engine.onPlanViewsChange.add(update);
+    engine.views.list.onItemSet.add(update);
+    engine.views.list.onItemDeleted.add(update);
+    return () => {
+      engine.onPlanViewsChange.remove(update);
+      engine.views.list.onItemSet.remove(update);
+      engine.views.list.onItemDeleted.remove(update);
+    };
+  }, [engine]);
+  if (names.length === 0) return null;
+  return (
+    <>
+      <div className="cols__heading">
+        <span>Plan views <InfoTip>A floor plan per storey, cut at its level. Open one to look at it from above; Close returns to the 3D view.</InfoTip></span>
+        <button type="button" className="btn btn--small" onClick={() => engine.closePlanViews()}>Close plan</button>
+      </div>
+      <div className="matmap">
+        {names.map((n) => (
+          <button key={n} type="button" className="mini-btn" style={{ textAlign: 'left' }} onClick={() => engine.openPlanView(n)}>{n}</button>
+        ))}
+      </div>
+    </>
+  );
+}
+
+/** Render quality of one view: presets, occlusion, resolution and adaptive resolution. */
+function RenderQualitySettings({ quality, onChange }: { quality: Partial<RenderQuality> | undefined; onChange: (q: Partial<RenderQuality>) => void }) {
+  const q: RenderQuality = { ...DEFAULT_QUALITY, ...quality };
+  const patch = (p: Partial<RenderQuality>) => onChange({ ...quality, ...p });
+  const slider = (label: string, key: 'aoRadius' | 'aoScale' | 'aoThickness' | 'aoSamples', min: number, max: number, step: number, tip: string) => (
+    <label className="disp__row" title={tip}>
+      <span>{label} ({q[key]})</span>
+      <input type="range" min={min} max={max} step={step} value={q[key]} onChange={(e) => patch({ [key]: Number(e.target.value) })} />
+    </label>
+  );
+  return (
+    <>
+      <div className="cols__heading"><span>Render quality <InfoTip>Occlusion, resolution and edges of this view. Lower values are faster on big models; Presentation is for stills and recording.</InfoTip></span></div>
+      <div className="disp__row">
+        <span>Preset</span>
+        <span style={{ display: 'flex', gap: 4 }}>
+          {QUALITY_PRESETS.map((p) => (
+            <button key={p.id} type="button" className="mini-btn" title={p.tip} onClick={() => onChange({ ...quality, ...p.values })}>{p.label}</button>
+          ))}
+        </span>
+      </div>
+      {slider('Occlusion radius', 'aoRadius', 0.1, 2, 0.05, 'How far the shading around corners reaches')}
+      {slider('Occlusion strength', 'aoScale', 0.2, 2, 0.05, 'How strongly occlusion darkens')}
+      {slider('Occlusion thickness', 'aoThickness', 0.5, 5, 0.5, 'Thickness assumed behind a surface: higher darkens thin objects less')}
+      {slider('Occlusion samples', 'aoSamples', 8, 64, 4, 'More samples are smoother and slower')}
+      <label className="disp__row" title="Resolution relative to the screen's own: above 1 draws more pixels than the screen shows (sharper, slower)">
+        <span>Render scale</span>
+        <select value={q.renderScale} onChange={(e) => patch({ renderScale: Number(e.target.value) })}>
+          {[0.5, 0.75, 1, 1.5, 2].map((v) => <option key={v} value={v}>{v}×{v === 1 ? ' (native)' : ''}</option>)}
+        </select>
+      </label>
+      <Switch label="Adaptive resolution" on={q.adaptive} onChange={(v) => patch({ adaptive: v })} tip="Lowers the resolution while the frame rate is under the target and raises it again when there is room, up to the render scale." />
+      {q.adaptive && (
+        <label className="disp__row">
+          <span>Target frame rate</span>
+          <select value={q.targetFps} onChange={(e) => patch({ targetFps: Number(e.target.value) })}>
+            {[24, 30, 45, 60].map((v) => <option key={v} value={v}>{v} fps</option>)}
+          </select>
+        </label>
+      )}
+      <label className="disp__row">
+        <span>Edge colour</span>
+        <input type="color" value={q.edgeColor || '#2a2a2a'} onChange={(e) => patch({ edgeColor: e.target.value })} />
+      </label>
+    </>
+  );
+}
 
 /** Realistic look (main / left view): a fixed sun with soft shadows, and a
     concrete colour and texture — each switched on its own. */

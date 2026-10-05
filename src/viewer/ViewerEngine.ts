@@ -13,6 +13,9 @@ import { attachBoxSelect } from './boxSelect';
 import { PointMarks, copyText, formatCoords } from './pointMarks';
 import { configureSun, markBaseMaterials, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setMaterialsEnabled, setSkyUniforms, skyParamsFor, type RealismSettings } from './realism';
 import { SkyBackdrop } from './skyBackdrop';
+import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
+import { DEFAULT_OUTLINE, DEFAULT_SECTION_STYLE, SECTION_CATEGORY_DEFS, type OutlineSettings, type SectionStyle } from './visualAids';
+import { DEFAULT_QUALITY, applyRenderQuality, type AdaptiveResolution, type RenderQuality } from './renderQuality';
 import { buildMaterialEntries, collectMaterialNames, setClassOverrides, setMaterialEntries, type ClassChoice, type ElementMaterialInfo, type MaterialEntry } from './materialClasses';
 import { applyXray } from './xray';
 import { hideFadedFromEdges } from './ghostEdges';
@@ -28,7 +31,7 @@ const GHOST_OPACITY_EDGE_CUTOFF = 0.35;
 
 export type MeasureKind = 'length' | 'area' | 'angle' | 'volume';
 export type ViewerTool = 'select' | 'box' | MeasureKind | 'point' | 'section';
-export type ViewerStyle = 'COLOR_PEN' | 'COLOR_PEN_SHADOWS';
+export type ViewerStyle = 'COLOR' | 'PEN' | 'PEN_SHADOWS' | 'COLOR_PEN' | 'COLOR_SHADOWS' | 'COLOR_PEN_SHADOWS';
 
 export type InteractionMode = 'select' | 'isolate' | 'reveal';
 
@@ -818,6 +821,8 @@ export class ViewerEngine {
       }
     });
 
+    await step('Plan views', async () => this.stylePlanViews());
+
     this.onSetsReady.trigger(modelId);
   }
 
@@ -1547,6 +1552,164 @@ export class ViewerEngine {
     void this.forceUpdate();
   }
 
+  // ---- Outliner, styled section cuts (ClipStyler) and plan views -----------------
+  private sectionCfg: SectionStyle = { ...DEFAULT_SECTION_STYLE };
+  private styledViews = new Set<string>();
+  readonly onPlanViewsChange = new OBC.Event<void>();
+
+  /** Outlines the selection (a line and a tinted fill), or stops. */
+  setOutline(partial: Partial<OutlineSettings> | undefined) {
+    const world = this._world;
+    if (!world) return;
+    const cfg = { ...DEFAULT_OUTLINE, ...partial };
+    try {
+      const outliner = this.components.get(OBCF.Outliner);
+      outliner.world = world;
+      outliner.color = new THREE.Color(cfg.color);
+      outliner.fillColor = new THREE.Color(cfg.fillColor);
+      outliner.fillOpacity = cfg.fillOpacity;
+      outliner.thickness = cfg.thickness;
+      if (cfg.enabled) {
+        outliner.enabled = true;
+        if (!outliner.styles.has('select')) outliner.styles.add('select');
+      } else {
+        outliner.styles.delete('select');
+        outliner.clean();
+        outliner.enabled = false;
+      }
+    } catch (e) {
+      console.warn('ViewerEngine: outline failed', e);
+    }
+    void this.forceUpdate();
+  }
+
+  /** Outlines these items in a named group of their own (colour, fill, width),
+      e.g. a search set or the clashes of a test, next to the selection outline. */
+  async outlineItems(map: OBC.ModelIdMap, group: string, config: { color?: string; fillColor?: string; fillOpacity?: number; thickness?: number } = {}) {
+    const outliner = this.components.get(OBCF.Outliner);
+    outliner.world = this._world ?? undefined;
+    outliner.enabled = true;
+    outliner.create(group, {
+      color: config.color ? new THREE.Color(config.color) : undefined,
+      fillColor: config.fillColor ? new THREE.Color(config.fillColor) : undefined,
+      fillOpacity: config.fillOpacity,
+      thickness: config.thickness,
+    });
+    await outliner.addItems(map, group);
+    void this.forceUpdate();
+  }
+
+  /** Removes the outlines drawn by outlineItems (one group, or all of them). */
+  clearOutlines(group?: string) {
+    this.components.get(OBCF.Outliner).clean(group);
+    void this.forceUpdate();
+  }
+
+  /** The cut fill and outline of section planes: one fill, or one colour per kind of element. */
+  setSectionStyle(partial: Partial<SectionStyle> | undefined) {
+    this.sectionCfg = { ...DEFAULT_SECTION_STYLE, ...partial, categories: { ...DEFAULT_SECTION_STYLE.categories, ...partial?.categories } };
+    try {
+      this.syncSectionStyles();
+      const clipStyler = this.components.get(OBCF.ClipStyler);
+      for (const [, edges] of clipStyler.list) {
+        // Plan views keep their own (always per-kind) look.
+        if (edges.plane && [...this.views.list.values()].some((v) => v.plane === edges.plane)) continue;
+        edges.items.clear();
+        const items = this.sectionItems();
+        if (items) for (const [name, item] of Object.entries(items)) edges.items.set(name, item);
+        void edges.update();
+      }
+    } catch (e) {
+      console.warn('ViewerEngine: section style failed', e);
+    }
+    void this.forceUpdate();
+  }
+
+  /** Makes (or updates) the ClipStyler styles from the section settings. */
+  private syncSectionStyles() {
+    const cfg = this.sectionCfg;
+    const clipStyler = this.components.get(OBCF.ClipStyler);
+    const make = (name: string, fill: string) => {
+      const existing = clipStyler.styles.get(name);
+      if (existing) {
+        existing.linesMaterial?.color.set(cfg.lineColor);
+        if (existing.linesMaterial) existing.linesMaterial.linewidth = cfg.lineWidth;
+        (existing.fillsMaterial as THREE.MeshBasicMaterial | undefined)?.color.set(fill);
+        clipStyler.updateStyle(name);
+        return;
+      }
+      clipStyler.styles.set(name, {
+        linesMaterial: new LineMaterial({ color: new THREE.Color(cfg.lineColor).getHex(), linewidth: cfg.lineWidth }),
+        fillsMaterial: new THREE.MeshBasicMaterial({ color: fill, side: THREE.DoubleSide }),
+      });
+    };
+    make('Cut:all', cfg.fill);
+    for (const def of SECTION_CATEGORY_DEFS) make(`Cut:${def.id}`, cfg.categories[def.id] ?? def.color);
+  }
+
+  /** What a cut styles: every kind of element in its colour, grouped by the
+      Categories classification; null when section styling is off. */
+  private sectionItems(forceByCategory = false): Record<string, { style: string; data?: OBC.ClassifierIntersectionInput }> | null {
+    const cfg = this.sectionCfg;
+    if (!cfg.enabled && !forceByCategory) return null;
+    if (!cfg.byCategory && !forceByCategory) return { All: { style: 'Cut:all' } };
+    const groups = [...(this.classifier.list.get(CATEGORIES_CLASSIFICATION)?.keys() ?? [])];
+    const items: Record<string, { style: string; data?: OBC.ClassifierIntersectionInput }> = {};
+    for (const def of SECTION_CATEGORY_DEFS) {
+      const names = groups.filter((g) => def.test.test(g));
+      if (names.length) items[def.id] = { style: `Cut:${def.id}`, data: { [CATEGORIES_CLASSIFICATION]: names } };
+    }
+    return Object.keys(items).length ? items : { All: { style: 'Cut:all' } };
+  }
+
+  /** Floor plans from the storeys, drawn with the per-kind cut styles. */
+  private stylePlanViews() {
+    this.syncSectionStyles();
+    const clipStyler = this.components.get(OBCF.ClipStyler);
+    for (const [name, view] of this.views.list) {
+      if (this.styledViews.has(name)) continue;
+      const items = this.sectionItems(true);
+      if (!items) continue;
+      this.styledViews.add(name);
+      try {
+        clipStyler.createFromView(view, { items });
+      } catch (e) {
+        console.warn(`ViewerEngine: could not style the plan "${name}"`, e);
+      }
+    }
+    this.onPlanViewsChange.trigger();
+  }
+
+  /** The floor plans (one per storey) that can be opened. */
+  planViewNames(): string[] {
+    return [...this.views.list.keys()];
+  }
+  openPlanView(name: string) {
+    void this.views.open(name);
+  }
+  closePlanViews() {
+    this.views.close();
+  }
+
+  // ---- Render quality: occlusion, resolution, adaptive resolution -------------
+  private adaptive: AdaptiveResolution | null = null;
+  private adaptiveWired = false;
+
+  /** Applies the view's quality settings (see renderQuality.ts). */
+  setQuality(quality: Partial<RenderQuality> | undefined) {
+    const renderer = this._world?.renderer;
+    if (!renderer) return;
+    const q = { ...DEFAULT_QUALITY, ...quality };
+    // An export in progress owns the pixel ratio (setCaptureScale).
+    if (this.savedPixelRatio !== null) return;
+    this.adaptive = applyRenderQuality(renderer, q, Math.min(window.devicePixelRatio || 1, 2), this.adaptive, EDGE_COLOR);
+    if (this.adaptive && !this.adaptiveWired) {
+      this.adaptiveWired = true;
+      renderer.onAfterUpdate.add(() => this.adaptive?.tick());
+    }
+    void this.forceUpdate();
+  }
+
   setAntiAliasingEnabled(enabled: boolean) {
     if (!this._world?.renderer?.postproduction) return;
     this._world.renderer.postproduction.smaaEnabled = enabled;
@@ -1560,7 +1723,7 @@ export class ViewerEngine {
 
   getStyle(): ViewerStyle {
     const current = this._world?.renderer?.postproduction.style;
-    return current === OBCF.PostproductionAspect.COLOR_PEN ? 'COLOR_PEN' : 'COLOR_PEN_SHADOWS';
+    return (current === undefined ? 'COLOR_PEN_SHADOWS' : OBCF.PostproductionAspect[current]) as ViewerStyle;
   }
 
   /** Applies one view's display settings to the main viewer. */
@@ -1572,6 +1735,9 @@ export class ViewerEngine {
     this.setEdgeLinesEnabled(s.edgeLines);
     this.setAmbientOcclusionEnabled(s.ambientOcclusion);
     this.setEdgeWidth(s.edgeWidth);
+    this.setQuality(s.quality);
+    this.setOutline(s.outline);
+    this.setSectionStyle(s.sectionStyle);
     this.setBackgroundColor(s.background);
     this.setGridVisible(s.grid);
   }
@@ -1648,7 +1814,7 @@ export class ViewerEngine {
     const clipStyler = components.get(OBCF.ClipStyler);
     clipper.onAfterCreate.add((plane) => {
       for (const [id, p] of clipper.list) {
-        if (p === plane) clipStyler.createFromClipping(id, { world, link: true });
+        if (p === plane) clipStyler.createFromClipping(id, { world, link: true, items: this.sectionItems() ?? undefined });
       }
     });
 

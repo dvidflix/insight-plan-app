@@ -18,7 +18,11 @@ import {
   type ScenarioFlag,
   type ScenarioRelation,
 } from '../scenarios/api';
-import { fromSheet, stepNumbers, toSheet, type PourRow } from '../scenarios/pourOrder';
+import { fromSheet, indexColumn, stepNumbers, toSheet, type PourRow } from '../scenarios/pourOrder';
+import { useScheduleStore } from './scheduleStore';
+import { elementIdField } from '../schedule/activityObjects';
+import { taskFieldValue } from '../schedule/linkGroups';
+import { finishOf, startOf } from '../schedule/columns';
 import { parseXml } from '../schedule/parsers/xml';
 import { xmlToXer } from '../schedule/xmlToXer';
 import { filterXmlText } from '../schedule/exportFilter';
@@ -100,7 +104,17 @@ interface ScenarioState {
   log: string;
   showLog: boolean;
   /** "Copy the order on screen" hands its rows to the next load. */
-  copy: { scenario: string; stem: string; loaded: LoadedOrder; rows: PourRow[] } | null;
+  copy: {
+    scenario: string;
+    stem: string;
+    loaded: LoadedOrder;
+    rows: PourRow[];
+    /** Links, crews, flags and crew options carried over from the scenario copied. */
+    relations?: ScenarioRelation[];
+    crews?: ScenarioCrew[];
+    flags?: Record<string, FlagState>;
+    crewOptions?: CrewOptions | null;
+  } | null;
   /** Bumped after each successful Generate (4D refreshes from it). */
   generation: number;
   /** Regenerate 4D automatically a moment after each change to the order. */
@@ -235,7 +249,11 @@ async function loadOrderNow(stem: string | null) {
   }
   if (loaded && loaded.root === project.root && loaded.scenario === scenario && loaded.stem === stem) return;
   if (copy && copy.scenario === scenario && copy.stem === stem) {
-    set({ copy: null, loaded: { ...copy.loaded, scenario, root: project.root }, rows: copy.rows, savedRows: [], undo: [], redo: [], savedRelations: NO_RELATIONS, savedCrews: NO_CREWS, flags: NO_FLAGS, savedFlags: NO_FLAGS });
+    set({
+      copy: null, loaded: { ...copy.loaded, scenario, root: project.root }, rows: copy.rows, savedRows: [], undo: [], redo: [],
+      relations: copy.relations ?? NO_RELATIONS, crews: copy.crews ?? NO_CREWS, savedRelations: NO_RELATIONS, savedCrews: NO_CREWS,
+      flags: copy.flags ?? NO_FLAGS, savedFlags: NO_FLAGS, ...(copy.crewOptions ? { crewOptions: copy.crewOptions } : {}),
+    });
     return;
   }
   set({ busy: 'Loading order…', copy: null });
@@ -430,7 +448,97 @@ export const download = (format: 'xml' | 'xer') =>
   });
 
 /** Creates a scenario (a draft until saved); returns an error message or null. */
-export function createScenario(rawName: string, from: 'base' | 'current'): string | null {
+/** Where a new scenario's pour order starts: the baseline, the order on screen,
+    a saved scenario of this building, or the dates of a loaded programme. */
+export type StartFrom = 'base' | 'current' | `saved:${string}` | `programme:${string}`;
+
+/** The pour dates of a loaded programme, by Pour ID (= the schedule's Element ID): the earliest start of the pour's activities. */
+function programmeStarts(scheduleId: string): { starts: Map<string, number>; error: string | null } {
+  const norm = (v: string) => v.trim().toLowerCase().replace(/^0+(?=\d)/, '');
+  const starts = new Map<string, number>();
+  const schedule = useScheduleStore.getState().schedules.find((s) => s.id === scheduleId);
+  if (!schedule) return { starts, error: 'That programme is no longer loaded.' };
+  const field = elementIdField(schedule);
+  if (!field) return { starts, error: 'That programme has no Element ID (an activity code or user field) to tell which pour each activity belongs to.' };
+  for (const a of schedule.activities) {
+    const id = norm(taskFieldValue(a, field));
+    const start = startOf(a);
+    if (!id || !start) continue;
+    const t = start.getTime();
+    const cur = starts.get(id);
+    if (cur === undefined || t < cur) starts.set(id, t);
+  }
+  return { starts, error: starts.size === 0 ? 'No activity of that programme has an Element ID and a start date.' : null };
+}
+
+/** Starts a scenario as a copy of a saved one, or from a programme's dates: the
+    pour order (and for a copy, its links, crews and flags) is built from the
+    building's baseline sheet. */
+async function createFromSource(name: string, from: StartFrom): Promise<string | null> {
+  const { project, drafts } = get();
+  const stem = currentStem();
+  if (!project || !stem) return 'Load the building\'s model in Inputs first.';
+  if (!confirmDiscard()) return null;
+  set({ busy: 'Preparing the new scenario…' });
+  try {
+    const source = from.startsWith('saved:') ? from.slice('saved:'.length) : null;
+    const [own, base] = await Promise.all([fetchSequence(project.root, stem, source), fetchSequence(project.root, stem, null)]);
+    let headers = own.headers;
+    let sheetRows = own.rows;
+    let note: Message = null;
+    if (from.startsWith('programme:')) {
+      const { starts, error } = programmeStarts(from.slice('programme:'.length));
+      if (error) return error;
+      const idx = indexColumn(base.headers);
+      const idCols = ['PlanningProposedPourID', 'Pour ID'].map((h) => base.headers.indexOf(h)).filter((i) => i >= 0);
+      if (idx < 0 || idCols.length === 0) return 'The building\'s pour table has no Index or Pour ID column to match against.';
+      const norm = (v: string) => v.trim().toLowerCase().replace(/^0+(?=\d)/, '');
+      const day = (t: number) => Math.floor(t / 86_400_000);
+      const dated = base.rows.map((cells) => {
+        for (const c of idCols) {
+          const t = starts.get(norm(cells[c] ?? ''));
+          if (t !== undefined) return { cells, day: day(t) };
+        }
+        return { cells, day: null as number | null };
+      });
+      // Pours starting the same day share an Index; the rest keep their baseline order, unsequenced.
+      const days = [...new Set(dated.flatMap((d) => (d.day === null ? [] : [d.day])))].sort((a, b) => a - b);
+      const rankOf = new Map(days.map((d, i) => [d, i + 1]));
+      headers = base.headers;
+      sheetRows = dated
+        .map((d, pos) => ({ ...d, pos }))
+        .sort((a, b) => (a.day ?? Infinity) - (b.day ?? Infinity) || a.pos - b.pos)
+        .map((d) => {
+          const cells = [...d.cells];
+          cells[idx] = d.day === null ? '' : String(rankOf.get(d.day));
+          return cells;
+        });
+      const matched = dated.filter((d) => d.day !== null).length;
+      note = { kind: matched === 0 ? 'warn' : 'ok', text: `${matched} of ${dated.length} pours found in the programme, in ${days.length} steps by start date.${matched < dated.length ? ' The others are unsequenced, at the end.' : ''}` };
+    }
+    const order = fromSheet(headers, sheetRows);
+    const baseOrder = fromSheet(base.headers, base.rows);
+    const baseSteps = stepNumbers(baseOrder.rows);
+    const loadedOrder: LoadedOrder = {
+      root: project.root, scenario: name, stem, headers, baseStep: new Map(baseOrder.rows.map((r, i) => [r.key, baseSteps[i]])),
+    };
+    set({
+      copy: {
+        scenario: name, stem, loaded: loadedOrder, rows: order.rows,
+        ...(source ? { relations: own.relations ?? NO_RELATIONS, crews: own.crews ?? NO_CREWS, flags: flagsOf(own.flags) } : {}),
+        crewOptions: { trades: own.trades ?? [], phases: own.phases ?? [], defaultCrews: own.defaultCrews ?? [] },
+      },
+      drafts: [...drafts, name], scenario: name, loaded: null, message: note,
+    });
+    return null;
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  } finally {
+    set({ busy: null });
+  }
+}
+
+export async function createScenario(rawName: string, from: StartFrom): Promise<string | null> {
   const name = rawName.trim();
   const { project, drafts, loaded, rows } = get();
   if (!NAME_RE.test(name) || name === '.' || name === '..') return 'Scenario names cannot contain < > : " / \\ | ? *';
@@ -439,6 +547,7 @@ export function createScenario(rawName: string, from: 'base' | 'current'): strin
     set({ copy: { scenario: name, stem: loaded.stem, loaded, rows }, drafts: [...drafts, name], scenario: name });
     return null;
   }
+  if (from.startsWith('saved:') || from.startsWith('programme:')) return createFromSource(name, from);
   if (!confirmDiscard()) return null;
   set({ drafts: [...drafts, name], scenario: name, loaded: null });
   return null;
