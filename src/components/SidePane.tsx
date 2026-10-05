@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { ResizeHandle, useResizableWidth } from './ResizeHandle';
 import { SettingsPanel } from './SettingsMenu';
-import { IconChevronLeft, IconGear, IconSidePanel } from './icons';
+import { IconChevronLeft, IconClose, IconGear } from './icons';
 
 export interface SidePaneTab<Id extends string = string> {
   id: Id;
@@ -83,6 +83,10 @@ export function SidePane<Id extends string>(props: {
   bodyClassName?: string;
   /** Shown under the body of the page's tabs (not under Settings). */
   footer?: ReactNode;
+  /** Settings also holds the 4D timeline settings (4D Sequencing only). */
+  timelineSettings?: boolean;
+  /** Settings holds the Inputs page's project database, exports and SeaTable. */
+  inputsSettings?: boolean;
   children?: ReactNode;
 }) {
   const host = useSidePaneStore((s) => s.host);
@@ -95,12 +99,17 @@ export function SidePane<Id extends string>(props: {
   return createPortal(<PaneContent {...props} />, host);
 }
 
-function PaneContent<Id extends string>({ tabs, active, onSelect, bodyClassName, footer, children }: {
+function PaneContent<Id extends string>({ tabs, active, onSelect, bodyClassName, footer, timelineSettings, inputsSettings, children }: {
   tabs: SidePaneTab<Id>[];
   active: Id;
   onSelect: (id: Id) => void;
   bodyClassName?: string;
   footer?: ReactNode;
+  /** Settings also holds the 4D timeline settings (4D Sequencing only). */
+  timelineSettings?: boolean;
+  /** Settings holds the Inputs page's project database, exports and SeaTable. */
+  inputsSettings?: boolean;
+
   children?: ReactNode;
 }) {
   const settingsPicked = useSidePaneStore((s) => s.settings);
@@ -122,11 +131,11 @@ function PaneContent<Id extends string>({ tabs, active, onSelect, bodyClassName,
         {/* A page without tabs of its own: Settings is all there is — a title, not a lone tab. */}
         {tabs.length ? tabButton('settings', 'Settings', <IconGear />, settings, () => setSettings(true)) : <span className="side-pane__title">Settings</span>}
         <button type="button" className="side-pane__hide" title="Hide side pane" aria-label="Hide side pane" onClick={() => setOpen(false)}>
-          <IconSidePanel />
+          <IconClose />
         </button>
       </div>
       {settings ? (
-        <div className="config-panel__body side-pane__settings" role="tabpanel"><SettingsPanel /></div>
+        <div className="config-panel__body side-pane__settings" role="tabpanel"><SettingsPanel timeline={timelineSettings} inputs={inputsSettings} /></div>
       ) : (
         <>
           <div className={bodyClassName ?? 'config-panel__body'} role="tabpanel">{children}</div>

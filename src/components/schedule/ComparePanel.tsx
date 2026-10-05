@@ -1,9 +1,10 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import { FileDrop } from '../FileDrop';
 import { loadScheduleFile } from '../../schedule/importSchedule';
 import { compareSchedules } from '../../schedule/compare';
 import { useScheduleStore } from '../../state/scheduleStore';
 import type { ScheduleModel } from '../../schedule/types';
+import type { MilestoneDriver } from '../../schedule/milestoneDrivers';
 
 export function ComparePanel({ current }: { current: ScheduleModel }) {
   const schedules = useScheduleStore((s) => s.schedules);
@@ -11,7 +12,7 @@ export function ComparePanel({ current }: { current: ScheduleModel }) {
   const otherSchedules = schedules.filter((s) => s.id !== current.id);
 
   const [baselineId, setBaselineId] = useState<string | null>(null);
-  const [subTab, setSubTab] = useState<'events' | 'drag'>('events');
+  const [subTab, setSubTab] = useState<'events' | 'drag' | 'milestones'>('events');
   const [error, setError] = useState<string | null>(null);
 
   const baseline = otherSchedules.find((s) => s.id === baselineId) ?? null;
@@ -50,7 +51,7 @@ export function ComparePanel({ current }: { current: ScheduleModel }) {
     );
   }
 
-  const { summary, events, dragRows } = result;
+  const { summary, events, dragRows, milestones } = result;
 
   return (
     <div className="page">
@@ -91,6 +92,9 @@ export function ComparePanel({ current }: { current: ScheduleModel }) {
         <button className={subTab === 'drag' ? 'active' : ''} onClick={() => setSubTab('drag')}>
           Critical Path Drag Analysis ({dragRows.length})
         </button>
+        <button className={subTab === 'milestones' ? 'active' : ''} onClick={() => setSubTab('milestones')}>
+          Milestone drivers ({milestones.length})
+        </button>
       </div>
       <div className="page-body__main">
         {subTab === 'events' && (
@@ -118,6 +122,7 @@ export function ComparePanel({ current }: { current: ScheduleModel }) {
             </tbody>
           </table>
         )}
+        {subTab === 'milestones' && <MilestoneDrivers rows={milestones} />}
         {subTab === 'drag' && (
           <table className="data-table">
             <thead>
@@ -143,5 +148,61 @@ export function ComparePanel({ current }: { current: ScheduleModel }) {
         )}
       </div>
     </div>
+  );
+}
+
+const KIND_LABEL: Record<string, string> = {
+  duration: 'Duration', lag: 'Lag', logic: 'Logic', constraint: 'Constraint', progress: 'Progress',
+  datadate: 'Data date', calendar: 'Calendar', new: 'New activity', unknown: 'Not found',
+};
+const fmtDays = (n: number) => `${n > 0 ? '+' : ''}${n} d`;
+
+/** Why each milestone that moved, moved: the activity on its driving chain where the shift came in, and what changed there. */
+function MilestoneDrivers({ rows }: { rows: MilestoneDriver[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (rows.length === 0) return <div style={{ padding: 12, color: 'var(--text-dim)' }}>No milestone moved between the two programmes.</div>;
+  return (
+    <table className="data-table">
+      <thead>
+        <tr><th /><th>Milestone</th><th>Baseline</th><th>Current</th><th>Moved</th><th>Main driver</th><th>Reason</th></tr>
+      </thead>
+      <tbody>
+        {rows.map((r) => (
+          <Fragment key={r.code}>
+            <tr className={r.slipDays > 0 ? 'critical' : ''} onClick={() => setOpen(open === r.code ? null : r.code)} style={{ cursor: 'pointer' }}>
+              <td>{open === r.code ? '▾' : '▸'}</td>
+              <td title={r.name}>{r.code}<div style={{ color: 'var(--text-dim)', fontSize: 11 }}>{r.name}</div></td>
+              <td>{r.baseDate.toLocaleDateString()}</td>
+              <td>{r.currDate.toLocaleDateString()}</td>
+              <td>{fmtDays(r.slipDays)}</td>
+              <td>{r.primary ? <>{r.primary.code}{r.primary.days !== null && <> ({fmtDays(r.primary.days)})</>}</> : '—'}</td>
+              <td>
+                {r.primary ? <><strong>{KIND_LABEL[r.primary.kind]}:</strong> {r.primary.reason}</> : 'No driving chain found.'}
+                {r.pathChanged && <div style={{ color: 'var(--text-dim)', fontSize: 11 }}>The driving path is not the one the baseline had.</div>}
+              </td>
+            </tr>
+            {open === r.code && (
+              <tr>
+                <td />
+                <td colSpan={6}>
+                  <div style={{ fontSize: 12, marginBottom: 4 }}><strong>What moved it</strong> (in chain order, earliest first)</div>
+                  {r.steps.length === 0 && <div style={{ color: 'var(--text-dim)' }}>No single change on the chain explains it.</div>}
+                  {r.steps.map((s, i) => (
+                    <div key={`${s.code}:${i}`} style={{ fontSize: 12, padding: '2px 0' }}>
+                      <strong>{s.code}</strong> {s.name} — {s.days !== null ? fmtDays(s.days) : 'not measurable'} · {KIND_LABEL[s.kind]}: {s.reason}
+                    </div>
+                  ))}
+                  {Math.abs(r.unexplainedDays) > 0.5 && <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>Not accounted for: {fmtDays(r.unexplainedDays)} (new activities on the path).</div>}
+                  <div style={{ fontSize: 12, margin: '8px 0 2px' }}><strong>Driving chain</strong> (movement of the date each activity passes on)</div>
+                  <div style={{ fontSize: 12, color: 'var(--text-dim)' }}>
+                    {r.chain.map((l, i) => <span key={`${l.code}:${i}`}>{i > 0 && ' → '}{l.code}{l.shiftDays !== null ? ` (${fmtDays(l.shiftDays)})` : ' (new)'}</span>)}
+                  </div>
+                </td>
+              </tr>
+            )}
+          </Fragment>
+        ))}
+      </tbody>
+    </table>
   );
 }

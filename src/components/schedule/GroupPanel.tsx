@@ -20,16 +20,20 @@ interface GroupPanelProps {
       to hide the switch. */
   groupByWbs?: boolean;
   onToggleGroupByWbs?: () => void;
+  /** A second switch above the levels (the Inputs list: several levels on one line). */
+  extraToggle?: { label: string; tip: string; on: boolean; onToggle: () => void };
   width?: number;
   /** Renders just the inner content (no aside wrapper, header or close
       button) for embedding inside a Configuration tab. */
   bare?: boolean;
+  /** One-click groupings; one is hidden when a field it needs is not offered. */
+  presets?: { label: string; fields: string[] }[];
 }
 
 /** Group: the grouping levels in order (drag or ↑ ↓ to nest differently,
     A→Z / Z→A per level), then every field to add a level from — the same
     way the Columns tab works. */
-export function GroupPanel({ fields, rules, onChange, onClose, onCollapseAll, onExpandAll, groupByWbs, onToggleGroupByWbs, width, bare = false }: GroupPanelProps) {
+export function GroupPanel({ fields, rules, onChange, onClose, onCollapseAll, onExpandAll, groupByWbs, onToggleGroupByWbs, extraToggle, width, bare = false, presets: offered = [] }: GroupPanelProps) {
   const byId = new Map(fields.map((f) => [f.id, f]));
   const used = new Set(rules.map((r) => r.field));
   const update = (id: string, patch: Partial<GroupRule>) => onChange(rules.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -38,8 +42,19 @@ export function GroupPanel({ fields, rules, onChange, onClose, onCollapseAll, on
     onChange([...rules, { id: newRuleId('group'), field: f.id, direction: 'up' }]);
   };
 
+  const presets = offered.filter((p) => p.fields.every((f) => byId.has(f)));
+
   const body = (
     <div className="cols">
+      {presets.length > 0 && (
+        <div className="cols__presets">
+          <span className="cols__hint">Presets</span>
+          {presets.map((p) => (
+            <button key={p.label} type="button" onClick={() => onChange(p.fields.map((field) => ({ id: newRuleId('group'), field, direction: 'up' as const })))}>{p.label}</button>
+          ))}
+        </div>
+      )}
+
       {onToggleGroupByWbs && (
         <div className="disp__row">
           <span>
@@ -47,6 +62,18 @@ export function GroupPanel({ fields, rules, onChange, onClose, onCollapseAll, on
             <InfoTip>When no fields are picked below, the Gantt groups its rows by the WBS tree. Picked fields replace it.</InfoTip>
           </span>
           <button type="button" role="switch" aria-checked={!!groupByWbs} className={`switch${groupByWbs ? ' on' : ''}`} onClick={onToggleGroupByWbs}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+      )}
+
+      {extraToggle && (
+        <div className="disp__row">
+          <span>
+            {extraToggle.label}{' '}
+            <InfoTip>{extraToggle.tip}</InfoTip>
+          </span>
+          <button type="button" role="switch" aria-checked={extraToggle.on} className={`switch${extraToggle.on ? ' on' : ''}`} onClick={extraToggle.onToggle}>
             <span className="switch__thumb" />
           </button>
         </div>

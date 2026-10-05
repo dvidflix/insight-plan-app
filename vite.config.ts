@@ -8,6 +8,7 @@ import { appUpdatePlugin } from './vite-plugins/appUpdate';
 import { wikiPlugin } from './vite-plugins/wiki';
 import { idsPlugin } from './vite-plugins/ids';
 import { seatablePlugin } from './vite-plugins/seatablePlugin';
+import { externalPlugin } from './vite-plugins/externalPlugin';
 
 export default defineConfig({
   plugins: [
@@ -16,6 +17,7 @@ export default defineConfig({
     wikiPlugin(),
     idsPlugin(),
     seatablePlugin(),
+    externalPlugin(),
     projectDbPlugin(),
     modelsPlugin(),
     scenariosPlugin(),

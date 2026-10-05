@@ -7,7 +7,7 @@ const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
 /** Inputs > Project database: the project folder and its database
     (insight-plan.db), reload, and P6 Professional databases to read from. */
-export function ProjectDbBar() {
+export function ProjectDbBar({ bare = false }: { bare?: boolean } = {}) {
   const root = useProjectDbStore((s) => s.root);
   const db = useProjectDbStore((s) => s.db);
   const error = useProjectDbStore((s) => s.error);
@@ -52,16 +52,16 @@ export function ProjectDbBar() {
   };
 
   return (
-    <div className="inputs-panel project-db">
-      <div className="inputs-panel__header">
-        <span>Project database</span>
+    <div className={bare ? "project-db" : "inputs-panel project-db"}>
+      <div className={bare ? 'project-db__reload' : 'inputs-panel__header'}>
+        {!bare && <span>Project database</span>}
         {db && (
           <button className={`mini-btn${changed ? ' project-db__changed' : ''}`} disabled={!!busy} onClick={() => void reloadFromDb()} title="Read programmes, scenarios, link groups, capacities and settings from the database again">
             ⟳ Reload from database{changed ? ' — changed outside the app' : ''}
           </button>
         )}
       </div>
-      <div className="inputs-panel__body project-db__body">
+      <div className={bare ? "project-db__body" : "inputs-panel__body project-db__body"}>
         <form
           className="project-db__row"
           onSubmit={(e) => {

@@ -18,6 +18,7 @@ import {
   type ScenarioFlag,
   type ScenarioRelation,
 } from '../scenarios/api';
+import { baseStem, indexFromProgramme } from '../scenarios/fromProgramme';
 import { fromSheet, indexColumn, stepNumbers, toSheet, type PourRow } from '../scenarios/pourOrder';
 import { useScheduleStore } from './scheduleStore';
 import { elementIdField } from '../schedule/activityObjects';
@@ -206,7 +207,7 @@ function currentStem(): string | null {
 }
 
 export function scenarioNamesFor(project: ProjectInfo | null, drafts: string[], stem: string | null): string[] {
-  const own = project?.scenarios.filter((s) => s.models.some((m) => m.stem === stem)).map((s) => s.name) ?? [];
+  const own = project?.scenarios.filter((s) => s.models.some((m) => stem !== null && baseStem(m.stem).toLowerCase() === baseStem(stem).toLowerCase())).map((s) => s.name) ?? [];
   return [...new Set([...own, ...drafts])].sort((a, b) => a.localeCompare(b));
 }
 
@@ -263,7 +264,19 @@ async function loadOrderNow(stem: string | null) {
     if (get().scenario !== scenario || get().project?.root !== project.root || currentStem() !== stem) return;
     const baseOrder = fromSheet(base.headers, base.rows);
     const baseSteps = stepNumbers(baseOrder.rows);
-    const order = fromSheet(own.headers, own.rows);
+    // A scenario with no saved order but a programme (loaded from a file):
+    // take the order from the programme's own dates, as an unsaved scenario.
+    let ownRows = own.rows;
+    let fromProgramme = false;
+    if (own.source !== 'scenario') {
+      const programme = useScheduleStore.getState().schedules.find((s) => s.sourceFileName.includes(`[${scenario}]`));
+      const derived = programme ? indexFromProgramme(programme, own.headers, own.rows) : null;
+      if (derived) {
+        ownRows = derived;
+        fromProgramme = true;
+      }
+    }
+    const order = fromSheet(own.headers, ownRows);
     set({
       loaded: { root: project.root, scenario, stem, headers: own.headers, baseStep: new Map(baseOrder.rows.map((r, i) => [r.key, baseSteps[i]])) },
       relations: own.relations ?? NO_RELATIONS,
@@ -274,11 +287,11 @@ async function loadOrderNow(stem: string | null) {
       savedFlags: flagsOf(own.flags),
       crewOptions: { trades: own.trades ?? [], phases: own.phases ?? [], defaultCrews: own.defaultCrews ?? [] },
       rows: order.rows,
-      savedRows: order.rows,
+      savedRows: fromProgramme ? NO_ROWS : order.rows,
       undo: [],
       redo: [],
       selected: new Set(),
-      message: null,
+      message: fromProgramme ? { kind: 'ok', text: `"${scenario}" opened from its programme — the pour order comes from the programme's start dates. Edit it, Update 4D, then Save.` } : null,
     });
   } catch (e) {
     set({ message: { kind: 'error', text: e instanceof Error ? e.message : String(e) } });

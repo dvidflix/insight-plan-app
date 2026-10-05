@@ -25,12 +25,14 @@ interface SortPanelProps {
   /** Renders just the inner content (no aside wrapper, header or close
       button) for embedding inside a Configuration tab. */
   bare?: boolean;
+  /** One-click sorts (default: the Programmes').  */
+  presets?: { label: string; rules: { field: string; direction: 'up' | 'down' }[] }[];
 }
 
 /** Sort: the sort keys in order (drag or ↑ ↓; the first decides, the next
     ones break ties), A→Z / Z→A each, then every field to add a key from —
     the same way the Columns tab works. */
-export function SortPanel({ fields, rules, onChange, onClose, width, bare = false }: SortPanelProps) {
+export function SortPanel({ fields, rules, onChange, onClose, width, bare = false, presets: offered = PRESETS }: SortPanelProps) {
   const byId = new Map(fields.map((f) => [f.id, f]));
   const used = new Set(rules.map((r) => r.field));
   const update = (id: string, patch: Partial<SortRule>) => onChange(rules.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -38,7 +40,7 @@ export function SortPanel({ fields, rules, onChange, onClose, width, bare = fals
     if (used.has(f.id)) return;
     onChange([...rules, { id: newRuleId('sort'), field: f.id, direction: 'up' }]);
   };
-  const presets = PRESETS.filter((p) => p.rules.every((r) => byId.has(r.field)));
+  const presets = offered.filter((p) => p.rules.every((r) => byId.has(r.field)));
 
   const body = (
     <div className="cols">

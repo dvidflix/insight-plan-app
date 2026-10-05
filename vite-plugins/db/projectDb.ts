@@ -664,7 +664,21 @@ export class ProjectDb {
       out.set(r.name, s);
       if (r.stem) s.models.push({ stem: r.stem, saved: Date.parse(r.saved_at ?? '') || 0, generated: r.generated ? Date.parse(r.generated) : null });
     }
-    return [...out.values()];
+    // Scenario programmes with no saved order yet (loaded from a file or
+    // another project): listed too, so they open as scenarios (saved = 0).
+    const orphans = this.db
+      .prepare(
+        `SELECT p.scenario, p.stem, MAX(p.imported_at) AS generated FROM ip_programme p
+         WHERE p.kind = 'scenario' AND p.scenario IS NOT NULL AND p.stem IS NOT NULL AND p.scenario NOT LIKE '\\_%' ESCAPE '\\'
+         GROUP BY p.scenario, p.stem`,
+      )
+      .all() as { scenario: string; stem: string; generated: string | null }[];
+    for (const o of orphans) {
+      const s = out.get(o.scenario) ?? { name: o.scenario, models: [] };
+      out.set(o.scenario, s);
+      if (!s.models.some((m) => m.stem === o.stem)) s.models.push({ stem: o.stem, saved: 0, generated: o.generated ? Date.parse(o.generated) : null });
+    }
+    return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
 
   /** Deletes a scenario: its order, links, crews and flags (by cascade) and
@@ -678,8 +692,11 @@ export class ProjectDb {
   }
 
   readScenario(scenario: string, stem: string): ScenarioContent | null {
-    const args = [scenario, stem];
-    if (!this.db.prepare('SELECT 1 FROM ip_scenario_model WHERE scenario = ? AND stem = ?').get(...args)) return null;
+    // A scenario made on "<model>" also opens on its "<model>_FIXED" edit, and the other way round.
+    const base = stem.replace(/_FIXED$/i, '');
+    const found = [stem, base, `${base}_FIXED`].find((s) => this.db.prepare('SELECT 1 FROM ip_scenario_model WHERE scenario = ? AND stem = ?').get(scenario, s));
+    if (found === undefined) return null;
+    const args = [scenario, found];
     const steps = this.db.prepare('SELECT guid, step, phase FROM ip_scenario_step WHERE scenario = ? AND stem = ? ORDER BY step, guid').all(...args) as { guid: string; step: number; phase: string | null }[];
     const links = this.db
       .prepare('SELECT pred_task_code, succ_task_code, rel_type, lag_hours FROM ip_scenario_link WHERE scenario = ? AND stem = ? ORDER BY id')

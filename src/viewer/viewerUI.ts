@@ -2,11 +2,8 @@ import * as BUI from '@thatopen/ui';
 import * as BUIC from '@thatopen/ui-obc';
 import * as OBC from '@thatopen/components';
 import { NavCube } from './navCube';
-import { STOREYS_CLASSIFICATION, type ViewerEngine, type ViewerStyle } from './ViewerEngine';
+import { STOREYS_CLASSIFICATION, type ViewerEngine } from './ViewerEngine';
 import { NorthArrow } from './northArrow';
-import { useSavedViewAttrsStore, LEGACY_SAVED_VIEW_ATTRS, type SavedViewAttr } from '../state/savedViewAttrsStore';
-import { useViewSettingsStore, type ViewSettings } from '../state/viewSettingsStore';
-import { useModelPlacementStore, type Offset } from '../state/modelPlacementStore';
 
 /** All viewer chrome, built only from @thatopen/ui (bim-grid / bim-viewport /
     bim-toolbar / bim-panel) and the official @thatopen/ui-obc factories
@@ -60,16 +57,25 @@ function nameListTable(getNames: () => string[], actions: (name: string, refresh
     so an extra sheet joins the component's own styles (Lit adopts
     `elementStyles` into every instance; the library itself is untouched). */
 function chevronFirstInSections() {
-  const Section = customElements.get('bim-panel-section') as (CustomElementConstructor & { elementStyles?: (CSSStyleSheet | object)[]; chevronFirst?: boolean }) | undefined;
-  if (!Section?.elementStyles || Section.chevronFirst) return;
-  Section.chevronFirst = true;
-  const sheet = new CSSStyleSheet();
-  sheet.replaceSync(`
+  const Section = customElements.get('bim-panel-section') as (CustomElementConstructor & { elementStyles?: (CSSStyleSheet | object)[]; chevronSheet?: CSSStyleSheet }) | undefined;
+  if (!Section?.elementStyles) return;
+  const css = `
     .header { justify-content: flex-start; padding-left: 4px; background: #f4f4f5; }
-    .header-end { order: -1; }
+    /* The chevron first; a button put in the header-end slot goes to the right end. */
+    .header-end { display: contents; }
+    .expand-icon { order: -1; }
+    slot[name="header-end"] { display: flex; align-items: center; order: 1; margin-left: auto; }
     .expand-icon { transform: rotate(180deg); }
     :host([collapsed]) .expand-icon { transform: rotate(90deg); }
-  `);
+  `;
+  // Already added (the module was hot-reloaded): update the sheet in place, which restyles every section at once.
+  if (Section.chevronSheet) {
+    Section.chevronSheet.replaceSync(css);
+    return;
+  }
+  const sheet = new CSSStyleSheet();
+  sheet.replaceSync(css);
+  Section.chevronSheet = sheet;
   Section.elementStyles.push(sheet);
   // Sections already on the page were styled before this; add it to them too.
   document.querySelectorAll('bim-panel-section').forEach((el) => {
@@ -77,6 +83,9 @@ function chevronFirstInSections() {
     if (root && !root.adoptedStyleSheets.includes(sheet)) root.adoptedStyleSheets = [...root.adoptedStyleSheets, sheet];
   });
 }
+
+// Also at module load, so a hot reload of this file restyles the sections right away.
+chevronFirstInSections();
 
 export function createViewerShell(): ViewerShell {
   BUI.Manager.init();
@@ -226,97 +235,7 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
 
   // Selection sets are part of Search sets (components/SearchSetsPanel.tsx).
 
-  // ---- Saved views (Viewpoints + hider + colours + clip + style) -----
-  const [viewpointsTable, updateViewpoints] = BUIC.tables.viewpointsList({
-    components,
-    actions: { selectComponents: true, colorizeComponent: false, resetColors: true, updateCamera: true, delete: true, unlink: false },
-  });
-
-  /** Opens a saved view, bringing back only the attributes it was saved
-      with (Views > Saved view attributes). Style, display settings and
-      placement are restored through the settings stores, so the panels
-      follow; the rest ride in the viewpoint's customData. */
-  const openSavedView = async (vp: OBC.Viewpoint, transition: boolean) => {
-    const a: Record<SavedViewAttr, boolean> = { ...LEGACY_SAVED_VIEW_ATTRS, ...(vp.customData.attrs ?? {}) };
-    const data = vp.customData as { style?: ViewerStyle; display?: Partial<ViewSettings>; placement?: { offsets: Record<string, Offset>; storeySlides: Record<string, number> } };
-    const settings = useViewSettingsStore.getState();
-    const page = settings.activePage;
-    const jobs: Promise<unknown>[] = [];
-    if (a.sections) {
-      vp.setClippingState(true);
-      vp.setClippingVisibility(true);
-    }
-    if (a.visibility) jobs.push(vp.applyVisibility().then(() => engine.onExternalVisibilityChange.trigger()));
-    if (a.selection && vp.selectionComponents.size > 0) {
-      jobs.push(vp.getSelectionMap().then((map) => highlighter.highlightByID('select', map, true, false)));
-    }
-    const patch: Partial<ViewSettings> = {};
-    if (a.style && data.style) patch.style = data.style;
-    if (a.display && data.display) Object.assign(patch, data.display);
-    if (a.placement && data.placement) {
-      patch.storeySlides = { ...data.placement.storeySlides };
-      const { setOffset } = useModelPlacementStore.getState();
-      for (const [name, offset] of Object.entries(data.placement.offsets)) setOffset(name, offset);
-    }
-    if (Object.keys(patch).length) settings.patch(page, 'main', patch);
-    if (a.camera) {
-      const camera = engine.world.camera;
-      camera.projection.set(vp.projection);
-      const p = vp.position;
-      const d = vp.direction;
-      jobs.push(camera.controls.setLookAt(p.x, p.y, p.z, p.x + d.x * 80, p.y + d.y * 80, p.z + d.z * 80, transition));
-    }
-    await Promise.all(jobs);
-  };
-  let viewCount = 0;
-  let lastViewpoint: OBC.Viewpoint | null = null;
-  const onNewView = async ({ target }: { target: BUI.Button }) => {
-    target.loading = true;
-    const viewpoint = viewpoints.create();
-    viewCount += 1;
-    viewpoint.title = `View ${viewpoints.list.size || viewCount}`;
-    await viewpoint.updateCamera(true);
-
-    // Saved view = the camera plus whichever attributes are ticked in
-    // Views > Saved view attributes (what the Hider has hidden, the
-    // Clipper's planes, the style, display settings, model placement).
-    const attrs = { ...useSavedViewAttrsStore.getState().attrs };
-    viewpoint.customData.attrs = attrs;
-    const settings = useViewSettingsStore.getState();
-    const main = settings.pages[settings.activePage].main;
-    viewpoint.defaultVisibility = true;
-    if (attrs.visibility) {
-      const hidden = await hider.getVisibilityMap(false);
-      const hiddenMap: OBC.ModelIdMap = {};
-      for (const [modelId, ids] of Object.entries(hidden)) if (ids.length) hiddenMap[modelId] = new Set(ids);
-      if (!OBC.ModelIdMapUtils.isEmpty(hiddenMap)) {
-        for (const guid of await fragments.modelIdMapToGuids(hiddenMap)) viewpoint.exceptionComponents.add(guid);
-      }
-    }
-    if (attrs.selection) {
-      const selected = highlighter.selection.select;
-      if (!OBC.ModelIdMapUtils.isEmpty(selected)) {
-        for (const guid of await fragments.modelIdMapToGuids(selected)) viewpoint.selectionComponents.add(guid);
-      }
-    }
-    if (attrs.sections) viewpoint.updateClippingPlanes();
-    if (attrs.style) viewpoint.customData.style = main.style;
-    if (attrs.display) {
-      const display: Partial<ViewSettings> = { ...main };
-      delete display.storeySlides;
-      delete display.hiddenModels;
-      delete display.style;
-      viewpoint.customData.display = display;
-    }
-    if (attrs.placement) {
-      viewpoint.customData.placement = { offsets: { ...useModelPlacementStore.getState().offsets }, storeySlides: { ...main.storeySlides } };
-    }
-    // The views table's "go to" calls go(); open with the saved attributes instead.
-    viewpoint.go = (config) => openSavedView(viewpoint, config?.transition ?? true);
-    lastViewpoint = viewpoint;
-    updateViewpoints();
-    target.loading = false;
-  };
+  // ---- Viewpoints: React now (components/ViewpointsList.tsx, viewer/savedViews.ts) ----
 
   // ---- Floor plans (Views.createFromIfcStoreys) ----------------------
   const [floorPlansTable, refreshFloorPlans] = nameListTable(
@@ -381,8 +300,9 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
     updateTopics();
     showComments();
   };
-  /** BCF: the newest saved view goes into the current topic, as the topic's viewpoint. */
+  /** BCF: the newest viewpoint goes into the current topic, as the topic's viewpoint. */
   const onLinkView = () => {
+    const lastViewpoint = [...viewpoints.list.values()].pop();
     if (!currentTopic || !lastViewpoint) return;
     currentTopic.viewpoints.add(lastViewpoint.guid);
     updateTopics();
@@ -411,7 +331,6 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
       if (!file) return;
       await bcfTopics.load(new Uint8Array(await file.arrayBuffer()));
       updateTopics();
-      updateViewpoints();
     };
     input.click();
   };
@@ -437,10 +356,6 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
     views: panel(() => BUI.html`
       <bim-panel>
         ${setupNotes[0]}
-        <bim-panel-section label="Saved views">
-          <bim-button label="New view" icon="mdi:camera-plus-outline" @click=${onNewView}></bim-button>
-          ${viewpointsTable}
-        </bim-panel-section>
       </bim-panel>
     `),
     topics: panel(() => BUI.html`
@@ -448,7 +363,7 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
         <bim-panel-section label="BCF topics">
           <bim-text-input label="Title" @input=${(e: Event) => (topicTitle = (e.target as BUI.TextInput).value)}></bim-text-input>
           <bim-button label="Create topic" icon="mdi:plus" @click=${onCreateTopic}></bim-button>
-          <bim-button label="Add the newest saved view to the topic" icon="mdi:camera-plus-outline" @click=${onLinkView}></bim-button>
+          <bim-button label="Add the newest viewpoint to the topic" icon="mdi:camera-plus-outline" @click=${onLinkView}></bim-button>
           <bim-button label="Export BCF" icon="mdi:export" @click=${onExportBcf}></bim-button>
           <bim-button label="Import BCF" icon="mdi:import" @click=${onImportBcf}></bim-button>
           ${topicsTable}

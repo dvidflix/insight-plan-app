@@ -1,3 +1,4 @@
+import { useMarkersStore } from '../state/markersStore';
 import { useDataTableStore } from '../state/dataTableStore';
 import { useFocusStore } from '../state/focusStore';
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
@@ -17,7 +18,7 @@ import { usePersistedState } from '../utils/persistedState';
 import { elementValue, prettyClass } from '../viewer/bimTables';
 import { useIndexTick } from './modelFields';
 import {
-  IconBoxSelect, IconCategory, IconLocationPoint, IconNavigationArrow, IconShortText, IconTagOutline, IconViewCube, IconChevronDown, IconChevronRight, IconFullscreen, IconCube, IconCursor, IconDeleteAll, IconFilter, IconGhost, IconGrid, IconMeasureArea, IconMeasureLength,
+  IconBoxSelect, IconCategory, IconLocationPoint, IconNavigationArrow, IconShortText, IconTagOutline, IconViewCube, IconChevronDown, IconChevronRight, IconFullscreen, IconCube, IconCursor, IconDeleteAll, IconFilter, IconGhost, IconGrid, IconIfcGrid, IconPaintBucket, IconPalette, IconMeasureArea, IconMeasureLength,
   IconMeasurePerimeter, IconMeasureSlope, IconMeasureVertical, IconModelOrtho, IconViewTable, IconPerspective, IconPin, IconSection, IconSelectionSet, IconSelectOff, IconSinglePane, IconTransparency, IconTwoPane, IconViewAxon, IconViewBack,
   IconViewBottom, IconViewFront, IconViewLeft, IconViewRight, IconViewShowAll, IconViewTop, IconVisibility, IconVisibilityOff, IconZoomToSelected,
 } from './icons';
@@ -221,6 +222,28 @@ const VIEWS: { id: string; label: string; icon: IconC; dir: THREE.Vector3 }[] = 
   { id: 'bottom', label: 'Bottom view', icon: IconViewBottom, dir: new THREE.Vector3(0, -1, 0) },
 ];
 
+/** Colours offered by the paint bucket. */
+const PAINT_COLORS = [
+  { hex: '#e03131', label: 'Red' },
+  { hex: '#f08c00', label: 'Orange' },
+  { hex: '#fcc419', label: 'Yellow' },
+  { hex: '#2f9e44', label: 'Green' },
+  { hex: '#1c7ed6', label: 'Blue' },
+  { hex: '#7048e8', label: 'Purple' },
+  { hex: '#adb5bd', label: 'Grey' },
+  { hex: '#ffffff', label: 'White' },
+  { hex: '#212529', label: 'Black' },
+];
+const swatchIcon = (hex: string): IconC => {
+  const Swatch: IconC = (p) => (
+    <svg viewBox="0 0 24 24" width="16" height="16" {...p}>
+      <rect x="3" y="3" width="18" height="18" rx="4" fill={hex} stroke="rgba(0,0,0,0.35)" strokeWidth="1.5" />
+    </svg>
+  );
+  return Swatch;
+};
+const SWATCH_ICONS = new Map(PAINT_COLORS.map((c) => [c.hex, swatchIcon(c.hex)]));
+
 /** The 3D viewer's toolbar (Models and 4D Sequencing): icon buttons, the
     ones switched on filled with the accent colour, and split buttons with
     a menu for the measure types, the standard views and what is shown. */
@@ -236,8 +259,11 @@ export function ViewerToolbar() {
   const patchPage = useViewSettingsStore((s) => s.patchPage);
   const showCube = useViewSettingsStore((s) => s.pages[page].showCube);
   const showNorth = useViewSettingsStore((s) => s.pages[page].showNorth ?? true);
+  const showIfcGrids = useViewSettingsStore((s) => s.pages[page].showIfcGrids ?? false);
   // 4D Sequencing overlays (set up in its Label tab).
   const tagsShown = useTagsStore((s) => s.shown);
+  const markersShown = useMarkersStore((s) => s.visible);
+  const setMarkersShown = useMarkersStore((s) => s.setVisible);
   const setTagsShown = useTagsStore((s) => s.setShown);
   const tagList = useTagsStore((s) => s.tags);
   const hoverTagId = useTagsStore((s) => s.hoverTagId);
@@ -248,6 +274,15 @@ export function ViewerToolbar() {
   const setDataTableOpen = useDataTableStore((s) => s.setOpen);
   const focus = useFocusStore((s) => s.focus);
   const setDateLabel = useSequenceLabelStore((s) => s.setEnabled);
+
+  // Paint bucket: the colour the next click paints the selection with.
+  const [paintColor, setPaintColor] = usePersistedState('viewer.toolbar.paintColor', '#e03131');
+  const paintInput = useRef<HTMLInputElement>(null);
+  const paint = (hex: string) => {
+    setPaintColor(hex);
+    void engine.paintSelection(hex);
+  };
+  const BucketIcon = useMemo<IconC>(() => (p) => <IconPaintBucket {...p} bar={paintColor} />, [paintColor]);
 
   // Tools and what they left behind.
   const [tool, setToolState] = useState<ViewerTool>(() => engine.getActiveTool());
@@ -427,6 +462,8 @@ export function ViewerToolbar() {
 
   return (
     <div className="vtb" role="toolbar" aria-label="3D viewer tools">
+      {/* Two groups: when the viewer is narrow the second one drops to its own row as a whole. */}
+      <div className="vtb-group">
       <Btn icon={IconCursor} tip="Select objects (Ctrl+click adds)" active={tool === 'select'} onClick={() => setTool('select')} />
       <Btn
         icon={IconBoxSelect}
@@ -472,7 +509,24 @@ export function ViewerToolbar() {
       <Btn icon={IconVisibilityOff} tip="Hide the selected objects" disabled={!hasSelection} onClick={() => void hide()} />
       <Btn icon={IconFilter} tip="Isolate the selected objects (hide the rest)" disabled={!hasSelection} onClick={() => void isolate()} />
       <Btn icon={IconViewShowAll} tip="Show all objects" onClick={() => void showAll()} />
+      <Split
+        icon={BucketIcon}
+        tip="Paint the selected objects with the current colour"
+        menuTip="Paint colour"
+        disabled={!hasSelection}
+        onClick={() => paint(paintColor)}
+        items={[
+          ...PAINT_COLORS.map((c): MenuItem => ({ key: c.hex, label: c.label, icon: SWATCH_ICONS.get(c.hex), current: c.hex === paintColor, disabled: !hasSelection, onClick: () => paint(c.hex) })),
+          { key: 'custom', label: 'Other colour…', icon: IconPalette, disabled: !hasSelection, onClick: () => paintInput.current?.click() },
+          { key: 'sep', label: '', separator: true },
+          { key: 'clear-sel', label: 'Clear the colour of the selection', icon: IconDeleteAll, disabled: !hasSelection, onClick: () => void engine.paintSelection(null) },
+          { key: 'clear-all', label: 'Clear all colour overrides', icon: IconDeleteAll, onClick: () => void engine.clearColorOverrides() },
+        ]}
+      />
+      <input ref={paintInput} type="color" value={paintColor} aria-hidden tabIndex={-1} style={{ position: 'absolute', opacity: 0, pointerEvents: 'none', width: 0, height: 0 }} onChange={(e) => paint(e.target.value)} />
       <Sep />
+      </div>
+      <div className="vtb-group">
       <div className="vtb-seg" role="radiogroup" aria-label="What selecting does">
         <button type="button" role="radio" aria-checked={baseMode === 'select'} className={baseMode === 'select' ? 'is-on' : ''} onClick={() => applyMode('select', baseMode === 'select' ? ghost : false)} title="Selecting only highlights">Select</button>
         <button type="button" role="radio" aria-checked={baseMode === 'isolate'} className={baseMode === 'isolate' ? 'is-on' : ''} onClick={() => applyMode('isolate', baseMode === 'isolate' ? ghost : true)} title="Only the selection stays visible">Isolate</button>
@@ -521,8 +575,10 @@ export function ViewerToolbar() {
           },
           // Both views of a split (the grid has no switch of its own in View settings).
           { key: 'grid', label: 'Grid', icon: IconGrid, checked: main.grid, keepOpen: true, onClick: () => { patchView(page, 'main', { grid: !main.grid }); patchView(page, 'second', { grid: !main.grid }); } },
+          { key: 'ifcgrids', label: 'IFC grids', icon: IconIfcGrid, checked: showIfcGrids, keepOpen: true, onClick: () => patchPage(page, { showIfcGrids: !showIfcGrids }) },
           { key: 'cube', label: 'View cube', icon: IconViewCube, checked: showCube, keepOpen: true, onClick: () => patchPage(page, { showCube: !showCube }) },
           { key: 'north', label: 'North arrow', icon: IconNavigationArrow, checked: showNorth, keepOpen: true, onClick: () => patchPage(page, { showNorth: !showNorth }) },
+          { key: 'markers', label: 'Markers', icon: IconLocationPoint, checked: markersShown, keepOpen: true, onClick: () => setMarkersShown(!markersShown) },
           ...(page === 'sequence'
             ? [
                 { key: 'tags', label: 'Tags', icon: IconTagOutline, checked: tagsShown, keepOpen: true, onClick: () => setTagsShown(!tagsShown) },
@@ -566,6 +622,7 @@ export function ViewerToolbar() {
           <FullscreenButton />
         </>
       )}
+      </div>
     </div>
   );
 }

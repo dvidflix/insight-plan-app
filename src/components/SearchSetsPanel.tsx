@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { SearchRow } from './SearchRow';
 import type * as OBC from '@thatopen/components';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
@@ -11,7 +11,8 @@ import {
 } from '../viewer/searchSets';
 import { FieldPicker, RuleRows, newRuleId, type PickField } from './schedule/FieldRules';
 import { useFieldValues, useIndexTick, useModelFields } from './modelFields';
-import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTextInputShort, IconTune, IconUpload } from './icons';
+import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTextInputShort, IconUpload } from './icons';
+import { RowButtonsChooser, useRowButtons } from './RowButtonsChooser';
 import { InfoTip } from './InfoTip';
 import { queryMatcher } from '../schedule/search';
 import { usePersistedState } from '../utils/persistedState';
@@ -107,18 +108,8 @@ function SearchSetList({ onEdit }: { onEdit: (s: SearchSet) => void }) {
   // Order of the sets in their folders: as dragged, or alphabetical.
   const [alpha, setAlpha] = usePersistedState('searchSets.alpha', false);
   // Which row buttons show (the popover beside the toolbar); remembered.
-  const [hiddenButtons, setHiddenButtons] = usePersistedState<RowButton[]>('searchSets.hiddenButtons', []);
-  const shownBtn = (id: RowButton) => !hiddenButtons.includes(id);
-  const [buttonsOpen, setButtonsOpen] = useState(false);
-  const popRef = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!buttonsOpen) return;
-    const away = (e: MouseEvent) => { if (!popRef.current?.contains(e.target as Node)) setButtonsOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setButtonsOpen(false); };
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', esc);
-    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
-  }, [buttonsOpen]);
+  const rb = useRowButtons<RowButton>('searchSets.hiddenButtons');
+  const shownBtn = rb.shown;
 
   const results = useMemo(
     () => new Map(sets.map((s) => [s.id, runSearchSet(engine.getIndexes(), s)])),
@@ -264,30 +255,7 @@ function SearchSetList({ onEdit }: { onEdit: (s: SearchSet) => void }) {
         <button type="button" className="btn ss__tool" onClick={() => setImporting((v) => !v)} aria-expanded={importing} aria-label="Import steps" title="Import steps: make a set per step from a CSV / TXT file of GlobalIds and task names">
           <IconUpload width={16} height={16} /><span className="ss__tool-text">Import</span>
         </button>
-        <div className="ss__cols" ref={popRef}>
-          <button type="button" className="btn ss__tool" onClick={() => setButtonsOpen((v) => !v)} aria-expanded={buttonsOpen} title="Choose which buttons show on each set" aria-label="Row buttons">
-            <IconTune width={16} height={16} />
-          </button>
-          {buttonsOpen && (
-            <div className="ss__pop" role="dialog" aria-label="Row buttons">
-              <div className="ss__pop-title">Row buttons</div>
-              <div className="ss__pop-row">
-                {ROW_BUTTONS.map((b) => (
-                  <button
-                    key={b.id}
-                    type="button"
-                    className={`ss__pop-btn${shownBtn(b.id) ? ' on' : ''}`}
-                    aria-pressed={shownBtn(b.id)}
-                    title={`${shownBtn(b.id) ? 'Hide' : 'Show'}: ${b.label}`}
-                    onClick={() => setHiddenButtons(shownBtn(b.id) ? [...hiddenButtons, b.id] : hiddenButtons.filter((x) => x !== b.id))}
-                  >
-                    {b.glyph}
-                  </button>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
+        <RowButtonsChooser buttons={ROW_BUTTONS} rb={rb} title="Choose which buttons show on each set" />
         <InfoTip>
           <p><b>Import steps:</b> reads a CSV / TXT file with a column of values that identify objects (GlobalId, or any model property such as a Pour ID Number) and a task-name column, in construction order (e.g. a Navisworks TimeLiner export). Consecutive rows with the same task become one search set (property is any of …) in the “Steps” folder, numbered 1, 2, … Rows without a task name are left out.</p>
           <p><b>Search set:</b> finds objects by their properties — add conditions (a property, how to compare, the value) and match all or any. Kept as rules, so it finds the right objects in whatever models are loaded.</p>

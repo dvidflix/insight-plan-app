@@ -2,6 +2,7 @@ import { useMemo } from 'react';
 import { movedKeys, stepNumbers, type PourRow } from './pourOrder';
 import { applyView, BASE_COL, COMPUTED_COLUMNS, FINISH_MONTH_COL, FINISH_WEEK_COL, SHIFT_COL, START_MONTH_COL, START_WEEK_COL, STEP_COL } from './tableView';
 import { scenarioFileName } from './api';
+import { baseStem } from './fromProgramme';
 import { useScheduleStore } from '../state/scheduleStore';
 import { elementIdField } from '../schedule/activityObjects';
 import { taskFieldValue } from '../schedule/linkGroups';
@@ -28,7 +29,7 @@ export function useScenarioView() {
 
   const scenarioNames = useMemo(() => scenarioNamesFor(project, drafts, stem), [project, drafts, stem]);
   const modelInfo = project?.models.find((m) => m.stem === stem) ?? null;
-  const generatedAt = project?.scenarios.find((s) => s.name === scenario)?.models.find((m) => m.stem === stem)?.generated ?? null;
+  const generatedAt = project?.scenarios.find((s) => s.name === scenario)?.models.find((m) => stem !== null && baseStem(m.stem).toLowerCase() === baseStem(stem).toLowerCase())?.generated ?? null;
   const ready = !!(project && scenario && stem && loaded && loaded.stem === stem && loaded.scenario === scenario);
 
   const steps = useMemo(() => stepNumbers(rows), [rows]);
@@ -65,7 +66,7 @@ export function useScenarioView() {
     const out = new Map<string, { start: Date; finish: Date }>();
     const norm = (v: string) => v.trim().toLowerCase().replace(/^0+(?=\d)/, '');
     const prefix = stem && scenario ? scenarioFileName(stem, scenario) : '';
-    const schedule = prefix ? schedules.find((s) => s.sourceFileName.startsWith(prefix)) : undefined;
+    const schedule = prefix ? schedules.find((s) => s.sourceFileName.startsWith(prefix) || s.sourceFileName.includes(`[${scenario}]`)) : undefined;
     const field = schedule && elementIdField(schedule);
     if (!schedule || !field) return { out, norm };
     for (const a of schedule.activities) {

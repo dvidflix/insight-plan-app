@@ -18,10 +18,11 @@ const GROUPS: { kind: Kind; title: string }[] = [
     Unticked user fields, resources and activity codes are for your own use and
     are left out, with every value and assignment that points at them. App-only
     resources (Precast (m3)) are the other way round: out unless ticked. */
-export function ExportFieldsPanel() {
+export function ExportFieldsPanel({ bare = false }: { bare?: boolean } = {}) {
   const schedules = useScheduleStore((s) => s.schedules);
   const excluded = useExportExclusionsStore();
-  const [open, setOpen] = useState(false);
+  const [openState, setOpen] = useState(false);
+  const open = bare || openState;
 
   const names = useMemo(() => {
     const out: Record<Kind, Set<string>> = { udfs: new Set(), resources: new Set(), codes: new Set() };
@@ -40,17 +41,17 @@ export function ExportFieldsPanel() {
   const total = excluded.udfs.length + excluded.resources.length + excluded.codes.length;
 
   return (
-    <div className="inputs-panel export-fields">
-      <div className="inputs-panel__header">
+    <div className={bare ? "export-fields" : "inputs-panel export-fields"}>
+      {!bare && <div className="inputs-panel__header">
         <button type="button" className="export-fields__toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           <IconSectionChevron className="section-chevron" />
           <span>Exports (XML / XER)</span>
         </button>
         <InfoTip>Tick what goes into the XML and XER files you download (scenario programmes, and programmes from the Inputs list). Untick the user fields, resources and activity codes that are for your own use: they stay in the app but are left out of the files, with their values and assignments. The app-only Precast (m3) resource is left out unless you tick it.</InfoTip>
         <span className="inputs-panel__count" title="Left out of exports">{total}</span>
-      </div>
+      </div>}
       {open && (
-        <div className="inputs-panel__body export-fields__body">
+        <div className={bare ? "export-fields__body" : "inputs-panel__body export-fields__body"}>
           {GROUPS.map(({ kind, title }) => {
             const list = names[kind];
             const out = excluded[kind];

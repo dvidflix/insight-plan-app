@@ -77,6 +77,8 @@ export interface PageViews {
   showCube: boolean;
   /** The north arrow under the cube in each view (unset = shown). */
   showNorth?: boolean;
+  /** The model's own IFC grids (axes with bubbles); unset = hidden. */
+  showIfcGrids?: boolean;
   /** North arrow override: degrees clockwise from project north (e.g. the
       site's true north). Unset = 0. */
   northRotation?: number;

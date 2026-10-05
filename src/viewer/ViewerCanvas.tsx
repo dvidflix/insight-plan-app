@@ -1,4 +1,14 @@
-import { useEffect, useRef, useState } from 'react';
+import { syncViewpoints } from './savedViews';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useExperimental } from '../state/appPrefsStore';
+import { useMarkersStore } from '../state/markersStore';
+import { markerShownAt } from './markerActivity';
+import { CLOSED_STATUSES, STATUS_COLORS, useTopicsStore, type Topic } from '../state/topicsStore';
+import { topicActiveAt, topicWindow } from '../topics/topicDates';
+import { sanitizeNote } from '../utils/richText';
+import type { Marker } from '../state/markersStore';
+import { useSequenceSchedule } from '../state/scheduleStore';
+import { useSequenceTimelineStore } from '../state/sequenceTimelineStore';
 import { isTwoViewLayout, pageOfLayout, useViewSettingsStore } from '../state/viewSettingsStore';
 import { useViewerEngine } from './ViewerEngineContext';
 import { createViewerShell, type ViewerLayout, type ViewerShell } from './viewerUI';
@@ -86,8 +96,15 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
     });
     return () => { cancelled = true; };
   }, [layout, ready, engine]);
-  const mainSettings = useViewSettingsStore((s) => s.pages[page].main);
+  const savedMain = useViewSettingsStore((s) => s.pages[page].main);
   const secondSettings = useViewSettingsStore((s) => s.pages[page].second);
+  // Experimental features that are switched off have no effect, whatever a view saved.
+  const cutsExperiment = useExperimental('sectionCuts');
+  const materialsExperiment = useExperimental('realisticMaterials');
+  const mainSettings = useMemo(
+    () => ({ ...savedMain, sectionStyle: cutsExperiment ? savedMain.sectionStyle : undefined, materials: materialsExperiment ? savedMain.materials : false }),
+    [savedMain, cutsExperiment, materialsExperiment],
+  );
   useEffect(() => {
     if (ready) void engine.applyViewSettings(mainSettings);
   }, [engine, ready, mainSettings]);
@@ -159,7 +176,7 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   }, [engine, ready, secondConcrete, realism, secondaryTick]);
 
   const secondSky = secondRealistic && !!secondSettings.sky;
-  const secondMaterials = !!secondSettings.materials;
+  const secondMaterials = materialsExperiment && !!secondSettings.materials;
   useEffect(() => {
     if (ready) engine.secondary?.setSky(secondSky, realism);
   }, [engine, ready, secondSky, realism, secondaryTick]);
@@ -223,6 +240,58 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   const showCube = useViewSettingsStore((s) => s.pages[page].showCube);
   const showNorth = useViewSettingsStore((s) => s.pages[page].showNorth ?? true);
   const northRotation = useViewSettingsStore((s) => s.pages[page].northRotation ?? 0);
+  const showIfcGrids = useViewSettingsStore((s) => s.pages[page].showIfcGrids ?? false);
+  const markers = useMarkersStore((s) => s.markers);
+  const markersVisible = useMarkersStore((s) => s.visible);
+  // Markers are in the IFC's own coordinates, so they are redrawn when the models (and so the global offset) change.
+  // In 4D Sequencing a marker linked to an activity shows from that activity's start to its finish.
+  const seqSchedule = useSequenceSchedule();
+  const seqDate = useSequenceTimelineStore((s) => s.date);
+  const seqBasis = useSequenceTimelineStore((s) => s.basis);
+  const shownKey = markers.map((m) => (page !== 'sequence' || markerShownAt(m, seqSchedule, seqDate, seqBasis) ? '1' : '0')).join('');
+  // Redrawn only when the shown set changes, not on every playback step.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  const shownMarkers = useMemo(() => markers.filter((_, i) => shownKey[i] === '1'), [markers, shownKey]);
+  // Topics with a point are markers too: the icon follows the priority / type, the label shows the status and
+  // description, and in 4D they show only while their dates are on. A click opens the topic.
+  const topics = useTopicsStore((s) => s.topics);
+  const showTopicMarkers = useTopicsStore((s) => s.showMarkers);
+  const topicKey = topics.map((t) => (t.point && !CLOSED_STATUSES.includes(t.status) && (page !== 'sequence' || topicActiveAt(topicWindow(t, seqSchedule, seqBasis), seqDate)) ? '1' : '0')).join('');
+  const topicMarkers = useMemo<Marker[]>(() => {
+    if (!showTopicMarkers) return [];
+    const esc = (x: string) => x.replace(/[&<>]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' })[c]!);
+    return topics.filter((_, i) => topicKey[i] === '1').map((t: Topic) => ({
+      id: `topic:${t.id}`,
+      topicId: t.id,
+      name: `#${t.index} ${t.title || 'Topic'}`,
+      x: t.point!.x,
+      y: t.point!.y,
+      z: t.point!.z,
+      icon: t.icon ?? (t.priority === 'Critical' || t.priority === 'High' ? 'warning' : t.type === 'Clash' ? 'flag' : 'pin'),
+      color: STATUS_COLORS[t.status],
+      note: sanitizeNote(`<b>${esc(t.status)}</b>${t.priority ? ` · ${esc(t.priority)}` : ''}${t.assignedTo ? ` · ${esc(t.assignedTo)}` : ''}${t.description ? `<br>${esc(t.description).replace(/\n/g, '<br>')}` : ''}`),
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topics, topicKey, showTopicMarkers]);
+  useEffect(() => {
+    const open = (e: Event) => {
+      useTopicsStore.getState().select((e as CustomEvent<string>).detail);
+      useTopicsStore.setState((s) => ({ openRequest: s.openRequest + 1 }));
+    };
+    window.addEventListener('ip-open-topic', open);
+    return () => window.removeEventListener('ip-open-topic', open);
+  }, []);
+  const allMarkers = useMemo(() => [...shownMarkers, ...topicMarkers], [shownMarkers, topicMarkers]);
+  useEffect(() => {
+    if (ready) engine.syncMarkers(allMarkers, markersVisible);
+  }, [engine, ready, allMarkers, markersVisible, models]);
+  // Saved viewpoints belong to the models they were taken with: back when those are loaded, set aside when not.
+  useEffect(() => {
+    if (ready) syncViewpoints(engine);
+  }, [engine, ready, models]);
+  useEffect(() => {
+    if (ready) engine.setIfcGridsVisible(showIfcGrids);
+  }, [engine, ready, showIfcGrids, models]);
   useEffect(() => {
     const opts = { visible: showNorth, rotation: northRotation, belowCube: showCube };
     shellRef.current?.setNorthArrow(opts);

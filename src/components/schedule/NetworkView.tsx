@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { ScheduleModel } from '../../schedule/types';
-import { useAccessibilityStore } from '../../state/accessibilityStore';
 import { buildNetwork, computeCPM, type NetworkNode } from '../../schedule/network';
 
 type GroupBy = 'wbs' | 'resource';
@@ -14,7 +13,6 @@ export function NetworkView({ model }: { model: ScheduleModel }) {
   const [cpOnly, setCpOnly] = useState(false);
   const [zoom, setZoom] = useState(1);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const palette = useAccessibilityStore((s) => s.palette);
 
   const { network, cpm } = useMemo(() => {
     const network = buildNetwork(model);
@@ -119,7 +117,7 @@ export function NetworkView({ model }: { model: ScheduleModel }) {
       ctx.fillStyle = '#e6edf3';
       ctx.fillText(truncate(n.node.name, 26), x2 + 4, y + 3);
     }
-  }, [network, cpm, cpOnly, zoom, groupBy, palette]);
+  }, [network, cpm, cpOnly, zoom, groupBy]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

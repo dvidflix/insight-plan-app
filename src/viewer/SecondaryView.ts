@@ -867,6 +867,16 @@ export class SecondaryView {
     return renderer.three.domElement;
   }
 
+  /** Takes every colour override off this view's copies (not visibility or opacity). */
+  async resetColors() {
+    for (const model of this.copies.values()) {
+      for (const m of renderTargets(this.core, model)) await m.resetColor(undefined);
+    }
+    this.colors.clear();
+    // The reset took the selection highlight off too: show it again.
+    await this.showSelection(this.selected);
+  }
+
   async resetOverrides() {
     for (const model of this.copies.values()) {
       for (const m of renderTargets(this.core, model)) {

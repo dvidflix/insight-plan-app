@@ -46,29 +46,32 @@ import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
 import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel } from '../components/icons';
 import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { useAggregateStore } from '../state/aggregateStore';
+import { useAppPrefsStore, type ExperimentalId } from '../state/appPrefsStore';
 
 export type TabId = 'explorer' | 'activities' | 'wbs' | 'gantt' | 'resources' | 'heatmap' | 'calendars' | 'codes' | 'network' | 'checks' | 'reports' | 'whatif' | 'compare' | 'lookahead' | 'ppc' | 'montecarlo' | 'anonymise' | 'bulkedit' | 'renumber';
 
-export const SCHEDULE_TABS: { id: TabId; label: string }[] = [
-  { id: 'explorer', label: 'Schedule Explorer' },
-  { id: 'activities', label: 'Table View' },
-  { id: 'wbs', label: 'WBS' },
+/** The Views list, in this order. Views marked `experimental` are still being tried out and
+    only show when switched on in Settings › Experimental features. */
+export const SCHEDULE_TABS: { id: TabId; label: string; experimental?: ExperimentalId }[] = [
   { id: 'gantt', label: 'Gantt' },
-  { id: 'resources', label: 'Resources' },
-  { id: 'heatmap', label: 'Calendar Heatmap' },
-  { id: 'calendars', label: 'Calendars' },
+  { id: 'compare', label: 'Schedule Comparison' },
+  { id: 'wbs', label: 'WBS' },
   { id: 'codes', label: 'Activity Codes' },
-  { id: 'network', label: 'Network View' },
+  { id: 'resources', label: 'Resources' },
   { id: 'checks', label: 'Quality Checks' },
-  { id: 'reports', label: 'Reports and Analysis' },
+  { id: 'calendars', label: 'Calendars' },
+  { id: 'heatmap', label: 'Calendar Heatmap' },
+  { id: 'activities', label: 'Table View' },
   { id: 'lookahead', label: 'Lookahead' },
-  { id: 'ppc', label: 'PPC (Plan Complete)' },
-  { id: 'montecarlo', label: 'Risk (Monte Carlo)' },
   { id: 'bulkedit', label: 'Bulk edit' },
   { id: 'renumber', label: 'Renumber to new model' },
-  { id: 'anonymise', label: 'Anonymise' },
-  { id: 'whatif', label: 'What-If Scenarios' },
-  { id: 'compare', label: 'Schedule Comparison' },
+  { id: 'reports', label: 'Reports and Analysis' },
+  { id: 'explorer', label: 'Schedule Explorer', experimental: 'scheduleExplorer' },
+  { id: 'network', label: 'Network View', experimental: 'networkView' },
+  { id: 'ppc', label: 'PPC (Plan Complete)', experimental: 'ppcView' },
+  { id: 'montecarlo', label: 'Risk (Monte Carlo)', experimental: 'monteCarlo' },
+  { id: 'anonymise', label: 'Anonymise', experimental: 'anonymise' },
+  { id: 'whatif', label: 'What-If Scenarios', experimental: 'whatIf' },
 ];
 
 /** Merges each schedule's activity code dictionary by type name, namespacing
@@ -185,7 +188,11 @@ export function SchedulePage(props: SchedulePageProps = {}) {
 function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
   const schedules = useVisibleSchedules();
   const model = useMemo(() => mergeSchedulesForDisplay(schedules), [schedules]);
-  const tab = selectedTab ?? 'activities';
+  // Experimental views only show when switched on; a saved one that is off falls back to the Gantt.
+  const experimental = useAppPrefsStore((s) => s.experimental);
+  const visibleTabs = useMemo(() => SCHEDULE_TABS.filter((t) => !t.experimental || experimental[t.experimental]), [experimental]);
+  const asked = selectedTab ?? 'activities';
+  const tab: TabId = visibleTabs.some((t) => t.id === asked) ? asked : 'gantt';
   const [layoutsOpen, setLayoutsOpen] = usePersistedState('programmes.layoutsOpen', false);
   const activityTableRef = useRef<ActivityTableHandle>(null);
   const ganttRef = useRef<GanttHandle>(null);
@@ -386,7 +393,7 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
             </label>
             <div className="workspaces-picker__select-wrap">
               <select id="schedule-layout-select" value={tab} onChange={(e) => onTabChange?.(e.target.value as TabId)}>
-                {SCHEDULE_TABS.map((t) => (
+                {visibleTabs.map((t) => (
                   <option key={t.id} value={t.id}>
                     {t.label}
                   </option>
@@ -422,7 +429,7 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
               <span className="groupby-panel__title">Level:</span>
               <select value={cfg.groupLevel} onChange={(e) => cfg.setGroupLevel(e.target.value)} title="Collapse the WBS groups to this level (All: everything open)">
                 <option value="">All</option>
-                {['0', '1', '2', '3', '4'].map((level) => (
+                {['0', '1', '2', '3', '4', '5', '6', '7', '8'].map((level) => (
                   <option key={level} value={level}>
                     {level}
                   </option>

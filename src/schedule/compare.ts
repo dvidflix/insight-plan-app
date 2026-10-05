@@ -1,3 +1,4 @@
+import { milestoneDrivers, type MilestoneDriver } from './milestoneDrivers';
 import { buildNetwork, computeCPM, computeDrag, type CpmResult } from './network';
 import type { Activity, ScheduleModel } from './types';
 
@@ -191,6 +192,8 @@ export interface CompareResult {
   summary: CompareSummary;
   events: DelayEvent[];
   dragRows: DragAnalysisRow[];
+  /** Why each milestone that moved, moved. */
+  milestones: MilestoneDriver[];
 }
 
 export function compareSchedules(baseline: ScheduleModel, current: ScheduleModel): CompareResult {
@@ -205,5 +208,5 @@ export function compareSchedules(baseline: ScheduleModel, current: ScheduleModel
   const events = buildDelayEvents(match, currentCpm);
   const dragRows = buildDragAnalysis(match, baselineCpm, baselineDrag, currentCpm, currentDrag);
   const summary = buildSummary(baselineCpm, currentCpm, events, dragRows);
-  return { summary, events, dragRows };
+  return { summary, events, dragRows, milestones: milestoneDrivers(baseline, current) };
 }

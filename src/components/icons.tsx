@@ -6,6 +6,7 @@ import arrowUpSvg from '../icons/modus-icon-arrow-up.svg?raw';
 import arrowDownSvg from '../icons/modus-icon-arrow-down.svg?raw';
 import arrowLineUpSvg from '../icons/modus-icon-arrow-line-up.svg?raw';
 import arrowLineDownSvg from '../icons/modus-icon-arrow-line-down.svg?raw';
+import arrowLineLeftSvg from '../icons/modus-icon-arrow-line-left.svg?raw';
 import navigationArrowSvg from '../icons/modus-icon-navigation-arrow.svg?raw';
 import shortTextSvg from '../icons/short-text.svg?raw';
 import tagOutlineSvg from '../icons/modus-icon-tag.svg?raw';
@@ -58,6 +59,8 @@ import expandMoreSvg from '../icons/expand-more.svg?raw';
 import rerouteSvg from '../icons/reroute.svg?raw';
 import driverSvg from '../icons/driver.svg?raw';
 import bookingsOpenSvg from '../icons/bookings-open.svg?raw';
+import dashboardSvg from '../icons/dashboard.svg?raw';
+import modusTableSvg from '../icons/modus-icon-table.svg?raw';
 import cubeFocusSvg from '../icons/modus-icon-cube-focus.svg?raw';
 import visibilityPartSvg from '../icons/visibility-part-outline.svg?raw';
 import videoCameraSvg from '../icons/modus-icon-video-camera.svg?raw';
@@ -118,6 +121,23 @@ export const IconShortText = svgIcon(shortTextSvg);
 export const IconTagOutline = svgIcon(tagOutlineSvg);
 /** View cube (viewer overlay). */
 export const IconViewCube = svgIcon(modelGeometrySvg);
+
+/** IFC grids: axis lines with a bubble at the end. */
+export const IconIfcGrid = (p: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="1.6" {...p}>
+    <path d="M8 9v13M16 9v13M2 15h20M2 20h20" strokeDasharray="3 2" />
+    <circle cx="8" cy="5" r="3" />
+    <circle cx="16" cy="5" r="3" />
+  </svg>
+);
+
+/** Paint bucket, with a bar in `bar` (the colour that will be applied). */
+export const IconPaintBucket = ({ bar, ...p }: SVGProps<SVGSVGElement> & { bar?: string }) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" {...p}>
+    <path d="M16.56 8.94 7.62 0 6.21 1.41l2.38 2.38-5.15 5.15a1.49 1.49 0 0 0 0 2.12l5.5 5.5c.29.29.68.44 1.06.44s.77-.15 1.06-.44l5.5-5.5c.59-.58.59-1.53 0-2.12zM5.21 10 10 5.21 14.79 10H5.21zM19 11.5s-2 2.17-2 3.5c0 1.1.9 2 2 2s2-.9 2-2c0-1.33-2-3.5-2-3.5z" />
+    {bar && <rect x="2" y="20" width="20" height="3.5" rx="1" fill={bar} stroke="rgba(0,0,0,0.25)" strokeWidth="0.6" />}
+  </svg>
+);
 
 export const IconPlus = (p: SVGProps<SVGSVGElement>) => (
   <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor" {...p}>
@@ -346,6 +366,7 @@ export const IconSplit = (p: SVGProps<SVGSVGElement>) => (
 // ---- Side pane tabs (Material Symbols glyphs) ----
 
 export const IconChevronLeft = svgIcon(chevronLeftSvg);
+export const IconArrowLineLeft = svgIcon(arrowLineLeftSvg);
 
 export const IconTree = svgIcon(treeSvg);
 
@@ -452,3 +473,5 @@ export const IconCursor = svgIcon(selectSingleSvg);
 export const IconBoxSelect = svgIcon(selectAreaSvg);
 export const IconSelectOff = svgIcon(selectSubtractSvg);
 export const IconZoomToSelected = svgIcon(zoomToSelectedSvg);
+export const IconDashboard = svgIcon(dashboardSvg);
+export const IconExternalData = svgIcon(modusTableSvg);

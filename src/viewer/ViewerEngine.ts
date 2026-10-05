@@ -10,9 +10,12 @@ import { GrowthAnimator } from './growthAnimator';
 import { Flythrough } from './flythrough';
 import { ElementRelations } from './relations';
 import { attachBoxSelect } from './boxSelect';
-import { PointMarks, copyText, formatCoords } from './pointMarks';
+import { PointMarks, copyText, formatCoords, projectCoords } from './pointMarks';
 import { configureSun, markBaseMaterials, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setMaterialsEnabled, setSkyUniforms, skyParamsFor, type RealismSettings } from './realism';
 import { SkyBackdrop } from './skyBackdrop';
+import { extractGrids, type IfcGridData } from './ifcGrids';
+import { MarkerLayer } from './markerLayer';
+import type { Marker } from '../state/markersStore';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { DEFAULT_OUTLINE, DEFAULT_SECTION_STYLE, SECTION_CATEGORY_DEFS, type OutlineSettings, type SectionStyle } from './visualAids';
 import { DEFAULT_QUALITY, applyRenderQuality, type AdaptiveResolution, type RenderQuality } from './renderQuality';
@@ -643,6 +646,131 @@ export class ViewerEngine {
     }
   }
 
+  // ---- Markers (points with icons, from the Markers panel) ----
+  private markerLayer: MarkerLayer | null = null;
+
+  /** Draws exactly these markers, or none while they are hidden. */
+  syncMarkers(list: Marker[], visible: boolean) {
+    if (!this._world) return;
+    this.markerLayer ??= new MarkerLayer(this.components, this._world, () => this.globalOffset());
+    this.markerLayer.sync(list, visible);
+  }
+
+  /** Flies the camera to a marker, looking at it from the side it is already seen from. */
+  async focusMarker(m: { x: number; y: number; z: number }) {
+    if (!this._world || !this.markerLayer) return;
+    const p = this.markerLayer.scenePoint(m);
+    const controls = this._world.camera.controls;
+    const from = controls.getPosition(new THREE.Vector3());
+    const dir = from.sub(p);
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0.7, 1);
+    dir.normalize().multiplyScalar(14);
+    if (dir.y < 3) dir.y = 3;
+    await controls.setLookAt(p.x + dir.x, p.y + dir.y, p.z + dir.z, p.x, p.y, p.z, true);
+  }
+
+  // ---- IFC grids (the model's IfcGrid axes, drawn as lines with a bubble at each end) ----
+  private gridData = new Map<string, IfcGridData[]>();
+  private gridGroups = new Map<string, THREE.Group>();
+  private showGrids = false;
+  readonly onIfcGridsChange = new OBC.Event<void>();
+
+  /** Whether any loaded model carries IFC grids. */
+  get hasIfcGrids(): boolean {
+    return [...this.gridData.values()].some((g) => g.length > 0);
+  }
+
+  private async loadGrids(modelId: string, bytes: Uint8Array) {
+    try {
+      const grids = await extractGrids(bytes);
+      if (!this.models.has(modelId)) return;
+      this.gridData.set(modelId, grids);
+      if (this.showGrids) this.buildGrids(modelId);
+      this.onIfcGridsChange.trigger();
+    } catch (e) {
+      console.warn('ViewerEngine: reading IFC grids failed', e);
+    }
+  }
+
+  /** Shows or hides the IFC grids of every loaded model. */
+  setIfcGridsVisible(on: boolean) {
+    this.showGrids = on;
+    for (const modelId of this.gridData.keys()) {
+      if (on && !this.gridGroups.has(modelId)) this.buildGrids(modelId);
+      const group = this.gridGroups.get(modelId);
+      if (group) group.visible = on;
+    }
+    void this.forceUpdate();
+  }
+
+  private buildGrids(modelId: string) {
+    const model = this.models.get(modelId);
+    const grids = this.gridData.get(modelId);
+    if (!model || !grids?.length) return;
+    this.gridGroups.get(modelId)?.removeFromParent();
+    const g = this.globalOffset();
+    // IFC (X east, Y north, Z up) -> the viewer's scene, relative to where the model sits.
+    const base = this.basePositions.get(modelId) ?? model.object.position;
+    const toLocal = ([x, y, z]: [number, number, number]) => new THREE.Vector3(x - g.x, z - g.z, -(y - g.y)).sub(base);
+    const group = new THREE.Group();
+    group.name = 'ifc-grids';
+    const positions: number[] = [];
+    const bubbles: { at: THREE.Vector3; tag: string }[] = [];
+    for (const grid of grids) {
+      for (const axis of grid.axes) {
+        const pts = axis.points.map(toLocal);
+        for (let i = 0; i + 1 < pts.length; i++) positions.push(pts[i].x, pts[i].y, pts[i].z, pts[i + 1].x, pts[i + 1].y, pts[i + 1].z);
+        // A bubble beyond each end, along the axis.
+        const first = pts[0];
+        const last = pts[pts.length - 1];
+        const along = last.clone().sub(first).normalize();
+        const gap = 0.9;
+        bubbles.push({ at: first.clone().addScaledVector(along, -gap), tag: axis.tag }, { at: last.clone().addScaledVector(along, gap), tag: axis.tag });
+      }
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    const lineMaterial = new THREE.LineDashedMaterial({ color: '#d6336c', dashSize: 1.2, gapSize: 0.5, transparent: true, opacity: 0.9, depthWrite: false });
+    const lines = new THREE.LineSegments(geometry, lineMaterial);
+    lines.computeLineDistances();
+    lines.renderOrder = 5;
+    group.add(lines);
+    const textures = new Map<string, THREE.CanvasTexture>();
+    const bubbleTexture = (tag: string) => {
+      let tex = textures.get(tag);
+      if (!tex) {
+        const c = document.createElement('canvas');
+        c.width = c.height = 96;
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = '#ffffff';
+        ctx.strokeStyle = '#d6336c';
+        ctx.lineWidth = 6;
+        ctx.beginPath();
+        ctx.arc(48, 48, 40, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#7a1238';
+        ctx.font = 'bold ' + (tag.length > 3 ? 26 : tag.length > 2 ? 32 : 44) + 'px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(tag, 48, 51, 70);
+        tex = new THREE.CanvasTexture(c);
+        textures.set(tag, tex);
+      }
+      return tex;
+    };
+    for (const b of bubbles) {
+      const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: bubbleTexture(b.tag), depthTest: false, transparent: true }));
+      sprite.position.copy(b.at);
+      sprite.scale.setScalar(1.6);
+      sprite.renderOrder = 6;
+      group.add(sprite);
+    }
+    group.visible = this.showGrids;
+    model.object.add(group);
+    this.gridGroups.set(modelId, group);
+  }
+
   /** The model's building storeys with the elements under each, in spatial-tree order. */
   getStoreys(modelId: string): { name: string; ids: number[] }[] {
     const index = this.indexes.get(modelId);
@@ -857,6 +985,7 @@ export class ViewerEngine {
     // they load in the background after the model, sets and floor plans are
     // already usable.
     void this.loadLayers(model.modelId, bytes);
+    void this.loadGrids(model.modelId, bytes);
     return info;
   }
 
@@ -1142,6 +1271,42 @@ export class ViewerEngine {
     this.syncGhostEdgeExclusion();
   }
 
+  /** Paints the selected objects (every model, both views of a split) with a
+      hand-picked colour — kept like the other colour overrides — or, with
+      null, takes their colour back. The selection is cleared after painting,
+      since selected objects show the selection colour instead. Returns how
+      many objects it touched. */
+  async paintSelection(color: string | null): Promise<number> {
+    if (!this._components) return 0;
+    const selected = this.highlighter.selection.select;
+    let count = 0;
+    for (const [modelId, ids] of Object.entries(selected)) {
+      const list = [...ids];
+      if (!list.length) continue;
+      count += list.length;
+      await this.setColor(modelId, list, color, true);
+      await this._secondary?.setColor(modelId, list, color, true);
+    }
+    if (count === 0) return 0;
+    await this.forceUpdate();
+    if (color !== null) await this.highlighter.clear('select');
+    return count;
+  }
+
+  /** Takes every colour override off every model (the picked ones, Models >
+      Colour and the 4D stage colours alike); visibility and opacity stay. */
+  async clearColorOverrides() {
+    if (!this.fragments) return;
+    this.keptColors.clear();
+    for (const model of this.models.values()) {
+      for (const m of this.renderTargets(model)) await m.resetColor(undefined);
+    }
+    await this._secondary?.resetColors();
+    // Resetting colours also took the selection highlight off: draw it again.
+    await this.highlighter.updateColors();
+    await this.forceUpdate();
+  }
+
   /** Drops every per-element visibility/colour/opacity override on every
       model — what the 4D sequence leaves behind (elements hidden before
       their start date, recoloured stages) — so leaving that page doesn't
@@ -1208,6 +1373,7 @@ export class ViewerEngine {
     const style = this.highlighter.styles.get('select');
     if (!style) return;
     style.color = new THREE.Color(hex);
+    this.components.get(OBCF.Outliner).fillColor = new THREE.Color(hex);
     const current = this.highlighter.selection.select;
     if (OBC.ModelIdMapUtils.isEmpty(current)) return;
     const copy = OBC.ModelIdMapUtils.clone(current);
@@ -1566,7 +1732,7 @@ export class ViewerEngine {
       const outliner = this.components.get(OBCF.Outliner);
       outliner.world = world;
       outliner.color = new THREE.Color(cfg.color);
-      outliner.fillColor = new THREE.Color(cfg.fillColor);
+      outliner.fillColor = new THREE.Color(this.selectionColor); // one selection colour: the tint matches the highlight
       outliner.fillOpacity = cfg.fillOpacity;
       outliner.thickness = cfg.thickness;
       if (cfg.enabled) {
@@ -1759,6 +1925,30 @@ export class ViewerEngine {
     if (this.grid) this.grid.visible = visible;
   }
 
+  /** A small JPEG of the main view as it is now — a viewpoint's thumbnail.
+      Null when the view has no size (hidden or not started). */
+  async captureThumbnail(width = 320, height = 180): Promise<Uint8Array | null> {
+    const renderer = this._world?.renderer;
+    const src = renderer?.three.domElement;
+    if (!renderer || !src || !src.width || !src.height) return null;
+    await this.forceUpdate();
+    // Render then read in the same task, before the buffer is presented.
+    renderer.update();
+    const out = document.createElement('canvas');
+    out.width = width;
+    out.height = height;
+    const ctx = out.getContext('2d')!;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, width, height);
+    // Cover-crop to the thumbnail's shape, keeping the centre.
+    const k = Math.max(width / src.width, height / src.height);
+    const sw = width / k;
+    const sh = height / k;
+    ctx.drawImage(src, (src.width - sw) / 2, (src.height - sh) / 2, sw, sh, 0, 0, width, height);
+    const blob = await new Promise<Blob | null>((resolve) => out.toBlob(resolve, 'image/jpeg', 0.82));
+    return blob ? new Uint8Array(await blob.arrayBuffer()) : null;
+  }
+
   private bgColor = '#f5f6f5';
   setBackgroundColor(hex: string) {
     this.bgColor = hex;
@@ -1779,6 +1969,9 @@ export class ViewerEngine {
     this.keptOpacities.delete(modelId);
     this.viewHidden.delete(modelId);
     this.basePositions.delete(modelId);
+    this.gridData.delete(modelId);
+    this.gridGroups.get(modelId)?.removeFromParent();
+    this.gridGroups.delete(modelId);
     this.baseHeights.delete(modelId);
     this.slides.delete(modelId);
     await this.fragments.core.update(true);
@@ -1800,6 +1993,8 @@ export class ViewerEngine {
     for (const [kind, m] of kinds) {
       m.world = world;
       m.enabled = false;
+      // The volume tool's default colour is white, which made its label white text on a white box.
+      if (kind === 'volume') m.color = new THREE.Color('#6528d7');
       this.measurements.set(kind, m);
       m.list.onItemAdded.add(changed);
       m.list.onItemDeleted.add(changed);
@@ -1861,6 +2056,33 @@ export class ViewerEngine {
     const text = formatCoords(hit.point, this.globalOffset());
     void copyText(text);
     return text;
+  }
+
+  /** Waits for one double-click in the view and gives the point under it (snapping to a vertex when one is near)
+      in project axes (X east, Y north, Z up, metres); null on Escape or when nothing is under the cursor. */
+  pickProjectPoint(): Promise<{ x: number; y: number; z: number } | null> {
+    const container = this.container;
+    if (!container || !this._world) return Promise.resolve(null);
+    return new Promise((resolve) => {
+      container.classList.add('picking-point');
+      const finish = (v: { x: number; y: number; z: number } | null) => {
+        container.removeEventListener('dblclick', onDbl, true);
+        window.removeEventListener('keydown', onKey, true);
+        container.classList.remove('picking-point');
+        resolve(v);
+      };
+      const onDbl = async (e: Event) => {
+        e.stopPropagation();
+        const caster = this.components.get(OBC.Raycasters).get(this.world);
+        const hit = (await caster.castRay({ snappingClasses: [FRAGS.SnappingClass.POINT] })) ?? (await caster.castRay());
+        finish(hit ? projectCoords(hit.point, this.globalOffset()) : null);
+      };
+      const onKey = (e: KeyboardEvent) => {
+        if (e.code === 'Escape') finish(null);
+      };
+      container.addEventListener('dblclick', onDbl, true);
+      window.addEventListener('keydown', onKey, true);
+    });
   }
 
   private activeMeasurement(): OBCF.Measurement<any, any> | null { // eslint-disable-line @typescript-eslint/no-explicit-any

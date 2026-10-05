@@ -1,4 +1,4 @@
-import { useAppPrefsStore } from '../state/appPrefsStore';
+import { EXPERIMENTAL_FEATURES, useAppPrefsStore } from '../state/appPrefsStore';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { CollapsibleSection } from './CollapsibleSection';
@@ -7,8 +7,13 @@ import { useTableStyleStore } from '../state/tableStyleStore';
 import { exportAppConfig, importAppConfig } from '../state/appConfig';
 import { FULL_SCREEN_KEY } from './FullScreenOnStart';
 import { ACCENT_PALETTES, useAccentPaletteStore } from '../state/accentPaletteStore';
-import { useAccessibilityStore, type ColourPalette } from '../state/accessibilityStore';
+import { DEFAULT_FLOOR_PLAN_RANGE, FLOOR_PLAN_RANGE_KEY } from '../viewer/floorPlanRange';
+import { DEFAULT_SELECTION_COLOR, SELECTION_COLOR_KEY } from '../viewer/selectionColor';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../state/timelineSettingsStore';
+import { FileDetailsSync } from './InputDetails';
+import { ProjectDbBar } from './ProjectDbPanel';
+import { ExportFieldsPanel } from './ExportFieldsPanel';
+import { SeaTablePanel } from './SeaTablePanel';
 
 function usePersistedValue<T extends string | number>(key: string, defaultValue: T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => {
@@ -23,8 +28,6 @@ function usePersistedValue<T extends string | number>(key: string, defaultValue:
   return [value, set];
 }
 
-const DEFAULT_FLOOR_PLAN_RANGE = 8;
-const DEFAULT_SELECTION_COLOR = '#1e88e5';
 
 /** Applies the saved viewer settings at startup — the Settings tab (which
     applies changes as they are made) is only mounted while it is open. */
@@ -38,9 +41,9 @@ export function SettingsSync() {
   const engine = useViewerEngine();
   useEffect(() => {
     applyStatusBar(localStorage.getItem(STATUS_BAR_KEY) !== 'false');
-    const range = Number(localStorage.getItem('viewer.floorPlanRange') ?? DEFAULT_FLOOR_PLAN_RANGE);
+    const range = Number(localStorage.getItem(FLOOR_PLAN_RANGE_KEY) ?? DEFAULT_FLOOR_PLAN_RANGE);
     engine.setFloorPlanRange(range || DEFAULT_FLOOR_PLAN_RANGE);
-    const color = localStorage.getItem('viewer.selectionColor') ?? DEFAULT_SELECTION_COLOR;
+    const color = localStorage.getItem(SELECTION_COLOR_KEY) ?? DEFAULT_SELECTION_COLOR;
     void engine.ready.then(() => engine.setSelectionColor(color));
   }, [engine]);
   return null;
@@ -52,15 +55,9 @@ function Section({ title, defaultOpen, tip, children }: { title: string; default
 }
 
 /** App-wide settings, the side pane's Settings tab: a "Preferences" section
-    (the whole-app Configuration import/export), tables, and 3D views. How a 3D
+    (the whole-app Configuration import/export), tables and window. How a 3D
     view looks (camera, style, edges, occlusion, anti-aliasing, background,
     grid) is a per-view setting — see View3DPanel (the "View settings" configuration). */
-const SELECTION_COLORS = [
-  { label: 'Orange', hex: '#ff8a00' },
-  { label: 'Blue', hex: '#1e88e5' },
-  { label: 'Purple', hex: '#7c5cff' },
-  { label: 'Green', hex: '#1b8d68' },
-];
 
 /** Settings › 4D timeline: how the 4D Sequencing timeline bar looks and plays. */
 function TimelineSettings() {
@@ -110,21 +107,26 @@ function TimelineSettings() {
   );
 }
 
-export function SettingsPanel() {
-  const engine = useViewerEngine();
+export function SettingsPanel({ timeline = false, inputs = false }: { timeline?: boolean; inputs?: boolean }) {
   const wrapHeaders = useTableStyleStore((s) => s.wrapHeaders);
   const setWrapHeaders = useTableStyleStore((s) => s.setWrapHeaders);
-  const [floorPlanRange, setFloorPlanRange] = usePersistedValue<number>('viewer.floorPlanRange', DEFAULT_FLOOR_PLAN_RANGE);
-  const [selectionColor, setSelectionColor] = usePersistedValue<string>('viewer.selectionColor', DEFAULT_SELECTION_COLOR);
   const [fullScreen, setFullScreen] = usePersistedValue<string>(FULL_SCREEN_KEY, 'true');
   const [statusBar, setStatusBar] = usePersistedValue<string>(STATUS_BAR_KEY, 'true');
   useEffect(() => { applyStatusBar(statusBar !== 'false'); }, [statusBar]);
   const accent = useAccentPaletteStore((s) => s.id);
   const setAccent = useAccentPaletteStore((s) => s.setId);
-  const palette = useAccessibilityStore((s) => s.palette);
-  const setPalette = useAccessibilityStore((s) => s.setPalette);
   const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
   const setShowScenariosTab = useAppPrefsStore((s) => s.setShowScenariosTab);
+  const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
+  const setShowTimelinesTab = useAppPrefsStore((s) => s.setShowTimelinesTab);
+  const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
+  const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
+  const setShowExternalTab = useAppPrefsStore((s) => s.setShowExternalTab);
+  const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
+  const setShowDashboardsTab = useAppPrefsStore((s) => s.setShowDashboardsTab);
+  const setShowWikiTab = useAppPrefsStore((s) => s.setShowWikiTab);
+  const experimental = useAppPrefsStore((s) => s.experimental);
+  const setExperimental = useAppPrefsStore((s) => s.setExperimental);
   const [configError, setConfigError] = useState<string | null>(null);
   const [configNotice, setConfigNotice] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -150,47 +152,26 @@ export function SettingsPanel() {
     }
   };
 
-  // The engine initialises asynchronously; applying after `ready` means a
-  // persisted value isn't lost to a call made before the renderer exists.
-  useEffect(() => {
-    engine.setFloorPlanRange(floorPlanRange);
-  }, [engine, floorPlanRange]);
-  useEffect(() => {
-    // Re-applied once the engine is up (a call before init just records it).
-    void engine.ready.then(() => engine.setSelectionColor(selectionColor));
-  }, [engine, selectionColor]);
-
   return (
     <div className="settings-panel">
-      <Section
-        title="3D views"
-        defaultOpen
-        tip="Camera, view style, edge lines, ambient occlusion, anti-aliasing, background and grid are set per 3D view: Views › View settings on the Models and 4D Sequencing pages. Model placement and storey slide are under the 3D tab."
-      >
-        <div className="settings-field">
-          <span className="settings-field__label">Selection colour</span>
-          <div className="sel-colors">
-            {SELECTION_COLORS.map((c) => (
-              <button
-                key={c.hex}
-                type="button"
-                className={`sel-colors__swatch${selectionColor.toLowerCase() === c.hex ? ' active' : ''}`}
-                style={{ background: c.hex }}
-                title={c.label}
-                aria-label={c.label}
-                onClick={() => setSelectionColor(c.hex)}
-              />
-            ))}
-            <input type="color" value={selectionColor} onChange={(e) => setSelectionColor(e.target.value)} title="Custom colour" />
-          </div>
-        </div>
-        <label className="settings-field">
-          <span className="settings-field__label">Floor plan range (m)</span>
-          <input type="number" min={1} max={20} step={1} value={floorPlanRange} onChange={(e) => setFloorPlanRange(Math.min(20, Math.max(1, Number(e.target.value) || 1)))} />
-        </label>
-      </Section>
+      {timeline && <TimelineSettings />}
 
-      <TimelineSettings />
+      {inputs && (
+        <>
+          <Section title="File details (SeaTable)" defaultOpen tip="The details of each file (discipline, building, status…) are filled in on SeaTable's Insight Plan Files table. Push sends the files of the Inputs page (name, type, format, size…): new ones are added, the others updated, and the details you filled in are not touched. Read brings the details back, to show as columns and to group and filter by.">
+            <FileDetailsSync />
+          </Section>
+          <Section title="Project database" defaultOpen tip="The project folder and its database (insight-plan.db): programmes in P6 tables, scenarios and settings. Open it in DBeaver or DB Browser for SQLite; edits made there come in with Reload.">
+            <ProjectDbBar bare />
+          </Section>
+          <Section title="Exports (XML / XER)" defaultOpen={false} tip="Tick what goes into the XML and XER files you download (scenario programmes, and programmes from the Inputs list). Untick the user fields, resources and activity codes that are for your own use: they stay in the app but are left out of the files, with their values and assignments. The app-only Precast (m3) resource is left out unless you tick it.">
+            <ExportFieldsPanel bare />
+          </Section>
+          <Section title="SeaTable (model data)" defaultOpen={false} tip="Push sends the elements of the IFC classes you tick, with the properties the Properties table shows, to the Elements table of the SeaTable base, one row per element, by its GlobalId. Pull brings back every column you add to that table yourself (names without a dot) as Custom properties of the elements.">
+            <SeaTablePanel bare />
+          </Section>
+        </>
+      )}
 
       <Section title="Window" defaultOpen tip="Browsers only allow full screen after a click or key press, so the app goes full screen on the first one. Esc (or F11) leaves it.">
         <div className="disp__row">
@@ -217,6 +198,44 @@ export function SettingsPanel() {
             <span className="switch__thumb" />
           </button>
         </div>
+        <div className="disp__row">
+          <span>Show Timelines tab</span>
+          <button type="button" role="switch" aria-checked={showTimelinesTab} className={`switch${showTimelinesTab ? ' on' : ''}`} onClick={() => setShowTimelinesTab(!showTimelinesTab)}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+        <div className="disp__row">
+          <span>Show Wiki tab</span>
+          <button type="button" role="switch" aria-checked={showWikiTab} className={`switch${showWikiTab ? ' on' : ''}`} onClick={() => setShowWikiTab(!showWikiTab)}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+        <div className="disp__row">
+          <span>Show External data tab <InfoTip>SeaTable in a frame, signed in for you.</InfoTip></span>
+          <button type="button" role="switch" aria-checked={showExternalTab} className={`switch${showExternalTab ? ' on' : ''}`} onClick={() => setShowExternalTab(!showExternalTab)}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+        <div className="disp__row">
+          <span>Show Dashboards tab <InfoTip>Apache Superset in a frame, signed in for you.</InfoTip></span>
+          <button type="button" role="switch" aria-checked={showDashboardsTab} className={`switch${showDashboardsTab ? ' on' : ''}`} onClick={() => setShowDashboardsTab(!showDashboardsTab)}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+      </Section>
+
+      <Section title="Experimental features" defaultOpen tip="Features still being tried out. They are hidden until switched on here, and may change or be removed.">
+        {EXPERIMENTAL_FEATURES.map((f) => (
+          <div key={f.id} className="disp__row">
+            <span>
+              {f.label}{' '}
+              <InfoTip>{f.tip}</InfoTip>
+            </span>
+            <button type="button" role="switch" aria-checked={experimental[f.id]} className={`switch${experimental[f.id] ? ' on' : ''}`} onClick={() => setExperimental(f.id, !experimental[f.id])}>
+              <span className="switch__thumb" />
+            </button>
+          </div>
+        ))}
       </Section>
 
       <Section
@@ -258,7 +277,7 @@ export function SettingsPanel() {
         </div>
       </Section>
 
-      <Section title="Appearance" defaultOpen tip="The accent colour of the app: buttons, selections, highlights and the Gantt's bars. The colour-blind safe palette (Accessibility) overrides the Gantt and status colours.">
+      <Section title="Appearance" defaultOpen tip="The accent colour of the app: buttons, selections, highlights and the Gantt's bars.">
         <div className="accent-palettes" role="radiogroup" aria-label="Accent palette">
           {ACCENT_PALETTES.map((p) => (
             <button
@@ -277,16 +296,6 @@ export function SettingsPanel() {
             </button>
           ))}
         </div>
-      </Section>
-
-      <Section title="Accessibility" defaultOpen tip="Status and critical colours in the Gantt, Network view and reports.">
-        <label className="settings-field">
-          <span className="settings-field__label">Colour palette</span>
-          <select value={palette} onChange={(e) => setPalette(e.target.value as ColourPalette)}>
-            <option value="standard">Standard (green / red)</option>
-            <option value="colour-blind">Colour-blind safe (blue / orange)</option>
-          </select>
-        </label>
       </Section>
     </div>
   );

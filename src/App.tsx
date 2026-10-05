@@ -5,7 +5,6 @@ import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
 import { SettingsSync } from './components/SettingsMenu';
 import { CustomFieldsSync } from './components/CustomFieldsSync';
-import { SeaTablePanel } from './components/SeaTablePanel';
 import { SidePaneHost } from './components/SidePane';
 import { AutoLinkGenerator } from './components/schedule/AutoLinkGenerator';
 import { ViewerWorkspace } from './viewer/ViewerWorkspace';
@@ -15,6 +14,7 @@ import { SequencePanel } from './pages/SequencePage';
 import { ScenariosPage } from './pages/ScenariosPage';
 import { TimelinesPage } from './pages/TimelinesPage';
 import { WikiPage } from './pages/WikiPage';
+import { ExternalPage } from './pages/ExternalPage';
 import { SequenceLabelOverlay } from './components/sequence/SequenceLabelOverlay';
 import { SequenceTimelineStatusBar } from './components/sequence/SequenceTimelineStatusBar';
 import { useModelsStore } from './state/modelsStore';
@@ -22,25 +22,28 @@ import { useContextMeshStore, type ContextMeshRow } from './state/contextMeshSto
 import { useActiveSchedule, useScheduleStore } from './state/scheduleStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
-import { IconBook, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline } from './components/icons';
+import { IconBook, IconCheckboxChecked, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
 import { FileDrop } from './components/FileDrop';
 import { SCHEDULE_ACCEPT, buildScheduleModel, parseScheduleFile, xmlScheduleTables } from './schedule/loadSchedule';
 import { buildXerSchedule, indexXerFile, isXer, type ImportProgress, type XerIndex } from './schedule/importSchedule';
 import { ProjectPicker } from './components/schedule/ProjectPicker';
 import { useAppPrefsStore } from './state/appPrefsStore';
 import { useRecordingStore } from './state/recordingStore';
-import { DbStatusChip, ProjectDbBar } from './components/ProjectDbPanel';
+import { DbStatusChip } from './components/ProjectDbPanel';
 import { UpdateChip } from './components/UpdateChip';
 import { fileSizeOf, rememberFileSize, rememberModelFile } from './state/modelFiles';
 import { useModelPlacementStore } from './state/modelPlacementStore';
 import modelIcon from './icons/BuildingSMART_RGB_Icon_colour_v3.jpg';
 import programmeIcon from './icons/window_15139098.png';
-import { FolderHeaderRow, FolderMenuButton, NewFolderButton, dragItemProps } from './components/InputFolders';
-import { sectionsOf, useInputFoldersStore } from './state/inputFoldersStore';
-import { StoredModelsPanel } from './components/StoredModelsPanel';
-import { ExportFieldsPanel } from './components/ExportFieldsPanel';
+import { DEFAULT_INPUT_COLUMNS, buildCombinedGroups, buildGroups, passesFilters, useInputDetailsStore, valuesOfFile, type GroupNode } from './state/inputDetailsStore';
+import { DetailValue, GroupHeaderRow, ColumnResizer, InputsColgroup, InputsStatusBar, useInputsTableStyle } from './components/InputDetails';
+import { InputsSidePane } from './components/InputsSidePane';
+import type { PushFile } from './seatable/filesClient';
+import { StoredModelsNotes, useStoredModels } from './components/StoredModelsPanel';
+import type { StoredModel } from './db/modelsApi';
 import { filterXerTables, filterXmlText } from './schedule/exportFilter';
 import { ProgrammeDownload, type DownloadFormat } from './components/ProgrammeDownload';
+import { RowButtonsChooser, useRowButtons, type RowButtonDef } from './components/RowButtonsChooser';
 import { fetchXml } from './scenarios/api';
 import { storeLoadedIfc } from './viewer/modelStore';
 import { useModelStoreState } from './state/modelStoreState';
@@ -52,7 +55,7 @@ import { downloadBlob } from './utils/download';
 import type { ScheduleModel } from './schedule/types';
 import { xmlToXer } from './schedule/xmlToXer';
 
-type PageId = 'inputs' | 'model' | 'schedule' | 'scenarios' | 'sequence' | 'timelines' | 'wiki';
+type PageId = 'inputs' | 'model' | 'schedule' | 'scenarios' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki';
 
 const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
   { id: 'inputs', label: 'Inputs', icon: <IconFolder /> },
@@ -61,6 +64,8 @@ const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
   { id: 'scenarios', label: 'Scenarios', icon: <IconSplit /> },
   { id: 'sequence', label: '4D Sequencing', icon: <IconSchema /> },
   { id: 'timelines', label: 'Timelines', icon: <IconTimeline /> },
+  { id: 'external', label: 'External data', icon: <IconExternalData /> },
+  { id: 'dashboards', label: 'Dashboards', icon: <IconDashboard /> },
   { id: 'wiki', label: 'Wiki', icon: <IconBook /> },
 ];
 
@@ -104,6 +109,9 @@ const mayLeave = (from: PageId, to: PageId) => {
 
 export default function App() {
   const [page, setPageRaw] = useState<PageId>('inputs');
+  // The External data and Dashboards frames stay loaded once opened.
+  const [visited, setVisited] = useState<ReadonlySet<PageId>>(new Set());
+  useEffect(() => { setVisited((v) => (v.has(page) ? v : new Set(v).add(page))); }, [page]);
   const pageRef = useRef(page);
   pageRef.current = page;
   const setPage = (next: PageId | ((current: PageId) => PageId)) => {
@@ -116,10 +124,17 @@ export default function App() {
   // Settings › Window › Show Scenarios tab (off by default — Scenarios is
   // also in 4D Sequencing).
   const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
-  const pages = useMemo(() => PAGES.filter((p) => p.id !== 'scenarios' || showScenariosTab), [showScenariosTab]);
+  const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
+  const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
+  const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
+  const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
+  const pages = useMemo(
+    () => PAGES.filter((p) => (p.id !== 'scenarios' || showScenariosTab) && (p.id !== 'timelines' || showTimelinesTab) && (p.id !== 'wiki' || showWikiTab) && (p.id !== 'external' || showExternalTab) && (p.id !== 'dashboards' || showDashboardsTab)),
+    [showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab],
+  );
   useEffect(() => {
-    if (!showScenariosTab && page === 'scenarios') setPage('sequence');
-  }, [showScenariosTab, page]);
+    if ((!showScenariosTab && page === 'scenarios') || (!showTimelinesTab && page === 'timelines') || (!showWikiTab && page === 'wiki') || (!showExternalTab && page === 'external') || (!showDashboardsTab && page === 'dashboards')) setPage('sequence');
+  }, [showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab, page]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab step through the top tabs (wrapping round).
   // Alt+PageDown / Alt+PageUp do the same: a normal browser tab keeps Ctrl+Tab
@@ -202,8 +217,10 @@ export default function App() {
           {page === 'scenarios' && <ScenariosPage />}
           {page === 'timelines' && <TimelinesPage />}
           {page === 'wiki' && <WikiPage />}
+          {visited.has('external') && <ExternalPage target="seatable" active={page === 'external'} />}
+          {visited.has('dashboards') && <ExternalPage target="superset" active={page === 'dashboards'} />}
         </div>
-        {page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' || page === 'scenarios' || page === 'timelines' || page === 'wiki' ? null : <StatusBar page={page} />}
+        {page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'external' || page === 'dashboards' ? null : <StatusBar page={page} />}
       </div>
       <SidePaneHost />
       <AutoLinkGenerator />
@@ -212,7 +229,20 @@ export default function App() {
   );
 }
 
+/** The buttons on each row of the Inputs table that can be hidden. */
+const INPUT_BUTTONS = [
+  { id: 'download', glyph: '⤓', label: 'Download (programmes)' },
+  { id: 'open', glyph: '☑', label: 'Open a model of the project database' },
+  { id: 'export', glyph: '⤓', label: 'Export IFC (models of the project database)' },
+  { id: 'hide', glyph: '👁', label: 'Hide / show (unload without removing)' },
+  { id: 'sync', glyph: '⟳', label: 'Sync: show this in the other tabs' },
+  { id: 'remove', glyph: '✕', label: 'Remove / delete' },
+  { id: 'versions', glyph: '#', label: 'Number of earlier IFC versions' },
+] as const satisfies readonly RowButtonDef<string>[];
+type InputButton = (typeof INPUT_BUTTONS)[number]['id'];
+
 function InputsPage() {
+  const inputBtns = useRowButtons<InputButton>('inputs.hiddenButtons');
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const addModel = useModelsStore((s) => s.addModel);
@@ -242,13 +272,17 @@ function InputsPage() {
   const pendingSchedules = usePendingImportsStore((s) => s.schedules);
   const clearPendingModel = usePendingImportsStore((s) => s.clearModel);
   const clearPendingSchedule = usePendingImportsStore((s) => s.clearSchedule);
-  const [sort, setSort] = useState<{ col: 'name' | 'type' | 'items' | 'size'; dir: 'asc' | 'desc' }>({ col: 'name', dir: 'asc' });
+  const sortRules = useInputDetailsStore((s) => s.sortRules);
+  const detailValues = useInputDetailsStore((s) => s.values);
   const dbOpen = useProjectDbStore((s) => !!s.db);
   const dbProgrammes = useProjectDbStore((s) => s.programmes);
   const dbLoading = useProjectDbStore((s) => s.loading);
 
-  const toggleSort = (col: 'name' | 'type' | 'items' | 'size') =>
-    setSort((x) => (x.col === col ? { col, dir: x.dir === 'asc' ? 'desc' : 'asc' } : { col, dir: 'asc' }));
+  // A click on a column heading sorts by it alone (again: the other way round); the Sort tab sets several keys.
+  const toggleSort = (col: string) => {
+    const only = sortRules.length === 1 && sortRules[0].field === col ? sortRules[0] : null;
+    useInputDetailsStore.getState().setSortRules([{ id: col, field: col, direction: only?.direction === 'up' ? 'down' : 'up' }]);
+  };
 
   // The project database's programmes (loaded or not: hidden ones load when
   // shown), then any loaded from files only.
@@ -276,28 +310,122 @@ function InputsPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, models, offsets]);
 
-  // Models and programmes in one list.
+  // Models (loaded, and the ones kept in the project database), site context and programmes in one list.
+  const storedActions = useStoredModels();
+  const storedModels = storedActions.stored;
   const rows = useMemo<InputRow[]>(() => {
+    const storedBy = new Map(storedModels.map((m) => [m.name, m]));
+    const loadedNames = new Set(models.map((m) => m.name));
     const all: InputRow[] = [
-      ...models.map((m): InputRow => ({ kind: 'model', key: m.modelId, name: m.name, items: m.elementCount, hidden: hiddenModelIds.has(m.modelId), size: fileSizeOf(m.name), bounds: boxes.get(m.modelId) ?? null })),
+      ...models.map((m): InputRow => ({ kind: 'model', key: m.modelId, name: m.name, items: m.elementCount, hidden: hiddenModelIds.has(m.modelId), size: fileSizeOf(m.name) ?? storedBy.get(m.name)?.ifcSize ?? null, bounds: boxes.get(m.modelId) ?? null, stored: storedBy.get(m.name) })),
+      ...storedModels.filter((m) => !loadedNames.has(m.name)).map((m): InputRow => ({ kind: 'model', key: `stored:${m.name}`, name: m.name, items: 0, hidden: false, size: m.ifcSize, bounds: null, stored: m, unloaded: true })),
       ...contextMeshes.map((c): InputRow => ({ kind: 'context', key: c.id, name: c.name, items: c.triangles, hidden: c.hidden, size: fileSizeOf(c.name), bounds: c.bounds ? { min: c.bounds.min.map((v, i) => v + [c.offset.x, c.offset.y, c.offset.z][i]) as [number, number, number], max: c.bounds.max.map((v, i) => v + [c.offset.x, c.offset.y, c.offset.z][i]) as [number, number, number] } : null, context: c })),
       ...programmeRows.map((p): InputRow => ({ kind: 'programme', key: p.key, name: p.name, items: p.activities, hidden: p.hidden, size: fileSizeOf(p.db?.sourceFile ?? p.schedule?.sourceFileName ?? p.name), bounds: null, programme: p })),
     ];
-    const dir = sort.dir === 'asc' ? 1 : -1;
+    const text = (x: string, y: string) => x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
+    const compare = (field: string, a: InputRow, b: InputRow) => {
+      if (field === 'type') return text(a.kind, b.kind);
+      if (field === 'items') return a.items - b.items;
+      if (field === 'size') return (a.size ?? -1) - (b.size ?? -1);
+      if (field === 'name') return text(a.name, b.name);
+      return text((detailValues[a.name]?.[field] ?? []).join(', '), (detailValues[b.name]?.[field] ?? []).join(', '));
+    };
     return all.sort((a, b) => {
-      if (sort.col === 'type') return dir * a.kind.localeCompare(b.kind) || a.name.localeCompare(b.name);
-      if (sort.col === 'items') return dir * (a.items - b.items);
-      if (sort.col === 'size') return dir * ((a.size ?? -1) - (b.size ?? -1));
-      return dir * a.name.localeCompare(b.name);
+      for (const r of sortRules) {
+        const c = compare(r.field, a, b);
+        if (c) return r.direction === 'up' ? c : -c;
+      }
+      return text(a.name, b.name);
     });
-  }, [models, programmeRows, contextMeshes, hiddenModelIds, boxes, sort]);
+  }, [models, storedModels, programmeRows, contextMeshes, hiddenModelIds, boxes, sortRules, detailValues]);
 
-  const folders = useInputFoldersStore((s) => s.folders);
-  const folderOf = useInputFoldersStore((s) => s.assign);
-  const collapsedFolders = useInputFoldersStore((s) => s.collapsed);
-  const sections = useMemo(() => sectionsOf(rows, (r) => r.name, folders, folderOf), [rows, folders, folderOf]);
+  // File details (your own fields per file) and what the list is grouped by.
+  const detailFields = useInputDetailsStore((s) => s.fields);
+  const columns = useInputDetailsStore((s) => s.columns);
+  const collapsedGroups = useInputDetailsStore((s) => s.collapsed);
+  const groupRules = useInputDetailsStore((s) => s.groupRules);
+  const groupCombine = useInputDetailsStore((s) => s.groupCombine);
+  // The columns shown, in order: the list's own and the details read from SeaTable.
+  const shownColumns = columns.filter((c) => DEFAULT_INPUT_COLUMNS.includes(c) || detailFields.includes(c));
+  const tableStyle = useInputsTableStyle(shownColumns);
+  // The filters of the side pane's Filters tab keep only some of the files.
+  const filters = useInputDetailsStore((s) => s.filters);
+  const formatOfRow = (r: InputRow) => (r.programme?.db?.sourceFormat ?? /\.([a-z0-9]+)$/i.exec(r.name)?.[1] ?? '').toUpperCase();
+  const visibleRows = useMemo(
+    () => (Object.keys(filters).length === 0 ? rows : rows.filter((r) => passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, filters, detailValues))),
+    [rows, filters, detailValues],
+  );
+  // Groups, outermost level first.
+  const tree = useMemo(() => {
+    const rules = groupRules;
+    const valuesOf = (field: string, r: InputRow) => valuesOfFile(field, { name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, detailValues);
+    return rules.length ? (groupCombine ? buildCombinedGroups : buildGroups)(visibleRows, rules, valuesOf) : null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [visibleRows, groupRules, groupCombine, detailValues]);
+  const closedOf = (n: GroupNode<InputRow>) => collapsedGroups.includes(n.key);
+  // The list as header + rows blocks: a group's rows come after its header unless it has groups inside it or is collapsed.
+  const sections = useMemo(() => {
+    if (!tree) return [{ node: null as GroupNode<InputRow> | null, items: visibleRows }];
+    const out: { node: GroupNode<InputRow> | null; items: InputRow[] }[] = [];
+    const walk = (nodes: GroupNode<InputRow>[]) => {
+      for (const n of nodes) {
+        const closed = closedOf(n);
+        out.push({ node: n, items: closed || n.children.length ? [] : n.items });
+        if (!closed) walk(n.children);
+      }
+    };
+    walk(tree);
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tree, visibleRows, collapsedGroups]);
+  // What a push to SeaTable's "Insight Plan Files" table sends: every file of this page, and the stored models not loaded now.
+  const filesToPush = useMemo<PushFile[]>(() => {
+    const MB = 1024 * 1024;
+    const formatFor = (r: InputRow) => (r.programme?.db?.sourceFormat ?? /\.([a-z0-9]+)$/i.exec(r.name)?.[1] ?? '').toUpperCase();
+    const out: PushFile[] = rows.map((r) => ({
+      name: r.name,
+      type: KIND_LABEL[r.kind],
+      format: formatFor(r),
+      items: r.unloaded ? null : r.items,
+      sizeMb: r.size === null ? null : Math.round((r.size / MB) * 100) / 100,
+      bounds: r.bounds ? `Min ${r.bounds.min.map((v) => v.toFixed(1)).join(', ')} / Max ${r.bounds.max.map((v) => v.toFixed(1)).join(', ')}` : '',
+    }));
+    const have = new Set(out.map((f) => f.name));
+    for (const m of storedModels) if (!have.has(m.name)) out.push({ name: m.name, type: 'Model', format: 'IFC', items: null, sizeMb: Math.round((m.ifcSize / MB) * 100) / 100, bounds: '' });
+    return out;
+  }, [rows, storedModels]);
 
-  const sortArrow = (active: boolean, dir: 'asc' | 'desc') => (active ? (dir === 'asc' ? ' ▲' : ' ▼') : '');
+  // The Group tab's collapse / expand all.
+  const collapseAllGroups = () => {
+    const keys: string[] = [];
+    const walk = (nodes: GroupNode<InputRow>[]) => nodes.forEach((n) => { keys.push(n.key); walk(n.children); });
+    walk(tree ?? []);
+    useInputDetailsStore.getState().setCollapsedAll(keys);
+  };
+  const expandAllGroups = () => {
+    useInputDetailsStore.getState().setCollapsedAll([]);
+  };
+
+  // The Filters tab counts the values over these.
+  useEffect(() => {
+    useInputDetailsStore.getState().setFiles(filesToPush);
+  }, [filesToPush]);
+
+  const sortArrow = (field: string) => {
+    const i = sortRules.findIndex((r) => r.field === field);
+    return i < 0 ? '' : ` ${sortRules[i].direction === 'up' ? '▲' : '▼'}${sortRules.length > 1 ? i + 1 : ''}`;
+  };
+  const headerCell = (col: string) => {
+    const click = { onClick: () => toggleSort(col) };
+    switch (col) {
+      case 'type': return <th key={col} className="inputs-table__sortable inputs-table__type" {...click} title="Type: model or programme">{sortArrow(col).trim()}</th>;
+      case 'name': return <th key={col} className="inputs-table__sortable" {...click}>Name{sortArrow(col)}</th>;
+      case 'items': return <th key={col} className="inputs-table__sortable inputs-table__centre" {...click} title="Number of elements (models) or activities (programmes)">Items{sortArrow(col)}<ColumnResizer col={col} /></th>;
+      case 'bounds': return <th key={col} className="inputs-table__centre" title="Models: the lowest and highest X, Y, Z of the model (project axes, metres)">Min / max XYZ (m)<ColumnResizer col={col} /></th>;
+      case 'size': return <th key={col} className="inputs-table__sortable inputs-table__centre" {...click}>File size{sortArrow(col)}<ColumnResizer col={col} /></th>;
+      default: return <th key={col} className="inputs-table__sortable inputs-table__detail" {...click}>{col}{sortArrow(col)}<ColumnResizer col={col} /></th>;
+    }
+  };
 
   // Toggling a model off keeps it loaded (switching back on is instant, no
   // re-parse); ViewerCanvas leaves hidden models out of both views.
@@ -451,10 +579,18 @@ function InputsPage() {
 
   return (
     <div className="inputs-page">
+      <InputsSidePane onCollapseAll={collapseAllGroups} onExpandAll={expandAllGroups} />
       <div className="inputs-panel">
         <div className="inputs-panel__header">
           <span>Models and programmes</span>
           <span className="inputs-panel__count">{rows.length}</span>
+          <span className="inputs-panel__spacer" />
+          {rows.length > 0 && (
+            <>
+              <button className="mini-btn mini-btn--icon" onClick={syncAll} title="Sync all" aria-label="Sync all"><IconSync /></button>
+              <RowButtonsChooser compact buttons={INPUT_BUTTONS} rb={inputBtns} title="Choose which buttons show on each row" />
+            </>
+          )}
         </div>
         <div className="inputs-panel__body">
           <FileDrop
@@ -496,33 +632,35 @@ function InputsPage() {
           )}
           {rows.length > 0 && (
             <>
-              <table className="inputs-table">
+              <div style={{ overflowX: 'auto' }}>
+              <table className="inputs-table inputs-table--aligned" style={tableStyle}>
+                <InputsColgroup columns={shownColumns} />
                 <thead>
                   <tr>
-                    <th className="inputs-table__sortable inputs-table__type" onClick={() => toggleSort('type')} title="Type: model or programme">{sort.col === 'type' ? sortArrow(true, sort.dir).trim() : ''}</th>
-                    <th className="inputs-table__sortable" onClick={() => toggleSort('name')}>Name{sortArrow(sort.col === 'name', sort.dir)}</th>
-                    <th className="inputs-table__sortable inputs-table__centre" onClick={() => toggleSort('items')} title="Number of elements (models) or activities (programmes)">Items{sortArrow(sort.col === 'items', sort.dir)}</th>
-                    <th className="inputs-table__centre" title="Models: the lowest and highest X, Y, Z of the model (project axes, metres)">Min / max XYZ (m)</th>
-                    <th className="inputs-table__sortable inputs-table__centre" onClick={() => toggleSort('size')}>File size{sortArrow(sort.col === 'size', sort.dir)}</th>
-                    <th style={{ textAlign: 'right', width: 1 }}>Action</th>
+                    {shownColumns.map((col) => headerCell(col))}
+                    <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sections.flatMap((section) => {
-                    const header = folders.length > 0 && (section.folder !== '' || section.items.length > 0)
-                      ? [<FolderHeaderRow key={`folder-${section.folder}`} folder={section.folder} count={section.items.length} colSpan={6} />]
-                      : [];
-                    return [...header, ...(collapsedFolders.includes(section.folder) && folders.length > 0 ? [] : section.items).map((row) => {
+                    const colSpan = 1 + shownColumns.length;
+                    const node = section.node;
+                    const header = !node
+                      ? []
+                      : [<GroupHeaderRow key={`group-${node.key}`} collapseKey={node.key} group={node.value} level={node.level} count={node.items.length} colSpan={colSpan} />];
+                    return [...header, ...section.items.map((row) => {
                     const { hidden } = row;
                     const p = row.programme;
                     const db = p?.db ?? null;
                     const loading = db ? dbLoading[db.id] : undefined;
                     return (
-                      <tr key={`${row.kind}-${row.key}`} style={hidden ? { opacity: 0.5 } : undefined} className={folders.length > 0 ? 'inputs-in-folder' : undefined} {...dragItemProps(row.name)}>
-                        <td className="inputs-table__type">
+                      <tr key={`${node?.key ?? ""}|${row.kind}-${row.key}`} style={hidden ? { opacity: 0.5 } : undefined} className={node ? "inputs-in-folder" : undefined}>
+                        {shownColumns.map((col) => {
+                          switch (col) {
+                            case 'type': return (<td key={col} className="inputs-table__type">
                           <img className="inputs-table__icon" src={row.kind === 'programme' ? programmeIcon : modelIcon} alt={KIND_LABEL[row.kind]} title={KIND_LABEL[row.kind]} />
-                        </td>
-                        <td>
+                        </td>);
+                        case 'name': return (<td key={col}>
                           {row.name}
                           {row.context && (
                             <span className="source-chip" title="Site context mesh: not part of 4D. Move it (metres, project axes) to line it up with the models.">
@@ -557,32 +695,52 @@ function InputsPage() {
                           ) : (
                             dbOpen && <span className="source-chip source-chip--file" title="Loaded from a file before the project database was open, so not in it">file only</span>
                           ))}
+                          {row.stored && !row.unloaded && <span className="source-chip" title="Kept in the project database's model store">in database</span>}
+                          {row.stored && !row.stored.cached && <span className="source-chip source-chip--file" title="No converted copy yet: opening it converts the IFC (the copy is kept for next time)">converts the IFC</span>}
                           {loading !== undefined && <span className="source-chip source-chip--busy">loading {Math.round(loading * 100)}%</span>}
-                        </td>
-                        <td className="inputs-table__centre">{row.items.toLocaleString()}</td>
-                        <td className="inputs-table__bounds inputs-table__centre">
+                        </td>);
+                        case 'items': return <td key={col} className="inputs-table__centre">{row.unloaded ? '' : row.items.toLocaleString()}</td>
+                        case 'bounds': return (<td key={col} className="inputs-table__bounds inputs-table__centre">
                           {row.bounds ? (
                             <>
                               <div>Min {row.bounds.min.map((v) => v.toFixed(1)).join(', ')}</div>
                               <div>Max {row.bounds.max.map((v) => v.toFixed(1)).join(', ')}</div>
                             </>
                           ) : ''}
-                        </td>
-                        <td className="inputs-table__centre">{row.size === null ? '' : formatBytes(row.size)}</td>
+                        </td>);
+                        case 'size': return <td key={col} className="inputs-table__centre">{row.size === null ? '' : formatBytes(row.size)}</td>
+                            default: return <td key={col} className="inputs-table__detail"><DetailValue item={row.name} field={col} /></td>;
+                          }
+                        })}
                         <td style={{ textAlign: 'right' }}>
                           <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
-                            {p ? (
+                            {row.stored && inputBtns.shown('versions') && row.stored.versions > 0 && <button type="button" className="mini-btn" onClick={() => void storedActions.showVersions(row.stored!)} title={`${row.stored.versions} earlier IFC${row.stored.versions === 1 ? '' : 's'} (kept when an edit or a new file replaces the model)`}>{row.stored.versions}</button>}
+                            {row.unloaded && row.stored ? (
+                              <>
+                                {inputBtns.shown('open') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.open(row.stored!)} aria-label="Open" title="Open the model">
+                                  <IconCheckboxUnchecked width={16} height={16} />
+                                </button>}
+                                {inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
+                                  <IconDownloadFile width={16} height={16} />
+                                </button>}
+                                {inputBtns.shown('remove') && <button type="button" className="mini-btn danger" onClick={() => void storedActions.remove(row.stored!)} title="Remove from the project database's model store" aria-label="Remove from the model store">✕</button>}
+                              </>
+                            ) : (<>
+                            {row.stored && inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
+                              <IconDownloadFile width={16} height={16} />
+                            </button>}
+                            {inputBtns.shown('download') && (p ? (
                               <ProgrammeDownload canXml={!!p.db?.scenario && !!p.db?.stem} disabled={!p.db && !p.schedule} onDownload={(f) => void downloadProgramme(p, f)} />
-                            ) : <span style={{ width: 44 }} aria-hidden />}
-                            <button
+                            ) : <span style={{ width: 44 }} aria-hidden />)}
+                            {inputBtns.shown('hide') && <button
                               className="mini-btn mini-btn--icon"
                               onClick={() => (row.context ? (ctx().toggleHidden(row.key), engine.contexts.setVisible(row.key, row.hidden)) : p ? (db ? void toggleHidden(db) : toggleScheduleHidden(row.key)) : toggleModelHidden(row.key))}
                               title={hidden ? 'Show — unload without removing' : 'Hide — unload without removing'}
                               aria-label={hidden ? 'Show' : 'Hide'}
                             >
                               {hidden ? <IconEyeOff /> : <IconEye />}
-                            </button>
-                            <button
+                            </button>}
+                            {inputBtns.shown('sync') && <button
                               className="mini-btn mini-btn--icon"
                               disabled={row.context ? true : p ? !p.schedule : false}
                               onClick={() => (p ? p.schedule && syncSchedule(p.schedule.id) : syncModel(row.key))}
@@ -590,9 +748,8 @@ function InputsPage() {
                               aria-label="Sync"
                             >
                               <IconSync />
-                            </button>
-                            <FolderMenuButton name={row.name} />
-                            <button
+                            </button>}
+                            {inputBtns.shown('remove') && <button
                               className="mini-btn danger"
                               onClick={() => {
                                 const what = db ? `Delete "${row.name}" from the project database? This cannot be undone.` : `Remove "${row.name}" from the app?`;
@@ -605,7 +762,8 @@ function InputsPage() {
                               aria-label={db ? 'Delete' : 'Remove'}
                             >
                               ✕
-                            </button>
+                            </button>}
+                            </>)}
                           </div>
                         </td>
                       </tr>
@@ -614,19 +772,11 @@ function InputsPage() {
                   })}
                 </tbody>
               </table>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 6, paddingTop: 10 }}>
-                <NewFolderButton />
-                <button className="mini-btn mini-btn--icon" onClick={syncAll} title="Sync all" aria-label="Sync all"><IconSync /></button>
               </div>
             </>
           )}
-          <StoredModelsPanel />
+          <StoredModelsNotes actions={storedActions} />
         </div>
-      </div>
-      <div className="inputs-side">
-        <ProjectDbBar />
-        <ExportFieldsPanel />
-        <SeaTablePanel />
       </div>
     </div>
   );
@@ -643,6 +793,10 @@ interface InputRow {
   bounds: { min: [number, number, number]; max: [number, number, number] } | null;
   programme?: ProgrammeRow;
   context?: ContextMeshRow;
+  /** The model's entry in the project database's model store, when it has one. */
+  stored?: StoredModel;
+  /** In the model store but not loaded: opened from its row. */
+  unloaded?: boolean;
 }
 
 const KIND_LABEL = { model: 'Model', programme: 'Programme', context: 'Site context mesh (glTF)' } as const;

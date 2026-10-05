@@ -7,6 +7,18 @@ import { useModelsStore } from '../state/modelsStore';
 import type { ViewId } from '../state/colorModeStore';
 import { useViewSettingsStore, type CompareMode, type Projection, type ViewKey, type ViewPage, type ViewStyle } from '../state/viewSettingsStore';
 import { InfoTip } from './InfoTip';
+import { CollapsibleSection } from './CollapsibleSection';
+import { useViewSettingsGroups, type ViewSettingsGroup } from '../state/viewSettingsGroups';
+import { useExperimental } from '../state/appPrefsStore';
+import { DEFAULT_FLOOR_PLAN_RANGE, FLOOR_PLAN_RANGE_KEY } from '../viewer/floorPlanRange';
+import { DEFAULT_SELECTION_COLOR, SELECTION_COLORS, SELECTION_COLOR_KEY } from '../viewer/selectionColor';
+
+type SectionId = ViewSettingsGroup;
+type Sections = { isOpen: (id: SectionId) => boolean; toggle: (id: SectionId) => void };
+
+function Group({ id, title, tip, sections, children }: { id: SectionId; title: string; tip?: ReactNode; sections: Sections; children: ReactNode }) {
+  return <CollapsibleSection title={title} tip={tip} open={sections.isOpen(id)} onToggle={() => sections.toggle(id)}>{children}</CollapsibleSection>;
+}
 
 function Switch({ label, on, onChange, tip }: { label: string; on: boolean; onChange: (v: boolean) => void; tip?: ReactNode }) {
   return (
@@ -31,57 +43,62 @@ export function View3DPanel({ page, colorSection, extra }: { page: ViewPage; col
   const setCompare = (v: CompareMode) => patchPage(page, { compare: v });
   const [picked, setPicked] = useState<ViewId>('a');
   const view: ViewId = split ? picked : 'a';
+  const openGroups = useViewSettingsGroups((st) => st.open);
+  const toggleGroup = useViewSettingsGroups((st) => st.toggle);
+  const sections: Sections = { isOpen: (id) => openGroups.includes(id), toggle: toggleGroup };
+  const cutsOn = useExperimental('sectionCuts');
 
   return (
-    <div className="disp">
-      <Switch label="Split into two views" on={split} onChange={setSplit} tip="The right view keeps its own copy of the models, so it needs about as much graphics memory again." />
-      {split && (
-        <>
+    <div className="disp vsp">
+      <Group id="views" title="Views" sections={sections}>
+        <Switch label="Split into two views" on={split} onChange={setSplit} tip="The right view keeps its own copy of the models, so it needs about as much graphics memory again." />
+        {split && (
+          <>
+            <label className="disp__row">
+              <span>
+                Show views{' '}
+                <InfoTip>
+                  <p><b>Side by side:</b> the two views next to each other, cameras linked or not.</p>
+                  <p><b>Compare slider:</b> both views fill the viewer with linked cameras; drag the divider to wipe between them. Pick each view's models to compare two projects in place.</p>
+                </InfoTip>
+              </span>
+              <select value={compare} onChange={(e) => setCompare(e.target.value as CompareMode)}>
+                <option value="side">Side by side</option>
+                <option value="slider">Compare slider</option>
+              </select>
+            </label>
+            {compare === 'side' && <Switch label="Link cameras" on={linked} onChange={setLinked} />}
+            <div className="cols__views" role="tablist" style={{ margin: '8px 0 2px' }}>
+              <button type="button" role="tab" aria-selected={view === 'a'} className={view === 'a' ? 'active' : ''} onClick={() => setPicked('a')}>Left view</button>
+              <button type="button" role="tab" aria-selected={view === 'b'} className={view === 'b' ? 'active' : ''} onClick={() => setPicked('b')}>Right view</button>
+            </div>
+            <ViewModels page={page} view={view === 'a' ? 'main' : 'second'} />
+          </>
+        )}
+        {cutsOn && <FloorPlanRange />}
+        {/* View cube and north arrow are switched on / off from the toolbar's Visibility menu. */}
+        {showNorth && (
           <label className="disp__row">
             <span>
-              Show views{' '}
-              <InfoTip>
-                <p><b>Side by side:</b> the two views next to each other, cameras linked or not.</p>
-                <p><b>Compare slider:</b> both views fill the viewer with linked cameras; drag the divider to wipe between them. Pick each view's models to compare two projects in place.</p>
-              </InfoTip>
+              North arrow rotation (°){' '}
+              <InfoTip>The arrow points at north as seen from the camera — project north (+Y, the same the sun & shadows use), or turned by this many degrees clockwise, e.g. the site's true north angle. 0 = project north. Show or hide the arrow from the toolbar's eye menu.</InfoTip>
             </span>
-            <select value={compare} onChange={(e) => setCompare(e.target.value as CompareMode)}>
-              <option value="side">Side by side</option>
-              <option value="slider">Compare slider</option>
-            </select>
+            <input
+              type="number"
+              min={-360}
+              max={360}
+              step={0.5}
+              value={northRotation}
+              onChange={(e) => patchPage(page, { northRotation: Math.max(-360, Math.min(360, Number(e.target.value) || 0)) })}
+              style={{ width: 72 }}
+            />
           </label>
-          {compare === 'side' && <Switch label="Link cameras" on={linked} onChange={setLinked} />}
-          <div className="cols__views" role="tablist" style={{ margin: '8px 0 2px' }}>
-            <button type="button" role="tab" aria-selected={view === 'a'} className={view === 'a' ? 'active' : ''} onClick={() => setPicked('a')}>Left view</button>
-            <button type="button" role="tab" aria-selected={view === 'b'} className={view === 'b' ? 'active' : ''} onClick={() => setPicked('b')}>Right view</button>
-          </div>
-        </>
-      )}
+        )}
+      </Group>
 
-      {colorSection?.(view)}
-      {split && <ViewModels page={page} view={view === 'a' ? 'main' : 'second'} />}
-      <DisplaySettings page={page} view={view === 'a' ? 'main' : 'second'} />
-
-      {/* View cube and north arrow are switched on / off from the toolbar's Visibility menu. */}
-      {showNorth && <div className="cols__heading"><span>All views</span></div>}
-      {showNorth && (
-        <label className="disp__row">
-          <span>
-            North arrow rotation (°){' '}
-            <InfoTip>The arrow points at north as seen from the camera — project north (+Y, the same the sun & shadows use), or turned by this many degrees clockwise, e.g. the site's true north angle. 0 = project north. Show or hide the arrow from the toolbar's eye menu.</InfoTip>
-          </span>
-          <input
-            type="number"
-            min={-360}
-            max={360}
-            step={0.5}
-            value={northRotation}
-            onChange={(e) => patchPage(page, { northRotation: Math.max(-360, Math.min(360, Number(e.target.value) || 0)) })}
-            style={{ width: 72 }}
-          />
-        </label>
-      )}
-      {extra}
+      {colorSection && <Group id="colour" title="Colour" sections={sections}>{colorSection(view)}</Group>}
+      <DisplaySettings page={page} view={view === 'a' ? 'main' : 'second'} sections={sections} />
+      {extra && <Group id="page" title="Gantt & playback" sections={sections}>{extra}</Group>}
     </div>
   );
 }
@@ -126,68 +143,145 @@ function ViewModels({ page, view }: { page: ViewPage; view: ViewKey }) {
   );
 }
 
-function DisplaySettings({ page, view }: { page: ViewPage; view: ViewKey }) {
+function DisplaySettings({ page, view, sections }: { page: ViewPage; view: ViewKey; sections: Sections }) {
   const s = useViewSettingsStore((st) => st.pages[page][view]);
   const patch = useViewSettingsStore((st) => st.patch);
+  const cutsOn = useExperimental('sectionCuts');
   const set = <K extends keyof typeof s>(k: K, v: (typeof s)[K]) => patch(page, view, { [k]: v });
 
   return (
     <>
-      <div className="cols__heading"><span>Display</span></div>
-      <label className="disp__row">
-        <span>Camera</span>
-        <select value={s.projection} onChange={(e) => set('projection', e.target.value as Projection)}>
-          <option value="Perspective">Perspective</option>
-          <option value="Orthographic">Orthographic</option>
-        </select>
-      </label>
-      <label className="disp__row">
-        <span>View style</span>
-        <select value={s.style} onChange={(e) => set('style', e.target.value as ViewStyle)}>
-          <option value="COLOR">Color</option>
-          <option value="PEN">Pen</option>
-          <option value="PEN_SHADOWS">Pen shadows</option>
-          <option value="COLOR_PEN">Color pen</option>
-          <option value="COLOR_SHADOWS">Color shadows</option>
-          <option value="COLOR_PEN_SHADOWS">Color pen shadows</option>
-        </select>
-      </label>
-      <Switch label="Ambient occlusion" on={s.ambientOcclusion} onChange={(v) => set('ambientOcclusion', v)} />
-      <Switch label="Anti-aliasing" on={s.antiAliasing} onChange={(v) => set('antiAliasing', v)} />
-      <Switch label="Edge lines" on={s.edgeLines} onChange={(v) => set('edgeLines', v)} />
-      {s.edgeLines && (
+      <Group id="display" title="Display" sections={sections}>
         <label className="disp__row">
-          <span>Edge width ({s.edgeWidth.toFixed(1)})</span>
-          <input type="range" min={0.5} max={4} step={0.1} value={s.edgeWidth} onChange={(e) => set('edgeWidth', Number(e.target.value))} />
+          <span>Camera</span>
+          <select value={s.projection} onChange={(e) => set('projection', e.target.value as Projection)}>
+            <option value="Perspective">Perspective</option>
+            <option value="Orthographic">Orthographic</option>
+          </select>
         </label>
-      )}
-      <RenderQualitySettings quality={s.quality} onChange={(quality) => set('quality', quality)} />
+        <label className="disp__row">
+          <span>View style</span>
+          <select value={s.style} onChange={(e) => set('style', e.target.value as ViewStyle)}>
+            <option value="COLOR">Color</option>
+            <option value="PEN">Pen</option>
+            <option value="PEN_SHADOWS">Pen shadows</option>
+            <option value="COLOR_PEN">Color pen</option>
+            <option value="COLOR_SHADOWS">Color shadows</option>
+            <option value="COLOR_PEN_SHADOWS">Color pen shadows</option>
+          </select>
+        </label>
+        <Switch label="Ambient occlusion" on={s.ambientOcclusion} onChange={(v) => set('ambientOcclusion', v)} />
+        <Switch label="Anti-aliasing" on={s.antiAliasing} onChange={(v) => set('antiAliasing', v)} />
+        <Switch label="Edge lines" on={s.edgeLines} onChange={(v) => set('edgeLines', v)} />
+        {s.edgeLines && (
+          <>
+            <label className="disp__row">
+              <span>Edge width ({s.edgeWidth.toFixed(1)})</span>
+              <input type="range" min={0.5} max={4} step={0.1} value={s.edgeWidth} onChange={(e) => set('edgeWidth', Number(e.target.value))} />
+            </label>
+            <label className="disp__row">
+              <span>Edge colour</span>
+              <input type="color" value={s.quality?.edgeColor || '#2a2a2a'} onChange={(e) => set('quality', { ...s.quality, edgeColor: e.target.value })} />
+            </label>
+          </>
+        )}
+        <label className="disp__row">
+          <span>Background</span>
+          <input type="color" value={s.background} onChange={(e) => set('background', e.target.value)} />
+        </label>
+      </Group>
+      <Group id="quality" title="Render quality" tip="Occlusion, resolution and edges of this view. Lower values are faster on big models; Presentation is for stills and recording." sections={sections}>
+        <RenderQualitySettings quality={s.quality} onChange={(quality) => set('quality', quality)} />
+      </Group>
       {view === 'main' && (
-        <>
+        <Group id="outline" title="Selection" tip="How selected objects look: the colour they are painted in, and optionally a line around them. Main view." sections={sections}>
+          <SelectionColour />
           <OutlineControls outline={s.outline} onChange={(outline) => set('outline', outline)} />
+        </Group>
+      )}
+      {view === 'main' && cutsOn && (
+        <Group id="cuts" title="Section cuts & plans (experimental)" tip="Section cuts fill and outline what a section plane cuts through, like a drawn section: one fill, or a colour per kind of element. Plan views are a floor plan per storey, cut at its level." sections={sections}>
           <SectionStyleControls style={s.sectionStyle} onChange={(sectionStyle) => set('sectionStyle', sectionStyle)} />
           <PlanViews />
-        </>
+        </Group>
       )}
-      <label className="disp__row">
-        <span>Background</span>
-        <input type="color" value={s.background} onChange={(e) => set('background', e.target.value)} />
-      </label>
-      <RealisticSettings
-        sun={!!s.realistic}
-        onSun={(v) => set('realistic', v)}
-        concrete={s.concrete ?? !!s.realistic}
-        onConcrete={(v) => set('concrete', v)}
-        sky={!!s.sky}
-        onSky={(v) => set('sky', v)}
-        materials={!!s.materials}
-        onMaterials={(v) => set('materials', v)}
-      />
+      <Group id="realistic" title="Realistic" sections={sections}>
+        <RealisticSettings
+          sun={!!s.realistic}
+          onSun={(v) => set('realistic', v)}
+          concrete={s.concrete ?? !!s.realistic}
+          onConcrete={(v) => set('concrete', v)}
+          sky={!!s.sky}
+          onSky={(v) => set('sky', v)}
+          materials={!!s.materials}
+          onMaterials={(v) => set('materials', v)}
+        />
+      </Group>
     </>
   );
 }
 
 const fmt = (n: number) => (Math.round(n * 100) / 100).toString();
+
+/** How far a floor plan looks down from its storey (m); applies to plan views opened from now on. */
+function FloorPlanRange() {
+  const engine = useViewerEngine();
+  const [range, setRange] = useState(() => {
+    try {
+      return Number(localStorage.getItem(FLOOR_PLAN_RANGE_KEY)) || DEFAULT_FLOOR_PLAN_RANGE;
+    } catch {
+      return DEFAULT_FLOOR_PLAN_RANGE;
+    }
+  });
+  const change = (v: number) => {
+    const next = Math.min(20, Math.max(1, v || 1));
+    setRange(next);
+    try {
+      localStorage.setItem(FLOOR_PLAN_RANGE_KEY, String(next));
+    } catch {
+      // not remembered
+    }
+    engine.setFloorPlanRange(next);
+  };
+  return (
+    <label className="disp__row">
+      <span>Floor plan range (m) <InfoTip>How far a floor plan looks down from its storey's level. Applies to plan views opened from now on.</InfoTip></span>
+      <input type="number" min={1} max={20} step={1} value={range} onChange={(e) => change(Number(e.target.value))} style={{ width: 72 }} />
+    </label>
+  );
+}
+
+/** The colour of selected objects (one for the whole viewer). */
+function SelectionColour() {
+  const engine = useViewerEngine();
+  const [color, setColor] = useState(() => {
+    try {
+      return localStorage.getItem(SELECTION_COLOR_KEY) ?? DEFAULT_SELECTION_COLOR;
+    } catch {
+      return DEFAULT_SELECTION_COLOR;
+    }
+  });
+  const choose = (hex: string) => {
+    setColor(hex);
+    try {
+      localStorage.setItem(SELECTION_COLOR_KEY, hex);
+    } catch {
+      // not remembered
+    }
+    void engine.ready.then(() => engine.setSelectionColor(hex));
+  };
+  return (
+    <div className="settings-field">
+      <span className="settings-field__label">Selection colour <InfoTip>The colour selected objects are painted in. The outline below adds a line around them.</InfoTip></span>
+      <div className="sel-colors">
+        {SELECTION_COLORS.map((c) => (
+          <button key={c.hex} type="button" className={`sel-colors__swatch${color.toLowerCase() === c.hex ? ' active' : ''}`} style={{ background: c.hex }} title={c.label} aria-label={c.label} onClick={() => choose(c.hex)} />
+        ))}
+        <input type="color" value={color} onChange={(e) => choose(e.target.value)} title="Custom colour" />
+      </div>
+    </div>
+  );
+}
 
 /** Outline of the selection: a line around it and a tinted fill (the Outliner). */
 function OutlineControls({ outline, onChange }: { outline: Partial<OutlineSettings> | undefined; onChange: (o: Partial<OutlineSettings>) => void }) {
@@ -195,16 +289,10 @@ function OutlineControls({ outline, onChange }: { outline: Partial<OutlineSettin
   const patch = (p: Partial<OutlineSettings>) => onChange({ ...outline, ...p });
   return (
     <>
-      <div className="cols__heading"><span>Selection outline <InfoTip>Draws a line around the selected objects and tints them, without changing their own colours. Main view.</InfoTip></span></div>
       <Switch label="Outline the selection" on={o.enabled} onChange={(v) => patch({ enabled: v })} />
       {o.enabled && (
         <>
           <label className="disp__row"><span>Line colour</span><input type="color" value={o.color} onChange={(e) => patch({ color: e.target.value })} /></label>
-          <label className="disp__row"><span>Fill colour</span><input type="color" value={o.fillColor} onChange={(e) => patch({ fillColor: e.target.value })} /></label>
-          <label className="disp__row">
-            <span>Fill opacity ({Math.round(o.fillOpacity * 100)}%)</span>
-            <input type="range" min={0} max={1} step={0.05} value={o.fillOpacity} onChange={(e) => patch({ fillOpacity: Number(e.target.value) })} />
-          </label>
           <label className="disp__row">
             <span>Line width ({o.thickness})</span>
             <input type="range" min={1} max={5} step={0.5} value={o.thickness} onChange={(e) => patch({ thickness: Number(e.target.value) })} />
@@ -221,7 +309,7 @@ function SectionStyleControls({ style, onChange }: { style: Partial<SectionStyle
   const patch = (p: Partial<SectionStyle>) => onChange({ ...style, ...p });
   return (
     <>
-      <div className="cols__heading"><span>Section cuts <InfoTip>Fills and outlines what a section plane cuts through, like a drawn section: one fill, or a colour per kind of element. Floor plans use the per-kind colours.</InfoTip></span></div>
+      <div className="cols__heading"><span>Section cuts</span></div>
       <Switch label="Styled cuts" on={c.enabled} onChange={(v) => patch({ enabled: v })} />
       {c.enabled && (
         <>
@@ -293,13 +381,15 @@ function RenderQualitySettings({ quality, onChange }: { quality: Partial<RenderQ
   );
   return (
     <>
-      <div className="cols__heading"><span>Render quality <InfoTip>Occlusion, resolution and edges of this view. Lower values are faster on big models; Presentation is for stills and recording.</InfoTip></span></div>
       <div className="disp__row">
         <span>Preset</span>
-        <span style={{ display: 'flex', gap: 4 }}>
-          {QUALITY_PRESETS.map((p) => (
-            <button key={p.id} type="button" className="mini-btn" title={p.tip} onClick={() => onChange({ ...quality, ...p.values })}>{p.label}</button>
-          ))}
+        <span className="segmented-choice" role="group" aria-label="Quality preset">
+          {QUALITY_PRESETS.map((p) => {
+            const on = (Object.keys(p.values) as (keyof RenderQuality)[]).every((k) => q[k] === p.values[k]);
+            return (
+              <button key={p.id} type="button" className={on ? 'active' : ''} aria-pressed={on} title={p.tip} onClick={() => onChange({ ...quality, ...p.values })}>{p.label}</button>
+            );
+          })}
         </span>
       </div>
       {slider('Occlusion radius', 'aoRadius', 0.1, 2, 0.05, 'How far the shading around corners reaches')}
@@ -321,10 +411,6 @@ function RenderQualitySettings({ quality, onChange }: { quality: Partial<RenderQ
           </select>
         </label>
       )}
-      <label className="disp__row">
-        <span>Edge colour</span>
-        <input type="color" value={q.edgeColor || '#2a2a2a'} onChange={(e) => patch({ edgeColor: e.target.value })} />
-      </label>
     </>
   );
 }
@@ -343,9 +429,9 @@ function RealisticSettings({ sun, onSun, concrete, onConcrete, sky, onSky, mater
 }) {
   const r = useViewSettingsStore((st) => st.realism);
   const setR = useViewSettingsStore((st) => st.setRealism);
+  const materialsOn = useExperimental('realisticMaterials');
   return (
     <>
-      <div className="cols__heading"><span>Realistic</span></div>
       <Switch label="Sun & shadows" on={sun} onChange={onSun} tip="A fixed sun: shadows stay put through the 4D playback. Left / main view only." />
       {sun && (
         <>
@@ -360,8 +446,8 @@ function RealisticSettings({ sun, onSun, concrete, onConcrete, sky, onSky, mater
           <Switch label="Real-time sky" on={sky} onChange={onSky} tip="A sky behind the models that follows the sun: the horizon turns warm as the sun gets low, and the shaded sides and shiny surfaces pick up its colours." />
         </>
       )}
-      <Switch label="Realistic materials" on={materials} onChange={onMaterials} tip="Brick, glass, timber, metal, stone, grass, asphalt... drawn with their own surface, matched from the names in the model (its IFC materials, element names and classes). Glass is see-through and, like metal, reflects the sky. Change a match below." />
-      {materials && <MaterialMapping />}
+      {materialsOn && <Switch label="Realistic materials" on={materials} onChange={onMaterials} tip="Brick, glass, timber, metal, stone, grass, asphalt... drawn with their own surface, matched from the names in the model (its IFC materials, element names and classes). Glass is see-through and, like metal, reflects the sky. Change a match below." />}
+      {materialsOn && materials && <MaterialMapping />}
       <Switch label="Concrete" on={concrete} onChange={onConcrete} />
       {concrete && (
         <>

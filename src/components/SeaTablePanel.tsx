@@ -13,7 +13,7 @@ import { InfoTip } from './InfoTip';
 /** Inputs › SeaTable (model data): push the elements of chosen IFC classes, with the properties the
     Properties table shows, into SeaTable's "Elements" table; pull the columns its users add back as
     custom fields ("Custom" property group), on a button or whenever a model loads. */
-export function SeaTablePanel() {
+export function SeaTablePanel({ bare = false }: { bare?: boolean } = {}) {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
@@ -23,7 +23,8 @@ export function SeaTablePanel() {
   const message = useSeaTableUiStore((s) => s.message);
   const hiddenPsets = usePropertyVisibilityStore((s) => s.hiddenPsets);
   const hiddenProps = usePropertyVisibilityStore((s) => s.hiddenProps);
-  const [open, setOpen] = usePersistedState('models.seatablePanelOpen', true);
+  const [openState, setOpen] = usePersistedState('models.seatablePanelOpen', true);
+  const open = bare || openState;
   const [status, setStatus] = useState<SeaTableStatus | null>(null);
 
   const refreshStatus = () => void getStatus().then(setStatus).catch((e) => setStatus({ configured: false, reachable: false, envFile: '', error: String(e) }));
@@ -53,8 +54,8 @@ export function SeaTablePanel() {
   const elementsWithFields = Object.keys(values).length;
 
   return (
-    <div className="inputs-panel seatable-panel">
-      <div className="inputs-panel__header">
+    <div className={bare ? "seatable-panel" : "inputs-panel seatable-panel"}>
+      {!bare && <div className="inputs-panel__header">
         <button type="button" className="export-fields__toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           <IconSectionChevron className="section-chevron" />
           <span>SeaTable (model data)</span>
@@ -64,9 +65,9 @@ export function SeaTablePanel() {
           <p><b>Pull</b> brings back every column you add to that table yourself (use names without a dot) as <b>Custom</b> properties of the elements: in Properties, the Data table, colour, filters, search sets and link groups.</p>
         </InfoTip>
         <span className="inputs-panel__count" title="Elements with custom fields">{elementsWithFields}</span>
-      </div>
+      </div>}
       {open && (
-        <div className="inputs-panel__body seatable-panel__body">
+        <div className={bare ? "seatable-panel__body" : "inputs-panel__body seatable-panel__body"}>
           <div className="seatable-panel__status">
             {status === null ? 'Checking SeaTable…' : ok ? <>Connected to <b>{status.address}</b>{status.table ? ` · Elements table: ${status.columns} columns` : ' · no Elements table yet (the first push makes it)'}</> : <span className="seatable-panel__bad">{status.error ?? 'SeaTable is not reachable.'}</span>}
             <button type="button" className="cols__link" onClick={refreshStatus}>Check again</button>

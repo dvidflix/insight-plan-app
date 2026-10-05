@@ -34,12 +34,15 @@ import { View3DPanel } from '../components/View3DPanel';
 import { NavisworksExport } from '../components/sequence/ExportPanel';
 import { MediaExport } from '../components/sequence/MediaExport';
 import { SidePane, type SidePaneTab } from '../components/SidePane';
-import { IconCamera, IconCube, IconList, IconSchema, IconSearch, IconTag, IconTree, IconViewTable } from '../components/icons';
+import { IconChevronLeft, IconCamera, IconClose, IconCube, IconList, IconSchema, IconSearch, IconTree, IconViewTable } from '../components/icons';
 import { DataTablePanel } from '../components/DataTablePanel';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { useDataTableStore } from '../state/dataTableStore';
 import { SearchSetsPanel } from '../components/SearchSetsPanel';
+import { TopicsPanel } from '../components/TopicsPanel';
+import { useTopicsStore } from '../state/topicsStore';
 import { CollapsibleSection, useOpenSections } from '../components/CollapsibleSection';
+import { useAppPrefsStore } from '../state/appPrefsStore';
 import { PropertiesTab, RelatedTab, SelectionTreeTab, ViewpointsPanel } from '../components/ModelConfigPanel';
 import { useViewSettingsStore } from '../state/viewSettingsStore';
 import { useColorModeStore, type ColorModeSettings } from '../state/colorModeStore';
@@ -57,7 +60,7 @@ import type { Activity, ScheduleModel } from '../schedule/types';
 import { InfoTip } from '../components/InfoTip';
 import { JumpToDate } from '../components/sequence/JumpToDate';
 
-type LinkTab = 'groups' | 'tree' | 'properties' | 'search' | 'datatable' | 'view3d' | 'label' | 'models';
+type LinkTab = 'groups' | 'tree' | 'properties' | 'search' | 'datatable' | 'view3d' | 'models';
 
 /** A stage with an unset color/opacity falls back to the given bookend
     stage — e.g. leaving "Active start" blank inherits "Start" rather than
@@ -163,6 +166,11 @@ export function SequencePanel() {
     useSidePaneStore.getState().setSettings(false);
   }, [dataTableConfigRequest]);
   const modelPanels = useSequenceUiStore((s) => s.modelPanels);
+  const experimental = useAppPrefsStore((s) => s.experimental);
+  const topicCount = useTopicsStore((s) => s.topics.length);
+  // A topic marker clicked in the 3D view opens the 4D tab's Topics section.
+  const topicOpenRequest = useTopicsStore((s) => s.openRequest);
+  const topicSeen = useRef(topicOpenRequest);
   const fourD = useOpenSections<'jump' | 'groups' | 'appearance' | 'taskField' | 'why'>('sequence.4dSections', ['jump', 'groups', 'appearance']);
   const basis = useSequenceTimelineStore((s) => s.basis);
   const setBasis = useSequenceTimelineStore((s) => s.setBasis);
@@ -180,8 +188,21 @@ export function SequencePanel() {
   const ignoreAppearance = useIgnoreTimelinerStore((s) => s.ignoreAppearance);
   const setIgnoreAppearance = useIgnoreTimelinerStore((s) => s.setIgnoreAppearance);
   const [unassignedMode, setUnassignedMode] = usePersistedState<'original' | 'red'>('sequence.unassignedMode', 'original');
-  const [rightTab, setRightTab] = usePersistedState<'gantt' | 'tasks' | 'scenarios'>('sequence.rightTab', 'gantt');
+  const [rightTab, setRightTab] = usePersistedState<'gantt' | 'tasks' | 'scenarios' | 'topics'>('sequence.rightTab', 'gantt');
   const [ganttCollapsed, setGanttCollapsed] = usePersistedState('sequence.ganttCollapsed', false);
+  // The Topics tab goes with the experimental BCF option.
+  useEffect(() => {
+    if (rightTab === 'topics' && !experimental.bcf) setRightTab('gantt');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rightTab, experimental.bcf]);
+  useEffect(() => {
+    if (topicOpenRequest === topicSeen.current) return;
+    topicSeen.current = topicOpenRequest;
+    if (!experimental.bcf) return;
+    setGanttCollapsed(false);
+    setRightTab('topics');
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topicOpenRequest]);
   // Bumped by the "Refresh graphics" buttons to force the driving effect to
   // re-apply visibility/colors/opacity to the viewer on demand.
   const [refreshTick, setRefreshTick] = useState(0);
@@ -722,7 +743,7 @@ export function SequencePanel() {
 
   const rightTabs = (
     <div className="config-tabs seq-righttabs" role="tablist">
-      {([['gantt', 'Gantt'], ['tasks', 'Tasks'], ['scenarios', 'Scenarios']] as const).map(([id, label]) => (
+      {([['gantt', 'Gantt'], ['tasks', 'Tasks'], ['scenarios', 'Scenarios'], ...(experimental.bcf ? [['topics', `Topics${topicCount ? ` (${topicCount})` : ''}`] as const] : [])] as const).map(([id, label]) => (
         <button key={id} type="button" role="tab" aria-selected={rightTab === id} className={`config-tab${rightTab === id ? ' active' : ''}`} onClick={() => setRightTab(id)}>{label}</button>
       ))}
     </div>
@@ -731,23 +752,37 @@ export function SequencePanel() {
   // No programme (or model) yet: Scenarios still works — it is how a
   // building's first programme gets generated.
   const collapsedStrip = (
-    <button
-      type="button"
-      onClick={() => setGanttCollapsed(false)}
-      title="Show Gantt panel"
-      style={{ width: 24, flexShrink: 0, background: 'var(--bg-elevated)', border: 'none', borderLeft: '1px solid var(--border)', cursor: 'pointer', color: 'var(--text-dim)' }}
-    >
-      ‹
+    <button type="button" className="pane-reveal" onClick={() => setGanttCollapsed(false)} title="Show Gantt panel" aria-label="Show Gantt panel">
+      <IconChevronLeft />
     </button>
   );
   const collapseButton = (
-    <button className="icon-btn" type="button" onClick={() => setGanttCollapsed(true)} title="Hide panel" style={{ marginLeft: 'auto' }}>{'›'}</button>
+    <button className="icon-btn pane-hide" type="button" onClick={() => setGanttCollapsed(true)} title="Hide panel" aria-label="Hide panel" style={{ marginLeft: 'auto' }}><IconClose /></button>
   );
 
   if (!model || models.length === 0) {
-    if (ganttCollapsed) return collapsedStrip;
+    // The side pane's tabs that need no programme still show (a model alone, or nothing loaded).
+    const emptyTabs = [
+      { id: 'models', label: '3D & Related', icon: <IconCube /> },
+      { id: 'properties', label: 'Properties', icon: <IconList /> },
+      { id: 'tree', label: 'Selection Tree', icon: <IconTree /> },
+      { id: 'search', label: 'Search sets', icon: <IconSearch /> },
+      { id: 'datatable', label: 'Data table', icon: <IconViewTable /> },
+    ] satisfies SidePaneTab<LinkTab>[];
+    const emptyActive = emptyTabs.some((t) => t.id === linkTab) ? linkTab : 'models';
+    const emptyPane = (
+      <SidePane timelineSettings tabs={emptyTabs} active={emptyActive} onSelect={setLinkTab} bodyClassName="config-panel__body model-config__body">
+        {emptyActive === 'models' && <RelatedTab page="sequence" />}
+        {emptyActive === 'tree' && <SelectionTreeTab />}
+        {emptyActive === 'search' && <SearchSetsPanel />}
+        {emptyActive === 'datatable' && <DataTablePanel />}
+        {emptyActive === 'properties' && <PropertiesTab />}
+      </SidePane>
+    );
+    if (ganttCollapsed) return <>{collapsedStrip}{emptyPane}</>;
     return (
       <>
+        {emptyPane}
         <ResizeHandle onMouseDown={ganttWidth.startDrag(true)} />
         <aside className="config-panel seq-panel" style={{ width: ganttWidth.width, minWidth: 0 }}>
           <div className="filter-sidebar-header seq-righthead">
@@ -757,6 +792,8 @@ export function SequencePanel() {
           <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
             {rightTab === 'scenarios' ? (
               <ScenarioTabContent onOpen={jumpToPourStart} />
+            ) : rightTab === 'topics' && experimental.bcf ? (
+              <div className="tpc-pad" style={{ overflow: 'auto' }}><TopicsPanel /></div>
             ) : (
               <div style={{ padding: 12, color: 'var(--text-dim)' }}>
                 Load both an IFC model and a P6 programme in Inputs to start 4D sequencing — or generate one from the Scenarios tab.
@@ -788,6 +825,7 @@ export function SequencePanel() {
             </div>
             <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
               {rightTab === 'scenarios' && <ScenarioTabContent onOpen={jumpToPourStart} />}
+              {rightTab === 'topics' && experimental.bcf && <div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div>}
               {rightTab === 'tasks' && ganttColumnCtx && (
                 <TasksPanel model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} selectedId={ganttSelectedId} getColor={taskColorOf ?? undefined} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
               )}
@@ -810,15 +848,15 @@ export function SequencePanel() {
       )}
 
       <SidePane
+        timelineSettings
         tabs={[
-          { id: 'groups', label: '4D', icon: <IconSchema /> },
           { id: 'models', label: '3D & Related', icon: <IconCube /> },
           { id: 'properties', label: 'Properties', icon: <IconList /> },
           { id: 'tree', label: 'Selection Tree', icon: <IconTree /> },
           { id: 'search', label: 'Search sets', icon: <IconSearch /> },
           { id: 'datatable', label: 'Data table', icon: <IconViewTable /> },
           { id: 'view3d', label: 'Views', icon: <IconCamera /> },
-          { id: 'label', label: 'Label', icon: <IconTag /> },
+          { id: 'groups', label: '4D', icon: <IconSchema /> },
         ] satisfies SidePaneTab<LinkTab>[]}
         active={linkTab}
         onSelect={setLinkTab}
@@ -836,7 +874,7 @@ export function SequencePanel() {
                   <CollapsibleSection title={`Appearance Profiles (${appearanceProfiles.length})`} open={fourD.isOpen('appearance')} onToggle={() => fourD.toggle('appearance')} flush>
                     <AppearancePanel onRefresh={refreshGraphics} />
                   </CollapsibleSection>
-                  <CollapsibleSection title="Why is it shown?" open={fourD.isOpen('why')} onToggle={() => fourD.toggle('why')} tip={<p>Select an object in the 3D view: this lists every task that links to it, which Link Group each comes from, where each stands at the current step, and which one controls the object (and so whether it is shown, hidden or recoloured).</p>}>
+                  {experimental.whyShown && <CollapsibleSection title="Why is it shown?" open={fourD.isOpen('why')} onToggle={() => fourD.toggle('why')} tip={<p>Select an object in the 3D view: this lists every task that links to it, which Link Group each comes from, where each stands at the current step, and which one controls the object (and so whether it is shown, hidden or recoloured).</p>}>
                     <WhyShown
                       groupResults={groupResultsByModel}
                       model={model}
@@ -848,10 +886,10 @@ export function SequencePanel() {
                       appearanceById={appearanceById}
                       ignoreAppearance={ignoreAppearance}
                     />
-                  </CollapsibleSection>
-                  <CollapsibleSection title="Task fields from search sets" open={fourD.isOpen('taskField')} onToggle={() => fourD.toggle('taskField')}>
+                  </CollapsibleSection>}
+                  {experimental.taskFields && <CollapsibleSection title="Task fields from search sets" open={fourD.isOpen('taskField')} onToggle={() => fourD.toggle('taskField')}>
                     <TaskFieldFromSets results={groupResultsByModel} />
-                  </CollapsibleSection>
+                  </CollapsibleSection>}
                   <div className="disp seq-ignore">
                     <div className="disp__row">
                       <span>
@@ -872,9 +910,23 @@ export function SequencePanel() {
                       </button>
                     </div>
                   </div>
+                  <div className="disp seq-ignore">
+                    <div className="disp__row">
+                      <span>Show unassigned objects</span>
+                      <button type="button" role="switch" aria-checked={showUnassigned} className={`switch${showUnassigned ? ' on' : ''}`} onClick={() => setShowUnassigned((v) => !v)}>
+                        <span className="switch__thumb" />
+                      </button>
+                    </div>
+                    {showUnassigned && (
+                      <div className="segmented-choice" style={{ marginTop: 6 }}>
+                        <button className={unassignedMode === 'original' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('original')}>Original colors</button>
+                        <button className={unassignedMode === 'red' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('red')}>Highlighted red</button>
+                      </div>
+                    )}
+                  </div>
+                  <LabelPanel />
                 </div>
               )}
-              {linkTab === 'label' && <LabelPanel />}
               {linkTab === 'models' && <RelatedTab page="sequence" />}
               {linkTab === 'tree' && <SelectionTreeTab />}
               {linkTab === 'search' && <SearchSetsPanel />}
@@ -895,21 +947,7 @@ export function SequencePanel() {
                             <span className="switch__thumb" />
                           </button>
                         </div>
-  
-                        <div className="cols__heading"><span>Unassigned objects</span></div>
-                        <div className="disp__row">
-                          <span>Show unassigned objects</span>
-                          <button type="button" role="switch" aria-checked={showUnassigned} className={`switch${showUnassigned ? ' on' : ''}`} onClick={() => setShowUnassigned((v) => !v)}>
-                            <span className="switch__thumb" />
-                          </button>
-                        </div>
-                        {showUnassigned && (
-                          <div className="segmented-choice" style={{ marginTop: 6 }}>
-                            <button className={unassignedMode === 'original' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('original')}>Original colors</button>
-                            <button className={unassignedMode === 'red' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('red')}>Highlighted red</button>
-                          </div>
-                        )}
-  
+
                         <div className="cols__heading">
                           <span>
                             Playback{' '}
@@ -929,7 +967,7 @@ export function SequencePanel() {
                 );
                 const extra = [
                   { label: 'Output', content: <MediaExport schedule={model} /> },
-                  { label: 'Navisworks TimeLiner', content: <NavisworksExport schedule={model} models={models} basis={basis} /> },
+                  ...(experimental.navisworks ? [{ label: 'Navisworks TimeLiner', content: <NavisworksExport schedule={model} models={models} basis={basis} /> }] : []),
                 ];
                 return modelPanels ? <ViewpointsPanel element={modelPanels.views} settings={settings} extra={extra} /> : settings;
               })()}
