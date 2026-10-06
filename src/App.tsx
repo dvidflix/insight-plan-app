@@ -31,7 +31,7 @@ import { useAppPrefsStore } from './state/appPrefsStore';
 import { useRecordingStore } from './state/recordingStore';
 import { DbStatusChip } from './components/ProjectDbPanel';
 import { UpdateChip } from './components/UpdateChip';
-import { fileSizeOf, rememberFileSize, rememberModelFile } from './state/modelFiles';
+import { fileSizeOf, rememberFileSize, rememberModelFile, uploadOf } from './state/modelFiles';
 import { useModelPlacementStore } from './state/modelPlacementStore';
 import modelIcon from './icons/BuildingSMART_RGB_Icon_colour_v3.jpg';
 import programmeIcon from './icons/window_15139098.png';
@@ -324,17 +324,22 @@ function InputsPage() {
   const rows = useMemo<InputRow[]>(() => {
     const storedBy = new Map(storedModels.map((m) => [m.name, m]));
     const loadedNames = new Set(models.map((m) => m.name));
+    // Uploaded / version: a stored model has its store's time and earlier-IFC count; the rest, the drops remembered here.
+    const dropped = (name: string) => { const u = uploadOf(name); return { uploaded: u?.at ?? null, version: u?.version ?? null }; };
+    const storedStamp = (m: StoredModel) => ({ uploaded: Date.parse(m.updatedAt) || null, version: m.versions + 1 });
     const all: InputRow[] = [
-      ...models.map((m): InputRow => ({ kind: 'model', key: m.modelId, name: m.name, items: m.elementCount, hidden: hiddenModelIds.has(m.modelId), size: fileSizeOf(m.name) ?? storedBy.get(m.name)?.ifcSize ?? null, bounds: boxes.get(m.modelId) ?? null, stored: storedBy.get(m.name) })),
-      ...storedModels.filter((m) => !loadedNames.has(m.name)).map((m): InputRow => ({ kind: 'model', key: `stored:${m.name}`, name: m.name, items: 0, hidden: false, size: m.ifcSize, bounds: null, stored: m, unloaded: true })),
-      ...contextMeshes.map((c): InputRow => ({ kind: 'context', key: c.id, name: c.name, items: c.triangles, hidden: c.hidden, size: fileSizeOf(c.name), bounds: c.bounds ? { min: c.bounds.min.map((v, i) => v + [c.offset.x, c.offset.y, c.offset.z][i]) as [number, number, number], max: c.bounds.max.map((v, i) => v + [c.offset.x, c.offset.y, c.offset.z][i]) as [number, number, number] } : null, context: c })),
-      ...programmeRows.map((p): InputRow => ({ kind: 'programme', key: p.key, name: p.name, items: p.activities, hidden: p.hidden, size: fileSizeOf(p.db?.sourceFile ?? p.schedule?.sourceFileName ?? p.name), bounds: null, programme: p })),
+      ...models.map((m): InputRow => ({ kind: 'model', key: m.modelId, name: m.name, items: m.elementCount, hidden: hiddenModelIds.has(m.modelId), size: fileSizeOf(m.name) ?? storedBy.get(m.name)?.ifcSize ?? null, bounds: boxes.get(m.modelId) ?? null, ...(storedBy.has(m.name) ? storedStamp(storedBy.get(m.name)!) : dropped(m.name)), stored: storedBy.get(m.name) })),
+      ...storedModels.filter((m) => !loadedNames.has(m.name)).map((m): InputRow => ({ kind: 'model', key: `stored:${m.name}`, name: m.name, items: 0, hidden: false, size: m.ifcSize, bounds: null, ...storedStamp(m), stored: m, unloaded: true })),
+      ...contextMeshes.map((c): InputRow => ({ kind: 'context', key: c.id, name: c.name, items: c.triangles, hidden: c.hidden, size: fileSizeOf(c.name), ...dropped(c.name), bounds: c.bounds ? { min: c.bounds.min.map((v, i) => v + [c.offset.x, c.offset.y, c.offset.z][i]) as [number, number, number], max: c.bounds.max.map((v, i) => v + [c.offset.x, c.offset.y, c.offset.z][i]) as [number, number, number] } : null, context: c })),
+      ...programmeRows.map((p): InputRow => ({ kind: 'programme', key: p.key, name: p.name, items: p.activities, hidden: p.hidden, size: fileSizeOf(p.db?.sourceFile ?? p.schedule?.sourceFileName ?? p.name), bounds: null, uploaded: (p.db && Date.parse(p.db.importedAt)) || dropped(p.db?.sourceFile ?? p.schedule?.sourceFileName ?? p.name).uploaded, version: dropped(p.db?.sourceFile ?? p.schedule?.sourceFileName ?? p.name).version ?? 1, programme: p })),
     ];
     const text = (x: string, y: string) => x.localeCompare(y, undefined, { numeric: true, sensitivity: 'base' });
     const compare = (field: string, a: InputRow, b: InputRow) => {
       if (field === 'type') return text(a.kind, b.kind);
       if (field === 'items') return a.items - b.items;
       if (field === 'size') return (a.size ?? -1) - (b.size ?? -1);
+      if (field === 'uploaded') return (a.uploaded ?? -1) - (b.uploaded ?? -1);
+      if (field === 'version') return (a.version ?? -1) - (b.version ?? -1);
       if (field === 'name') return text(a.name, b.name);
       return text((detailValues[a.name]?.[field] ?? []).join(', '), (detailValues[b.name]?.[field] ?? []).join(', '));
     };
@@ -408,6 +413,14 @@ function InputsPage() {
       if (!next.delete(rowId(r))) next.add(rowId(r));
       setSelectedKeys(next);
     } else setSelectedKeys(new Set([rowId(r)]));
+  };
+  /** A group's Select button: its files join the selection (all already in it: they leave it). */
+  const selectGroup = (items: InputRow[]) => {
+    const next = new Set(selectedKeys);
+    const allIn = items.every((r) => next.has(rowId(r)));
+    for (const r of items) { if (allIn) next.delete(rowId(r)); else next.add(rowId(r)); }
+    setSelectedKeys(next);
+    if (items.length) { setActiveKey(rowId(items[0])); setAnchorKey(rowId(items[0])); }
   };
   const toggleRowHidden = (row: InputRow) => {
     const db = row.programme?.db ?? null;
@@ -491,6 +504,8 @@ function InputsPage() {
       case 'items': return <th key={col} className="inputs-table__sortable inputs-table__centre" {...click} title="Number of elements (models) or activities (programmes)">Items{sortArrow(col)}<ColumnResizer col={col} /></th>;
       case 'bounds': return <th key={col} className="inputs-table__centre" title="Models: the lowest and highest X, Y, Z of the model (project axes, metres)">Min / max XYZ (m)<ColumnResizer col={col} /></th>;
       case 'size': return <th key={col} className="inputs-table__sortable inputs-table__centre" {...click}>File size{sortArrow(col)}<ColumnResizer col={col} /></th>;
+      case 'uploaded': return <th key={col} className="inputs-table__sortable inputs-table__centre" {...click} title="When the file was uploaded (models kept in the project database: when the current IFC was stored)">Uploaded{sortArrow(col)}<ColumnResizer col={col} /></th>;
+      case 'version': return <th key={col} className="inputs-table__sortable inputs-table__centre" {...click} title="Version: 1 is the first upload, each replacement adds one (earlier IFCs of a stored model can be restored)">Version{sortArrow(col)}<ColumnResizer col={col} /></th>;
       default: return <th key={col} className="inputs-table__sortable inputs-table__detail" {...click}>{col}{sortArrow(col)}<ColumnResizer col={col} /></th>;
     }
   };
@@ -716,7 +731,7 @@ function InputsPage() {
                     const node = section.node;
                     const header = !node
                       ? []
-                      : [<GroupHeaderRow key={`group-${node.key}`} collapseKey={node.key} group={node.value} level={node.level} count={node.items.length} colSpan={colSpan} />];
+                      : [<GroupHeaderRow key={`group-${node.key}`} collapseKey={node.key} group={node.value} level={node.level} count={node.items.length} colSpan={colSpan} allSelected={node.items.length > 0 && node.items.every((r) => selectedKeys.has(rowId(r)))} onSelect={() => selectGroup(node.items)} />];
                     return [...header, ...section.items.map((row) => {
                     const { hidden } = row;
                     const p = row.programme;
@@ -784,6 +799,8 @@ function InputsPage() {
                           ) : ''}
                         </td>);
                         case 'size': return <td key={col} className="inputs-table__centre">{row.size === null ? '' : formatBytes(row.size)}</td>
+                        case 'uploaded': return <td key={col} className="inputs-table__centre">{row.uploaded === null ? '' : new Date(row.uploaded).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
+                        case 'version': return <td key={col} className="inputs-table__centre">{row.version === null ? '' : `v${row.version}`}</td>
                             default: return <td key={col} className="inputs-table__detail"><DetailValue item={row.name} field={col} /></td>;
                           }
                         })}
@@ -866,6 +883,9 @@ interface InputRow {
   hidden: boolean;
   size: number | null;
   bounds: { min: [number, number, number]; max: [number, number, number] } | null;
+  /** When the file went in (ms; null when unknown) and its version (1 = the first upload; each replacement adds one). */
+  uploaded: number | null;
+  version: number | null;
   programme?: ProgrammeRow;
   context?: ContextMeshRow;
   /** The model's entry in the project database's model store, when it has one. */

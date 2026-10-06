@@ -14,6 +14,8 @@ export const INPUT_COLUMNS = [
   { id: 'items', label: 'Items', group: 'File' },
   { id: 'bounds', label: 'Min / max XYZ (m)', group: 'File' },
   { id: 'size', label: 'File size', group: 'File' },
+  { id: 'uploaded', label: 'Uploaded', group: 'File' },
+  { id: 'version', label: 'Version', group: 'File' },
 ];
 export const DEFAULT_INPUT_COLUMNS = INPUT_COLUMNS.map((c) => c.id);
 
@@ -95,7 +97,7 @@ export const useInputDetailsStore = create<InputDetailsState>()(
           const d = await fetchFileDetails();
           if (d.note) return { ok: false, message: d.note };
           const fields = d.fields.map((f) => f.name);
-          set((s) => ({ fields, values: d.values, readAt: Date.now(), groupRules: s.groupRules.filter((r) => ['type', 'format', ...fields].includes(r.field)) }));
+          set((s) => ({ fields, values: d.values, readAt: Date.now(), groupRules: s.groupRules.filter((r) => ['type', 'name', 'format', ...fields].includes(r.field)) }));
           const n = Object.keys(d.values).length;
           return { ok: true, message: `Read the details of ${n} file${n === 1 ? '' : 's'} from SeaTable.` };
         } catch (e) {
@@ -126,12 +128,14 @@ export const NO_VALUE = '';
 export const BUILT_IN_GROUPS = [
   { id: 'none', label: 'No grouping' },
   { id: 'type', label: 'Type' },
+  { id: 'name', label: 'Name' },
   { id: 'format', label: 'File format' },
 ];
 
-/** A file's values for a group id (type, format or a detail field). */
+/** A file's values for a group id (type, name, format or a detail field). */
 export function valuesOfFile(key: string, f: Pick<PushFile, 'name' | 'type' | 'format'>, details: Record<string, Record<string, string[]>>): string[] {
   if (key === 'type') return [f.type];
+  if (key === 'name') return [f.name];
   if (key === 'format') return [f.format];
   return details[f.name]?.[key] ?? [];
 }

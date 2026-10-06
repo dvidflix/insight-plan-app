@@ -32,17 +32,24 @@ let applying = false;
 const dirty = new Set<string>();
 let timer: ReturnType<typeof setTimeout> | null = null;
 
-function flush() {
+function flush(): Promise<unknown> {
   timer = null;
   const root = dbRoot();
   const keys = [...dirty];
   dirty.clear();
-  if (!root) return;
-  for (const key of keys) {
+  if (!root) return Promise.resolve();
+  return Promise.all(keys.map((key) =>
     saveSetting(root, DB_PREFIX + key, localStorage.getItem(key)).catch((e) =>
       useProjectDbStore.setState({ error: `Saving settings to the project database failed: ${e instanceof Error ? e.message : e}` }),
-    );
-  }
+    ),
+  ));
+}
+
+/** Writes what changed to the project database now (a scene switch does this before it reloads the page, which would
+    otherwise drop the pending write and let the database's older values come back). */
+export async function flushUiSettings(): Promise<void> {
+  if (timer) clearTimeout(timer);
+  await flush();
 }
 
 function markDirty(key: string) {

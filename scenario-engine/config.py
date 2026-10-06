@@ -188,6 +188,11 @@ PHASE_DEFINITIONS = [
     {"name": "Concrete",   "suffix": "-C", "resource": f"{PROJECT_SHORT}-C",  "wbs_sub": "Concrete",   "duration": "Concrete"}
 ]
 
+# In-situ stair pours under this volume (m3) are taken to be steps cast with a stair flight:
+# each is linked to the stair it touches (core/stair_steps.py), scheduled in that stair's WBS
+# and named "... (part of stair <pour ID>)".
+STAIR_STEP_MAX_VOLUME_M3 = 0.09
+
 # Scheduling optional features
 ENABLE_GROUP_MILESTONES = False  # GET/GIVE/Summary
 ENABLE_BUILDING_COMPLETION = False

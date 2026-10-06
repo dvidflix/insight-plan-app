@@ -1,4 +1,5 @@
 # core/activity_generator.py
+from core.stair_steps import stair_group_label
 from config import (
     PROJECT_SHORT,
     PHASE_DEFINITIONS,
@@ -173,6 +174,10 @@ def create_activities(rec, wbs_manager, overrides=None):
     is_slab = any(keyword in pour_type_raw for keyword in [
         "SLAB", "MAIN_SLAB", "RAFT", "PIT", "PITS & RAFT", "FLOOR", "SLAB ON GRADE"
     ])
+    # Landings are decked like slabs (Decking -> Rebar -> Concrete), and in-situ stairs
+    # (precast ones returned above) get their own WBS group with Rebar / Formwork / Concrete.
+    is_landing = "LANDING" in pour_type_raw
+    is_stair = "STAIR" in pour_type_raw
 
     key = determine_duration_key(pour_type_raw, is_external, is_double)
     durations = DURATIONS.get(key, DURATIONS["Other"])
@@ -188,6 +193,22 @@ def create_activities(rec, wbs_manager, overrides=None):
             sub_wbs_name = f"{wall_wbs_base} - {rec.get('phase')}"
             wbs_oid = wbs_manager.register(sub_wbs_name, parent_name=wall_wbs_base) or wbs_oid
 
+    elif is_landing:
+        # Like a slab: Group "Landings" → individual "Landing XXXX"
+        landing_group_name = f"{rec['wbs_prefix']} - {rec['level_display']} - Landings"
+        landing_wbs_name = f"{rec['wbs_prefix']} - {rec['level_display']} - Landing {rec.get('task_pour_id', rec.get('pour_id', ''))}"
+        wbs_manager.register(landing_group_name)
+        wbs_oid = wbs_manager.register(landing_wbs_name, parent_name=landing_group_name)
+
+    elif is_stair:
+        # In-situ stair: its own group, split by Rebar / Formwork / Concrete like the walls.
+        # A step (a small stair pour, see core/stair_steps.py) has its own group, on its stair flight's level when it has one.
+        wrec = rec.get("stair_parent") or rec
+        stair_group_name = f"{wrec['wbs_prefix']} - {wrec['level_display']} - {stair_group_label(rec)}"
+        wbs_oid = wbs_manager.register(stair_group_name)
+        for sub in ("Rebar", "Formwork", "Concrete"):
+            wbs_manager.register(f"{stair_group_name} - {sub}", parent_name=stair_group_name)
+
     elif is_slab:
         # === CLEAN SLAB WBS: Group "Slabs" → individual "Slab XXXX" ===
         slab_group_name = f"{rec['wbs_prefix']} - {rec['level_display']} - Slabs"
@@ -198,7 +219,13 @@ def create_activities(rec, wbs_manager, overrides=None):
         wbs_oid = wbs_manager.register(slab_wbs_name, parent_name=slab_group_name)
 
     # ── PHASE SEQUENCE ───────────────────────────────────────────────────────
-    if is_slab and is_raft:
+    if is_landing:
+        phase_sequence = [
+            {"original_name": "Decking",  "display_name": "Decking",  "suffix": "-DK", "short_label": "Decking"},
+            {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R",  "short_label": "Rebar"},
+            {"original_name": "Concrete", "display_name": "Concrete", "suffix": "-C",  "short_label": "Concrete"},
+        ]
+    elif is_slab and is_raft:
         phase_sequence = [
             {"original_name": "Rebar",       "display_name": "Rebar",       "suffix": "-R",  "short_label": "Rebar"},
             {"original_name": "EOP on Slab", "display_name": "EOP on Slab", "suffix": "-E2", "short_label": "EOP on Slab"},
@@ -258,6 +285,8 @@ def create_activities(rec, wbs_manager, overrides=None):
         )
 
         default_task_name = f"{task_name_base} - {seq['short_label']}"
+        if is_stair and rec.get("stair_parent_pour_id"):
+            default_task_name += f" (part of stair {rec['stair_parent_pour_id']})"
 
         # Override handling
         phase_key = f"{guid}_{seq['display_name']}"
@@ -274,7 +303,11 @@ def create_activities(rec, wbs_manager, overrides=None):
             "task_name": final_task_name,
             "duration_days": duration,
             "resource": phase_def.get("resource"),
-            "wbs_oid": wbs_oid,
+            # In-situ stair activities sit in the group's Rebar / Formwork / Concrete sub-WBS.
+            "wbs_oid": (
+                wbs_manager.get_id(f"{stair_group_name} - {seq['original_name']}") or wbs_oid
+                if is_stair and not is_landing else wbs_oid
+            ),
             "volume": rec["volume"] if phase_def.get("resource") == f"{PROJECT_SHORT}-C" else None,
             "rebar_weight_tonnes": rec.get("rebar_weight_tonnes", 0) if "Rebar" in seq["original_name"] else None,
             "phase_order": phase_order_counter,

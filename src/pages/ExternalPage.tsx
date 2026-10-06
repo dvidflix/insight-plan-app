@@ -21,11 +21,17 @@ const TEXT: Record<Target, { title: string; name: string; fix: string }> = {
   },
 };
 
+/** Where in the program the tab opens: External data shows SeaTable's shared "ExternalData" view (a custom external link). */
+const LANDING: Record<Target, string> = {
+  seatable: '/dtable/links/3691cdb918e848a6a59a/',
+  superset: '',
+};
+
 export function ExternalPage({ target, active }: { target: Target; active: boolean }) {
   const t = TEXT[target];
   const [status, setStatus] = useState<Status | null>(null);
   const [nonce, setNonce] = useState(0);
-  const open = `/api/external/open?target=${target}`;
+  const open = `/api/external/open?target=${target}${LANDING[target] ? `&to=${encodeURIComponent(LANDING[target])}` : ''}`;
 
   useEffect(() => {
     if (!active) return;

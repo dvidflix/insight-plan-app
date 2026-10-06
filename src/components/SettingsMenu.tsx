@@ -13,7 +13,6 @@ import { FileDetailsSync } from './InputDetails';
 import { ProjectDbBar } from './ProjectDbPanel';
 import { ExportFieldsPanel } from './ExportFieldsPanel';
 import { SeaTablePanel } from './SeaTablePanel';
-import { LayoutProfilesPanel } from './LayoutProfilesPanel';
 
 function usePersistedValue<T extends string | number>(key: string, defaultValue: T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => {
@@ -234,10 +233,6 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
             </button>
           </div>
         ))}
-      </Section>
-
-      <Section title="Layout profiles" defaultOpen tip="Save how the app is arranged (the page it opens on, side-pane tabs, panel and column sizes, column choices, group / sort / colour rules, view settings, switches) as a named profile. Export it to a JSON file to share or back it up, import it elsewhere, and mark one as the Default template. Your own data (viewpoints, search sets, notes, link groups…) is not part of a profile: use Configuration for that.">
-        <LayoutProfilesPanel />
       </Section>
 
       <Section

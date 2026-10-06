@@ -10545,3 +10545,45 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 
 .ss.models-list { padding-top: 0; padding-bottom: 0; flex: none; }
 .ss.models-list .cols__search { margin: 6px 10px; width: calc(100% - 20px); box-sizing: border-box; }
+
+/* Scenes tab (components/ScenesPanel.tsx) */
+.scenes { padding: 4px 2px 12px; }
+.scenes__intro { font-size: 12px; color: var(--text-dim); line-height: 1.45; margin: 4px 0 12px; }
+.scenes__start { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 12px; margin-bottom: 14px; }
+.scenes__start select { min-width: 150px; }
+.scenes__list { display: flex; flex-direction: column; gap: 8px; margin: 8px 0 16px; }
+.scene-card { border: 1px solid var(--border); border-radius: 8px; padding: 9px 10px 8px; background: var(--bg-elevated, #fff); display: flex; flex-direction: column; gap: 4px; }
+.scene-card.is-current { border-color: var(--accent); background: var(--accent-dim); box-shadow: inset 3px 0 0 var(--accent); }
+.scene-card__top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.scene-card__name { font-weight: 600; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.scene-card__rename { flex: 1; min-width: 0; font-size: 13px; }
+.scene-card__spacer { flex: 1; }
+.scene-card__badge { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--accent-strong); background: #fff; border: 1px solid var(--accent); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
+.scene-card__open { font-size: 12px; padding: 2px 12px; border: 1px solid var(--accent); border-radius: 6px; background: var(--accent); color: #fff; cursor: pointer; }
+.scene-card__open:hover { filter: brightness(1.08); }
+.scene-card__meta { font-size: 11px; color: var(--text-dim); }
+.scene-card__actions { display: flex; gap: 4px; margin-top: 2px; }
+.scenes__new { display: flex; gap: 6px; margin: 6px 0; }
+.scenes__new input { flex: 1; min-width: 0; }
+.scenes__empty { font-size: 12px; margin-bottom: 14px; }
+.scenes__import { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Scenes tab, second pass: the current scene on top, a New scene button, then the others to open */
+.scene-here { padding: 10px 12px; gap: 3px; margin-top: 6px; }
+.scene-here__label { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--accent-strong); }
+.scene-here__name { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.scene-here__saved { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.scene-here__dot { width: 8px; height: 8px; border-radius: 50%; background: #2e9e5b; flex: none; }
+.scene-here__hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; margin-top: 2px; }
+.scenes__create { display: flex; align-items: center; gap: 10px; width: 100%; margin: 10px 0 14px; padding: 9px 12px; border: 1px dashed var(--accent); border-radius: 8px; background: transparent; color: var(--accent-strong); cursor: pointer; text-align: left; }
+.scenes__create:hover { background: var(--accent-dim); }
+.scenes__create span { display: flex; flex-direction: column; }
+.scenes__create small { font-size: 11px; color: var(--text-dim); }
+.scene-new { display: flex; flex-direction: column; gap: 8px; margin: 10px 0 14px; padding: 10px 12px; border: 1px solid var(--accent); border-radius: 8px; }
+.scene-new__title { font-weight: 600; font-size: 13px; }
+.scene-new__opt { display: flex; gap: 8px; align-items: flex-start; padding: 7px 9px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; font-size: 12px; }
+.scene-new__opt.on { border-color: var(--accent); background: var(--accent-dim); }
+.scene-new__opt span { display: flex; flex-direction: column; gap: 1px; }
+.scene-new__opt small { font-size: 11px; color: var(--text-dim); }
+.scene-new__buttons { display: flex; justify-content: flex-end; gap: 6px; }
+.scenes__start { margin: 8px 0; }

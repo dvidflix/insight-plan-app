@@ -1,19 +1,22 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { usePersistedState } from '../utils/persistedState';
 import { SidePane } from './SidePane';
 import { ColumnsPanel } from './schedule/ColumnsPanel';
 import { GroupPanel } from './schedule/GroupPanel';
 import { SortPanel } from './schedule/SortPanel';
 import { InputsFilters } from './InputDetails';
-import { IconColumns, IconFilter, IconGroup, IconSort } from './icons';
+import { ScenesPanel } from './ScenesPanel';
+import { IconColumns, IconFilter, IconGroup, IconScenes, IconSort } from './icons';
 import { BUILT_IN_GROUPS, DEFAULT_INPUT_COLUMNS, INPUT_COLUMNS, useInputDetailsStore } from '../state/inputDetailsStore';
 
-type TabId = 'columns' | 'filters' | 'group' | 'sort';
+type TabId = 'scenes' | 'columns' | 'filters' | 'group' | 'sort';
 
 const DETAILS = 'SeaTable details';
 
 /** The Inputs page's tabs in the side pane, like the Programmes page's: Columns, Filters, Group and Sort of the files list. */
 export function InputsSidePane({ onCollapseAll, onExpandAll }: { onCollapseAll: () => void; onExpandAll: () => void }) {
-  const [tab, setTab] = useState<TabId>('columns');
+  // The tab is remembered (and so goes with the scene).
+  const [tab, setTab] = usePersistedState<TabId>('inputs.sideTab', 'columns');
   const fields = useInputDetailsStore((s) => s.fields);
   const columns = useInputDetailsStore((s) => s.columns);
   const groupRules = useInputDetailsStore((s) => s.groupRules);
@@ -31,6 +34,7 @@ export function InputsSidePane({ onCollapseAll, onExpandAll }: { onCollapseAll: 
   const sortFields = useMemo(() => catalog.filter((c) => c.id !== 'bounds'), [catalog]);
 
   const tabs = [
+    { id: 'scenes' as const, label: 'Scenes', icon: <IconScenes />, body: <ScenesPanel /> },
     { id: 'columns' as const, label: 'Columns', icon: <IconColumns />, body: (
       <ColumnsPanel
         key={fields.join()}

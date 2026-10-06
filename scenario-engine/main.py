@@ -48,6 +48,7 @@ from core.xml_builder import (
 from core import xml_builder as _xml_builder
 from core.ifc_writer import attach_cwa_planning_properties, attach_clash_relationship_properties, save_ifc_model
 from core.clash_detection import run_pour_to_pour_clearance
+from core.stair_steps import link_stair_steps
 from core.clash_position import build_position_groups
 from core.ifc_class_fixer import fix_ifc_classes
 from core.ifc_spatial_structure import consolidate_spatial_structure
@@ -624,7 +625,8 @@ def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heig
                 concrete_wbs_name = wall_wbs
                 concrete_wbs_oid = wbs.get_id(concrete_wbs_name)
             else:
-                type_name = title_case(pour_type.replace("_", " ")) + "s"
+                # (One raft per building: "Raft", not "Rafts".)
+                type_name = title_case(pour_type.replace("_", " ")) + ("" if "RAFT" in pour_type.upper() else "s")
                 type_wbs = f"{current_wbs_prefix} - {level_display} - {type_name}"
                 wbs.register(type_wbs, level_wbs_name)
                 concrete_wbs_name = type_wbs
@@ -683,7 +685,8 @@ def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heig
                 "coord_x": coord_x,
                 "coord_y": coord_y,
                 "coord_z": coord_z,
-                "include": "YES" if volume >= INCLUDE_MIN_VOLUME_M3 and pour_type not in excluded_types else "NO",
+                # Small pours are left out, except stairs (a small stair pour is a step of a flight: see core/stair_steps.py).
+                "include": "YES" if (volume >= INCLUDE_MIN_VOLUME_M3 or "STAIR" in pour_type) and pour_type not in excluded_types else "NO",
                 "min_elevation": min_elevation,
                 "max_elevation": max_elevation,
                 "general_level_3": general_level_3,
@@ -753,6 +756,11 @@ def resolve_pour_ids(records, clashes, overrides, generate_new_pour_ids):
             rec["task_pour_id"] = existing_id if existing_id else rec.get("pour_id", "")
             if rec.get("task_pour_id") and rec.get("task_id_prefix"):
                 rec["task_id_base"] = f"{rec['task_id_prefix']}-{rec['task_pour_id']}"
+
+    # Small in-situ stair pours are steps of a touching stair flight: they go with it.
+    linked = link_stair_steps(records, clashes)
+    if linked:
+        print(f"  Linked {linked} in-situ stair step(s) to the stair they touch")
 
 
 def create_all_activities(records, overrides):

@@ -107,10 +107,13 @@ async function login(target: Target): Promise<string[] | null> {
   return [line.split(';').filter((p, i) => i === 0 || !/^\s*domain=/i.test(p)).join(';')];
 }
 
+/** The page each tab opens (the one whose frame rules matter: SeaTable only allows frames on its external links). */
+const LANDING: Record<Target, string> = { seatable: '/dtable/links/3691cdb918e848a6a59a/', superset: '/' };
+
 async function probe(target: Target, appOrigin: string) {
   const { base } = config(target);
   try {
-    const res = await fetch(`${base}/`, { redirect: 'manual', signal: AbortSignal.timeout(3000) });
+    const res = await fetch(`${base}${LANDING[target]}`, { redirect: 'manual', signal: AbortSignal.timeout(3000) });
     const csp = res.headers.get('content-security-policy') ?? '';
     const ancestors = /frame-ancestors([^;]*)/i.exec(csp)?.[1] ?? null;
     const xfo = (res.headers.get('x-frame-options') ?? '').toUpperCase();

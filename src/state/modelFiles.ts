@@ -42,5 +42,30 @@ export const rememberFileSize = (file: File) => {
   } catch {
     // not remembered
   }
+  rememberUpload(file);
 };
+
+/** When each file was last dropped on Inputs (ms) and how many times (its version: a file of the same name
+    dropped again is the next version), by file name, remembered across reloads. */
+const UPLOADS_KEY = 'inputs.fileUploads';
+export interface UploadInfo {
+  at: number;
+  version: number;
+}
+const readUploads = (): Record<string, UploadInfo> => {
+  try {
+    return JSON.parse(localStorage.getItem(UPLOADS_KEY) ?? '{}') as Record<string, UploadInfo>;
+  } catch {
+    return {};
+  }
+};
+const rememberUpload = (file: File) => {
+  try {
+    const all = readUploads();
+    localStorage.setItem(UPLOADS_KEY, JSON.stringify({ ...all, [file.name]: { at: Date.now(), version: (all[file.name]?.version ?? 0) + 1 } }));
+  } catch {
+    // not remembered
+  }
+};
+export const uploadOf = (name: string | null | undefined): UploadInfo | null => (name ? readUploads()[name] ?? null : null);
 export const fileSizeOf = (name: string | null | undefined): number | null => (name ? readSizes()[name] ?? null : null);

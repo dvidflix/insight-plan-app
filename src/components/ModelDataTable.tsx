@@ -524,8 +524,14 @@ Now: ${summary}` : ''}`}>
                     <button
                       type="button"
                       className={`mdt__mini${allIn ? ' is-on' : ''}`}
-                      onClick={(e) => { e.stopPropagation(); void applySelection(allIn ? new Set() : new Set(it.rows.map((r) => r.key))); }}
-                      title={allIn ? 'Deselect this group' : `Select the ${it.rows.length.toLocaleString()} objects in this group`}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        // Added to (or taken from) the selection, so several groups can be picked one after the other.
+                        const next = new Set(selected);
+                        for (const r of it.rows) { if (allIn) next.delete(r.key); else next.add(r.key); }
+                        void applySelection(next);
+                      }}
+                      title={allIn ? 'Deselect this group (the rest of the selection stays)' : `Select the ${it.rows.length.toLocaleString()} objects in this group (added to the selection)`}
                     >
                       {allIn ? 'Deselect' : 'Select'}
                     </button>

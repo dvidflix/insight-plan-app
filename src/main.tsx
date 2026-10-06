@@ -1,6 +1,6 @@
-// First, so a Default layout profile is in place before anything reads its saved settings.
-import { applyDefaultAtStartup } from './state/layoutProfiles';
-applyDefaultAtStartup();
+// First, so the active scene follows every change to the saved settings from the start.
+import { startScenes } from './state/scenes';
+startScenes();
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

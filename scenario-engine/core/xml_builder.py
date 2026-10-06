@@ -59,6 +59,14 @@ def _normalized_pour_type(rec):
     return str(rec.get("pour_type", "") or "").replace(" ", "_").upper()
 
 
+from core.stair_steps import stair_group_label  # noqa: E402
+
+
+def _is_insitu_stair(rec):
+    """A stair cast in place (Rebar / Formwork / Concrete): any stair that is not precast."""
+    return "STAIR" in _normalized_pour_type(rec) and str(rec.get("conc_stage", "") or "").strip().upper() != "PRECAST"
+
+
 def _is_stage2_pedestal(rec):
     # Stage-2 pedestals are later-pass box-outs — the same "unless stated
     # otherwise in the drawing (e.g. 2nd stage box-outs)" carve-out already
@@ -196,9 +204,9 @@ def _build_intra_pour_predecessors(activities, sequence_order=None):
         phase_map = {str(a.get("phase", "")).strip(): a.get("task_id") 
                      for a in acts if a.get("phase")}
 
-        if "SLAB" in ptype or "MAIN_SLAB" in ptype:
+        if "SLAB" in ptype or "MAIN_SLAB" in ptype or "LANDING" in ptype:
             order = [
-                "Works before slab", 
+                "Works before slab",
                 "Decking",
                 "Under Slab", 
                 "Rebar", 
@@ -210,7 +218,7 @@ def _build_intra_pour_predecessors(activities, sequence_order=None):
             "PRECAST" in ptype
             or "HEAVY_PRECAST" in gtype
             or "REMOVABLE" in ptype
-            or "STAIR" in ptype
+            or ("STAIR" in ptype and not _is_insitu_stair(acts[0].get("rec", {})))
         ):
             # "Propping"/"Curing"/"Propping Removal" only exist for Heavy
             # Precast pours (see activity_generator._is_heavy_precast_rec);
@@ -279,7 +287,7 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
         rec = guid_to_rec.get(guid, {})
         ptype = _normalized_pour_type(rec)
 
-        if ptype in {"REMOVABLE_ELEMENT", "HEAVY_PRECAST", "STAIR"}:
+        if ptype in {"REMOVABLE_ELEMENT", "HEAVY_PRECAST", "STAIR"} and not _is_insitu_stair(rec):
             return (
                 task_map.get("Propping")
                 or task_map.get("Installation")
@@ -287,7 +295,7 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
                 or _final_task_for_guid(guid)
             )
 
-        if ptype in {"SLAB", "MAIN_SLAB"}:
+        if ptype in {"SLAB", "MAIN_SLAB", "LANDING"}:
             return _slab_start_task_for_guid(guid) or _final_task_for_guid(guid)
 
         return (
@@ -302,7 +310,7 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
 
     def _is_supported_slab(rec):
         ptype = _normalized_pour_type(rec)
-        return ptype in {"SLAB", "MAIN_SLAB"}
+        return ptype in {"SLAB", "MAIN_SLAB", "LANDING"}
 
     def _is_heavy_precast(rec):
         ptype = _normalized_pour_type(rec)
@@ -506,7 +514,7 @@ def _build_level_gate_predecessors(activities):
         rec = guid_to_rec.get(guid, {})
         ptype = _normalized_pour_type(rec)
 
-        if ptype in {"SLAB", "MAIN_SLAB"}:
+        if ptype in {"SLAB", "MAIN_SLAB", "LANDING"}:
             return (
                 task_map.get("Decking")
                 or task_map.get("Under Slab")
@@ -1231,10 +1239,12 @@ def _get_sequence_phase_for_rec(rec):
     if "SLAB" in ptype or "MAIN_SLAB" in ptype:
         # For slabs, blank Phase should target the first executable slab task.
         return "Works before slab" if ENABLE_WORKS_BEFORE_SLAB else "Decking"
+    elif "LANDING" in ptype:
+        return "Decking"
     elif ptype == "PEDESTAL" and conc_stage in {"2", "STAGE 2", "2.0", "STAGE2"}:
         return "Rebar, Formwork and Concrete"
     elif (
-        ptype in {"HEAVY_PRECAST", "REMOVABLE_ELEMENT", "STAIR"}
+        (ptype in {"HEAVY_PRECAST", "REMOVABLE_ELEMENT"} or (ptype == "STAIR" and conc_stage == "PRECAST"))
         or "HEAVY_PRECAST" in gtype
         or "REMOVABLE" in ptype
         or "PRECAST" in ptype
@@ -1443,12 +1453,14 @@ def _build_xml_wbs_manager_for_activities(activities):
 
     for act in ordered_activities:
         rec = act.get("rec", {})
-        building = str(rec.get("building", "BLD"))
-        level_display = _xml_level_label(rec)
-        zone_label = _xml_zone_label(rec)
+        # A step cast with a stair flight is placed where that flight is (core/stair_steps.py).
+        wrec = rec.get("stair_parent") if (_is_insitu_stair(rec) and rec.get("stair_parent")) else rec
+        building = str(wrec.get("building", "BLD"))
+        level_display = _xml_level_label(wrec)
+        zone_label = _xml_zone_label(wrec)
         pour_type = _normalized_pour_type(rec)
 
-        wbs_prefix = str(rec.get("wbs_prefix", "") or "").strip()
+        wbs_prefix = str(wrec.get("wbs_prefix", "") or "").strip()
         if not wbs_prefix:
             wbs_prefix = str(WBS_PREFIX or "").replace(f"-{PROJECT_SHORT}", "").replace(f"{PROJECT_SHORT}-", "").format(BUILDING_CODE=building)
 
@@ -1482,6 +1494,32 @@ def _build_xml_wbs_manager_for_activities(activities):
                 act["wbs_oid"] = xml_wbs.get_id(wall_group)
             continue
 
+        if "LANDING" in pour_type:
+            # Like a slab: Landings -> Landing <pour id>
+            landing_group = f"{wbs_prefix} - {zone_segment}{level_display} - Landings"
+            xml_wbs.register(landing_group, level_name)
+            pid = str(rec.get("planning_proposed_pour_id", "") or "").strip()
+            if pid:
+                landing_leaf = f"{wbs_prefix} - {zone_segment}{level_display} - Landing {pid}"
+                xml_wbs.register(landing_leaf, landing_group)
+                act["wbs_oid"] = xml_wbs.get_id(landing_leaf)
+            else:
+                act["wbs_oid"] = xml_wbs.get_id(landing_group)
+            continue
+
+        if _is_insitu_stair(rec):
+            # Its own group, split by phase like the walls: In-situ Stairs (or In-situ Stair Steps) -> Rebar / Formwork / Concrete
+            stair_group = f"{wbs_prefix} - {zone_segment}{level_display} - {stair_group_label(rec)}"
+            xml_wbs.register(stair_group, level_name)
+            for sub in ["Rebar", "Formwork", "Concrete"]:
+                xml_wbs.register(f"{stair_group} - {sub}", stair_group)
+            phase = act.get("phase", "")
+            if phase in ["Rebar", "Formwork", "Concrete"]:
+                act["wbs_oid"] = xml_wbs.get_id(f"{stair_group} - {phase}")
+            else:
+                act["wbs_oid"] = xml_wbs.get_id(stair_group)
+            continue
+
         if "SLAB" in pour_type or "MAIN_SLAB" in pour_type:
             slab_group = f"{wbs_prefix} - {zone_segment}{level_display} - Slabs"
             xml_wbs.register(slab_group, level_name)
@@ -1494,7 +1532,9 @@ def _build_xml_wbs_manager_for_activities(activities):
                 act["wbs_oid"] = xml_wbs.get_id(slab_group)
             continue
 
-        type_name = title_case(str(rec.get("pour_type", "") or "").replace("_", " ")) + "s"
+        # (One raft per building: "Raft", not "Rafts".)
+        raw_type = str(rec.get("pour_type", "") or "")
+        type_name = title_case(raw_type.replace("_", " ")) + ("" if "RAFT" in raw_type.upper() else "s")
         group_name = f"{wbs_prefix} - {zone_segment}{level_display} - {type_name}"
         xml_wbs.register(group_name, level_name)
         act["wbs_oid"] = xml_wbs.get_id(group_name)

@@ -202,7 +202,7 @@ export function FileDetailsSync() {
 }
 
 /** A group's header row in the list: collapse / expand, its name and how many files. */
-export function GroupHeaderRow({ collapseKey: key, group, level, count, colSpan }: { collapseKey: string; group: string; level: number; count: number; colSpan: number }) {
+export function GroupHeaderRow({ collapseKey: key, group, level, count, colSpan, allSelected, onSelect }: { collapseKey: string; group: string; level: number; count: number; colSpan: number; allSelected?: boolean; onSelect?: () => void }) {
   const collapsed = useInputDetailsStore((s) => s.collapsed.includes(key));
   const toggle = useInputDetailsStore((s) => s.toggleCollapsed);
   return (
@@ -214,6 +214,13 @@ export function GroupHeaderRow({ collapseKey: key, group, level, count, colSpan 
             <b>{group === NO_VALUE ? '(none)' : group}</b>
             <span className="inputs-folder__count">{count}</span>
           </button>
+          {onSelect && (
+            <span className="inputs-folder__actions">
+              <button type="button" className={`mdt__mini${allSelected ? ' is-on' : ''}`} onClick={onSelect} title={allSelected ? 'Deselect the files of this group (the rest of the selection stays)' : `Select the ${count} file${count === 1 ? '' : 's'} of this group (added to the selection)`}>
+                {allSelected ? 'Deselect' : 'Select'}
+              </button>
+            </span>
+          )}
         </div>
       </td>
     </tr>
@@ -231,7 +238,7 @@ export function DetailValue({ item, field }: { item: string; field: string }) {
   );
 }
 
-const COLUMN_WIDTH: Record<string, number> = { type: 44, items: 70, bounds: 160, size: 90 };
+const COLUMN_WIDTH: Record<string, number> = { type: 44, items: 70, bounds: 160, size: 90, uploaded: 130, version: 70 };
 const DETAIL_WIDTH = 100;
 const ACTION_WIDTH = 150;
 const NAME_MIN = 220;
