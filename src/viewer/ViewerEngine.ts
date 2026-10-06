@@ -855,12 +855,11 @@ export class ViewerEngine {
     this.onExternalVisibilityChange.trigger();
   }
 
-  /** Storey classification + floor-plan views, both official components. */
-  /** Anything the automatic sets / floor plans could not do, shown in the
+  /** Anything the automatic sets could not do, shown in the
       Sets and Views tabs so a silent failure isn't invisible. */
   readonly setupErrors: string[] = [];
 
-  /** Storeys, floor plans, categories and search sets, generated on load.
+  /** Storeys, categories and search sets, generated on load.
       Each step is independent and time-boxed: one failing (or hanging) on a
       difficult file must not take the others with it, and each falls back to
       building the same thing from the loaded tree/elements. */
@@ -911,28 +910,6 @@ export class ViewerEngine {
       }
     });
 
-    await step('Floor plans', async () => {
-      const before = this.views.list.size;
-      try {
-        await this.views.createFromIfcStoreys({ modelIds: only, world: this.world });
-      } catch (e) {
-        console.warn('ViewerEngine: createFromIfcStoreys failed as a whole, trying storey by storey', e);
-      }
-      if (this.views.list.size > before) return;
-      // One awkward storey (no elevation, "Undefined"...) can abort the whole
-      // call — go storey by storey so the others still get a plan.
-      let created = 0;
-      for (const { name } of storeyItems()) {
-        try {
-          await this.views.createFromIfcStoreys({ modelIds: only, storeyNames: [new RegExp(`^${escapeRegExp(name)}$`)], world: this.world });
-          created++;
-        } catch (e) {
-          console.warn(`ViewerEngine: floor plan for storey "${name}" failed`, e);
-        }
-      }
-      if (this.views.list.size <= before && created === 0) throw new Error('no floor plan could be created from the storeys');
-    });
-
     await step('Categories', async () => {
       // byCategory registers an ItemsFinder query per category and a
       // classifier group linked to it, so both Sets lists fill up together.
@@ -948,8 +925,6 @@ export class ViewerEngine {
         this.classifier.setGroupQuery(CATEGORIES_CLASSIFICATION, category, { name: category });
       }
     });
-
-    await step('Plan views', async () => this.stylePlanViews());
 
     this.onSetsReady.trigger(modelId);
   }
@@ -1718,10 +1693,8 @@ export class ViewerEngine {
     void this.forceUpdate();
   }
 
-  // ---- Outliner, styled section cuts (ClipStyler) and plan views -----------------
+  // ---- Outliner and styled section cuts (ClipStyler) -----------------
   private sectionCfg: SectionStyle = { ...DEFAULT_SECTION_STYLE };
-  private styledViews = new Set<string>();
-  readonly onPlanViewsChange = new OBC.Event<void>();
 
   /** Outlines the selection (a line and a tinted fill), or stops. */
   setOutline(partial: Partial<OutlineSettings> | undefined) {
@@ -1778,8 +1751,6 @@ export class ViewerEngine {
       this.syncSectionStyles();
       const clipStyler = this.components.get(OBCF.ClipStyler);
       for (const [, edges] of clipStyler.list) {
-        // Plan views keep their own (always per-kind) look.
-        if (edges.plane && [...this.views.list.values()].some((v) => v.plane === edges.plane)) continue;
         edges.items.clear();
         const items = this.sectionItems();
         if (items) for (const [name, item] of Object.entries(items)) edges.items.set(name, item);
@@ -1826,35 +1797,6 @@ export class ViewerEngine {
       if (names.length) items[def.id] = { style: `Cut:${def.id}`, data: { [CATEGORIES_CLASSIFICATION]: names } };
     }
     return Object.keys(items).length ? items : { All: { style: 'Cut:all' } };
-  }
-
-  /** Floor plans from the storeys, drawn with the per-kind cut styles. */
-  private stylePlanViews() {
-    this.syncSectionStyles();
-    const clipStyler = this.components.get(OBCF.ClipStyler);
-    for (const [name, view] of this.views.list) {
-      if (this.styledViews.has(name)) continue;
-      const items = this.sectionItems(true);
-      if (!items) continue;
-      this.styledViews.add(name);
-      try {
-        clipStyler.createFromView(view, { items });
-      } catch (e) {
-        console.warn(`ViewerEngine: could not style the plan "${name}"`, e);
-      }
-    }
-    this.onPlanViewsChange.trigger();
-  }
-
-  /** The floor plans (one per storey) that can be opened. */
-  planViewNames(): string[] {
-    return [...this.views.list.keys()];
-  }
-  openPlanView(name: string) {
-    void this.views.open(name);
-  }
-  closePlanViews() {
-    this.views.close();
   }
 
   // ---- Render quality: occlusion, resolution, adaptive resolution -------------
@@ -1914,11 +1856,6 @@ export class ViewerEngine {
 
   setEdgeWidth(width: number) {
     if (this._world?.renderer) this._world.renderer.postproduction.edgesPass.width = width;
-  }
-
-  /** Default range (in metres) of floor-plan views created from now on. */
-  setFloorPlanRange(range: number) {
-    OBC.Views.defaultRange = range;
   }
 
   setGridVisible(visible: boolean) {

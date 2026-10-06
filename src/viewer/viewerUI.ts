@@ -200,7 +200,7 @@ export type ModelPanelId = 'tree' | 'properties' | 'views' | 'topics';
 export type ModelPanels = Record<ModelPanelId, HTMLElement>;
 
 function buildSidebar(engine: ViewerEngine): ModelPanels {
-  const { components, highlighter, hider, classifier, viewpoints, views } = engine;
+  const { components, highlighter, hider, classifier, viewpoints } = engine;
   const fragments = components.get(OBC.FragmentsManager);
 
   // ---- Models --------------------------------------------------------
@@ -214,7 +214,7 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
 
   // ---- Properties: React now (components/PropertiesGrid.tsx) ---------
 
-  // Anything the automatic sets / floor plans could not build, shown where
+  // Anything the automatic sets could not build, shown where
   // the user would look for them (one element per tab).
   const makeSetupNote = () => {
     const note = document.createElement('bim-label') as BUI.Label;
@@ -236,24 +236,6 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
   // Selection sets are part of Search sets (components/SearchSetsPanel.tsx).
 
   // ---- Viewpoints: React now (components/ViewpointsList.tsx, viewer/savedViews.ts) ----
-
-  // ---- Floor plans (Views.createFromIfcStoreys) ----------------------
-  const [floorPlansTable, refreshFloorPlans] = nameListTable(
-    () => [...views.list.keys()],
-    (name) => {
-      const onOpen = () => views.open(name);
-      const onRemove = () => views.list.delete(name);
-      return BUI.html`
-        <bim-button label-hidden label="Open" icon="mdi:floor-plan" @click=${onOpen}></bim-button>
-        <bim-button label-hidden label="Remove" icon="mdi:delete-outline" @click=${onRemove}></bim-button>
-      `;
-    },
-  );
-  const refreshViews = () => refreshFloorPlans();
-  views.list.onItemSet.add(refreshViews);
-  views.list.onItemDeleted.add(refreshViews);
-  views.list.onItemUpdated.add(refreshViews);
-  views.list.onCleared.add(refreshViews);
 
   // ---- Storeys (classifier.byIfcBuildingStorey) ----------------------
   const [storeysTable, refreshStoreys] = nameListTable(

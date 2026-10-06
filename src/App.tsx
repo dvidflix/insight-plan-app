@@ -108,7 +108,15 @@ const mayLeave = (from: PageId, to: PageId) => {
 };
 
 export default function App() {
-  const [page, setPageRaw] = useState<PageId>('inputs');
+  const [page, setPageRaw] = useState<PageId>(() => {
+    // Settings › Layout profiles › Open on.
+    try {
+      const saved = localStorage.getItem('app.startPage');
+      return PAGES.some((p) => p.id === saved) ? (saved as PageId) : 'inputs';
+    } catch {
+      return 'inputs';
+    }
+  });
   // The External data and Dashboards frames stay loaded once opened.
   const [visited, setVisited] = useState<ReadonlySet<PageId>>(new Set());
   useEffect(() => { setVisited((v) => (v.has(page) ? v : new Set(v).add(page))); }, [page]);
@@ -378,6 +386,66 @@ function InputsPage() {
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tree, visibleRows, collapsedGroups]);
+  // The current row (arrows move it) and the selected ones: click a row, Shift+click (or Shift+arrows)
+  // to reach down to another, Ctrl+click to add or remove one. Space hides / shows the selected rows.
+  const listedRows = useMemo(() => sections.flatMap((s) => s.items), [sections]);
+  const [activeKey, setActiveKey] = useState<string | null>(null);
+  const [anchorKey, setAnchorKey] = useState<string | null>(null);
+  const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
+  const rowId = (r: InputRow) => `${r.kind}-${r.key}`;
+  const pickRow = (r: InputRow, mod: { shift?: boolean; ctrl?: boolean } = {}) => {
+    setActiveKey(rowId(r));
+    const from = listedRows.findIndex((x) => rowId(x) === anchorKey);
+    const to = listedRows.findIndex((x) => rowId(x) === rowId(r));
+    if (mod.shift && from >= 0 && to >= 0) {
+      const range = listedRows.slice(Math.min(from, to), Math.max(from, to) + 1).map(rowId);
+      setSelectedKeys(new Set(mod.ctrl ? [...selectedKeys, ...range] : range));
+      return;
+    }
+    setAnchorKey(rowId(r));
+    if (mod.ctrl) {
+      const next = new Set(selectedKeys);
+      if (!next.delete(rowId(r))) next.add(rowId(r));
+      setSelectedKeys(next);
+    } else setSelectedKeys(new Set([rowId(r)]));
+  };
+  const toggleRowHidden = (row: InputRow) => {
+    const db = row.programme?.db ?? null;
+    if (row.context) {
+      ctx().toggleHidden(row.key);
+      engine.contexts.setVisible(row.key, row.hidden);
+    } else if (row.programme) {
+      if (db) void toggleHidden(db);
+      else toggleScheduleHidden(row.key);
+    } else toggleModelHidden(row.key);
+  };
+  /** Space: the selected rows (the current one when none is selected) go off if any is on, otherwise all come back.
+      Stored models that are not loaded are opened (one after the other). */
+  const flipSelectedRows = () => {
+    const keys = selectedKeys.size ? selectedKeys : new Set(activeKey ? [activeKey] : []);
+    const picked = listedRows.filter((r) => keys.has(rowId(r)));
+    const targets = picked.filter((r) => !r.unloaded);
+    const anyShown = targets.some((r) => !r.hidden);
+    for (const r of targets) if (r.hidden !== anyShown) toggleRowHidden(r);
+    const toOpen = picked.filter((r) => r.unloaded && r.stored).map((r) => r.stored!);
+    if (toOpen.length) void (async () => { for (const m of toOpen) await storedActions.open(m); })();
+  };
+  const onRowsKeyDown = (e: React.KeyboardEvent) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== ' ') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
+    e.preventDefault();
+    if (e.key === ' ') {
+      flipSelectedRows();
+      return;
+    }
+    if (!listedRows.length) return;
+    const i = listedRows.findIndex((r) => rowId(r) === activeKey);
+    const next = i < 0 ? (e.key === 'ArrowDown' ? 0 : listedRows.length - 1) : i + (e.key === 'ArrowDown' ? 1 : -1);
+    if (next < 0 || next >= listedRows.length) return;
+    pickRow(listedRows[next], { shift: e.shiftKey });
+    document.getElementById(`inputs-row-${rowId(listedRows[next])}`)?.scrollIntoView({ block: 'nearest' });
+  };
+
   // What a push to SeaTable's "Insight Plan Files" table sends: every file of this page, and the stored models not loaded now.
   const filesToPush = useMemo<PushFile[]>(() => {
     const MB = 1024 * 1024;
@@ -632,7 +700,8 @@ function InputsPage() {
           )}
           {rows.length > 0 && (
             <>
-              <div style={{ overflowX: 'auto' }}>
+              {/* (A button would also "click" on Space's release: kept from doing so.) */}
+              <div style={{ overflowX: 'auto', outline: 'none' }} tabIndex={0} onKeyDown={onRowsKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }} aria-label="Files: arrow keys move, Shift or Ctrl select several, Space hides or shows the selected">
               <table className="inputs-table inputs-table--aligned" style={tableStyle}>
                 <InputsColgroup columns={shownColumns} />
                 <thead>
@@ -654,7 +723,13 @@ function InputsPage() {
                     const db = p?.db ?? null;
                     const loading = db ? dbLoading[db.id] : undefined;
                     return (
-                      <tr key={`${node?.key ?? ""}|${row.kind}-${row.key}`} style={hidden ? { opacity: 0.5 } : undefined} className={node ? "inputs-in-folder" : undefined}>
+                      <tr
+                        key={`${node?.key ?? ""}|${row.kind}-${row.key}`}
+                        id={`inputs-row-${rowId(row)}`}
+                        style={hidden ? { opacity: 0.5 } : undefined}
+                        className={`inputs-row${node ? ' inputs-in-folder' : ''}${selectedKeys.has(rowId(row)) ? ' is-active' : ''}${activeKey === rowId(row) ? ' is-current' : ''}`}
+                        onClick={(e) => { if (!(e.target as HTMLElement).closest('button, input, select, a, label')) pickRow(row, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }); }}
+                      >
                         {shownColumns.map((col) => {
                           switch (col) {
                             case 'type': return (<td key={col} className="inputs-table__type">
@@ -734,7 +809,7 @@ function InputsPage() {
                             ) : <span style={{ width: 44 }} aria-hidden />)}
                             {inputBtns.shown('hide') && <button
                               className="mini-btn mini-btn--icon"
-                              onClick={() => (row.context ? (ctx().toggleHidden(row.key), engine.contexts.setVisible(row.key, row.hidden)) : p ? (db ? void toggleHidden(db) : toggleScheduleHidden(row.key)) : toggleModelHidden(row.key))}
+                              onClick={() => toggleRowHidden(row)}
                               title={hidden ? 'Show — unload without removing' : 'Hide — unload without removing'}
                               aria-label={hidden ? 'Show' : 'Hide'}
                             >

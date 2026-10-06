@@ -10,7 +10,6 @@ import { InfoTip } from './InfoTip';
 import { CollapsibleSection } from './CollapsibleSection';
 import { useViewSettingsGroups, type ViewSettingsGroup } from '../state/viewSettingsGroups';
 import { useExperimental } from '../state/appPrefsStore';
-import { DEFAULT_FLOOR_PLAN_RANGE, FLOOR_PLAN_RANGE_KEY } from '../viewer/floorPlanRange';
 import { DEFAULT_SELECTION_COLOR, SELECTION_COLORS, SELECTION_COLOR_KEY } from '../viewer/selectionColor';
 
 type SectionId = ViewSettingsGroup;
@@ -46,7 +45,6 @@ export function View3DPanel({ page, colorSection, extra }: { page: ViewPage; col
   const openGroups = useViewSettingsGroups((st) => st.open);
   const toggleGroup = useViewSettingsGroups((st) => st.toggle);
   const sections: Sections = { isOpen: (id) => openGroups.includes(id), toggle: toggleGroup };
-  const cutsOn = useExperimental('sectionCuts');
 
   return (
     <div className="disp vsp">
@@ -75,7 +73,6 @@ export function View3DPanel({ page, colorSection, extra }: { page: ViewPage; col
             <ViewModels page={page} view={view === 'a' ? 'main' : 'second'} />
           </>
         )}
-        {cutsOn && <FloorPlanRange />}
         {/* View cube and north arrow are switched on / off from the toolbar's Visibility menu. */}
         {showNorth && (
           <label className="disp__row">
@@ -200,9 +197,8 @@ function DisplaySettings({ page, view, sections }: { page: ViewPage; view: ViewK
         </Group>
       )}
       {view === 'main' && cutsOn && (
-        <Group id="cuts" title="Section cuts & plans (experimental)" tip="Section cuts fill and outline what a section plane cuts through, like a drawn section: one fill, or a colour per kind of element. Plan views are a floor plan per storey, cut at its level." sections={sections}>
+        <Group id="cuts" title="Section cuts (experimental)" tip="Section cuts fill and outline what a section plane cuts through, like a drawn section: one fill, or a colour per kind of element." sections={sections}>
           <SectionStyleControls style={s.sectionStyle} onChange={(sectionStyle) => set('sectionStyle', sectionStyle)} />
-          <PlanViews />
         </Group>
       )}
       <Group id="realistic" title="Realistic" sections={sections}>
@@ -222,34 +218,6 @@ function DisplaySettings({ page, view, sections }: { page: ViewPage; view: ViewK
 }
 
 const fmt = (n: number) => (Math.round(n * 100) / 100).toString();
-
-/** How far a floor plan looks down from its storey (m); applies to plan views opened from now on. */
-function FloorPlanRange() {
-  const engine = useViewerEngine();
-  const [range, setRange] = useState(() => {
-    try {
-      return Number(localStorage.getItem(FLOOR_PLAN_RANGE_KEY)) || DEFAULT_FLOOR_PLAN_RANGE;
-    } catch {
-      return DEFAULT_FLOOR_PLAN_RANGE;
-    }
-  });
-  const change = (v: number) => {
-    const next = Math.min(20, Math.max(1, v || 1));
-    setRange(next);
-    try {
-      localStorage.setItem(FLOOR_PLAN_RANGE_KEY, String(next));
-    } catch {
-      // not remembered
-    }
-    engine.setFloorPlanRange(next);
-  };
-  return (
-    <label className="disp__row">
-      <span>Floor plan range (m) <InfoTip>How far a floor plan looks down from its storey's level. Applies to plan views opened from now on.</InfoTip></span>
-      <input type="number" min={1} max={20} step={1} value={range} onChange={(e) => change(Number(e.target.value))} style={{ width: 72 }} />
-    </label>
-  );
-}
 
 /** The colour of selected objects (one for the whole viewer). */
 function SelectionColour() {
@@ -333,38 +301,6 @@ function SectionStyleControls({ style, onChange }: { style: Partial<SectionStyle
           ))}
         </details>
       )}
-    </>
-  );
-}
-
-/** The floor plans made from the storeys: open one to see it cut at that level, with the cut styles. */
-function PlanViews() {
-  const engine = useViewerEngine();
-  const [names, setNames] = useState<string[]>(() => engine.planViewNames());
-  useEffect(() => {
-    const update = () => setNames(engine.planViewNames());
-    update();
-    engine.onPlanViewsChange.add(update);
-    engine.views.list.onItemSet.add(update);
-    engine.views.list.onItemDeleted.add(update);
-    return () => {
-      engine.onPlanViewsChange.remove(update);
-      engine.views.list.onItemSet.remove(update);
-      engine.views.list.onItemDeleted.remove(update);
-    };
-  }, [engine]);
-  if (names.length === 0) return null;
-  return (
-    <>
-      <div className="cols__heading">
-        <span>Plan views <InfoTip>A floor plan per storey, cut at its level. Open one to look at it from above; Close returns to the 3D view.</InfoTip></span>
-        <button type="button" className="btn btn--small" onClick={() => engine.closePlanViews()}>Close plan</button>
-      </div>
-      <div className="matmap">
-        {names.map((n) => (
-          <button key={n} type="button" className="mini-btn" style={{ textAlign: 'left' }} onClick={() => engine.openPlanView(n)}>{n}</button>
-        ))}
-      </div>
     </>
   );
 }

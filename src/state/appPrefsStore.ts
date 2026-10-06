@@ -15,7 +15,7 @@ export const EXPERIMENTAL_FEATURES = [
   { id: 'whyShown', label: 'Why is it shown?', tip: '4D tab: lists the tasks that link to the selected object and which one controls it.' },
   { id: 'taskFields', label: 'Task fields from search sets', tip: '4D tab: writes a task field from the search sets the tasks\' objects belong to.' },
   { id: 'navisworks', label: 'Navisworks TimeLiner export', tip: 'Views tab: exports search sets + a TimeLiner CSV for Navisworks.' },
-  { id: 'sectionCuts', label: 'Section cuts and plan views', tip: 'Views tab: styled section cuts and a floor plan per storey.' },
+  { id: 'sectionCuts', label: 'Section cuts', tip: 'Views tab: styled section cuts.' },
   { id: 'scheduleExplorer', label: 'Programmes: Schedule Explorer', tip: 'Programmes › Views: the Schedule Explorer (table, Gantt and panels together).' },
   { id: 'networkView', label: 'Programmes: Network View', tip: 'Programmes › Views: the activity network diagram.' },
   { id: 'ppcView', label: 'Programmes: PPC (Plan Complete)', tip: 'Programmes › Views: percent plan complete by week.' },

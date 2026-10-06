@@ -13,6 +13,7 @@ import { useViewSettingsGroups } from '../state/viewSettingsGroups';
 import { View3DPanel } from './View3DPanel';
 import { ModelsPanel } from './sequence/ModelsPanel';
 import { IfcTree } from './IfcTree';
+import { ModelsList } from './ModelsList';
 import { ClashResultsList } from './ContactsSection';
 import { SidePane, type SidePaneTab } from './SidePane';
 import { IconChevronLeft, IconCamera, IconClose, IconCube, IconList, IconPalette, IconSearch, IconTree, IconViewTable } from './icons';
@@ -141,7 +142,7 @@ function LitSection({ panel, label, second, leading, defaultOpen, headerAction, 
     }
     el.collapsed = !open;
     const first = panel.querySelector('bim-panel-section');
-    // Sections the panel keeps last (Views: Floor plans, Storeys) stay below.
+    // Sections the panel keeps last (Views: Storeys) stay below.
     const trailing = panel.querySelector('bim-panel-section[data-trailing]');
     if (leading && first) first.before(el);
     else if (second && first) first.after(el);
@@ -213,7 +214,7 @@ export function SelectionTreeTab() {
   if (!panels) return <div className="flt__hint">Starting viewer…</div>;
   return (
     <div className="model-config__tree">
-      <LitPanel element={panels.tree} />
+      <ModelsList />
       <IfcTree />
     </div>
   );

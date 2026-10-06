@@ -7,13 +7,13 @@ import { useTableStyleStore } from '../state/tableStyleStore';
 import { exportAppConfig, importAppConfig } from '../state/appConfig';
 import { FULL_SCREEN_KEY } from './FullScreenOnStart';
 import { ACCENT_PALETTES, useAccentPaletteStore } from '../state/accentPaletteStore';
-import { DEFAULT_FLOOR_PLAN_RANGE, FLOOR_PLAN_RANGE_KEY } from '../viewer/floorPlanRange';
 import { DEFAULT_SELECTION_COLOR, SELECTION_COLOR_KEY } from '../viewer/selectionColor';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../state/timelineSettingsStore';
 import { FileDetailsSync } from './InputDetails';
 import { ProjectDbBar } from './ProjectDbPanel';
 import { ExportFieldsPanel } from './ExportFieldsPanel';
 import { SeaTablePanel } from './SeaTablePanel';
+import { LayoutProfilesPanel } from './LayoutProfilesPanel';
 
 function usePersistedValue<T extends string | number>(key: string, defaultValue: T): [T, (v: T) => void] {
   const [value, setValue] = useState<T>(() => {
@@ -41,8 +41,6 @@ export function SettingsSync() {
   const engine = useViewerEngine();
   useEffect(() => {
     applyStatusBar(localStorage.getItem(STATUS_BAR_KEY) !== 'false');
-    const range = Number(localStorage.getItem(FLOOR_PLAN_RANGE_KEY) ?? DEFAULT_FLOOR_PLAN_RANGE);
-    engine.setFloorPlanRange(range || DEFAULT_FLOOR_PLAN_RANGE);
     const color = localStorage.getItem(SELECTION_COLOR_KEY) ?? DEFAULT_SELECTION_COLOR;
     void engine.ready.then(() => engine.setSelectionColor(color));
   }, [engine]);
@@ -236,6 +234,10 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
             </button>
           </div>
         ))}
+      </Section>
+
+      <Section title="Layout profiles" defaultOpen tip="Save how the app is arranged (the page it opens on, side-pane tabs, panel and column sizes, column choices, group / sort / colour rules, view settings, switches) as a named profile. Export it to a JSON file to share or back it up, import it elsewhere, and mark one as the Default template. Your own data (viewpoints, search sets, notes, link groups…) is not part of a profile: use Configuration for that.">
+        <LayoutProfilesPanel />
       </Section>
 
       <Section

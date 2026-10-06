@@ -1,3 +1,7 @@
+// First, so a Default layout profile is in place before anything reads its saved settings.
+import { applyDefaultAtStartup } from './state/layoutProfiles';
+applyDefaultAtStartup();
+
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
