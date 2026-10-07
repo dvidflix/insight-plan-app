@@ -215,17 +215,32 @@ export interface RangeFilter {
 }
 
 /** How a text filter's terms are compared with the field (default: contains). */
-export type TextMode = 'contains' | 'starts' | 'ends' | 'equals' | 'excludes';
+export type TextMode = 'contains' | 'all' | 'starts' | 'ends' | 'equals' | 'excludes' | 'empty' | 'filled';
+
+/** Modes that test whether the field has a value at all: they need no text. */
+export const isPresenceMode = (m: TextMode | undefined): m is 'empty' | 'filled' => m === 'empty' || m === 'filled';
 
 export const TEXT_MODES: { value: TextMode; label: string; title: string }[] = [
-  { value: 'contains', label: 'Contains', title: 'The field contains the text' },
+  { value: 'contains', label: 'Any', title: 'The field contains any of the terms (OR)' },
+  { value: 'all', label: 'All', title: 'The field contains every term (AND)' },
   { value: 'starts', label: 'Starts', title: 'The field starts with the text' },
   { value: 'ends', label: 'Ends', title: 'The field ends with the text' },
   { value: 'equals', label: 'Is', title: 'The field is exactly the text' },
   { value: 'excludes', label: 'Not', title: 'The field does not contain the text' },
+  { value: 'empty', label: 'Empty', title: 'Only rows where the field has no value' },
+  { value: 'filled', label: 'Filled', title: 'Only rows where the field has a value (leaves the empty ones out)' },
 ];
 
+/** How the active filters combine: every one must match (AND, default) or any one is enough (OR). */
+export type FilterCombine = 'all' | 'any';
+/** For a checklist field with several values ticked: an activity has any of them (OR, default) or all of them (AND). */
+export type SelectMode = 'any' | 'all';
+
 export interface FieldFilterState {
+  /** Across the active fields; absent = 'all'. */
+  combine?: FilterCombine;
+  /** Per checklist field; absent = 'any'. */
+  selectModes?: Record<string, SelectMode>;
   selections: Record<string, Set<string>>;
   textFilters: Record<string, string>;
   /** Per text field; absent = contains. */
@@ -247,6 +262,9 @@ function matchesSearchTokens(text: string | undefined, tokens: string[], mode: T
     case 'ends': return tokens.some((t) => v.endsWith(t));
     case 'equals': return tokens.some((t) => v === t);
     case 'excludes': return !tokens.some((t) => v.includes(t));
+    case 'empty': return v === '';
+    case 'filled': return v !== '';
+    case 'all': return tokens.every((t) => v.includes(t));
     default: return tokens.some((t) => v.includes(t));
   }
 }
@@ -269,32 +287,43 @@ function matchesRange(f: FilterFieldDef, a: Activity, r: RangeFilter): boolean {
   return (Number.isNaN(lo) || (r.minExclusive ? v > lo : v >= lo)) && (Number.isNaN(hi) || v <= hi);
 }
 
-/** Applies every field filter except `excludeFieldId`, matching
-    insight-plan-web's associative-filtering model: AND across fields, OR
-    within a field's own selected checkbox values. */
+/** Applies the field filters except `excludeFieldId`. Across fields: AND by default, OR when state.combine is 'any'.
+    Within a checklist field: OR of the ticked values by default, AND when its select mode is 'all'.
+    (With OR across fields the other filters don't narrow a field's own counts, so those are the plain counts.) */
 export function applyFieldFilters(activities: Activity[], fields: FilterFieldDef[], state: FieldFilterState, excludeFieldId?: string): Activity[] {
-  let acts = activities;
+  const tests: ((a: Activity) => boolean)[] = [];
   for (const f of fields) {
     if (f.id === excludeFieldId) continue;
     if (f.kind === 'text') {
+      const mode = state.textModes?.[f.id];
       const tokens = searchTokens(state.textFilters[f.id] || '');
-      if (tokens.length > 0 && f.rawValue) acts = acts.filter((a) => matchesSearchTokens(f.rawValue!(a), tokens, state.textModes?.[f.id]));
+      if (isPresenceMode(mode)) { if (f.rawValue) tests.push((a) => matchesSearchTokens(f.rawValue!(a), tokens, mode)); }
+      else if (tokens.length > 0 && f.rawValue) tests.push((a) => matchesSearchTokens(f.rawValue!(a), tokens, mode));
     } else if (f.kind === 'select') {
       const sel = state.selections[f.id];
-      if (sel && sel.size > 0) acts = acts.filter((a) => f.activityValues(a).some((v) => sel.has(v)));
+      if (sel && sel.size > 0) {
+        const all = state.selectModes?.[f.id] === 'all';
+        tests.push((a) => {
+          const have = f.activityValues(a);
+          return all ? [...sel].every((v) => have.includes(v)) : have.some((v) => sel.has(v));
+        });
+      }
     } else {
       const r = state.ranges[f.id];
-      if (rangeActive(r)) acts = acts.filter((a) => matchesRange(f, a, r));
+      if (rangeActive(r)) tests.push((a) => matchesRange(f, a, r));
     }
   }
-  return acts;
+  if (tests.length === 0) return activities;
+  if (state.combine === 'any') return excludeFieldId ? activities : activities.filter((a) => tests.some((t) => t(a)));
+  return activities.filter((a) => tests.every((t) => t(a)));
 }
 
 /** How many separate fields currently narrow the list. */
 export function countActiveFilters(state: FieldFilterState): number {
   return (
     Object.values(state.selections).filter((s) => s.size > 0).length +
-    Object.values(state.textFilters).filter((v) => v.trim().length > 0).length +
+    Object.entries(state.textFilters).filter(([id, v]) => v.trim().length > 0 && !isPresenceMode(state.textModes?.[id])).length +
+    Object.values(state.textModes ?? {}).filter(isPresenceMode).length +
     Object.values(state.ranges).filter(rangeActive).length
   );
 }

@@ -22,6 +22,8 @@ import { usePersistedState } from '../../utils/persistedState';
 import type { GroupRule } from './GroupPanel';
 import { useTableStyleStore } from '../../state/tableStyleStore';
 import { useAggregateStore } from '../../state/aggregateStore';
+import { applyWbsOrder, useWbsOrder } from '../../state/wbsOrder';
+import type { GanttExport, GanttExportRow } from '../../schedule/exportGanttXlsx';
 import { aggregate, aggType, defaultAgg, type AggKind } from '../../schedule/aggregates';
 import { AggCell } from './AggCell';
 import { IconExpander } from '../icons';
@@ -36,6 +38,8 @@ export interface GanttHandle {
   zoomOut: () => void;
   fit: () => void;
   scrollToToday: () => void;
+  /** The label grid as shown (columns, groups, subtotals, folded state) for the Excel export. */
+  getExport: () => GanttExport;
 }
 
 interface GanttChartProps {
@@ -205,6 +209,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   const rowById = useMemo(() => new Map(rows.map((r) => [r.activity.id, r])), [rows]);
   // Group rules win over the WBS tree; both become the same kind of tree
   // (a " / " path per row), so headers, collapsing and Group level work alike.
+  const [wbsOrder] = useWbsOrder();
   const byRules = !!(groupRules?.length && catalog);
   const grouped = byRules || groupByWbs;
   const wbsTree = useMemo(() => {
@@ -212,8 +217,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
       const byId = new Map(catalog!.map((c) => [c.id, c]));
       return buildRuleTree(rows, groupRules!, (r, field) => byId.get(field)?.text(r.activity, columnCtx) ?? '');
     }
-    return groupByWbs ? buildWbsTree(rows, (r) => r.activity.wbsPath, (r) => r.activity.wbsCodePath) : [];
-  }, [rows, groupByWbs, byRules, groupRules, catalog, columnCtx]);
+    return groupByWbs ? applyWbsOrder(buildWbsTree(rows, (r) => r.activity.wbsPath, (r) => r.activity.wbsCodePath), wbsOrder) : [];
+  }, [rows, groupByWbs, byRules, groupRules, catalog, columnCtx, wbsOrder]);
   const groupAggs = useMemo(() => computeGroupAggregates(wbsTree), [wbsTree]);
 
   // Σ Totals: a totals bar under the chart and subtotals on group headers,
@@ -330,9 +335,34 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
 
   const controls = useRef({ zoomBy, fit, scrollToToday });
   controls.current = { zoomBy, fit, scrollToToday };
+  // The label grid as it is on screen, for the Excel export. Every row is included; those under a collapsed group are marked hidden.
+  const exportData = () => {
+    const out: GanttExportRow[] = [];
+    const totalCells = (acts: Activity[], first: string) => columns.map((c, i) => (totalsOn && aggType(c) ? String(aggregate(c, kindOf(c), acts, columnCtx) ?? '') : i === 0 ? first : ''));
+    if (grouped) {
+      const walk = (nodes: typeof wbsTree, folded: boolean) => {
+        for (const node of nodes) {
+          const first = `${node.label} (${node.descendantCount})`;
+          out.push({ kind: 'group', depth: node.depth, hidden: folded, cells: totalCells(groupActs.get(node.path) ?? [], first) });
+          const closed = folded || collapsedGroups.has(node.path);
+          for (const r of node.rows) out.push({ kind: 'row', depth: node.depth + 1, hidden: closed, cells: columns.map((c) => c.text(r.activity, columnCtx)) });
+          walk(node.children, closed);
+        }
+      };
+      walk(wbsTree, false);
+    } else {
+      for (const r of rows) out.push({ kind: 'row', depth: 0, hidden: false, cells: columns.map((c) => c.text(r.activity, columnCtx)) });
+    }
+    if (totalsOn) out.push({ kind: 'total', depth: 0, hidden: false, cells: totalCells(activities, `Total · ${activities.length.toLocaleString()} tasks`) });
+    return { columns: columns.map((c) => c.label), rows: out };
+  };
+  const controls2 = useRef(exportData);
+  controls2.current = exportData;
+
   useImperativeHandle(
     ref,
     () => ({
+      getExport: () => controls2.current(),
       zoomIn: () => controls.current.zoomBy(1.5),
       zoomOut: () => controls.current.zoomBy(1 / 1.5),
       fit: () => controls.current.fit(),

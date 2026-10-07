@@ -183,6 +183,33 @@ def debug_centroid_x(element) -> float | None:
         return None
 
 
+_FOOTPRINT_CACHE = {}
+
+
+def get_plan_footprint(element):
+    """(footprint, z_min, z_max) of the element in world coordinates (metres): the plan outline as a
+    shapely geometry (union of its upward-facing triangles, as core/element_features.py measures it)
+    and its vertical extent. None when the geometry is unavailable. Cached per element."""
+    key = element.id()
+    if key in _FOOTPRINT_CACHE:
+        return _FOOTPRINT_CACHE[key]
+    footprint = None
+    try:
+        import ifcopenshell.geom
+        from core import element_features as ef
+
+        shape = ifcopenshell.geom.create_shape(ef._settings(), element)
+        tri, normals, _areas, _volume = ef._mesh(shape)
+        top = ef._union_xy(tri[normals[:, 2] > ef.FACE_NZ])
+        outline = top if not top.is_empty else ef._union_xy(tri)
+        if not outline.is_empty:
+            footprint = (outline, float(tri[:, :, 2].min()), float(tri[:, :, 2].max()))
+    except Exception as e:
+        print(f"Footprint error for element #{element.id()}: {e}")
+    _FOOTPRINT_CACHE[key] = footprint
+    return footprint
+
+
 def get_element_world_coordinates(element):
     """
     Resolve absolute world coordinates from IfcLocalPlacement chain.

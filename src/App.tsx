@@ -1,6 +1,7 @@
 import { DuplicateTabButton, DuplicateTabSync } from './components/DuplicateTab';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSidePaneStore } from './state/sidePaneStore';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
 import { SettingsSync } from './components/SettingsMenu';
@@ -56,6 +57,9 @@ import type { ScheduleModel } from './schedule/types';
 import { xmlToXer } from './schedule/xmlToXer';
 
 type PageId = 'inputs' | 'model' | 'schedule' | 'scenarios' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki';
+
+/** Ctrl+Alt + key (KeyboardEvent.code) -> the page it opens. */
+const PAGE_SHORTCUTS: Record<string, PageId> = { KeyP: 'inputs', KeyQ: 'model', KeyU: 'schedule', KeyW: 'sequence' };
 
 const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
   { id: 'inputs', label: 'Inputs', icon: <IconFolder /> },
@@ -149,6 +153,21 @@ export default function App() {
   // for itself, but an installed app window passes it on.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      // Ctrl+Alt+P / Q / U / W jump to Inputs / Models / Programmes / 4D Sequencing (by key position).
+      if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey) {
+        // Ctrl+Alt+9: show / hide Viewpoints on the Models and 4D Sequencing pages.
+        if (e.code === 'Digit9' && (pageRef.current === 'model' || pageRef.current === 'sequence')) {
+          e.preventDefault();
+          if (!e.repeat) useSidePaneStore.getState().requestViewpoints(pageRef.current);
+          return;
+        }
+        const target = PAGE_SHORTCUTS[e.code];
+        if (target && pages.some((p) => p.id === target)) {
+          e.preventDefault();
+          setPage(target);
+          return;
+        }
+      }
       const tab = e.key === 'Tab' && e.ctrlKey && !e.altKey;
       const alt = e.altKey && !e.ctrlKey && (e.key === 'PageDown' || e.key === 'PageUp');
       if (!tab && !alt) return;

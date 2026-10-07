@@ -15,6 +15,8 @@ import { configureSun, markBaseMaterials, patchAllConcrete, refreshMaterialClass
 import { SkyBackdrop } from './skyBackdrop';
 import { extractGrids, type IfcGridData } from './ifcGrids';
 import { MarkerLayer } from './markerLayer';
+import { ConstructionPlaneLayer } from './constructionPlaneLayer';
+import type { ConstructionPlane } from '../state/constructionPlanesStore';
 import type { Marker } from '../state/markersStore';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { DEFAULT_OUTLINE, DEFAULT_SECTION_STYLE, SECTION_CATEGORY_DEFS, type OutlineSettings, type SectionStyle } from './visualAids';
@@ -667,6 +669,30 @@ export class ViewerEngine {
     dir.normalize().multiplyScalar(14);
     if (dir.y < 3) dir.y = 3;
     await controls.setLookAt(p.x + dir.x, p.y + dir.y, p.z + dir.z, p.x, p.y, p.z, true);
+  }
+
+  // ---- Construction planes (translucent boxes from the Construction planes panel) ----
+  private planeLayer: ConstructionPlaneLayer | null = null;
+
+  /** Draws exactly these planes, or none while they are hidden. */
+  syncConstructionPlanes(list: ConstructionPlane[], visible: boolean) {
+    if (!this._world) return;
+    this.planeLayer ??= new ConstructionPlaneLayer(this._world, () => this.globalOffset());
+    this.planeLayer.sync(list, visible);
+  }
+
+  /** Flies the camera to a construction plane, seen from the side it is already seen from. */
+  async focusConstructionPlane(p: ConstructionPlane) {
+    if (!this._world || !this.planeLayer) return;
+    const box = this.planeLayer.box(p);
+    const centre = box.getCenter(new THREE.Vector3());
+    const radius = Math.max(box.getSize(new THREE.Vector3()).length() / 2, 2);
+    const controls = this._world.camera.controls;
+    const dir = controls.getPosition(new THREE.Vector3()).sub(centre);
+    if (dir.lengthSq() < 1e-6) dir.set(1, 0.7, 1);
+    dir.normalize().multiplyScalar(radius * 2.2);
+    if (dir.y < radius * 0.5) dir.y = radius * 0.5;
+    await controls.setLookAt(centre.x + dir.x, centre.y + dir.y, centre.z + dir.z, centre.x, centre.y, centre.z, true);
   }
 
   // ---- IFC grids (the model's IfcGrid axes, drawn as lines with a bubble at each end) ----

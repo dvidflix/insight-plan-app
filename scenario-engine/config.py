@@ -200,7 +200,13 @@ ENABLE_BUILDING_COMPLETION = False
 # Level gate master switch. False: a slab's predecessors come only from the
 # clash-derived slab-support edges (pours touching below, walls beside), not
 # from every pour of the level below. True: the behaviour described below.
-ENABLE_LEVEL_GATE = False
+# On, so each level's slabs wait for the level below's concrete (otherwise a slab
+# with nothing above touching it is left with no successor).
+ENABLE_LEVEL_GATE = True
+
+# Close-out: a "<project>-<building>-COMPLETION" finish milestone per building, which
+# every activity left with no successor feeds (FS), so the programme has no open ends.
+ENABLE_COMPLETION_CLOSEOUT = True
 
 # Level gate: only tie SLAB pours back to the level below; walls/columns/
 # stairs follow their own slab via clash-derived slab-support edges. Set
@@ -216,6 +222,13 @@ ENABLE_WORKS_BEFORE_SLAB = False
 # excluded. Set False to also count Stitching/Installation/combined finals
 # and stage-2 pours.
 LEVEL_GATE_DECKING_CONCRETE_ONLY = True
+
+# Level gate reach (m): a slab only waits for lower-level pours whose 3D gap to it
+# (plan gap and vertical gap, measured from the geometry) is within this, instead
+# of every pour of the level below across the building (which gave a slab's Decking
+# dozens of far-away predecessors). If none is that close, the nearest one is used;
+# pours whose geometry can't be measured are kept. None/0 = no limit (old behaviour).
+LEVEL_GATE_MAX_DISTANCE_M = 0.05
 
 # Pour ID behavior
 # True: generate new planning proposed pour IDs (current workflow).

@@ -7,6 +7,8 @@ import { wbsGroupColors } from '../../schedule/wbsPalette';
 import { finishOf, startOf, totalsOfSpan, type ActivitySpan, type LoadedResource } from '../../schedule/resourceLoading';
 import { usePersistedState } from '../../utils/persistedState';
 import { downloadCsv } from '../../utils/csv';
+import { useWbsOrder } from '../../state/wbsOrder';
+import { exportGanttXlsx, type GanttExportRow } from '../../schedule/exportGanttXlsx';
 import { fmtNum } from './ResourceCharts';
 import { IconExpander, IconEye, IconEyeOff } from '../icons';
 
@@ -60,6 +62,8 @@ export interface WbsTableHandle {
   setLevel: (level: number | null) => void;
   resetOrder: () => void;
   exportCsv: () => void;
+  /** The tree as shown (order, search, columns) as an Excel workbook, grouped with outline levels; collapsed branches are hidden rows. */
+  exportXlsx: () => void;
 }
 
 export interface WbsTableState {
@@ -98,7 +102,7 @@ export const ResourceWbsTable = forwardRef<WbsTableHandle, ResourceWbsTableProps
   { activities, spans, resources, wbsPalette, hidden, widths, query, unloaded = [], onToggleUnloaded, onWidth, onState },
   ref,
 ) {
-  const [order, setOrder] = usePersistedState<Record<string, string[]>>('schedule.wbsResourceOrder', {});
+  const [order, setOrder] = useWbsOrder();
   const [sort, setSort] = usePersistedState<Sort>('schedule.wbsResourceSort', null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<string | null>(null);
@@ -248,7 +252,32 @@ export const ResourceWbsTable = forwardRef<WbsTableHandle, ResourceWbsTableProps
       ),
     );
 
+  const exportXlsx = () => {
+    const rows: GanttExportRow[] = [];
+    const walk = (nodes: WbsTreeNode<Activity>[], parentKey: string, folded: boolean) => {
+      for (const node of ordered(nodes, parentKey)) {
+        if (found && !found.has(node.path)) continue;
+        const t = totals.get(node.path);
+        rows.push({
+          kind: 'group',
+          depth: node.depth,
+          hidden: folded,
+          cells: columns.map((c) => {
+            if (c.id === WBS_NAME_COL) return node.label;
+            if (c.id === COUNT_COL) return t?.count ?? 0;
+            if (c.resource) return +(t?.sums.get(c.id) ?? 0).toFixed(2);
+            return cellText(c, t);
+          }),
+        });
+        walk(node.children, node.path, folded || (!found && collapsed.has(node.path)));
+      }
+    };
+    walk(tree, '', false);
+    exportGanttXlsx({ columns: columns.map((c) => c.label), rows }, `WBS ${new Date().toISOString().slice(0, 10)}.xlsx`, 'WBS');
+  };
+
   useImperativeHandle(ref, () => ({
+    exportXlsx,
     move,
     expandAll: () => setCollapsed(new Set()),
     collapseAll: () => setCollapsed(new Set(allWbsPaths(tree))),

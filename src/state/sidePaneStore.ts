@@ -22,6 +22,31 @@ interface SidePaneState {
       SidePaneHost), and how many pages are showing one. */
   dockHost: HTMLElement | null;
   dockClaims: number;
+  /** Ctrl+Alt+9: show Viewpoints on this page (hide the pane when already showing them). */
+  viewpointsRequest: { page: 'model' | 'sequence'; n: number } | null;
+  requestViewpoints: (page: 'model' | 'sequence') => void;
+}
+
+/** Runs fn on each Ctrl+Alt+9 aimed at `page`, with whether the pane already shows Viewpoints
+    (the page says so with `showing`): hide it then, else bring Viewpoints up. */
+export function useViewpointsToggle(page: 'model' | 'sequence', showing: () => boolean, show: () => void) {
+  const request = useSidePaneStore((s) => s.viewpointsRequest);
+  const seen = useRef(request);
+  useEffect(() => {
+    if (!request || request === seen.current) return;
+    seen.current = request;
+    if (request.page !== page) return;
+    const pane = useSidePaneStore.getState();
+    if (pane.open && !pane.settings && showing()) {
+      pane.setOpen(false);
+      return;
+    }
+    show();
+    pane.setOpen(true);
+    pane.setSettings(false);
+    // showing / show read the page's current tab.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [request]);
 }
 
 /** Calls fn when the view is split (not when it loads split): the side pane
@@ -58,6 +83,8 @@ export const useSidePaneStore = create<SidePaneState>()(
       claims: 0,
       dockHost: null,
       dockClaims: 0,
+      viewpointsRequest: null,
+      requestViewpoints: (page) => set((s) => ({ viewpointsRequest: { page, n: (s.viewpointsRequest?.n ?? 0) + 1 } })),
     }),
     { name: 'app.sidePane', partialize: (s) => ({ open: s.open, bareOpen: s.bareOpen }) },
   ),

@@ -4,6 +4,7 @@ import { downloadCsv } from '../../utils/csv';
 import { wbsGroupColors } from '../../schedule/wbsPalette';
 import { type WbsTreeNode, allWbsPaths, buildRuleTree, buildWbsTree, wbsPathsAtOrBeyondDepth } from '../../schedule/wbsTree';
 import { usePersistedState } from '../../utils/persistedState';
+import { applyWbsOrder, useWbsOrder } from '../../state/wbsOrder';
 import type { ColumnCtx, ColumnDef } from '../../schedule/columns';
 import { useTableStyleStore } from '../../state/tableStyleStore';
 import type { GroupRule } from './GroupPanel';
@@ -163,9 +164,10 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
 
   const isWbsGroup = groupBy === 'wbs';
 
+  const [wbsOrder] = useWbsOrder();
   const wbsTree = useMemo(
-    () => (isWbsGroup ? buildWbsTree(rows, (a) => a.wbsPath, (a) => a.wbsCodePath) : []),
-    [rows, isWbsGroup],
+    () => (isWbsGroup ? applyWbsOrder(buildWbsTree(rows, (a) => a.wbsPath, (a) => a.wbsCodePath), wbsOrder) : []),
+    [rows, isWbsGroup, wbsOrder],
   );
   // Field grouping: every rule is one level (the first outermost).
   const ruleTree = useMemo(() => {

@@ -10,7 +10,7 @@ export interface Relation { ActivityID1: string; ActivityID2: string; Relation: 
 export interface Crew { Phase: string; PourType: string; Trade: string; Crew: string }
 /** A flag on a pour (its GUID) or a group of the Scenarios table (its key), for review: 'flag' = to fix, 'done' = fixed. */
 export interface Flag { Key: string; State: 'flag' | 'done' }
-export interface ScenarioContent { sequence: SequenceItem[]; relations: Relation[]; crews: Crew[]; flags?: Flag[] }
+export interface ScenarioContent { sequence: SequenceItem[]; relations: Relation[]; crews: Crew[]; flags?: Flag[]; /** The WBS order to write into the generated schedule (parent path -> children paths); not stored with the scenario. */ wbsOrder?: Record<string, string[]> }
 
 export const SEQUENCE_SHEET = 'SequenceOrder';
 

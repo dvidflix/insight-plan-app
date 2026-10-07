@@ -4,7 +4,7 @@ import { buildLoading } from '../../schedule/resourceLoading';
 import { applyVirtualResources, virtualCatalog } from '../../schedule/virtualResources';
 import { usePersistedState } from '../../utils/persistedState';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
-import { IconArrowDown, IconArrowUp } from '../icons';
+import { IconArrowDown, IconArrowUp, IconDownload } from '../icons';
 import { ToolbarSlot } from './ToolbarSlot';
 import { useScheduleStore } from '../../state/scheduleStore';
 import { inUnloadedWbs, programmeKey, useUnloadedWbsStore } from '../../state/unloadedWbsStore';
@@ -124,7 +124,7 @@ export function WbsView({ model, activities, wbsPalette }: WbsViewProps) {
           </button>
         )}
         <span style={{ flex: 1 }} />
-        <button type="button" className="btn btn--small" onClick={() => ref.current?.exportCsv()}>Export CSV</button>
+        <button type="button" className="icon-btn" onClick={() => ref.current?.exportXlsx()} title="Export to Excel as shown: the WBS tree with its columns and order, grouped (outline levels), collapsed levels folded" aria-label="Export to Excel"><IconDownload /></button>
       </ToolbarSlot>
       <ResourceWbsTable
         ref={ref}

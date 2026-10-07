@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { IconSectionChevron } from '../icons';
 import {
-  FILTER_GROUPS, TEXT_MODES, applyFieldFilters, buildFilterFields, countActiveFilters, emptyFilterState, rangeActive,
+  FILTER_GROUPS, TEXT_MODES, applyFieldFilters, isPresenceMode, buildFilterFields, countActiveFilters, emptyFilterState, rangeActive,
   type FieldFilterState, type FilterFieldDef, type TextMode, type RangeFilter,
 } from '../../schedule/filterFields';
 import { InfoTip } from '../InfoTip';
@@ -35,6 +35,8 @@ const QUICK: { id: string; label: string; fieldId: string; values?: string[]; ra
 ];
 
 function clearField(prev: FieldFilterState, id: string): FieldFilterState {
+  const selectModes = { ...prev.selectModes };
+  delete selectModes[id];
   const selections = { ...prev.selections };
   const textFilters = { ...prev.textFilters };
   const textModes = { ...prev.textModes };
@@ -43,11 +45,11 @@ function clearField(prev: FieldFilterState, id: string): FieldFilterState {
   delete textFilters[id];
   delete textModes[id];
   delete ranges[id];
-  return { selections, textFilters, textModes, ranges };
+  return { combine: prev.combine, selectModes, selections, textFilters, textModes, ranges };
 }
 
 function fieldActive(f: FilterFieldDef, s: FieldFilterState): boolean {
-  if (f.kind === 'text') return (s.textFilters[f.id] ?? '').trim() !== '';
+  if (f.kind === 'text') return isPresenceMode(s.textModes?.[f.id]) || (s.textFilters[f.id] ?? '').trim() !== '';
   if (f.kind === 'select') return (s.selections[f.id]?.size ?? 0) > 0;
   return rangeActive(s.ranges[f.id]);
 }
@@ -55,7 +57,9 @@ function fieldActive(f: FilterFieldDef, s: FieldFilterState): boolean {
 function summarize(f: FilterFieldDef, s: FieldFilterState): string {
   if (f.kind === 'text') {
     const mode = s.textModes?.[f.id] ?? 'contains';
-    const prefix = { contains: '', starts: 'starts ', ends: 'ends ', equals: '= ', excludes: 'not ' }[mode];
+    if (mode === 'empty') return 'empty';
+    if (mode === 'filled') return 'has a value';
+    const prefix = { contains: '', all: 'all of ', starts: 'starts ', ends: 'ends ', equals: '= ', excludes: 'not ' }[mode];
     return `${prefix}“${s.textFilters[f.id]}”`;
   }
   if (f.kind === 'select') {
@@ -82,6 +86,7 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
   const activeFields = visibleFields.filter((f) => fieldActive(f, state));
   const q = search.trim().toLowerCase();
   const hit = queryMatcher(search);
+  const combine = state.combine ?? 'all';
   const pct = baseActivities.length ? (matched.length / baseActivities.length) * 100 : 100;
 
   const clear = (id: string) => onChange((prev) => clearField(prev, id));
@@ -121,7 +126,7 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
           <b>{matched.length.toLocaleString()}</b> of {baseActivities.length.toLocaleString()} activities
           {matched.length === 0 && <span className="flt__none"> — no matches</span>}
         </div>
-        <button type="button" className="cols__link" disabled={activeFields.length === 0} onClick={() => onChange(emptyFilterState())}>Clear all</button>
+        <button type="button" className="cols__link" disabled={activeFields.length === 0} onClick={() => onChange((prev) => ({ ...emptyFilterState(), combine: prev.combine }))}>Clear all</button>
         <div className="flt__bar"><span style={{ width: `${pct}%` }} /></div>
       </div>
 
@@ -137,6 +142,16 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
       {activeFields.length > 0 && (
         <>
           <div className="cols__heading"><span>Active <b>{countActiveFilters(state)}</b></span></div>
+          {countActiveFilters(state) > 1 && (
+            <div className="flt__match">
+              <span className="flt__match-label">An activity must match</span>
+              <div className="flt__modes" role="group" aria-label="How the filters combine">
+                <button type="button" className={combine === 'all' ? 'on' : ''} aria-pressed={combine === 'all'} onClick={() => onChange((prev) => ({ ...prev, combine: 'all' }))} title="AND: every active filter must match">All</button>
+                <button type="button" className={combine === 'any' ? 'on' : ''} aria-pressed={combine === 'any'} onClick={() => onChange((prev) => ({ ...prev, combine: 'any' }))} title="OR: matching any one of the active filters is enough">Any</button>
+              </div>
+              <span className="flt__match-label">of these filters</span>
+            </div>
+          )}
           <div className="flt__active">
             {activeFields.map((f) => (
               <span className="flt__chip" key={f.id}>
@@ -229,7 +244,7 @@ function FieldCard({ field: f, fields, base, state, open, onToggle, onChange, on
 function TextBody({ field: f, state, onChange }: { field: FilterFieldDef; state: FieldFilterState; onChange: SetState }) {
   const mode: TextMode = state.textModes?.[f.id] ?? 'contains';
   const setMode = (m: TextMode) => onChange((prev) => ({ ...prev, textModes: { ...prev.textModes, [f.id]: m } }));
-  const placeholder = { contains: 'Contains', starts: 'Starts with', ends: 'Ends with', equals: 'Is exactly', excludes: 'Does not contain' }[mode];
+  const placeholder = { contains: 'Contains any of', all: 'Contains all of', starts: 'Starts with', ends: 'Ends with', equals: 'Is exactly', excludes: 'Does not contain', empty: '', filled: '' }[mode];
   return (
     <>
       <div className="flt__modes" role="group" aria-label="Match">
@@ -237,16 +252,20 @@ function TextBody({ field: f, state, onChange }: { field: FilterFieldDef; state:
           <button key={m.value} type="button" className={mode === m.value ? 'on' : ''} aria-pressed={mode === m.value} title={m.title} onClick={() => setMode(m.value)}>{m.label}</button>
         ))}
       </div>
-      <div className="info-tip-row">
-        <input
-          className="cols__search"
-          style={{ marginBottom: 4 }}
-          placeholder={`${placeholder}… (${f.label})`}
-          value={state.textFilters[f.id] ?? ''}
-          onChange={(e) => onChange((prev) => ({ ...prev, textFilters: { ...prev.textFilters, [f.id]: e.target.value } }))}
-        />
-        <InfoTip>Separate several terms with commas or new lines to match any of them (with “Not”, none of them may match).</InfoTip>
-      </div>
+      {isPresenceMode(mode) ? (
+        <div className="flt__hint">{mode === 'empty' ? `Only rows where ${f.label} has no value.` : `Only rows where ${f.label} has a value; the empty ones are left out.`}</div>
+      ) : (
+        <div className="info-tip-row">
+          <input
+            className="cols__search"
+            style={{ marginBottom: 4 }}
+            placeholder={`${placeholder}… (${f.label})`}
+            value={state.textFilters[f.id] ?? ''}
+            onChange={(e) => onChange((prev) => ({ ...prev, textFilters: { ...prev.textFilters, [f.id]: e.target.value } }))}
+          />
+          <InfoTip>Separate several terms with commas or new lines to match any of them (with “Not”, none of them may match). Use Filled to leave out rows with no value, or Empty to keep only those.</InfoTip>
+        </div>
+      )}
     </>
   );
 }
@@ -293,6 +312,8 @@ function RangeBody({ field: f, state, onChange }: { field: FilterFieldDef; state
 function SelectBody({ field: f, fields, base, state, onChange }: { field: FilterFieldDef; fields: FilterFieldDef[]; base: Activity[]; state: FieldFilterState; onChange: SetState }) {
   const [valueSearch, setValueSearch] = useState('');
   const sel = state.selections[f.id];
+  const mode = state.selectModes?.[f.id] ?? 'any';
+  const setMode = (m: 'any' | 'all') => onChange((prev) => ({ ...prev, selectModes: { ...prev.selectModes, [f.id]: m } }));
 
   // How many activities each value would leave, given every OTHER filter.
   const counts = useMemo(() => {
@@ -328,6 +349,16 @@ function SelectBody({ field: f, fields, base, state, onChange }: { field: Filter
     <>
       {f.values.length > 8 && (
         <input className="cols__search" style={{ marginBottom: 4 }} type="search" placeholder="Search values…" value={valueSearch} onChange={(e) => setValueSearch(e.target.value)} />
+      )}
+      {(sel?.size ?? 0) > 1 && (
+        <div className="flt__match">
+          <span className="flt__match-label">Has</span>
+          <div className="flt__modes" role="group" aria-label="How the ticked values combine">
+            <button type="button" className={mode === 'any' ? 'on' : ''} aria-pressed={mode === 'any'} onClick={() => setMode('any')} title="OR: the activity has at least one of the ticked values">Any of</button>
+            <button type="button" className={mode === 'all' ? 'on' : ''} aria-pressed={mode === 'all'} onClick={() => setMode('all')} title="AND: the activity has every ticked value">All of</button>
+          </div>
+          <span className="flt__match-label">the ticked</span>
+        </div>
       )}
       <div className="flt__bulk">
         <button type="button" className="cols__link" onClick={() => setSel(new Set([...(sel ?? []), ...list.map((v) => v.value)]))}>Select {q ? 'shown' : 'all'}</button>

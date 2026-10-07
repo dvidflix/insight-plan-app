@@ -120,6 +120,8 @@ export interface SaveRequest {
   relations?: ScenarioRelation[];
   crews?: ScenarioCrew[];
   flags?: ScenarioFlag[];
+  /** The WBS order set in Programmes > WBS (parent path -> children paths): the generated schedule's WBS follows it. */
+  wbsOrder?: Record<string, string[]>;
 }
 
 export const saveScenario = (req: SaveRequest) => post<{ ok: true }>('save', req);

@@ -4,12 +4,13 @@ Complete corrected version with improved WBS and milestone handling
 """
 import xml.etree.ElementTree as ET
 import uuid
+import math
 import re
 from datetime import datetime
 from collections import defaultdict
 from copy import deepcopy
 
-from core.helpers import title_case
+from core.helpers import title_case, get_plan_footprint
 from core.clash_position import classify_vertical_position, DEFINITELY_BELOW, MAJORITY_BELOW, DEFINITELY_ABOVE, MAJORITY_ABOVE
 from core.resources import crews_for, labour_resource_id, rebar_tonnes
 from core.rates_info import rate_fields
@@ -31,6 +32,7 @@ START_DATE = getattr(_config, "START_DATE", None) or datetime.today().replace(
 )
 ENABLE_GROUP_MILESTONES = getattr(_config, "ENABLE_GROUP_MILESTONES", False)
 ENABLE_BUILDING_COMPLETION = getattr(_config, "ENABLE_BUILDING_COMPLETION", False)
+ENABLE_COMPLETION_CLOSEOUT = getattr(_config, "ENABLE_COMPLETION_CLOSEOUT", False)
 # Level gate scope: when True, only SLAB pours on a level are tied back to the
 # level below — walls/columns/stairs then follow their own slab through the
 # clash-derived slab-support edges (a wall bears on the slab it sits on),
@@ -42,6 +44,7 @@ ENABLE_LEVEL_GATE = getattr(_config, "ENABLE_LEVEL_GATE", True)
 # Feeding a slab's first task (Decking): count only the lower level's pure
 # "Concrete" phase tasks, and drop stage-2 pours entirely.
 LEVEL_GATE_DECKING_CONCRETE_ONLY = getattr(_config, "LEVEL_GATE_DECKING_CONCRETE_ONLY", True)
+LEVEL_GATE_MAX_DISTANCE_M = getattr(_config, "LEVEL_GATE_MAX_DISTANCE_M", None)
 ENABLE_WORKS_BEFORE_SLAB = getattr(_config, "ENABLE_WORKS_BEFORE_SLAB", False)
 USE_ACTIVITY_BASED_ACTIVITY_CODES = getattr(_config, "USE_ACTIVITY_BASED_ACTIVITY_CODES", False)
 WBS_BUILDING_ROOT_OBJECT_ID = getattr(_config, "WBS_BUILDING_ROOT_OBJECT_ID", {"DEFAULT": 1})
@@ -204,7 +207,8 @@ def _build_intra_pour_predecessors(activities, sequence_order=None):
         phase_map = {str(a.get("phase", "")).strip(): a.get("task_id") 
                      for a in acts if a.get("phase")}
 
-        if "SLAB" in ptype or "MAIN_SLAB" in ptype or "LANDING" in ptype:
+        # (A raft has the slab's EOP on Slab / FWK phases, so it chains like a slab.)
+        if "SLAB" in ptype or "MAIN_SLAB" in ptype or "LANDING" in ptype or ptype == "RAFT":
             order = [
                 "Works before slab",
                 "Decking",
@@ -449,6 +453,15 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
         if _is_supported_slab(b_rec) and _is_underneath(a_rec, b_rec) and not _is_stage2_pedestal(a_rec):
             candidates.append((a_guid, b_guid))
 
+        # A landing is cast before the stair flights that meet it (a stair follows its landing, as it
+        # follows its slab). Elevations of a landing and its flights overlap, so the vertical rules above
+        # cannot order them: this pair rule replaces them.
+        a_ptype, b_ptype = _normalized_pour_type(a_rec), _normalized_pour_type(b_rec)
+        if "LANDING" in a_ptype and "STAIR" in b_ptype:
+            candidates = [(a_guid, b_guid)]
+        elif "LANDING" in b_ptype and "STAIR" in a_ptype:
+            candidates = [(b_guid, a_guid)]
+
         for pred_guid, slab_guid in candidates:
             pred_rec = guid_to_rec.get(pred_guid, {})
             succ_rec = guid_to_rec.get(slab_guid, {})
@@ -468,6 +481,39 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
             seen_pairs.add(pair)
             predecessors[succ_task].append(pred_task)
 
+    return predecessors
+
+
+def _build_stair_step_predecessors(activities):
+    """Stair steps (small in-situ stair pours linked by core/stair_steps.py to the flight they touch) are
+    cast after that flight: the flight's Concrete precedes the step's first task."""
+    tasks = defaultdict(dict)
+    recs = {}
+    for act in activities:
+        rec = act.get("rec", {})
+        element = rec.get("element")
+        guid = str(getattr(element, "GlobalId", "") or "").strip() if element else ""
+        if not guid:
+            continue
+        recs[guid] = rec
+        phase = str(act.get("phase", "") or "").strip()
+        if phase and act.get("task_id"):
+            tasks[guid][phase] = act["task_id"]
+
+    predecessors = defaultdict(list)
+    for guid, rec in recs.items():
+        parent = rec.get("stair_parent")
+        if not parent:
+            continue
+        parent_guid = str(getattr(parent.get("element"), "GlobalId", "") or "").strip()
+        if not parent_guid or parent_guid == guid or parent_guid not in tasks:
+            continue
+        flight = tasks[parent_guid]
+        step = tasks.get(guid, {})
+        pred = flight.get("Concrete") or flight.get("Stitching") or (list(flight.values())[-1] if flight else None)
+        succ = step.get("Rebar") or (next(iter(step.values())) if step else None)
+        if pred and succ and pred != succ:
+            predecessors[succ].append(pred)
     return predecessors
 
 
@@ -560,18 +606,18 @@ def _build_level_gate_predecessors(activities):
                 # "Concrete" phase tasks, and nothing from a stage-2 pour
                 # (box-outs etc. are sequenced separately and would otherwise
                 # drag the slab above down to their late finish).
-                lower_final_tasks = [
-                    guid_to_tasks.get(guid, {}).get("Concrete")
+                lower_finals = [
+                    (guid, guid_to_tasks.get(guid, {}).get("Concrete"))
                     for guid in level_map.get(lower_level, set())
                     if not _is_stage2(guid_to_rec.get(guid, {}))
                 ]
             else:
-                lower_final_tasks = [
-                    _final_task_for_guid(guid) for guid in level_map.get(lower_level, set())
+                lower_finals = [
+                    (guid, _final_task_for_guid(guid)) for guid in level_map.get(lower_level, set())
                     if not _is_stage2_pedestal(guid_to_rec.get(guid, {}))
                 ]
-            lower_final_tasks = [t for t in lower_final_tasks if t]
-            if not lower_final_tasks:
+            lower_finals = [(g, t) for g, t in lower_finals if t]
+            if not lower_finals:
                 continue
 
             upper_guids = level_map.get(upper_level, set())
@@ -581,13 +627,35 @@ def _build_level_gate_predecessors(activities):
                     if _normalized_pour_type(guid_to_rec.get(guid, {})) in {"SLAB", "MAIN_SLAB"}
                 ]
 
-            upper_start_tasks = [
-                _start_task_for_guid(guid) for guid in upper_guids
-            ]
-            upper_start_tasks = [t for t in upper_start_tasks if t]
+            upper_starts = [(guid, _start_task_for_guid(guid)) for guid in upper_guids]
+            upper_starts = [(g, t) for g, t in upper_starts if t]
 
-            for succ_task in upper_start_tasks:
-                for pred_task in lower_final_tasks:
+            def _footprint(guid):
+                element = guid_to_rec.get(guid, {}).get("element")
+                return get_plan_footprint(element) if element is not None else None
+
+            for succ_guid, succ_task in upper_starts:
+                slab_fp = _footprint(succ_guid) if LEVEL_GATE_MAX_DISTANCE_M else None
+                if slab_fp is None:
+                    near = [t for _g, t in lower_finals]
+                else:
+                    near, measured = [], []
+                    for g, t in lower_finals:
+                        fp = _footprint(g)
+                        if fp is None:
+                            near.append(t)  # can't measure: keep it
+                            continue
+                        # 3D gap between the two: plan gap and vertical gap (0 when they overlap in height).
+                        plan_gap = slab_fp[0].distance(fp[0])
+                        z_gap = max(0.0, fp[1] - slab_fp[2], slab_fp[1] - fp[2])
+                        gap = math.hypot(plan_gap, z_gap)
+                        measured.append((gap, t))
+                        if gap <= LEVEL_GATE_MAX_DISTANCE_M:
+                            near.append(t)
+                    # Nothing close enough: fall back to the nearest lower pour so the slab is still gated.
+                    if not near and measured:
+                        near = [min(measured, key=lambda m: m[0])[1]]
+                for pred_task in near:
                     if pred_task == succ_task:
                         continue
                     pair = (pred_task, succ_task)
@@ -1585,7 +1653,30 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             "rec": {}
         }
 
-    all_activities = activity_list + group_milestones + ([building_completion] if building_completion else [])
+    # Close-out milestone per building: every activity still without a successor after all the
+    # relationships are written feeds it (step 7 below).
+    closeout_by_building = {}
+    closeout_milestones = []
+    if ENABLE_COMPLETION_CLOSEOUT:
+        for act in activity_list:
+            rec = act.get("rec") or {}
+            building = str(rec.get("building", "") or "").strip()
+            if not building or building in closeout_by_building:
+                continue
+            wbs_prefix = str(rec.get("wbs_prefix", "") or building).strip()
+            milestone_id = f"{PROJECT_SHORT}-{building}-COMPLETION"
+            closeout_by_building[building] = milestone_id
+            closeout_milestones.append({
+                "task_id": milestone_id,
+                "task_name": f"{building} - Building Completion",
+                "wbs_oid": wbs_manager.get_id(f"{wbs_prefix} - Construction") or 1,
+                "duration_days": 0,
+                "milestone": True,
+                "milestone_type": "Finish",
+                "rec": {},
+            })
+
+    all_activities = activity_list + group_milestones + closeout_milestones + ([building_completion] if building_completion else [])
 
     act_counter = 1000
     rel_counter = 1000
@@ -2012,6 +2103,18 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         for spec in specs:
             _emit_relationship(spec["pred_id"], spec["succ_id"], spec["rel_type"], spec.get("lag", 0), source="custom")
 
+    # 7. Close-out: activities with no successor feed their building's completion milestone
+    if closeout_by_building:
+        closed = 0
+        for act in activity_list:
+            task_id = act.get("task_id")
+            milestone_id = closeout_by_building.get(str((act.get("rec") or {}).get("building", "") or "").strip())
+            if not task_id or not milestone_id or adjacency.get(task_id):
+                continue
+            if _emit_relationship(task_id, milestone_id, "FinishToStart", source="closeout"):
+                closed += 1
+        print(f"  Close-out: {closed} open-ended activit{'y' if closed == 1 else 'ies'} linked to the building completion milestone")
+
     total_skipped = sum(len(edges) for edges in skipped_edges_by_source.values())
     if total_skipped:
         breakdown = ", ".join(
@@ -2052,7 +2155,8 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         w = ET.SubElement(project_elem, "WBS")
         wid = str(wbs_manager.get_id(name))
         ET.SubElement(w, "ObjectId").text = wid
-        ET.SubElement(w, "Code").text = wid
+        # With a user-set WBS order the code follows it too, so a reader that sorts the WBS by code (the app) shows the same order.
+        ET.SubElement(w, "Code").text = str(seq + 1) if getattr(wbs_manager, "reordered", False) else wid
         ET.SubElement(w, "Name").text = name
         ET.SubElement(w, "ProjectObjectId").text = "1"
         ET.SubElement(w, "SequenceNumber").text = str(seq)

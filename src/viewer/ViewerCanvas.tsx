@@ -2,6 +2,7 @@ import { syncViewpoints } from './savedViews';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useExperimental } from '../state/appPrefsStore';
 import { useMarkersStore } from '../state/markersStore';
+import { useConstructionPlanesStore } from '../state/constructionPlanesStore';
 import { markerShownAt } from './markerActivity';
 import { CLOSED_STATUSES, STATUS_COLORS, useTopicsStore, type Topic } from '../state/topicsStore';
 import { topicActiveAt, topicWindow } from '../topics/topicDates';
@@ -285,6 +286,12 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   useEffect(() => {
     if (ready) engine.syncMarkers(allMarkers, markersVisible);
   }, [engine, ready, allMarkers, markersVisible, models]);
+  // Construction planes are in the IFC's own coordinates too: redrawn when the models change.
+  const planes = useConstructionPlanesStore((s) => s.planes);
+  const planesVisible = useConstructionPlanesStore((s) => s.visible);
+  useEffect(() => {
+    if (ready) engine.syncConstructionPlanes(planes, planesVisible);
+  }, [engine, ready, planes, planesVisible, models]);
   // Saved viewpoints belong to the models they were taken with: back when those are loaded, set aside when not.
   useEffect(() => {
     if (ready) syncViewpoints(engine);

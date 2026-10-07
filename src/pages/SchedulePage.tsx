@@ -26,6 +26,7 @@ import { ConfigPanel } from '../components/schedule/ConfigPanel';
 import { ResizeHandle, ResizeHandleH, useResizableHeight, useResizableWidth } from '../components/ResizeHandle';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { matchesSearchTokens, searchTokens } from '../schedule/search';
+import { exportGanttXlsx } from '../schedule/exportGanttXlsx';
 import { applyFieldFilters, buildFilterFields, emptyFilterState, type FieldFilterState } from '../schedule/filterFields';
 import { useScheduleStore, useVisibleSchedules } from '../state/scheduleStore';
 import { usePersistedState } from '../utils/persistedState';
@@ -336,6 +337,10 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
       onSelect={handleSelect}
     />
   );
+  const exportGantt = () => {
+    const data = ganttRef.current?.getExport();
+    if (data) exportGanttXlsx(data, `Gantt ${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
   const ganttChart = (
     <GanttChart
       ref={ganttRef}
@@ -373,7 +378,7 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
 
   const explorerPanels: ExplorerPanelDef[] = [
     { id: 'activities', title: 'Activity table', render: () => activityTable, onExport: () => activityTableRef.current?.download() },
-    { id: 'gantt', title: 'Timeline (Gantt)', render: () => ganttChart },
+    { id: 'gantt', title: 'Timeline (Gantt)', render: () => ganttChart, onExport: exportGantt },
     { id: 'resources', title: 'Resources', render: () => <ResourcesView model={model} activities={filtered} onSelect={handleSelect} /> },
     {
       id: 'heatmap', title: 'Calendar',
@@ -530,6 +535,11 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
               <IconDownload />
             </button>
           )}
+          {tab === 'gantt' && (
+            <button className="icon-btn" type="button" onClick={exportGantt} title="Export the Gantt to Excel as it is shown: its columns, grouping, subtotals and folded groups">
+              <IconDownload />
+            </button>
+          )}
           <FullscreenButton />
           {listTools && (
             <div className="schedule-toolbar__segmented layouts-segment">
@@ -553,7 +563,7 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
           {tab === 'wbs' && <WbsView model={model} activities={filtered} wbsPalette={wbsPalette} />}
           {tab === 'gantt' && ganttChart}
           {tab === 'resources' && <ResourcesView model={model} activities={filtered} onSelect={handleSelect} />}
-          {tab === 'calendars' && <CalendarsPanel model={model} />}
+          {tab === 'calendars' && <CalendarsPanel model={model} onSelectActivity={(a) => { handleSelect(a); setDetailsOpen(true); onTabChange?.('activities'); }} />}
           {tab === 'codes' && (
             <ActivityCodesView
               model={model}

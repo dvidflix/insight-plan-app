@@ -1,6 +1,6 @@
 # core/stair_steps.py
 """In-situ stair steps: a small in-situ stair pour (volume under STAIR_STEP_MAX_VOLUME_M3)
-is most likely a step cast with a stair flight. Using the clash results (pours within
+is most likely a step cast with a stair flight (in-situ or precast). Using the clash results (pours within
 CLEARANCE_MM of each other = touching), each step is linked to the stair flight it touches:
 
   rec["stair_parent"]          the flight's record
@@ -12,6 +12,10 @@ Steps" WBS group (activity_generator / xml_builder read stair_parent / is_stair_
 volume rule skips them), so steps are scheduled like any other stair pour. A step touching only other steps is linked through them. A step touching no stair stays
 an ordinary stair pour."""
 from config import STAIR_STEP_MAX_VOLUME_M3
+
+
+def _is_stair(rec):
+    return "STAIR" in str(rec.get("pour_type", "") or "").replace(" ", "_").upper()
 
 
 def _is_insitu_stair(rec):
@@ -47,8 +51,9 @@ def link_stair_steps(records, clashes):
         if guid:
             by_guid[guid] = rec
 
-    stairs = {guid: rec for guid, rec in by_guid.items() if _is_insitu_stair(rec)}
-    is_step = {guid: _volume(rec) < STAIR_STEP_MAX_VOLUME_M3 for guid, rec in stairs.items()}
+    # Every stair pour can be a flight (precast flights included); a step is a small in-situ one.
+    stairs = {guid: rec for guid, rec in by_guid.items() if _is_stair(rec)}
+    is_step = {guid: _is_insitu_stair(rec) and _volume(rec) < STAIR_STEP_MAX_VOLUME_M3 for guid, rec in stairs.items()}
     # Every small in-situ stair pour is a step (linked to a stair or not): it has its own WBS group.
     for guid, rec in stairs.items():
         rec["is_stair_step"] = is_step[guid]

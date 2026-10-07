@@ -132,7 +132,7 @@ const writeScenario = (root: string, scenario: string, stem: string, content: Sc
     from the database for the run. */
 function withOverridesFile<T>(content: ScenarioContent, stem: string, fn: (file: string) => Promise<T>): Promise<T> {
   const file = path.join(os.tmpdir(), `insight-plan-${process.pid}-${Date.now()}-${stem}.scenario.json`);
-  fs.writeFileSync(file, JSON.stringify({ version: 1, building: stem, sequence: content.sequence, relations: content.relations, crews: content.crews }));
+  fs.writeFileSync(file, JSON.stringify({ version: 1, building: stem, sequence: content.sequence, relations: content.relations, crews: content.crews, wbsOrder: content.wbsOrder }));
   return fn(file).finally(() => fs.rmSync(file, { force: true }));
 }
 
@@ -153,6 +153,7 @@ function contentOf(body: any): ScenarioContent {
     relations: Array.isArray(body.relations) ? body.relations : [],
     crews: Array.isArray(body.crews) ? body.crews : [],
     flags: Array.isArray(body.flags) ? body.flags : [],
+    wbsOrder: body.wbsOrder && typeof body.wbsOrder === 'object' ? body.wbsOrder : undefined,
   };
 }
 
@@ -427,7 +428,7 @@ async function quickGenerate(root: string, scenario: string, stem: string, conte
   checkModel(root, stem);
   const workDir = scenarioDirOf(root, scenario);
   stageInputs(root, workDir, stem);
-  const reply = await worker.request({ op: 'generate', input: path.join(modelsDir(root), `${stem}.ifc`), scenarioDir: workDir, startDate, sequence: content.sequence, relations: content.relations, crews: content.crews });
+  const reply = await worker.request({ op: 'generate', input: path.join(modelsDir(root), `${stem}.ifc`), scenarioDir: workDir, startDate, sequence: content.sequence, relations: content.relations, crews: content.crews, wbsOrder: content.wbsOrder });
   if (!reply.ok) {
     if (reply.needsFullRun) return { ...(await fullRun(root, scenario, stem, content, startDate)), fast: false, seconds: null };
     throw new HttpError(500, `${reply.error}\n\n${reply.trace ?? ''}${reply.log ?? ''}`);

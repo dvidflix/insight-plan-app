@@ -8,6 +8,7 @@ import { useSequenceUiStore } from '../state/sequenceUiStore';
 import { rerenderTables, type ModelPanelId } from '../viewer/viewerUI';
 import { ViewpointsList } from './ViewpointsList';
 import { MarkersPanel } from './MarkersPanel';
+import { ConstructionPlanesPanel } from './ConstructionPlanesPanel';
 import { ExpandCollapseToggle } from './ExpandCollapseToggle';
 import { useViewSettingsGroups } from '../state/viewSettingsGroups';
 import { View3DPanel } from './View3DPanel';
@@ -30,7 +31,7 @@ import { ModelColorPanel } from './ModelColorPanel';
 import { SearchSetsPanel } from './SearchSetsPanel';
 import { DataTablePanel } from './DataTablePanel';
 import { useDataTableStore } from '../state/dataTableStore';
-import { useOnSplit, useSidePaneStore } from '../state/sidePaneStore';
+import { useOnSplit, useSidePaneStore, useViewpointsToggle } from '../state/sidePaneStore';
 import { useAppPrefsStore } from '../state/appPrefsStore';
 import { useViewSettingsStore } from '../state/viewSettingsStore';
 
@@ -200,6 +201,7 @@ export function ViewpointsPanel({ element, settings, extra = [] }: { element: HT
       <LitSection panel={element} label="Viewpoints" leading defaultOpen><ViewpointsList /></LitSection>
       <LitSection panel={element} label="View settings" second headerAction={<ViewSettingsFoldButton />}>{settings}</LitSection>
       <LitSection panel={element} label="Fly-through"><FlythroughPanel /></LitSection>
+      <LitSection panel={element} label="Decorators"><MarkersPanel /><ConstructionPlanesPanel /></LitSection>
       {extra.map((x) => (
         <LitSection key={x.label} panel={element} label={x.label}>{x.content}</LitSection>
       ))}
@@ -239,7 +241,6 @@ export function RelatedTab({ page }: { page: 'model' | 'sequence' }) {
     <div className="model-config__split">
       <div className="model-config__split-top">
         <RelatedPanel />
-        <MarkersPanel />
         {/* Placement is set once and rarely touched: last, collapsed. */}
         <ModelsPanel page={page} />
       </div>
@@ -271,6 +272,7 @@ export function ModelConfigPanel() {
   // Splitting the view brings up Views, to set the two views up.
   const split = useViewSettingsStore((s) => s.pages.model.split);
   useOnSplit(split, () => setTab('views'));
+  useViewpointsToggle('model', () => tab === 'views', () => setTab('views'));
 
   return (
     <>
@@ -285,7 +287,7 @@ export function ModelConfigPanel() {
       ) : tab === 'colour' ? (
         <ModelColorPanel />
       ) : tab === 'search' ? (
-        <SearchSetsPanel />
+        <SearchSetsPanel player />
       ) : tab === 'datatable' ? (
         <DataTablePanel />
       ) : panels && tab === 'views' ? (

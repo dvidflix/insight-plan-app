@@ -16,6 +16,7 @@ import { RowButtonsChooser, useRowButtons } from './RowButtonsChooser';
 import { InfoTip } from './InfoTip';
 import { queryMatcher } from '../schedule/search';
 import { usePersistedState } from '../utils/persistedState';
+import { FolderPlayerBar, useFolderPlayer } from './FolderPlayer';
 import { STEPS_GROUP, buildStepSets, cleanHeader, guessColumns, guessField, parseTable, stepsFromRows } from '../viewer/importSteps';
 
 const MAX_VALUES = 300;
@@ -61,7 +62,7 @@ function useSelectionItems(): SetItem[] {
       so it survives reloading or re-converting the model.
     Built like the Programme's Filter and Columns tabs: a live result count,
     grouped fields to add, and each condition's values with their counts. */
-export function SearchSetsPanel() {
+export function SearchSetsPanel({ player = false }: { /** Show the folder player (Models only). */ player?: boolean } = {}) {
   const sets = useSearchSetsStore((s) => s.sets);
   const [draft, setDraft] = useState<SearchSet | null>(null);
   if (draft) {
@@ -70,7 +71,7 @@ export function SearchSetsPanel() {
       ? <SelectionSetEditor key={draft.id} initial={draft} isNew={isNew} onClose={() => setDraft(null)} />
       : <SearchSetEditor key={draft.id} initial={draft} isNew={isNew} onClose={() => setDraft(null)} />;
   }
-  return <SearchSetList onEdit={setDraft} />;
+  return <SearchSetList onEdit={setDraft} player={player} />;
 }
 
 /** The buttons on each row that can be hidden (like Blender's restriction toggles). */
@@ -83,7 +84,7 @@ const ROW_BUTTONS = [
 ] as const;
 type RowButton = (typeof ROW_BUTTONS)[number]['id'];
 
-function SearchSetList({ onEdit }: { onEdit: (s: SearchSet) => void }) {
+function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) => void; player: boolean }) {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
@@ -185,6 +186,17 @@ function SearchSetList({ onEdit }: { onEdit: (s: SearchSet) => void }) {
     if (alpha) list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     return list;
   };
+  // Play a folder like phasing (Models only): its sets, in the order listed, are the steps.
+  const folderSteps = (g: string) => sets.filter((x) => x.group === g).sort(alpha ? (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : () => 0).map((x) => results.get(x.id) ?? {}).filter((ids) => countIds(ids) > 0);
+  const folderPlayer = useFolderPlayer({
+    steps: folderSteps,
+    setShown,
+    shownCount: (g) => {
+      let n = 0;
+      for (const ids of folderSteps(g)) { const h = hiddenCount(ids); if (h.hidden > 0) break; n++; }
+      return n;
+    },
+  });
   const listed = groups.flatMap((g) => (q || !closed.has(g) ? inGroupOf(g) : []));
   // The current set (arrows move it, Space toggles it) and the selected ones: click one,
   // Shift+click (or Shift+arrows) to reach down to another, Ctrl+click to add or remove one.
@@ -351,6 +363,7 @@ function SearchSetList({ onEdit }: { onEdit: (s: SearchSet) => void }) {
           </div>
         );
       })}
+      {withPlayer && <FolderPlayerBar player={folderPlayer} folders={[...new Set(sets.map((x) => x.group).filter(Boolean))].sort((a, b) => a.localeCompare(b))} />}
     </div>
   );
 }

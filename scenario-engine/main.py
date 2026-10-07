@@ -40,6 +40,7 @@ from core.xml_builder import (
     _build_intra_pour_predecessors,
     _build_slab_support_predecessors_from_clashes,
     _build_level_gate_predecessors,
+    _build_stair_step_predecessors,
     _build_heavy_precast_wall_predecessors_from_clashes,
     _build_heavy_precast_open_end_predecessors,
     _build_xml_wbs_manager_for_activities,
@@ -810,12 +811,13 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
     intra_predecessors = _build_intra_pour_predecessors(xml_activities)
     slab_support_predecessors = _build_slab_support_predecessors_from_clashes(xml_activities, clashes)
     level_gate_predecessors = _build_level_gate_predecessors(xml_activities)
+    stair_step_predecessors = _build_stair_step_predecessors(xml_activities)
     heavy_precast_wall_predecessors = _build_heavy_precast_wall_predecessors_from_clashes(xml_activities, clashes)
 
     # Heavy Precast chains left with a loose end (Propping with no predecessor,
     # Propping Removal with no successor) get tied to what is under / above them.
     known_edges = defaultdict(list)
-    for source in (intra_predecessors, slab_support_predecessors, level_gate_predecessors, heavy_precast_wall_predecessors):
+    for source in (intra_predecessors, slab_support_predecessors, level_gate_predecessors, stair_step_predecessors, heavy_precast_wall_predecessors):
         for succ, preds in source.items():
             known_edges[succ].extend(preds)
     for pred_id, succ_id, _rel in sequence_ss_predecessors:
@@ -836,11 +838,15 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
     automatic_predecessor_sources = [
         ("slab_support", slab_support_predecessors),
         ("level_gate", level_gate_predecessors),
+        ("stair_step", stair_step_predecessors),
         ("heavy_precast_wall", heavy_precast_wall_predecessors),
         ("heavy_precast_open_end", heavy_precast_open_end_predecessors),
     ]
 
     xml_wbs_manager = _build_xml_wbs_manager_for_activities(xml_activities)
+    # The WBS order set in the app (Programmes > WBS) is written into the schedule.
+    if xml_wbs_manager.reorder(overrides.get("__wbs_order__")):
+        print("  WBS order from the app applied")
     project_building_code = (
         str(records[0].get("building", "DEFAULT") or "DEFAULT")
         if records else
@@ -916,6 +922,7 @@ def overrides_from_scenario(data):
         "__sequence_order__": sorted(sequence, key=lambda x: x["Index"]),
         "__relations__": relations,
         "__crews__": crews,
+        "__wbs_order__": data.get("wbsOrder") or {},
     }
 
 

@@ -29,6 +29,7 @@ const readJson = <T,>(key: string, fallback: T): T => {
   }
 };
 import { downloadBlob } from '../../utils/download';
+import { DEFAULT_SOUND_ID, NO_SOUND, SOUNDS, audioConfig, audioEncodingSupported, encodeSound, loadSound } from '../../utils/exportAudio';
 import { InfoTip } from '../InfoTip';
 
 type Output = 'mp4' | 'png';
@@ -55,6 +56,7 @@ export function MediaExport({ schedule }: { schedule: ScheduleModel }) {
   const [framesPerStep, setFramesPerStep] = useState(1);
   const [scale, setScale] = usePersistedState('export.scale', 2);
   const [quality, setQuality] = usePersistedState<Quality>('export.quality', 'high');
+  const [soundId, setSoundId] = usePersistedState('export.sound', DEFAULT_SOUND_ID);
   const [timeline, setTimeline] = usePersistedState('export.timeline', true);
   const [withTasks, setWithTasks] = usePersistedState('export.tasks', false);
   const flyKeyCount = useFlythroughStore((s) => s.keys.length);
@@ -221,7 +223,26 @@ export function MediaExport({ schedule }: { schedule: ScheduleModel }) {
           }
         }
         if (!config) throw new Error(`This browser cannot encode ${width}×${height} H.264 — choose a lower resolution.`);
-        const muxer = new Muxer({ target: new ArrayBufferTarget(), video: { codec: 'avc', width, height, frameRate: fps }, fastStart: 'in-memory' });
+        // Sound: the chosen track, if this browser can encode AAC; the video is made without it otherwise.
+        let sound: Awaited<ReturnType<typeof loadSound>> | null = null;
+        let soundConfig: AudioEncoderConfig | null = null;
+        let soundNote = '';
+        const chosen = SOUNDS.find((x) => x.id === soundId);
+        if (chosen && audioEncodingSupported) {
+          try {
+            sound = await loadSound(chosen.url);
+            soundConfig = await audioConfig(sound);
+          } catch {
+            soundConfig = null;
+          }
+          if (!soundConfig) { sound = null; soundNote = ' No sound: this browser could not prepare it.'; }
+        } else if (chosen) soundNote = ' No sound: this browser cannot encode audio.';
+        const muxer = new Muxer({
+          target: new ArrayBufferTarget(),
+          video: { codec: 'avc', width, height, frameRate: fps },
+          ...(sound && soundConfig ? { audio: { codec: 'aac' as const, numberOfChannels: sound.channels, sampleRate: soundConfig.sampleRate } } : {}),
+          fastStart: 'in-memory',
+        });
         let encodeError: Error | null = null;
         const encoder = new VideoEncoder({ output: (chunk, meta) => muxer.addVideoChunk(chunk, meta), error: (e) => (encodeError = e) });
         encoder.configure(config);
@@ -248,10 +269,11 @@ export function MediaExport({ schedule }: { schedule: ScheduleModel }) {
         }
         await encoder.flush();
         encoder.close();
+        if (sound && soundConfig && n > 0) await encodeSound(sound, soundConfig, n / fps, (chunk, meta) => muxer.addAudioChunk(chunk, meta));
         muxer.finalize();
         const name = `${schedule.sourceFileName.replace(/\.(xml|xer)$/i, '')}_4D.mp4`;
         downloadBlob(name, new Blob([muxer.target.buffer], { type: 'video/mp4' }));
-        setMessage(cancelled() ? `Cancelled — saved the ${n} frames made so far.` : `Saved ${name} (${n} frames, ${(n / fps).toFixed(1)} s).`);
+        setMessage(cancelled() ? `Cancelled — saved the ${n} frames made so far.` : `Saved ${name} (${n} frames, ${(n / fps).toFixed(1)} s${sound ? `, with ${chosen?.label}` : ''}).${soundNote}`);
       }
     } catch (e) {
       if ((e as Error)?.name !== 'AbortError') setMessage(e instanceof Error ? e.message : String(e));
@@ -306,6 +328,15 @@ export function MediaExport({ schedule }: { schedule: ScheduleModel }) {
           <option value={3}>×3 (very sharp, large)</option>
         </select>
       </label>
+      {output === 'mp4' && SOUNDS.length > 0 && (
+        <label className="disp__row" title={audioEncodingSupported ? 'Music added to the video (looped or cut to its length, fading out at the end)' : 'This browser cannot encode audio'}>
+          <span>Sound</span>
+          <select value={SOUNDS.some((x) => x.id === soundId) ? soundId : NO_SOUND} onChange={(e) => setSoundId(e.target.value)} disabled={!audioEncodingSupported}>
+            <option value={NO_SOUND}>None</option>
+            {SOUNDS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}
+          </select>
+        </label>
+      )}
       {output === 'mp4' && (
         <label className="disp__row">
           <span>Quality</span>

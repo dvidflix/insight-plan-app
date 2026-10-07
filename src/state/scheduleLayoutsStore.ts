@@ -28,7 +28,7 @@ const VIEW_KEYS = new Set([
 ]);
 export const isLayoutKey = (k: string) => k !== STORE_KEY && (VIEW_KEYS.has(k) || VIEW_PREFIXES.some((p) => k.startsWith(p)));
 
-type SerializedFilters = { selections: Record<string, string[]>; textFilters: FieldFilterState['textFilters']; textModes?: FieldFilterState['textModes']; ranges: FieldFilterState['ranges'] };
+type SerializedFilters = { combine?: FieldFilterState['combine']; selectModes?: FieldFilterState['selectModes']; selections: Record<string, string[]>; textFilters: FieldFilterState['textFilters']; textModes?: FieldFilterState['textModes']; ranges: FieldFilterState['ranges'] };
 
 export interface ScheduleLayout {
   id: string;
@@ -96,13 +96,13 @@ const get = useScheduleLayoutsStore.getState;
 const serialize = (filters: FieldFilterState): SerializedFilters => {
   const selections: Record<string, string[]> = {};
   for (const [k, v] of Object.entries(filters.selections)) selections[k] = [...v];
-  return { selections, textFilters: filters.textFilters, textModes: filters.textModes, ranges: filters.ranges };
+  return { combine: filters.combine, selectModes: filters.selectModes, selections, textFilters: filters.textFilters, textModes: filters.textModes, ranges: filters.ranges };
 };
 
 const deserialize = (f: SerializedFilters): FieldFilterState => {
   const selections: Record<string, Set<string>> = {};
   for (const [k, v] of Object.entries(f.selections)) selections[k] = new Set(v);
-  return { selections, textFilters: f.textFilters ?? {}, textModes: f.textModes ?? {}, ranges: f.ranges ?? {} };
+  return { combine: f.combine, selectModes: f.selectModes ?? {}, selections, textFilters: f.textFilters ?? {}, textModes: f.textModes ?? {}, ranges: f.ranges ?? {} };
 };
 
 function snapshot(filters: ViewFilters, tab?: string): Omit<ScheduleLayout, 'id' | 'name'> {

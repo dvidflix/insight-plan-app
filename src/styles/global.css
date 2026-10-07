@@ -10587,3 +10587,20 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .scene-new__opt small { font-size: 11px; color: var(--text-dim); }
 .scene-new__buttons { display: flex; justify-content: flex-end; gap: 6px; }
 .scenes__start { margin: 8px 0; }
+
+/* Filters: how filters / ticked values combine (AND / OR) */
+.flt__match { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin: 4px 0 8px; font-size: 12px; }
+.flt__match-label { color: var(--text-dim); }
+
+/* Construction planes (beside Markers): name, min X Y Z, max X Y Z, colour. */
+.cpl__head, .cpl__edit { display: grid; grid-template-columns: repeat(6, minmax(40px, 1fr)) 26px 22px 22px; gap: 3px; align-items: center; }
+.cpl__name { grid-column: 1 / -1; }
+.cpl__head { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); padding: 0 2px; }
+.cpl__item { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; border-top: 1px solid var(--border); }
+.cpl__edit input[type='text'], .cpl__edit input:not([type]) { min-width: 0; height: 26px; box-sizing: border-box; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: #ffffff; font: inherit; font-size: 12px; }
+.cpl__edit .mkt__num { text-align: right; }
+.cpl__edit input[type='color'] { width: 26px; height: 26px; padding: 0; border: 1px solid var(--border); border-radius: 4px; background: none; }
+.cpl__row { display: flex; align-items: center; gap: 6px; width: 100%; padding: 3px 4px; border: none; background: none; text-align: left; font: inherit; cursor: pointer; }
+.cpl__row:hover { background: rgba(0, 0, 0, 0.05); }
+.cpl__swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
+.cpl__row.is-off { opacity: 0.45; }

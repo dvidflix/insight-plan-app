@@ -29,6 +29,7 @@ import { xmlToXer } from '../schedule/xmlToXer';
 import { filterXmlText } from '../schedule/exportFilter';
 import { DEFAULT_SCN_TABLE, type ScnTableConfig } from '../scenarios/tableView';
 import type { ScnConfigTab } from '../components/scenarios/ScenarioTableConfig';
+import { getWbsOrder } from './wbsOrder';
 
 /** The Scenarios work in progress — project, scenario, pour order, unsaved
     edits, undo/redo, selection, table view — in one store, so the Scenarios
@@ -365,7 +366,7 @@ async function run(label: string, fn: () => Promise<void>) {
 
 function request() {
   const { project, scenario, loaded, rows, relations, crews, flags } = get();
-  return { root: project!.root, scenario: scenario!, stem: loaded!.stem, headers: loaded!.headers, rows: toSheet({ headers: loaded!.headers, rows }), relations, crews, flags: flagList(flags) };
+  return { root: project!.root, scenario: scenario!, stem: loaded!.stem, headers: loaded!.headers, rows: toSheet({ headers: loaded!.headers, rows }), relations, crews, flags: flagList(flags), wbsOrder: getWbsOrder() };
 }
 
 export const saveOrder = () =>

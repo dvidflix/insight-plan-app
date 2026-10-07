@@ -149,25 +149,56 @@ export function SequenceTimelineStatusBar() {
     return () => clearInterval(intervalRef.current);
   }, [playing, range, stepUnit, setDate, setPlaying, tl.stepIntervalMs]);
 
-  // Left/Right arrow keys step the cursor back/forward by one stepUnit —
-  // same boundary math as the ⏪/⏩ buttons. Ignored while typing in a form
-  // field elsewhere on the page so it doesn't hijack normal text editing.
+  // Left/Right arrow keys, and Ctrl+. / Ctrl+, , step the cursor forward/back
+  // by one stepUnit — same boundary math as the ⏪/⏩ buttons. Ignored while
+  // typing in a form field elsewhere on the page so it doesn't hijack normal
+  // text editing.
   useEffect(() => {
     if (!range) return;
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
-      if (e.key === 'ArrowRight') {
+      // Ctrl+Alt+3 plays / pauses, Ctrl+Alt+0 goes to the start, Ctrl+Alt+4 to the end (matched by key
+      // position, as Alt changes what the key types).
+      if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey) {
+        if (e.code === 'Digit3') {
+          e.preventDefault();
+          if (!e.repeat) setPlaying((p) => !p);
+          return;
+        }
+        if (e.code === 'Digit0') {
+          e.preventDefault();
+          setDate(range.min);
+          return;
+        }
+        if (e.code === 'Digit4') {
+          e.preventDefault();
+          setDate(range.max);
+          return;
+        }
+        // Ctrl+Alt+5 / 6: a longer / shorter step, along the Step dropdown's list.
+        if (e.code === 'Digit5' || e.code === 'Digit6') {
+          e.preventDefault();
+          const i = STEP_UNIT_LABELS.findIndex((u) => u.value === stepUnit);
+          const next = STEP_UNIT_LABELS[Math.min(STEP_UNIT_LABELS.length - 1, Math.max(0, i + (e.code === 'Digit5' ? 1 : -1)))];
+          if (next) setStepUnit(next.value);
+          return;
+        }
+      }
+      const ctrl = (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey;
+      const forward = e.key === 'ArrowRight' || (ctrl && e.code === 'Period');
+      const back = e.key === 'ArrowLeft' || (ctrl && e.code === 'Comma');
+      if (forward) {
         e.preventDefault();
         setDate((d) => Math.min(range.max, nextBoundary(d ?? range.min, stepUnit)));
-      } else if (e.key === 'ArrowLeft') {
+      } else if (back) {
         e.preventDefault();
         setDate((d) => Math.max(range.min, prevBoundary(d ?? range.min, stepUnit)));
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [range, stepUnit, setDate]);
+  }, [range, stepUnit, setDate, setStepUnit, setPlaying]);
 
   const segments = useMemo(() => (range ? yearSegments(range) : []), [range]);
   // Monthly stepping: the track splits into a month row over a smaller year row.
@@ -294,13 +325,13 @@ export function SequenceTimelineStatusBar() {
       </div>
 
       <div className="sequence-statusbar__transport">
-        <button className="transport-btn" type="button" title="Go to start" aria-label="Go to start" onClick={() => setDate(range.min)}>
+        <button className="transport-btn" type="button" title="Go to start (Ctrl+Alt+0)" aria-label="Go to start" onClick={() => setDate(range.min)}>
           <IconFirstPage />
         </button>
-        <button className="transport-btn" type="button" title={`Back 1 ${stepUnit}`} aria-label={`Back 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(prevBoundary(d ?? range.min, stepUnit)))}>
+        <button className="transport-btn" type="button" title={`Back 1 ${stepUnit} (Ctrl+,)`} aria-label={`Back 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(prevBoundary(d ?? range.min, stepUnit)))}>
           <IconRewind />
         </button>
-        <button className={`transport-btn transport-btn--play${playing ? ' is-playing' : ''}`} type="button" title={playing ? 'Pause' : 'Play'} aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying((p) => !p)}>
+        <button className={`transport-btn transport-btn--play${playing ? ' is-playing' : ''}`} type="button" title={playing ? 'Pause (Ctrl+Alt+3)' : 'Play (Ctrl+Alt+3)'} aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying((p) => !p)}>
           {playing ? <IconPauseCircle /> : <IconPlayCircle />}
         </button>
         <button
@@ -315,15 +346,15 @@ export function SequenceTimelineStatusBar() {
         >
           <IconStopCircle />
         </button>
-        <button className="transport-btn transport-btn--mirror" type="button" title={`Forward 1 ${stepUnit}`} aria-label={`Forward 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(nextBoundary(d ?? range.min, stepUnit)))}>
+        <button className="transport-btn transport-btn--mirror" type="button" title={`Forward 1 ${stepUnit} (Ctrl+.)`} aria-label={`Forward 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(nextBoundary(d ?? range.min, stepUnit)))}>
           <IconRewind />
         </button>
-        <button className="transport-btn" type="button" title="Go to end" aria-label="Go to end" onClick={() => setDate(range.max)}>
+        <button className="transport-btn" type="button" title="Go to end (Ctrl+Alt+4)" aria-label="Go to end" onClick={() => setDate(range.max)}>
           <IconLastPage />
         </button>
       </div>
 
-      <label className="sequence-statusbar__step" title="Playback step">
+      <label className="sequence-statusbar__step" title="Playback step (Ctrl+Alt+5 longer, Ctrl+Alt+6 shorter)">
         <span>Step</span>
         <select value={stepUnit} onChange={(e) => setStepUnit(e.target.value as StepUnit)}>
           {STEP_UNIT_LABELS.map((u) => (

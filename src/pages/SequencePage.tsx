@@ -1,5 +1,5 @@
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
-import { useOnSplit } from '../state/sidePaneStore';
+import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
 import { ScenarioDock, ScenarioTabContent } from '../components/scenarios/ScenarioDock';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule, useVisibleSchedules } from '../state/scheduleStore';
@@ -157,6 +157,7 @@ export function SequencePanel() {
   const [linkTab, setLinkTab] = useState<LinkTab>('groups');
   // Splitting the view brings up Views, to set the two views up.
   useOnSplit(split, () => setLinkTab('view3d'));
+  useViewpointsToggle('sequence', () => linkTab === 'view3d', () => setLinkTab('view3d'));
   // The data table's Configure button brings up its tab, as on the Models page.
   const dataTableConfigRequest = useDataTableStore((s) => s.configRequest);
   useEffect(() => {
