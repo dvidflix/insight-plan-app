@@ -3,21 +3,36 @@ import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useConstructionPlanesStore, type ConstructionPlane } from '../state/constructionPlanesStore';
 import { usePersistedState } from '../utils/persistedState';
 import { CollapsibleSection } from './CollapsibleSection';
-import { IconEye, IconEyeOff, IconTrash } from './icons';
+import { IconCopy, IconEye, IconEyeOff, IconTrash } from './icons';
+import { formatCoord, parseCoord, type Coord } from '../viewer/coordText';
 
 /** Views > Decorators > Construction planes: translucent boxes in the model's coordinates, from a
     minimum X Y Z to a maximum X Y Z (a plane where min and max meet on an axis), drawn in the 3D view.
     Click one to fly to it; Edit opens the table. */
 
-type Corner = 'minX' | 'minY' | 'minZ' | 'maxX' | 'maxY' | 'maxZ';
-const CORNERS: Corner[] = ['minX', 'minY', 'minZ', 'maxX', 'maxY', 'maxZ'];
-
-const toNumber = (text: string): number | null => {
-  const t = text.trim().replace(/\s/g, '');
-  if (!t) return null;
-  const n = Number(/^-?\d+,\d+$/.test(t) ? t.replace(',', '.') : t);
-  return Number.isFinite(n) ? n : null;
-};
+/** One corner as "X, Y, Z" text: typed, or pasted from the Point coordinates tool. It is kept while you type and tidied
+    when you leave the box; text that is not three numbers is flagged and does not change the plane. */
+function CornerInput({ value, label, onChange }: { value: Coord; label: string; onChange: (c: Coord) => void }) {
+  const [draft, setDraft] = useState<string | null>(null);
+  const invalid = draft !== null && parseCoord(draft) === null;
+  return (
+    <input
+      className={`cpl__corner${invalid ? ' is-invalid' : ''}`}
+      value={draft ?? formatCoord(value)}
+      placeholder="X, Y, Z"
+      title={invalid ? 'Three numbers: X, Y, Z' : `${label}: X, Y, Z in metres (paste the text the Point coordinates tool copies)`}
+      aria-label={label}
+      aria-invalid={invalid}
+      onFocus={(e) => e.currentTarget.select()}
+      onChange={(e) => {
+        setDraft(e.target.value);
+        const c = parseCoord(e.target.value);
+        if (c) onChange(c);
+      }}
+      onBlur={() => setDraft(null)}
+    />
+  );
+}
 
 const sizeText = (p: ConstructionPlane) => {
   const d = [p.maxX - p.minX, p.maxY - p.minY, p.maxZ - p.minZ].map((v) => Math.abs(v));
@@ -29,7 +44,7 @@ export function ConstructionPlanesPanel() {
   const engine = useViewerEngine();
   const planes = useConstructionPlanesStore((s) => s.planes);
   const visible = useConstructionPlanesStore((s) => s.visible);
-  const { setVisible, add, update, remove, clear } = useConstructionPlanesStore.getState();
+  const { setVisible, add, update, remove, duplicate, setAllVisible, clear } = useConstructionPlanesStore.getState();
   const [open, setOpen] = usePersistedState('constructionPlanes.open', true);
   const [editing, setEditing] = useState(false);
 
@@ -49,23 +64,43 @@ export function ConstructionPlanesPanel() {
     >
       <div className="mkt">
         <div className="mkt__bar">
-          <button type="button" role="switch" aria-checked={visible} className={`switch${visible ? ' on' : ''}`} onClick={() => setVisible(!visible)} title="Show the construction planes in the 3D view">
-            <span className="switch__thumb" />
-          </button>
+          {(() => {
+            // The eye of the whole list: shut when none is shown, dimmed when some are not.
+            const off = visible ? planes.filter((p) => !p.visible).length : planes.length;
+            const shut = planes.length > 0 && off === planes.length;
+            const part = off > 0 && !shut;
+            return (
+              <button
+                type="button"
+                className={`ss__eye${shut ? ' is-off' : ''}${part ? ' is-part' : ''}`}
+                disabled={planes.length === 0}
+                onClick={() => { if (shut || part) { setVisible(true); setAllVisible(true); } else setAllVisible(false); }}
+                title={shut ? 'Show all the construction planes' : part ? 'Some planes are hidden: click to show them all' : 'Hide all the construction planes'}
+                aria-label={shut ? 'Show all the construction planes' : 'Hide all the construction planes'}
+              >
+                {shut ? <IconEyeOff width={16} height={16} /> : <IconEye width={16} height={16} />}
+              </button>
+            );
+          })()}
           <span className="mkt__spacer" />
           <button type="button" className={`btn btn--small${editing ? ' primary' : ''}`} onClick={() => setEditing((v) => !v)}>{editing ? 'Done' : 'Edit'}</button>
         </div>
 
-        {planes.length === 0 && !editing && <div className="flt__hint">No construction planes yet. Press Edit, then add one and type its min and max X Y Z.</div>}
+        {planes.length === 0 && !editing && <div className="flt__hint">No construction planes yet. Press Edit, then add one and give its min and max corner (X, Y, Z).</div>}
 
         {!editing && planes.length > 0 && (
           <div className="mkt__list">
             {planes.map((p) => (
-              <button key={p.id} type="button" className={`cpl__row${p.visible ? '' : ' is-off'}`} title={`${p.name || 'Plane'} — click to fly to it`} onClick={() => flyTo(p)}>
-                <span className="cpl__swatch" style={{ background: p.color, opacity: Math.max(p.opacity, 0.35) }} />
-                <span className="mkt__name">{p.name || 'Plane'}</span>
-                <span className="mkt__xyz">{sizeText(p)}</span>
-              </button>
+              <div key={p.id} className={`mkt__line${p.visible ? '' : ' is-off'}`}>
+                <button type="button" className="cpl__row" title={`${p.name || 'Plane'} — click to fly to it`} onClick={() => flyTo(p)}>
+                  <span className="cpl__swatch" style={{ background: p.color, opacity: Math.max(p.opacity, 0.35) }} />
+                  <span className="mkt__name">{p.name || 'Plane'}</span>
+                  <span className="mkt__xyz">{sizeText(p)}</span>
+                </button>
+                <button type="button" className={`ss__eye${p.visible ? '' : ' is-off'}`} onClick={() => update(p.id, { visible: !p.visible })} title={p.visible ? 'Hide this plane' : 'Show this plane'} aria-label={p.visible ? 'Hide this plane' : 'Show this plane'}>
+                  {p.visible ? <IconEye width={16} height={16} /> : <IconEyeOff width={16} height={16} />}
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -79,7 +114,7 @@ export function ConstructionPlanesPanel() {
             </div>
             <div className="mkt__grid">
               <div className="cpl__head">
-                <span>Min X</span><span>Min Y</span><span>Min Z</span><span>Max X</span><span>Max Y</span><span>Max Z</span><span /><span /><span />
+                <span>Min corner (X, Y, Z)</span><span>Max corner (X, Y, Z)</span><span /><span /><span /><span />
               </div>
               {planes.map((p) => (
                 <div className="cpl__item" key={p.id}>
@@ -87,17 +122,11 @@ export function ConstructionPlanesPanel() {
                     <input className="cpl__name" value={p.name} placeholder="name" onChange={(e) => update(p.id, { name: e.target.value })} />
                   </div>
                   <div className="cpl__edit">
-                    {CORNERS.map((c) => (
-                      <input
-                        key={c}
-                        className="mkt__num"
-                        inputMode="decimal"
-                        value={Number.isFinite(p[c]) ? String(p[c]) : ''}
-                        onChange={(e) => { const n = toNumber(e.target.value); if (n !== null || e.target.value === '') update(p.id, { [c]: n ?? 0 }); }}
-                      />
-                    ))}
+                    <CornerInput label="Min corner" value={[p.minX, p.minY, p.minZ]} onChange={([minX, minY, minZ]) => update(p.id, { minX, minY, minZ })} />
+                    <CornerInput label="Max corner" value={[p.maxX, p.maxY, p.maxZ]} onChange={([maxX, maxY, maxZ]) => update(p.id, { maxX, maxY, maxZ })} />
                     <input type="color" value={p.color} onChange={(e) => update(p.id, { color: e.target.value })} title="Colour" aria-label="Colour" />
                     <button type="button" className="mkt__del" title={p.visible ? 'Hide this plane' : 'Show this plane'} aria-label={p.visible ? 'Hide this plane' : 'Show this plane'} onClick={() => update(p.id, { visible: !p.visible })}>{p.visible ? <IconEye width={14} height={14} /> : <IconEyeOff width={14} height={14} />}</button>
+                    <button type="button" className="mkt__del" title="Duplicate this plane" aria-label="Duplicate this plane" onClick={() => duplicate(p.id)}><IconCopy /></button>
                     <button type="button" className="mkt__del" title="Delete this plane" aria-label="Delete this plane" onClick={() => remove(p.id)}><IconTrash /></button>
                   </div>
                   <label className="mkt__def" title="How see-through it is">
@@ -107,7 +136,7 @@ export function ConstructionPlanesPanel() {
                 </div>
               ))}
             </div>
-            {planes.length === 0 && <div className="flt__hint">Add a plane, then type its corners (metres, project axes).</div>}
+            {planes.length === 0 && <div className="flt__hint">Add a plane, then type or paste its two corners (metres, project axes).</div>}
           </>
         )}
       </div>

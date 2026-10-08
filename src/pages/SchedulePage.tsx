@@ -462,38 +462,53 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
               <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.fit()} title="Fit whole programme in view">Fit</button>
               <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomOut()} title="Zoom out (Ctrl + wheel)">−</button>
               <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomIn()} title="Zoom in (Ctrl + wheel)">+</button>
-              <div style={{ position: 'relative' }}>
-                <button className="icon-btn" title="Gantt settings" onClick={() => setGanttSettingsOpen((v) => !v)}>
-                  <IconGear />
-                </button>
-                {ganttSettingsOpen && (
-                  <div
-                    style={{
-                      position: 'absolute', top: '110%', left: 0, zIndex: 20, width: 220,
-                      background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 10,
-                    }}
-                  >
-                    <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 6 }}>Gantt</div>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                      <input type="checkbox" checked={showGanttLinks} onChange={(e) => setShowGanttLinks(e.target.checked)} />
-                      Show relationship links
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                      <input type="checkbox" checked={showGanttCritical} onChange={(e) => setShowGanttCritical(e.target.checked)} />
-                      Highlight critical path
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                      <input type="checkbox" checked={showGanttBaseline} onChange={(e) => setShowGanttBaseline(e.target.checked)} />
-                      Show target (baseline) bars
-                    </label>
-                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                      <input type="checkbox" checked={showGanttLabels} onChange={(e) => setShowGanttLabels(e.target.checked)} />
-                      Show names beside bars
-                    </label>
-                  </div>
-                )}
-              </div>
             </>
+          )}
+          {listTools && (
+            <div style={{ position: 'relative' }}>
+              <button className="icon-btn" title={tab === 'gantt' ? 'Gantt and view settings' : 'View settings'} onClick={() => setGanttSettingsOpen((v) => !v)}>
+                <IconGear />
+              </button>
+              {ganttSettingsOpen && (
+                <div
+                  style={{
+                    position: 'absolute', top: '110%', left: 0, zIndex: 20, width: 240,
+                    background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 10,
+                  }}
+                >
+                  {tab === 'gantt' && (
+                    <>
+                      <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 6 }}>Gantt</div>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                        <input type="checkbox" checked={showGanttLinks} onChange={(e) => setShowGanttLinks(e.target.checked)} />
+                        Show relationship links
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                        <input type="checkbox" checked={showGanttCritical} onChange={(e) => setShowGanttCritical(e.target.checked)} />
+                        Highlight critical path
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                        <input type="checkbox" checked={showGanttBaseline} onChange={(e) => setShowGanttBaseline(e.target.checked)} />
+                        Show target (baseline) bars
+                      </label>
+                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                        <input type="checkbox" checked={showGanttLabels} onChange={(e) => setShowGanttLabels(e.target.checked)} />
+                        Show names beside bars
+                      </label>
+                    </>
+                  )}
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', margin: tab === 'gantt' ? '8px 0 6px' : '0 0 6px' }}>Rows</div>
+                  <label title="Curtain: filters and the driving path fade the other rows back instead of removing them" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                    <input type="checkbox" checked={curtain} onChange={(e) => setCurtain(e.target.checked)} />
+                    Curtain (fade filtered rows)
+                  </label>
+                  <label title="Totals row and group subtotals; pick how each column sums up (sum, average, min, max, dates, spans) in the totals row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                    <input type="checkbox" checked={showTotals} onChange={(e) => setShowTotals(e.target.checked)} />
+                    Σ Totals
+                  </label>
+                </div>
+              )}
+            </div>
           )}
         </div>
 
@@ -501,28 +516,6 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
           {drivingTarget && (
             <button className="btn btn--small" type="button" onClick={() => setDrivingTarget(null)} title="Clear the driving path">
               Driving path to {model.activities.find((x) => x.id === drivingTarget)?.code ?? ''} ✕
-            </button>
-          )}
-          {listTools && (
-            <button
-              type="button"
-              className={`btn totals-toggle${curtain ? ' primary' : ''}`}
-              aria-pressed={curtain}
-              onClick={() => setCurtain(!curtain)}
-              title="Curtain: filters and the driving path fade the other rows back instead of removing them"
-            >
-              Curtain
-            </button>
-          )}
-          {(tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
-            <button
-              type="button"
-              className={`btn totals-toggle${showTotals ? ' primary' : ''}`}
-              aria-pressed={showTotals}
-              onClick={() => setShowTotals(!showTotals)}
-              title="Totals row and group subtotals; pick how each column sums up (sum, average, min, max, dates, spans) in the totals row"
-            >
-              Σ Totals
             </button>
           )}
           {tab === 'activities' && (

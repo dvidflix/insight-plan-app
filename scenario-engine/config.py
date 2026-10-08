@@ -208,6 +208,13 @@ ENABLE_LEVEL_GATE = True
 # every activity left with no successor feeds (FS), so the programme has no open ends.
 ENABLE_COMPLETION_CLOSEOUT = True
 
+# Before the close-out, an activity left with no successor (a column, a wall, a removable element, a landing...)
+# precedes the start of the slab sitting on it, so it is part of the sequence; only pours with nothing above
+# them (the roof) end on the completion milestone. A slab counts as "on it" within this reach (m, plan gap and
+# vertical gap, like the level gate).
+ENABLE_OPEN_END_SEQUENCING = True
+OPEN_END_MAX_DISTANCE_M = 0.3
+
 # Level gate: only tie SLAB pours back to the level below; walls/columns/
 # stairs follow their own slab via clash-derived slab-support edges. Set
 # False for the old behaviour (every start task -> every lower-level final).
@@ -229,6 +236,15 @@ LEVEL_GATE_DECKING_CONCRETE_ONLY = True
 # dozens of far-away predecessors). If none is that close, the nearest one is used;
 # pours whose geometry can't be measured are kept. None/0 = no limit (old behaviour).
 LEVEL_GATE_MAX_DISTANCE_M = 0.05
+
+# Concrete curing of slabs (and rafts): a "Curing" activity after the slab's Concrete, written onto the
+# 7-day calendar like the Heavy Precast one (concrete cures on weekends too), with no labour.
+ENABLE_SLAB_CURING = True
+# Calendar days of curing.
+SLAB_CURING_DAYS = 7
+# False: what follows a slab (the pours it supports, the slab on the level above) waits for the slab's Concrete only,
+# and Curing runs alongside. True: it waits for the Curing to finish.
+SLAB_CURING_GATES_SUCCESSORS = False
 
 # Pour ID behavior
 # True: generate new planning proposed pour IDs (current workflow).
@@ -371,3 +387,8 @@ START_DATE = datetime.strptime(os.environ["CWA_START_DATE"], "%Y-%m-%d") if os.e
 # wall class and its rate assumptions on the wall activities as user fields (the
 # INSIGHT_RATES_FILE environment variable overrides this path). No file: no fields.
 RATES_FILE = r"C:\insight-stack\data\rates.json"
+
+# Retired and extra activities, from SeaTable's "Retired", "Extra activities" and "Baselines" tables: written by the app's
+# Settings > Retired and extra activities > Pull (the INSIGHT_ADJUSTMENTS_FILE environment variable overrides this path).
+# No file: nothing is retired and nothing is added. See core/adjustments.py.
+ADJUSTMENTS_FILE = r"C:\insight-stack\data\adjustments.json"

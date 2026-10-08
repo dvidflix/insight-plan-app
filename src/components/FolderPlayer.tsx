@@ -117,7 +117,7 @@ export function FolderPlayerBar({ player, folders }: { player: ReturnType<typeof
   const { folder, setFolder, step, total, playing, goTo, go, stop, togglePlay } = player;
   const on = folder !== '';
   return (
-    <div className="ss__player" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', position: 'sticky', bottom: 0, marginTop: 'auto', padding: '6px 0', background: 'var(--bg-panel)', borderTop: '1px solid var(--border)' }}>
+    <div className="ss__player" style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', position: 'sticky', bottom: 0, marginTop: 'auto', marginLeft: -10, marginRight: -10, padding: '6px 10px', background: 'var(--bg-panel)', borderTop: '1px solid var(--border)' }}>
       <label style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="Play a folder like phasing: its sets are the steps, shown one after another. The 4D timeline's shortcuts then drive it.">
         <span>Play</span>
         <select value={folder} onChange={(e) => setFolder(e.target.value)}>

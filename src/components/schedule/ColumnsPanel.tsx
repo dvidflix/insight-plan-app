@@ -190,7 +190,7 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
         const slots = g.columns.flatMap(idsOf);
         const on = slots.filter((id) => shownSet.has(id)).length;
         return (
-          <div className="cols__group" key={g.name}>
+          <div className={`cols__group${on > 0 ? ' is-active' : ''}`} key={g.name}>
             <div className="cols__group-head">
               <button type="button" className="cols__group-toggle" onClick={() => toggleGroup(g.name)} aria-expanded={open}>
                 <IconSectionChevron className="section-chevron" />

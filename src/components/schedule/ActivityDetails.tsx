@@ -11,6 +11,10 @@ import { usePourSequence } from './usePourSequence';
 import { useModelsStore } from '../../state/modelsStore';
 import { useLinkGroupsStore } from '../../state/linkGroupsStore';
 import { useClashStore } from '../../state/clashStore';
+import { useViewerEngine } from '../../viewer/ViewerEngineContext';
+import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
+import { activityStartMs } from '../../schedule/linking';
+import { alignDown } from '../../schedule/period';
 
 type SectionId = 'details' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
 const DEFAULT_OPEN: SectionId[] = ['details', 'notes', 'suggested', 'codes', 'udf', 'resources'];
@@ -43,6 +47,24 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
   const objects = useMemo(() => sharedActivityObjects(model, loadedModels, groups), [model, loadedModels, groups]);
   const contacts = useMemo(() => sharedContactIndex(clashResults), [clashResults]);
   const hasContacts = contacts.size > 0;
+  const engine = useViewerEngine();
+  // The activity's linked objects (its own, or those it shares by Element ID), as the viewer takes them.
+  const linkedIds = useMemo(() => {
+    const out: Record<string, number[]> = {};
+    for (const [modelId, ids] of objects.objectsOf.get(activity.id) ?? []) if (ids.size) out[modelId] = [...ids];
+    return out;
+  }, [objects, activity.id]);
+  const linkedCount = Object.values(linkedIds).reduce((n, l) => n + l.length, 0);
+
+  /** Takes you to 4D Sequencing with this activity's objects selected and the timeline on its start date. */
+  const showIn4D = () => {
+    const timeline = useSequenceTimelineStore.getState();
+    const start = activityStartMs(activity, timeline.basis);
+    if (start !== null) timeline.setDate(alignDown(start, timeline.stepUnit));
+    window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'sequence' }));
+    // Once the 4D page's viewer has its size back, select the objects and frame them.
+    window.setTimeout(() => void engine.selectElements(linkedIds, true), 400);
+  };
 
 
   // Links the model implies for this activity's element but the schedule lacks.
@@ -96,6 +118,7 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Code', activity.code],
           ['Name', activity.name],
           ['Status', activity.status],
+          ['Calendar', activity.calendarId ? (model.calendars.find((c) => c.id === activity.calendarId)?.name || activity.calendarId) : '—'],
           ['Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours) : '—'],
           ['% Complete', `${activity.percentComplete}%`],
         ])}
@@ -107,6 +130,16 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           title="Pick out the chain of predecessors that drives this activity's start"
         >
           {drivingTarget === activity.id ? 'Hide driving path' : 'Show driving path'}
+        </button>
+        <button
+          type="button"
+          className="btn btn--small"
+          style={{ margin: '6px 6px 6px 0' }}
+          onClick={showIn4D}
+          disabled={linkedCount === 0}
+          title={linkedCount === 0 ? 'This activity has no linked objects (Link Groups), so there is nothing to select' : `Go to 4D Sequencing: select its ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'} and move the timeline to its start`}
+        >
+          Show in 4D
         </button>
       </CollapsibleSection>
 

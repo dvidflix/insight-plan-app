@@ -15,6 +15,11 @@ try:
 except ImportError:
     ENABLE_WORKS_BEFORE_SLAB = False
 
+try:
+    from config import ENABLE_SLAB_CURING, SLAB_CURING_DAYS
+except ImportError:
+    ENABLE_SLAB_CURING, SLAB_CURING_DAYS = False, 0
+
 
 def _is_heavy_precast_rec(rec):
     ptype = str(rec.get("pour_type", "") or "").replace(" ", "_").upper()
@@ -222,7 +227,7 @@ def create_activities(rec, wbs_manager, overrides=None):
     if is_landing:
         phase_sequence = [
             {"original_name": "Decking",  "display_name": "Decking",  "suffix": "-DK", "short_label": "Decking"},
-            {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R",  "short_label": "Rebar"},
+            {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R",  "short_label": "Rebar & EP/AP"},
             {"original_name": "Concrete", "display_name": "Concrete", "suffix": "-C",  "short_label": "Concrete"},
         ]
     elif is_slab and is_raft:
@@ -251,6 +256,13 @@ def create_activities(rec, wbs_manager, overrides=None):
             {"original_name": "Concrete", "display_name": "Concrete", "suffix": "-C", "short_label": "Concrete"},
         ]
 
+    # Concrete curing after the slab's (or raft's) Concrete: a fixed number of calendar days, no labour. The phase is
+    # named "Curing", which is what puts it on the 7-day calendar (xml_builder) and gives it no crew (CREW_TABLE).
+    if is_slab and not is_landing and ENABLE_SLAB_CURING and SLAB_CURING_DAYS > 0:
+        phase_sequence = phase_sequence + [
+            {"original_name": "Curing", "display_name": "Curing", "suffix": "-CU", "short_label": "Curing", "fixed_days": SLAB_CURING_DAYS},
+        ]
+
     prev_task_id = None
     phase_order_counter = 0
 
@@ -266,7 +278,10 @@ def create_activities(rec, wbs_manager, overrides=None):
         }
 
         # Calculate duration
-        if isinstance(phase_def.get("duration"), str):
+        if "fixed_days" in seq:
+            duration = seq["fixed_days"]
+            phase_def = {**phase_def, "resource": None}
+        elif isinstance(phase_def.get("duration"), str):
             duration = durations.get(phase_def["duration"], 1.0)
         else:
             duration = sum(durations.get(k, 0) for k in phase_def.get("duration", []))

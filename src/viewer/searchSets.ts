@@ -229,3 +229,69 @@ export function runSearchSet(indexes: ReadonlyMap<string, ModelIndex>, set: Pick
 }
 
 export const countIds = (ids: Record<string, number[]>) => Object.values(ids).reduce((n, l) => n + l.length, 0);
+
+/** The objects of `ids` (per model local ids) as elements. */
+function elementsOf(indexes: ReadonlyMap<string, ModelIndex>, ids: Record<string, number[]>): ElementSummary[] {
+  const out: ElementSummary[] = [];
+  for (const [modelId, list] of Object.entries(ids)) {
+    const index = indexes.get(modelId);
+    if (!index) continue;
+    for (const id of list) {
+      const e = index.elements.get(id);
+      if (e) out.push(e);
+    }
+  }
+  return out;
+}
+
+/** A selection's conversion to a search: one "is any of" condition per property, holding the values those objects have
+    (all conditions must hold). The search finds the objects again from their properties, whatever model is loaded. */
+export function conditionsFromObjects(indexes: ReadonlyMap<string, ModelIndex>, ids: Record<string, number[]>, fields: string[]): SearchCondition[] {
+  const elements = elementsOf(indexes, ids);
+  return fields.map((field) => ({
+    id: crypto.randomUUID(),
+    field,
+    op: 'anyOf' as const,
+    value: '',
+    values: [...new Set(elements.map((e) => elementValue(e, field)))],
+  }));
+}
+
+/** How many objects a conversion finds, and how many of those are the objects it came from. */
+export function conversionResult(indexes: ReadonlyMap<string, ModelIndex>, ids: Record<string, number[]>, fields: string[]): { found: number; inSet: number; total: number } {
+  const total = countIds(ids);
+  if (fields.length === 0) return { found: 0, inSet: 0, total };
+  const found = runSearchSet(indexes, { kind: 'search', match: 'all', conditions: conditionsFromObjects(indexes, ids, fields) });
+  const own = new Map(Object.entries(ids).map(([m, l]) => [m, new Set(l)]));
+  let inSet = 0;
+  for (const [m, list] of Object.entries(found)) for (const id of list) if (own.get(m)?.has(id)) inSet++;
+  return { found: countIds(found), inSet, total };
+}
+
+/** The smallest combination of properties (up to 3) that finds these objects and as few others as possible: each step adds
+    the property that cuts the most strays, and it stops once nothing more is cut. Properties the objects don't all have, or
+    with many different values (a GlobalId, a name per object), are left out. */
+export function suggestFields(indexes: ReadonlyMap<string, ModelIndex>, ids: Record<string, number[]>, fields: string[], maxValues = 12): string[] {
+  const elements = elementsOf(indexes, ids);
+  if (elements.length === 0) return [];
+  const candidates = fields.filter((f) => {
+    if (f === `${ATTRIBUTES}.GlobalId`) return false;
+    const values = new Set(elements.map((e) => elementValue(e, f)));
+    return !values.has(NO_VALUE) && values.size <= maxValues;
+  });
+  const chosen: string[] = [];
+  let best = Infinity;
+  while (chosen.length < 3) {
+    let pick: string | null = null;
+    for (const f of candidates) {
+      if (chosen.includes(f)) continue;
+      const { found } = conversionResult(indexes, ids, [...chosen, f]);
+      if (found < best) { best = found; pick = f; }
+    }
+    if (!pick) break;
+    chosen.push(pick);
+    if (best <= elements.length) break;
+  }
+  return chosen;
+}
+

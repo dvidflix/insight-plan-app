@@ -6,7 +6,7 @@ import { parseTsv, toTsv } from './timelines/gridText';
 import { usePersistedState } from '../utils/persistedState';
 import { CollapsibleSection } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
-import { IconTrash } from './icons';
+import { IconCopy, IconEye, IconEyeOff, IconTrash } from './icons';
 import { RichNoteEditor } from './RichNoteEditor';
 import { MarkerActivityPicker } from './MarkerActivityPicker';
 import { isEmptyNote } from '../utils/richText';
@@ -60,7 +60,7 @@ export function MarkersPanel() {
   const engine = useViewerEngine();
   const markers = useMarkersStore((s) => s.markers);
   const visible = useMarkersStore((s) => s.visible);
-  const { setVisible, add, update, remove, setAll, clear } = useMarkersStore.getState();
+  const { setVisible, add, update, remove, duplicate, setAll, setAllHidden, clear } = useMarkersStore.getState();
   const [open, setOpen] = usePersistedState('markers.open', true);
   const [editing, setEditing] = useState(false);
   const [more, setMore] = useState<string | null>(null);
@@ -106,9 +106,24 @@ export function MarkersPanel() {
     >
       <div className="mkt">
         <div className="mkt__bar">
-          <button type="button" role="switch" aria-checked={visible} className={`switch${visible ? ' on' : ''}`} onClick={() => setVisible(!visible)} title="Show the markers in the 3D view">
-            <span className="switch__thumb" />
-          </button>
+          {(() => {
+            // The eye of the whole list, like a folder's in Search sets: shut when none is shown, dimmed when some are not.
+            const off = visible ? markers.filter((m) => m.hidden).length : markers.length;
+            const shut = markers.length > 0 && off === markers.length;
+            const part = off > 0 && !shut;
+            return (
+              <button
+                type="button"
+                className={`ss__eye${shut ? ' is-off' : ''}${part ? ' is-part' : ''}`}
+                disabled={markers.length === 0}
+                onClick={() => { if (shut || part) { setVisible(true); setAllHidden(false); } else setAllHidden(true); }}
+                title={shut ? 'Show all the markers' : part ? 'Some markers are hidden: click to show them all' : 'Hide all the markers'}
+                aria-label={shut ? 'Show all the markers' : 'Hide all the markers'}
+              >
+                {shut ? <IconEyeOff width={16} height={16} /> : <IconEye width={16} height={16} />}
+              </button>
+            );
+          })()}
           <span className="mkt__spacer" />
           <button type="button" className={`btn btn--small${editing ? ' primary' : ''}`} onClick={() => setEditing((v) => !v)}>{editing ? 'Done' : 'Edit'}</button>
         </div>
@@ -120,13 +135,18 @@ export function MarkersPanel() {
             {markers.map((m) => {
               const def = markerIcon(m.icon);
               return (
-                <button key={m.id} type="button" className="mkt__row" title={`${def.label} — click to fly to it`} onClick={() => void engine.focusMarker(m)}>
-                  <span className="mkt__icon" style={{ background: def.color }}>{def.path ? <svg viewBox="0 0 24 24"><path d={def.path} /></svg> : null}</span>
-                  <span className="mkt__name">{m.name || def.label}</span>
-                  {m.activityId && <span className="mkt__tag" title={`Shown during ${[m.activityCode, m.activityName].filter(Boolean).join(' — ')}`}>{m.activityCode || 'activity'}</span>}
-                  {!isEmptyNote(m.note) && <span className="mkt__tag" title="Has a note">note</span>}
-                  <span className="mkt__xyz">{m.x.toFixed(2)}, {m.y.toFixed(2)}, {m.z.toFixed(2)}</span>
-                </button>
+                <div key={m.id} className={`mkt__line${m.hidden ? ' is-off' : ''}`}>
+                  <button type="button" className="mkt__row" title={`${def.label} — click to fly to it`} onClick={() => void engine.focusMarker(m)}>
+                    <span className="mkt__icon" style={{ background: def.color }}>{def.path ? <svg viewBox="0 0 24 24"><path d={def.path} /></svg> : null}</span>
+                    <span className="mkt__name">{m.name || def.label}</span>
+                    {m.activityId && <span className="mkt__tag" title={`Shown during ${[m.activityCode, m.activityName].filter(Boolean).join(' — ')}`}>{m.activityCode || 'activity'}</span>}
+                    {!isEmptyNote(m.note) && <span className="mkt__tag" title="Has a note">note</span>}
+                    <span className="mkt__xyz">{m.x.toFixed(2)}, {m.y.toFixed(2)}, {m.z.toFixed(2)}</span>
+                  </button>
+                  <button type="button" className={`ss__eye${m.hidden ? ' is-off' : ''}`} onClick={() => update(m.id, { hidden: !m.hidden })} title={m.hidden ? 'Show this marker' : 'Hide this marker'} aria-label={m.hidden ? 'Show this marker' : 'Hide this marker'}>
+                    {m.hidden ? <IconEyeOff width={16} height={16} /> : <IconEye width={16} height={16} />}
+                  </button>
+                </div>
               );
             })}
           </div>
@@ -148,7 +168,7 @@ export function MarkersPanel() {
             </div>
             <div className="mkt__grid">
               <div className="mkt__head">
-                <span>Name</span><span>X</span><span>Y</span><span>Z</span><span>Icon</span><span /><span />
+                <span>Name</span><span>X</span><span>Y</span><span>Z</span><span>Icon</span><span /><span /><span />
               </div>
               {markers.map((m, row) => (
                 <div className="mkt__item" key={m.id}>
@@ -161,6 +181,7 @@ export function MarkersPanel() {
                     {MARKER_ICONS.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
                   </select>
                   <button type="button" className={`mkt__more${more === m.id ? ' on' : ''}${m.activityId || !isEmptyNote(m.note) ? ' has' : ''}`} title="Activity and note" aria-label="Activity and note" aria-expanded={more === m.id} onClick={() => setMore(more === m.id ? null : m.id)}>{more === m.id ? '▾' : '▸'}</button>
+                  <button type="button" className="mkt__del" title="Duplicate this marker" aria-label="Duplicate this marker" onClick={() => duplicate(m.id)}><IconCopy /></button>
                   <button type="button" className="mkt__del" title="Delete this marker" aria-label="Delete this marker" onClick={() => remove(m.id)}><IconTrash /></button>
                 </div>
                 {more === m.id && (

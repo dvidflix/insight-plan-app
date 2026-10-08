@@ -20,6 +20,8 @@ export interface Marker {
   activityName?: string;
   /** A formatted note (sanitised HTML), shown with the marker on hover. */
   note?: string;
+  /** Switched off with its eye (Views > Decorators): not drawn. */
+  hidden?: boolean;
   /** Set on the markers made from BCF topics (not saved with the Markers). */
   topicId?: string;
 }
@@ -31,6 +33,10 @@ interface MarkersState {
   add: (m?: Partial<Marker>) => string;
   update: (id: string, patch: Partial<Marker>) => void;
   remove: (id: string) => void;
+  /** A copy right after the original, to change from there; returns its id. */
+  duplicate: (id: string) => string | null;
+  /** Every marker's own eye on (false) or off (true). */
+  setAllHidden: (hidden: boolean) => void;
   setAll: (markers: Marker[]) => void;
   clear: () => void;
 }
@@ -50,6 +56,20 @@ export const useMarkersStore = create<MarkersState>()(
       },
       update: (id, patch) => set((s) => ({ markers: s.markers.map((m) => (m.id === id ? { ...m, ...patch } : m)) })),
       remove: (id) => set((s) => ({ markers: s.markers.filter((m) => m.id !== id) })),
+      duplicate: (id) => {
+        let copyId: string | null = null;
+        set((s) => {
+          const i = s.markers.findIndex((m) => m.id === id);
+          if (i < 0) return s;
+          // A BCF topic's marker belongs to its topic: the copy is an ordinary marker.
+          const { id: _id, topicId: _topic, ...rest } = s.markers[i];
+          const copy = newMarker({ ...rest, name: `${rest.name || 'Marker'} (copy)` });
+          copyId = copy.id;
+          return { markers: [...s.markers.slice(0, i + 1), copy, ...s.markers.slice(i + 1)] };
+        });
+        return copyId;
+      },
+      setAllHidden: (hidden) => set((s) => ({ markers: s.markers.map((m) => (!!m.hidden === hidden ? m : { ...m, hidden })) })),
       setAll: (markers) => set({ markers }),
       clear: () => set({ markers: [] }),
     }),

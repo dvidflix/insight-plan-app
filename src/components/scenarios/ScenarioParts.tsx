@@ -1,4 +1,5 @@
 import { InfoTip } from '../InfoTip';
+import { ProgrammeDownload } from '../ProgrammeDownload';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { FlagToggle } from './FlagToggle';
 import { useFocusStore } from '../../state/focusStore';
@@ -45,7 +46,11 @@ import { AddModelToProject, ModelCheckCard } from './ScenarioModelCheck';
 import { fetchDefaultRoot } from '../../scenarios/api';
 import { useSearchSetsStore } from '../../state/searchSetsStore';
 import { useViewerEngine } from '../../viewer/ViewerEngineContext';
-import { stepGuids, stepSetsOf } from '../../viewer/importSteps';
+import { STEPS_GROUP, stepGuids, stepSetsOf } from '../../viewer/importSteps';
+
+/** The Reorder source that is not a folder: the project's baseline order. */
+const BASELINE_SOURCE = '\u0001baseline';
+import { usePersistedState } from '../../utils/persistedState';
 
 /** Loads the project and the scenario's pour order from the store's
     choices. Mount it once wherever Scenarios is showing (the Scenarios tab,
@@ -115,7 +120,11 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
   const setIgnoreAppearance = useIgnoreTimelinerStore((s) => s.setIgnoreAppearance);
   const focus = useFocusStore((s) => s.focus);
   const setFocus = useFocusStore((s) => s.setFocus);
-  const stepSets = useMemo(() => stepSetsOf(searchSets), [searchSets]);
+  // The folder of sets that gives the order: Steps (imported) unless another is chosen, e.g. a folder of recorded selection sets.
+  const [stepsFolder, setStepsFolder] = usePersistedState('scenarios.stepsFolder', STEPS_GROUP);
+  const stepFolders = useMemo(() => [...new Set([STEPS_GROUP, ...(stepsFolder === BASELINE_SOURCE ? [] : [stepsFolder]), ...searchSets.map((s) => s.group).filter(Boolean)])].sort((a, b) => a.localeCompare(b)), [searchSets, stepsFolder]);
+  const byBaseline = stepsFolder === BASELINE_SOURCE;
+  const stepSets = useMemo(() => (byBaseline ? [] : stepSetsOf(searchSets, stepsFolder)), [searchSets, stepsFolder, byBaseline]);
   if (!loaded) return null;
   const updating = busy?.startsWith('Updating 4D') ?? false;
   return (
@@ -136,19 +145,30 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         <input className="scn-step-input" value={stepInput} onChange={(e) => setStepInput(e.target.value.replace(/\D/g, ''))} placeholder="Step" />
         <button className="btn scn-icon-btn" type="submit" disabled={!hasSelection || !stepInput} title="Move the selection to this step (Enter)" aria-label="Move to step"><IconReroute width={16} height={16} /></button>
       </form>
+      <select className="scn-step-folder" value={stepsFolder} onChange={(e) => setStepsFolder(e.target.value)} title="What Reorder follows: the project's baseline order, or a Search sets folder (its search or selection sets, numbered 1, 2, 3…, are the steps)" aria-label="Order source">
+        <option value={BASELINE_SOURCE}>Baseline</option>
+        {stepFolders.map((f) => <option key={f} value={f}>{f}</option>)}
+      </select>
       <button
         className="btn"
-        disabled={stepSets.length === 0}
+        disabled={!byBaseline && stepSets.length === 0}
         onClick={() => {
-          if (window.confirm(`Order the items by the ${stepSets.length} steps (Models > Search sets > Steps)? Items in a step start together; items in no step leave the sequence.`)) {
+          if (byBaseline) {
+            applyRows(reorderLike(rows, loaded.baseStep));
+            return;
+          }
+          if (window.confirm(`Order the items by the ${stepSets.length} sets of “${stepsFolder}” (Models › Search sets)? Items in a step start together; items in no step leave the sequence.`)) {
             applyRows(applySteps(rows, stepSets.map((s) => stepGuids(engine.getIndexes(), s))));
           }
         }}
-        title={stepSets.length ? 'Follow the Steps sets: the items of each step start together, in step order' : 'No Steps yet: import them in Models > Search sets'}
+        title={byBaseline
+          ? 'Reset to baseline: put every item back in the project\'s baseline order'
+          : stepSets.length
+            ? `Follow the sets of “${stepsFolder}”: the items of each step start together, in step order (by the number each name starts with)`
+            : `No sets in “${stepsFolder}”: choose another source, or import steps in Models › Search sets`}
       >
-        From steps
+        Reorder
       </button>
-      <button className="btn" onClick={() => applyRows(reorderLike(rows, loaded.baseStep))} title="Reset to baseline: put every item back in the project's baseline order">Baseline</button>
       </div>
       <div className="scn-grp">
       <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveUp(rows, selected))} title="Move up one step (Alt+↑)" aria-label="Move up one step"><IconArrowUp width={16} height={16} /></button>
@@ -535,7 +555,7 @@ export function ScenarioNotice() {
   );
 }
 
-/** No project folder yet: pick one in the Scenario panel, or work in the
+/** No project folder yet: pick one in Inputs > Project database, or work in the
     default one (Documents\Insight Plan\Default project). */
 function NoProject({ stem }: { stem: string }) {
   const [error, setError] = useState<string | null>(null);
@@ -552,7 +572,7 @@ function NoProject({ stem }: { stem: string }) {
       <section className="scn-card">
         <div className="scn-card__title">Generate a programme from this model</div>
         <p className="scn-dim scn-editor__help">
-          Scenarios works in a project folder: the models it schedules, their scenarios and the project database. Pick your project's folder in the Scenario panel, or start in a default one (Documents\Insight Plan\Default project) — the model loaded in Inputs is added to it in the next step.
+          Scenarios works in a project folder: the models it schedules, their scenarios and the project database. Pick your project's folder in Inputs › Project database (each scene keeps its own), or start in a default one (Documents\Insight Plan\Default project) — the model loaded in Inputs is added to it in the next step.
         </p>
         <div className="scn-row">
           <button type="button" className="btn primary" onClick={() => void start()}>Start without a project folder</button>
@@ -625,36 +645,14 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
 
   return (
     <>
-      <section className="scn-card">
-        <div className="scn-card__title">Project folder</div>
-        <form
-          className="scn-row"
-          onSubmit={(e) => {
-            e.preventDefault();
-            const next = rootDraft.trim();
-            if (next === root) {
-              void openProject(root);
-              void refreshProject(root);
-            } else useProjectDbStore.setState({ root: next });
-          }}
-        >
-          <input value={rootDraft} onChange={(e) => setRootDraft(e.target.value)} placeholder="C:\…\Project folder" title="The project folder: its models are in the models folder (added from here when missing), with 2-enriched-ifc and 4-schedule-xlsx if the full CWA workflow has run" />
-          <button className="btn" type="submit">Open</button>
-        </form>
-        {projectError && <div className="scn-error">{projectError}</div>}
-        {project && <div className="scn-dim">{project.models.length} models · scenarios saved in the project database</div>}
-        {dbFile && <div className="scn-dim scn-dbfile" title={dbFile}>{dbFile}</div>}
-      </section>
-
-      {stem && <ModelCheckCard stem={stem} compact />}
+      {projectError && <div className="scn-error">{projectError}</div>}
 
       {scenario && (
         <section className="scn-card">
-          <div className="scn-card__title">Current scenario</div>
-          <label className="scn-field">
-            <span>Building (from Inputs)</span>
+          <div className="scn-card__title">Current scenario from input:</div>
+          <label className="scn-field" title="The building (from Inputs) this scenario is for">
             {inputStems.length > 1 ? (
-              <select value={stem ?? ''} onChange={(e) => pickStem(e.target.value)}>
+              <select value={stem ?? ''} onChange={(e) => pickStem(e.target.value)} aria-label="Building (from Inputs)">
                 {inputStems.map((m) => (
                   <option key={m} value={m}>{m}</option>
                 ))}
@@ -663,14 +661,13 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
               <strong className="scn-building">{stem}</strong>
             )}
           </label>
-          <div className="scn-compact-row">
+          <div className="scn-compact-row scn-compact-row--one">
           <label className="scn-inline scn-inline--head" title="Project start / data date for the CPM. Keep it the same across scenarios you want to compare. Blank = the day you generate.">
-            <span>Start date</span>
+            <span>Start</span>
             <input type="date" value={startDate} onChange={(e) => useScenarioStore.setState({ startDate: e.target.value })} />
           </label>
             <button
               className="btn primary scn-update"
-              style={{ minWidth: 92 }}
               disabled={!ready || !!busy || (modelInfo ? !modelInfo.hasSource : true)}
               onClick={() => void updateFourD()}
               title="Regenerate the programme for the order on screen (about a second) and play it in 4D straight away — no download or Inputs step needed. Does not save the order."
@@ -687,25 +684,18 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
             >
               <IconSync width={16} height={16} />
             </button>
-          </div>
-          <div className="scn-compact-row">
             <button className="btn" disabled={!ready || !!busy || !dirty} onClick={() => void saveOrder()} title="Save the order, manual links and crews to the project database">Save</button>
             <button className="btn scn-icon-btn" disabled={!ready || !!busy || !generatedAt} onClick={() => void loadGenerated()} title="Load the last generated XML into Inputs without regenerating" aria-label="Load last generated">
               <IconUpload width={16} height={16} />
             </button>
-            <button className="btn scn-icon-btn scn-dl" disabled={!ready || !!busy || !generatedAt} onClick={() => void download('xml')} title="Download the last generated programme as XML" aria-label="Download XML">
-              <IconDownload width={16} height={16} /> XML
-            </button>
-            <button className="btn scn-icon-btn scn-dl" disabled={!ready || !!busy || !generatedAt} onClick={() => void download('xer')} title="Download the last generated programme as XER" aria-label="Download XER">
-              <IconDownload width={16} height={16} /> XER
-            </button>
+            <ProgrammeDownload canXml disabled={!ready || !!busy || !generatedAt} onDownload={(f) => void download(f)} />
           </div>
         </section>
       )}
 
       {project && (
         <section className="scn-card scn-card--grow">
-          <div className="scn-card__title">Scenarios</div>
+          <div className="scn-list__head" aria-hidden="true"><span>Scenario</span><span>Status</span><span /></div>
           <div className="scn-list">
             {scenarioNames.length === 0 && <div className="scn-dim">No scenarios yet — create one below.</div>}
             {scenarioNames.map((name) => {
@@ -716,7 +706,7 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
                   <button type="button" className="scn-list__pick" onClick={() => pickScenario(name)}>
                     <span className="scn-list__name">{name}</span>
                     <span className="scn-list__meta">
-                      {!m ? <span className="scn-chip">unsaved</span> : m.generated ? <span className="scn-chip scn-chip--ok">generated {new Date(m.generated).toLocaleString()}</span> : <span className="scn-chip">saved, not generated</span>}
+                      {!m ? <span className="scn-chip">unsaved</span> : m.generated ? <span className="scn-chip scn-chip--ok" title="Generated">{new Date(m.generated).toLocaleString()}</span> : <span className="scn-chip">saved, not generated</span>}
                     </span>
                   </button>
                   <button type="button" className="scn-list__delete" disabled={!!busy} title={`Delete the scenario "${name}"`} aria-label={`Delete the scenario ${name}`} onClick={() => void deleteScenario(name)}>
@@ -758,6 +748,8 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
           </form>
         </section>
       )}
+
+      {stem && <ModelCheckCard stem={stem} compact />}
     </>
   );
 }

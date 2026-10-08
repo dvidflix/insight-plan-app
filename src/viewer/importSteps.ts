@@ -155,9 +155,9 @@ export function stepGuids(indexes: ReadonlyMap<string, ModelIndex>, set: SearchS
   return out;
 }
 
-/** The Steps folder's sets in step order (by the number their name starts with). */
-export function stepSetsOf(sets: SearchSet[]): SearchSet[] {
+/** A folder's sets (the Steps folder unless another is given: search sets or selection sets) in step order (by the number their name starts with). */
+export function stepSetsOf(sets: SearchSet[], folder: string = STEPS_GROUP): SearchSet[] {
   return sets
-    .filter((s) => s.group === STEPS_GROUP)
+    .filter((s) => s.group === folder)
     .sort((a, b) => parseInt(a.name, 10) - parseInt(b.name, 10) || a.name.localeCompare(b.name));
 }

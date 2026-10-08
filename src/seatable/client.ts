@@ -114,16 +114,61 @@ export async function pushElements(engine: ViewerEngine, classes: string[]) {
 
 // ---------------------------------------------------------------- pull
 
+interface PourTable {
+  columns: { name: string; type: string }[];
+  rows: { pourId: string; buildings: string[]; values: Record<string, FieldValue> }[];
+}
+
+const POUR_SET = 'CWA Pour';
+const norm = (v: unknown) => String(v ?? '').trim().toUpperCase();
+
+/** The property of an element by set and name, ignoring case and surrounding spaces. */
+function pourProp(props: Record<string, unknown>, name: string): unknown {
+  const direct = props[`${POUR_SET}.${name}`];
+  if (direct !== undefined) return direct;
+  const want = `${POUR_SET}.${name}`.toUpperCase();
+  for (const k in props) if (k.trim().toUpperCase() === want) return props[k];
+  return undefined;
+}
+
+/** Gives the elements the columns of the "Models metadata" row with their HPC Pour ID and their Unit + Building
+    (the row's Buildings are like "1HDAB"). What the Elements table already has for an element is kept. */
+function matchPours(engine: ViewerEngine, pours: PourTable, values: Record<string, Record<string, FieldValue>>) {
+  const byPour = new Map<string, PourTable['rows']>();
+  for (const row of pours.rows) {
+    const id = norm(row.pourId);
+    (byPour.get(id) ?? byPour.set(id, []).get(id)!).push(row);
+  }
+  for (const index of engine.getIndexes().values()) {
+    for (const el of index.elements.values()) {
+      const id = pourProp(el.props, 'HPC Pour ID');
+      if (id === undefined || id === null || id === '') continue;
+      const candidates = byPour.get(norm(id));
+      if (!candidates) continue;
+      const building = norm(pourProp(el.props, 'Building'));
+      const unit = norm(pourProp(el.props, 'Unit'));
+      const key = `${unit}${building}`;
+      const hit = candidates.find((c) => c.buildings.some((b) => norm(b) === key));
+      if (!hit) continue;
+      values[el.guid] = { ...hit.values, ...values[el.guid] };
+    }
+  }
+}
+
 /** Reads the user's columns of the Elements table into the custom fields and puts them on the loaded elements.
     `quiet`: no message unless something changed or failed (the automatic pull when a model loads). */
 export async function pullFields(engine: ViewerEngine, opts: { quiet?: boolean } = {}) {
   if (useSeaTableUiStore.getState().busy) return;
   ui({ busy: 'pull', message: opts.quiet ? useSeaTableUiStore.getState().message : null, progress: { done: 0, total: 1, label: 'Reading the custom columns…' } });
   try {
-    const r = await api<{ columns: { name: string; type: string }[]; rows: { guid: string; values: Record<string, FieldValue> }[]; note?: string }>('pull');
+    const r = await api<{ columns: { name: string; type: string }[]; rows: { guid: string; values: Record<string, FieldValue> }[]; pours?: PourTable; note?: string }>('pull');
     const values: Record<string, Record<string, FieldValue>> = {};
     for (const row of r.rows) values[row.guid] = row.values;
     const fields = r.columns.map((c) => c.name);
+    if (r.pours?.rows.length) {
+      for (const c of r.pours.columns) if (!fields.includes(c.name)) fields.push(c.name);
+      matchPours(engine, r.pours, values);
+    }
     const before = useCustomFieldsStore.getState();
     const same = JSON.stringify(before.fields) === JSON.stringify(fields) && JSON.stringify(before.values) === JSON.stringify(values);
     useCustomFieldsStore.getState().setPulled(fields, values);

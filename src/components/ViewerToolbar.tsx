@@ -17,8 +17,9 @@ import { useSequenceLabelStore } from '../state/sequenceLabelStore';
 import { usePersistedState } from '../utils/persistedState';
 import { elementValue, prettyClass } from '../viewer/bimTables';
 import { useIndexTick } from './modelFields';
+import { WALK_SPEEDS } from '../viewer/walkthrough';
 import {
-  IconBoxSelect, IconCategory, IconLocationPoint, IconNavigationArrow, IconShortText, IconTagOutline, IconViewCube, IconChevronDown, IconChevronRight, IconFullscreen, IconCube, IconCursor, IconDeleteAll, IconFilter, IconGhost, IconGrid, IconIfcGrid, IconPaintBucket, IconPalette, IconMeasureArea, IconMeasureLength,
+  IconBoxSelect, IconCategory, IconLocationPoint, IconNavigationArrow, IconWalk, IconShortText, IconTagOutline, IconViewCube, IconChevronDown, IconChevronRight, IconFullscreen, IconCube, IconCursor, IconDeleteAll, IconFilter, IconGhost, IconGrid, IconIfcGrid, IconPaintBucket, IconPalette, IconMeasureArea, IconMeasureLength,
   IconMeasurePerimeter, IconMeasureSlope, IconMeasureVertical, IconModelOrtho, IconViewTable, IconPerspective, IconPin, IconSection, IconSelectionSet, IconSelectOff, IconSinglePane, IconTransparency, IconTwoPane, IconViewAxon, IconViewBack,
   IconViewBottom, IconViewFront, IconViewLeft, IconViewRight, IconViewShowAll, IconViewTop, IconVisibility, IconVisibilityOff, IconZoomToSelected,
 } from './icons';
@@ -305,10 +306,36 @@ export function ViewerToolbar() {
   };
   const measuring = tool !== 'select' && tool !== 'section' && tool !== 'box';
 
+  // Walkthrough (W A S D, E / Space up, Q / C down): the keyboard moves the camera through the model.
+  const [walking, setWalking] = useState(false);
+  const [walkSpeed, setWalkSpeed] = useState(4);
+  useEffect(() => {
+    let off = () => {};
+    void engine.ready.then(() => {
+      const w = engine.walkthrough;
+      if (!w) return;
+      setWalking(w.isActive);
+      setWalkSpeed(w.speed);
+      const on = (active: boolean) => setWalking(active);
+      w.onChange.add(on);
+      off = () => w.onChange.remove(on);
+    });
+    return () => off();
+  }, [engine]);
+
   // Select / Isolate, Ghost on top, Pin.
   const [baseMode, setBaseMode] = useState<'select' | 'isolate'>(() => (engine.getInteractionMode() === 'isolate' ? 'isolate' : 'select'));
   const [ghost, setGhost] = useState(() => engine.getInteractionMode() === 'reveal');
   const [pinned, setPinned] = useState(() => engine.isRevealPinned());
+  // The mode can also be changed from code (Record in Search sets goes back to Select): the buttons follow.
+  useEffect(() => {
+    const onMode = (mode: 'select' | 'isolate' | 'reveal') => {
+      setGhost(mode === 'reveal');
+      if (mode !== 'reveal') setBaseMode(mode);
+    };
+    engine.onInteractionModeChange.add(onMode);
+    return () => { engine.onInteractionModeChange.remove(onMode); };
+  }, [engine]);
   useEffect(() => {
     const onPin = (p: boolean) => setPinned(p);
     engine.onRevealPinChange.add(onPin);
@@ -558,6 +585,36 @@ export function ViewerToolbar() {
         items={VIEWS.map((v) => ({ key: v.id, label: v.label, icon: v.icon, onClick: () => void fitViews(undefined, v.dir) }))}
       />
       <Btn icon={IconZoomToSelected} tip={hasSelection ? 'Fit the selection' : 'Fit all models'} onClick={() => void fitViews(hasSelection ? selection() : undefined)} />
+      <Split
+        icon={IconWalk}
+        tip={walking ? 'Leave the walkthrough (Esc)' : 'Walkthrough: move with W A S D, up with E / Space / Page Up, down with Q / C / Page Down, turn with ← →, Shift for faster'}
+        menuTip="Walkthrough speed"
+        active={walking}
+        onClick={() => {
+          const w = engine.walkthrough;
+          if (!w) return;
+          // Walking needs the perspective camera.
+          if (!w.isActive && ortho) {
+            patchView(page, 'main', { projection: 'Perspective' });
+            patchView(page, 'second', { projection: 'Perspective' });
+          }
+          w.toggle();
+        }}
+        items={WALK_SPEEDS.map((s): MenuItem => ({
+          key: s.id,
+          label: s.label,
+          checked: walkSpeed === s.speed,
+          onClick: () => {
+            setWalkSpeed(s.speed);
+            if (engine.walkthrough) engine.walkthrough.speed = s.speed;
+            try {
+              localStorage.setItem('viewer.walkSpeed', String(s.speed));
+            } catch {
+              // not remembered
+            }
+          },
+        }))}
+      />
       <Split
         icon={IconVisibility}
         tip="What is shown"

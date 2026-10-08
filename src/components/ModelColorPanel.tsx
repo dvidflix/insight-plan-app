@@ -5,7 +5,8 @@ import { useModelColorStore, type ColourConfig } from '../state/modelColorStore'
 import { useViewSettingsStore, type ViewKey } from '../state/viewSettingsStore';
 import { useSearchSetsStore } from '../state/searchSetsStore';
 import { SET_FOLDER, isSetFolderField, makeValueOf, setFolderOf } from '../viewer/setFolderValues';
-import { useFieldValues, useIndexTick, useModelFields } from './modelFields';
+import { useIndexTick, useModelFields } from './modelFields';
+import { useColourValues } from './useColourValues';
 import { MODEL_PALETTES, paletteColors } from '../viewer/colorPalettes';
 import { FieldPicker } from './schedule/FieldRules';
 import { CollapsibleSection, useOpenSections } from './CollapsibleSection';
@@ -26,18 +27,9 @@ export function ModelColorPanel() {
   const patch = (p: Partial<ColourConfig>) => patchView(view, p);
   const fields = useModelFields();
   const sets = useSearchSetsStore((s) => s.sets);
-  const tick = useIndexTick();
   const setFolder = isSetFolderField(field);
-  const propertyValues = useFieldValues(setFolder ? '' : field);
-  // A set folder's values are the names of its sets, most objects first.
-  const values = useMemo(() => {
-    if (!setFolder) return propertyValues;
-    const valueOf = makeValueOf(field, engine.getIndexes(), sets);
-    const counts = new Map<string, number>();
-    for (const index of engine.getIndexes().values()) for (const e of index.elements.values()) counts.set(valueOf(e), (counts.get(valueOf(e)) ?? 0) + 1);
-    return [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [setFolder, propertyValues, field, sets, tick, engine]);
+  // A property's values, or a set folder's (the names of its sets), most objects first.
+  const values = useColourValues(field);
   const folders = useMemo(() => [...new Set(sets.map((x) => x.group ?? ''))].sort((a, b) => a.localeCompare(b)), [sets]);
   const sections = useOpenSections<'values' | 'field'>('models.colourSections', ['values', 'field']);
   const fieldLabel = fields.find((f) => f.id === field);

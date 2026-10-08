@@ -9,6 +9,8 @@ import { useModelsStore } from '../../state/modelsStore';
 import { useCreateLinks } from './useCreateLinks';
 import { useAutoLinksStore } from '../../state/autoLinksStore';
 import { usePourSequence } from './usePourSequence';
+import { AdjustmentsPanel } from '../AdjustmentsPanel';
+import { InfoTip } from '../InfoTip';
 
 const LIST_ROWS = 200;
 
@@ -90,6 +92,14 @@ export function GeneratedSchedulesPanel({ model }: { model: ScheduleModel }) {
           )}
         </>
       )}
+
+      <div className="cols__heading">
+        <span>
+          Retired and extra activities (SeaTable){' '}
+          <InfoTip>Retire generated tasks so the generator leaves them out, and add extra activities (with a baseline) to every generated programme. Pick the tasks in the table or the Gantt (Ctrl / Shift for several), send them to SeaTable's Retired table, and pull Retired, Extra activities and Baselines for the generator.</InfoTip>
+        </span>
+      </div>
+      <AdjustmentsPanel />
     </div>
   );
 }

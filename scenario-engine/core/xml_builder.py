@@ -45,6 +45,21 @@ ENABLE_LEVEL_GATE = getattr(_config, "ENABLE_LEVEL_GATE", True)
 # "Concrete" phase tasks, and drop stage-2 pours entirely.
 LEVEL_GATE_DECKING_CONCRETE_ONLY = getattr(_config, "LEVEL_GATE_DECKING_CONCRETE_ONLY", True)
 LEVEL_GATE_MAX_DISTANCE_M = getattr(_config, "LEVEL_GATE_MAX_DISTANCE_M", None)
+SLAB_CURING_GATES_SUCCESSORS = getattr(_config, "SLAB_CURING_GATES_SUCCESSORS", False)
+# Activities left with no successor precede the slab above them before falling back to the completion milestone.
+ENABLE_OPEN_END_SEQUENCING = getattr(_config, "ENABLE_OPEN_END_SEQUENCING", True)
+OPEN_END_MAX_DISTANCE_M = getattr(_config, "OPEN_END_MAX_DISTANCE_M", 0.3)
+
+
+def _concrete_done_task(task_map):
+    """The task a pour's successors wait for: its Concrete, or (a slab with curing, when SLAB_CURING_GATES_SUCCESSORS
+    is on) the Curing that follows it. Heavy Precast has a Curing but no Concrete, so it is not affected."""
+    concrete = task_map.get("Concrete")
+    if concrete and SLAB_CURING_GATES_SUCCESSORS and task_map.get("Curing"):
+        return task_map["Curing"]
+    return concrete
+
+
 ENABLE_WORKS_BEFORE_SLAB = getattr(_config, "ENABLE_WORKS_BEFORE_SLAB", False)
 USE_ACTIVITY_BASED_ACTIVITY_CODES = getattr(_config, "USE_ACTIVITY_BASED_ACTIVITY_CODES", False)
 WBS_BUILDING_ROOT_OBJECT_ID = getattr(_config, "WBS_BUILDING_ROOT_OBJECT_ID", {"DEFAULT": 1})
@@ -214,9 +229,10 @@ def _build_intra_pour_predecessors(activities, sequence_order=None):
                 "Decking",
                 "Under Slab", 
                 "Rebar", 
-                "EOP on Slab", 
-                "FWK", 
-                "Concrete"
+                "EOP on Slab",
+                "FWK",
+                "Concrete",
+                "Curing",  # slabs and rafts only (ENABLE_SLAB_CURING); missing phases are skipped
             ]
         elif (
             "PRECAST" in ptype
@@ -270,7 +286,7 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
     def _final_task_for_guid(guid):
         task_map = guid_to_tasks.get(guid, {})
         return (
-            task_map.get("Concrete")
+            _concrete_done_task(task_map)
             or task_map.get("Rebar, Formwork and Concrete")
             or task_map.get("Stitching")
             or task_map.get("Installation")
@@ -548,7 +564,7 @@ def _build_level_gate_predecessors(activities):
     def _final_task_for_guid(guid):
         task_map = guid_to_tasks.get(guid, {})
         return (
-            task_map.get("Concrete")
+            _concrete_done_task(task_map)
             or task_map.get("Rebar, Formwork and Concrete")
             or task_map.get("Stitching")
             or task_map.get("Installation")
@@ -607,7 +623,7 @@ def _build_level_gate_predecessors(activities):
                 # (box-outs etc. are sequenced separately and would otherwise
                 # drag the slab above down to their late finish).
                 lower_finals = [
-                    (guid, guid_to_tasks.get(guid, {}).get("Concrete"))
+                    (guid, _concrete_done_task(guid_to_tasks.get(guid, {})))
                     for guid in level_map.get(lower_level, set())
                     if not _is_stage2(guid_to_rec.get(guid, {}))
                 ]
@@ -792,6 +808,82 @@ def _build_heavy_precast_wall_predecessors_from_clashes(activities, clash_result
             predecessors[curing_task].append(wall_concrete_task)
 
     return predecessors
+
+
+def _build_open_end_successors(activities, open_tasks):
+    """Finds the next thing in the sequence for activities left with no successor, so they are not all
+    dumped on the building's completion milestone.
+
+    An open-ended pour (e.g. a Removable Element's Stitching, a double-height wall's Concrete) precedes
+    the start of the SLAB sitting on it: the slab in the same building whose soffit is at or above the
+    pour's top and within OPEN_END_MAX_DISTANCE_M of it (plan gap and vertical gap, as in the level gate).
+    A pour with no slab above it (the roof, a pit) stays open for the close-out.
+
+    `open_tasks` is the set of task ids with no successor yet. Returns {pred_task_id: [succ_task_id, ...]}."""
+    if not activities or not open_tasks or not ENABLE_OPEN_END_SEQUENCING:
+        return {}
+
+    guid_to_rec = {}
+    guid_to_tasks = defaultdict(dict)
+    task_guid = {}
+    for act in activities:
+        rec = act.get("rec", {})
+        element = rec.get("element")
+        guid = str(getattr(element, "GlobalId", "") or "").strip() if element else ""
+        if not guid:
+            continue
+        guid_to_rec[guid] = rec
+        phase = str(act.get("phase", "") or "").strip()
+        task_id = act.get("task_id")
+        if phase and task_id:
+            guid_to_tasks[guid][phase] = task_id
+            task_guid[task_id] = guid
+
+    def _building(rec):
+        return str(rec.get("building", "") or "").strip().upper()
+
+    def _start_task(guid):
+        tasks = guid_to_tasks.get(guid, {})
+        return (
+            tasks.get("Decking")
+            or tasks.get("Under Slab")
+            or tasks.get("Works before slab")
+            or tasks.get("Rebar")
+            or tasks.get("Concrete")
+            or next(iter(tasks.values()), None)
+        )
+
+    footprints = {}
+
+    def _footprint(guid):
+        if guid not in footprints:
+            element = guid_to_rec.get(guid, {}).get("element")
+            footprints[guid] = get_plan_footprint(element) if element is not None else None
+        return footprints[guid]
+
+    slabs_by_building = defaultdict(list)
+    for guid, rec in guid_to_rec.items():
+        if _normalized_pour_type(rec) in {"SLAB", "MAIN_SLAB"} and not _is_stage2(rec):
+            slabs_by_building[_building(rec)].append(guid)
+
+    successors = defaultdict(list)
+    for task_id in open_tasks:
+        guid = task_guid.get(task_id)
+        rec = guid_to_rec.get(guid) if guid else None
+        if rec is None or _normalized_pour_type(rec) in {"SLAB", "MAIN_SLAB"}:
+            continue  # slabs are sequenced by the level gate; the roof slab really is the end
+        fp = _footprint(guid)
+        if fp is None:
+            continue
+        for slab_guid in slabs_by_building.get(_building(rec), []):
+            slab_fp = _footprint(slab_guid)
+            if slab_fp is None or slab_fp[1] < fp[2] - 0.05:
+                continue  # not above this pour
+            gap = math.hypot(fp[0].distance(slab_fp[0]), max(0.0, slab_fp[1] - fp[2]))
+            start = _start_task(slab_guid)
+            if start and gap <= OPEN_END_MAX_DISTANCE_M:
+                successors[task_id].append(start)
+    return successors
 
 
 def _build_heavy_precast_open_end_predecessors(activities, clash_results, existing_edges):
@@ -1600,6 +1692,20 @@ def _build_xml_wbs_manager_for_activities(activities):
                 act["wbs_oid"] = xml_wbs.get_id(slab_group)
             continue
 
+        if pour_type == "HEAVY_PRECAST" or str(rec.get("general_pour_type", "") or "").replace(" ", "_").upper() == "HEAVY_PRECAST":
+            # Its own group, one WBS per pour like the slabs: Heavy Precast -> Heavy Precast <pour id>
+            # (Propping / Installation / Stitching / Curing / Propping Removal all sit in the pour's own WBS)
+            precast_group = f"{wbs_prefix} - {zone_segment}{level_display} - Heavy Precast"
+            xml_wbs.register(precast_group, level_name)
+            pid = str(rec.get("planning_proposed_pour_id", "") or "").strip()
+            if pid:
+                precast_leaf = f"{wbs_prefix} - {zone_segment}{level_display} - Heavy Precast {pid}"
+                xml_wbs.register(precast_leaf, precast_group)
+                act["wbs_oid"] = xml_wbs.get_id(precast_leaf)
+            else:
+                act["wbs_oid"] = xml_wbs.get_id(precast_group)
+            continue
+
         # (One raft per building: "Raft", not "Rafts".)
         raw_type = str(rec.get("pour_type", "") or "")
         type_name = title_case(raw_type.replace("_", " ")) + ("" if "RAFT" in raw_type.upper() else "s")
@@ -2104,6 +2210,18 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             _emit_relationship(spec["pred_id"], spec["succ_id"], spec["rel_type"], spec.get("lag", 0), source="custom")
 
     # 7. Close-out: activities with no successor feed their building's completion milestone
+    # Before that, an open-ended pour precedes the slab above it (part of the sequence, not of the close-out).
+    open_ended = {a.get("task_id") for a in activity_list if a.get("task_id") and not adjacency.get(a.get("task_id"))}
+    sequenced = 0
+    for pred_id, succ_ids in _build_open_end_successors(activity_list, open_ended).items():
+        if pred_id in override_successors:
+            continue
+        for succ_id in succ_ids:
+            if succ_id not in override_successors and _emit_relationship(pred_id, succ_id, "FinishToStart", source="open-end"):
+                sequenced += 1
+    if sequenced:
+        print(f"  Open ends: {sequenced} open-ended pour link{'s' if sequenced != 1 else ''} added to the slab above")
+
     if closeout_by_building:
         closed = 0
         for act in activity_list:

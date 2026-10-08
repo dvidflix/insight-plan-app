@@ -4,6 +4,9 @@ import type { SearchCondition, SearchSet } from '../viewer/searchSets';
 
 interface SearchSetsState {
   sets: SearchSet[];
+  /** The folder the last set was saved in: new sets (and recorded picks) go there. Part of the scene's lists. */
+  lastGroup: string;
+  setLastGroup: (group: string) => void;
   save: (set: SearchSet) => void;
   remove: (id: string) => void;
   /** Replaces every set of a folder with `next` (kept at the end of the list). */
@@ -64,6 +67,8 @@ export const useSearchSetsStore = create<SearchSetsState>()(
   persist(
     (set) => ({
       sets: [...fromOldForm(), ...fromOldSelectionSets()],
+      lastGroup: '',
+      setLastGroup: (lastGroup) => set({ lastGroup }),
       save: (next) => set((s) => ({ sets: s.sets.some((x) => x.id === next.id) ? s.sets.map((x) => (x.id === next.id ? next : x)) : [...s.sets, next] })),
       remove: (id) => set((s) => ({ sets: s.sets.filter((x) => x.id !== id) })),
       replaceGroup: (group, next) => set((s) => ({ sets: [...s.sets.filter((x) => x.group !== group), ...next] })),

@@ -4,6 +4,7 @@ import { useScheduleStore } from '../../state/scheduleStore';
 import { scenarioFileName, type ScenarioCrew, type ScenarioRelation } from '../../scenarios/api';
 import { useScenarioView } from '../../scenarios/useScenarioView';
 import { queryMatcher } from '../../schedule/search';
+import { SuggestedGroups } from './SuggestedGroups';
 
 /** Scenario panel > Links and Crews: the scenario's manual links and crew
     overrides, saved with it (Save / Update 4D) in the project database
@@ -48,6 +49,7 @@ export function ScenarioLinksEditor() {
 
   return (
     <div className="scn-editor">
+      <SuggestedGroups source={source} />
       <section className="scn-card">
         <div className="scn-card__title">
           Manual links

@@ -877,6 +877,19 @@ export class SecondaryView {
     await this.showSelection(this.selected);
   }
 
+  /** Takes every colour and opacity override off this view's copies (visibility stays), then draws the selection again. */
+  async resetLooks() {
+    for (const model of this.copies.values()) {
+      for (const m of renderTargets(this.core, model)) {
+        await m.resetColor(undefined);
+        await m.resetOpacity(undefined);
+      }
+    }
+    this.colors.clear();
+    this.opacities.clear();
+    await this.showSelection(this.selected);
+  }
+
   async resetOverrides() {
     for (const model of this.copies.values()) {
       for (const m of renderTargets(this.core, model)) {

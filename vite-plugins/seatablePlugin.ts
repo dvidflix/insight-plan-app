@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import path from 'node:path';
 import type { Plugin } from 'vite';
 import { HttpError, readBody, send, sendError } from './http';
 
@@ -65,7 +66,7 @@ async function access(kind: BaseKind = 'main', force = false): Promise<GatewayAc
   } catch (e) {
     throw new HttpError(503, `SeaTable is not reachable at ${root}: is its Docker stack running? (${e instanceof Error ? e.message : e})`);
   }
-  if (!r.ok) throw new HttpError(503, `SeaTable refused the API token (${r.status}).`);
+  if (!r.ok) throw new HttpError(503, `SeaTable refused the API token ${key} in ${ENV_FILE} (${r.status}${r.status === 404 ? ': no such token — it was probably regenerated or revoked, or the base was recreated. Make a new API token for that base in SeaTable (the base menu, API tokens) and paste it into the .env file' : ''}).`);
   const a = (await r.json()) as { access_token: string; dtable_uuid: string; dtable_server: string };
   const got: GatewayAccess = { gw: `${a.dtable_server}api/v2/dtables/${a.dtable_uuid}`, headers: { Authorization: `Bearer ${a.access_token}`, 'Content-Type': 'application/json' }, base: root, at: Date.now() };
   cache.set(kind, got);
@@ -155,6 +156,39 @@ function normalize(v: unknown): string | number | null {
   return String(v);
 }
 
+
+// ---- the "Models metadata" table: one row per pour, matched to the model elements by the client ----
+//   Pour ID (text) and Buildings (multiple select of Unit + Building, e.g. "1HDAB") are the key: an element
+//   with the same HPC Pour ID and the Unit + Building of one of them gets the row's other columns as custom fields.
+//   The table is in the Files base (or the main one).
+const POURS_TABLE = 'Models metadata';
+const POURS_KEY_COLUMNS = ['Name', 'Pour ID', 'Buildings'];
+
+async function pullPours(): Promise<{ columns: { name: string; type: string }[]; rows: { pourId: string; buildings: string[]; values: Record<string, string | number> }[] }> {
+  for (const base of ['files', 'main'] as BaseKind[]) {
+    let info: { exists: boolean; columns: Col[] };
+    try {
+      info = await tableInfo(POURS_TABLE, base);
+    } catch {
+      continue;
+    }
+    if (!info.exists) continue;
+    const columns = info.columns.filter((c) => !POURS_KEY_COLUMNS.includes(c.name) && !c.name.startsWith('_') && !SKIP_TYPES.has(c.type));
+    const rows: { pourId: string; buildings: string[]; values: Record<string, string | number> }[] = [];
+    for (const r of await allRows(POURS_TABLE, base)) {
+      const pourId = normalize(r['Pour ID']);
+      if (pourId === null) continue;
+      const values: Record<string, string | number> = {};
+      for (const c of columns) {
+        const v = normalize(r[c.name]);
+        if (v !== null) values[c.name] = v;
+      }
+      rows.push({ pourId: String(pourId).trim(), buildings: normalizeList(r.Buildings).map((b) => b.trim()), values });
+    }
+    return { columns, rows };
+  }
+  return { columns: [], rows: [] };
+}
 
 // ---- the file details table (in the Files base) ----
 //   Managed by the app's push: Name (the key), Type, Format, Items, Size (MB), Bounds, Last pushed.
@@ -319,6 +353,129 @@ async function pullFiles() {
   return { fields, files: out, table };
 }
 
+// ---- retired and extra activities (tables "Retired", "Extra activities" and "Baselines" of the Files base) ----
+//   Retired           Task ID (the key), Task name, Reason, Retired on   pushed from the app: generated tasks that stay out of the Gantt
+//   Baselines         Name, Start, Finish, Notes                         the user's: named baselines with dates
+//   Extra activities  Task ID, Task name, Duration (days), Baseline (a link to Baselines), Predecessors, Successors, WBS, Notes
+//                                                                        the user's: activities added to every generated programme
+//   Pull writes them to a local JSON file (ADJUSTMENTS_FILE), which the scenario generator reads, so it works with SeaTable
+//   switched off (like rates.json).
+const RETIRED = 'Retired';
+const BASELINES = 'Baselines';
+const EXTRAS = 'Extra activities';
+const ADJUSTMENTS_FILE = process.env.INSIGHT_ADJUSTMENTS_FILE ?? 'C:\\insight-stack\\data\\adjustments.json';
+const RETIRED_COLUMNS = [
+  { name: 'Task name', type: 'text' },
+  { name: 'Reason', type: 'text' },
+  { name: 'Retired on', type: 'text' },
+];
+
+/** These three tables live in the Files base (SEATABLE_FILES_API_TOKEN). */
+const ADJ_BASE: BaseKind = 'files';
+
+async function tableNames(): Promise<string[]> {
+  const meta = await call('GET', '/metadata/', { base: ADJ_BASE });
+  return (meta.metadata?.tables ?? []).map((t: any) => t.name);
+}
+
+/** A date cell as YYYY-MM-DD ('' when empty). */
+const dateOf = (v: unknown): string => {
+  const m = /^(\d{4}-\d{2}-\d{2})/.exec(String(v ?? ''));
+  return m ? m[1] : '';
+};
+
+const textOf = (v: unknown): string => {
+  const n = normalize(v);
+  return n === null ? '' : String(n);
+};
+
+/** Task IDs written in one cell: separated by commas, semicolons, spaces or new lines. */
+const idsOf = (v: unknown): string[] => textOf(v).split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+
+async function ensureRetiredTable(): Promise<void> {
+  if ((await tableNames()).includes(RETIRED)) return;
+  await call('POST', '/tables/', {
+    base: ADJ_BASE,
+    json: { table_name: RETIRED, columns: [{ column_name: 'Task ID', column_type: 'text' }, ...RETIRED_COLUMNS.map((c) => ({ column_name: c.name, column_type: c.type }))] },
+  });
+}
+
+async function pushRetired(list: { taskId: string; name?: string; reason?: string }[]) {
+  await ensureRetiredTable();
+  const have = new Set<string>();
+  for (const r of await allRows(RETIRED, ADJ_BASE)) if (r['Task ID']) have.add(String(r['Task ID']).trim());
+  const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const rows: Record<string, unknown>[] = [];
+  let skipped = 0;
+  for (const t of list) {
+    const id = String(t.taskId ?? '').trim();
+    if (!id) continue;
+    if (have.has(id)) {
+      skipped++;
+      continue;
+    }
+    have.add(id);
+    rows.push({ 'Task ID': id, 'Task name': t.name ?? '', Reason: t.reason ?? '', 'Retired on': when });
+  }
+  for (let i = 0; i < rows.length; i += 200) await call('POST', '/rows/', { base: ADJ_BASE, json: { table_name: RETIRED, rows: rows.slice(i, i + 200) } });
+  return { added: rows.length, skipped };
+}
+
+async function adjustmentsStatus() {
+  const names = await tableNames();
+  const count = async (n: string) => (names.includes(n) ? (await allRows(n, ADJ_BASE)).length : null);
+  return { retired: await count(RETIRED), extras: await count(EXTRAS), baselines: await count(BASELINES), file: ADJUSTMENTS_FILE, pulledAt: readAdjustments()?.pulledAt ?? null };
+}
+
+function readAdjustments(): { pulledAt?: string } | null {
+  try {
+    return JSON.parse(fs.readFileSync(ADJUSTMENTS_FILE, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
+async function pullAdjustments() {
+  const names = await tableNames();
+  const missing = [RETIRED, EXTRAS, BASELINES].filter((n) => !names.includes(n));
+
+  const retired = names.includes(RETIRED)
+    ? (await allRows(RETIRED, ADJ_BASE)).filter((r) => r['Task ID']).map((r) => ({ taskId: String(r['Task ID']).trim(), name: textOf(r['Task name']), reason: textOf(r.Reason) }))
+    : [];
+
+  const baselines = names.includes(BASELINES)
+    ? (await allRows(BASELINES, ADJ_BASE)).filter((r) => r.Name).map((r) => ({ id: String(r._id), name: textOf(r.Name), start: dateOf(r.Start), finish: dateOf(r.Finish), notes: textOf(r.Notes) }))
+    : [];
+
+  const extras = names.includes(EXTRAS)
+    ? (await allRows(EXTRAS, ADJ_BASE)).filter((r) => r['Task ID']).map((r) => {
+        // The Baseline link column: [{ row_id, display_value }]. Matched by row id, else by name.
+        const link = Array.isArray(r.Baseline) ? r.Baseline[0] : r.Baseline;
+        const linkId = link && typeof link === 'object' ? String((link as any).row_id ?? '') : '';
+        const linkName = link && typeof link === 'object' ? String((link as any).display_value ?? '') : textOf(link);
+        const base = baselines.find((b) => (linkId && b.id === linkId) || (linkName && b.name === linkName));
+        const days = Number(r['Duration (days)']);
+        return {
+          taskId: String(r['Task ID']).trim(),
+          name: textOf(r['Task name']) || String(r['Task ID']).trim(),
+          durationDays: Number.isFinite(days) && days >= 0 ? days : 0,
+          baseline: base?.name ?? linkName,
+          baselineStart: base?.start ?? '',
+          baselineFinish: base?.finish ?? '',
+          predecessors: idsOf(r.Predecessors),
+          successors: idsOf(r.Successors),
+          wbs: textOf(r.WBS),
+          notes: textOf(r.Notes),
+        };
+      })
+    : [];
+
+  const out = { pulledAt: new Date().toISOString(), retired, extras, baselines };
+  fs.mkdirSync(path.dirname(ADJUSTMENTS_FILE), { recursive: true });
+  fs.writeFileSync(ADJUSTMENTS_FILE, JSON.stringify(out, null, 1), 'utf8');
+  return { retired: retired.length, extras: extras.length, baselines: baselines.length, missing, file: ADJUSTMENTS_FILE, pulledAt: out.pulledAt };
+}
+
 export function seatablePlugin(): Plugin {
   return {
     name: 'insight-plan-seatable',
@@ -413,8 +570,16 @@ export function seatablePlugin(): Plugin {
 
           // ---- pull: the user's columns ----
           if (req.method === 'GET' && route === 'pull') {
-            const info = await tableInfo();
-            if (!info.exists) return send(res, 200, { columns: [], rows: [], note: 'The Elements table does not exist yet: push the model elements first.' });
+            const pours = await pullPours();
+            let info: { exists: boolean; columns: Col[] };
+            try {
+              info = await tableInfo();
+            } catch (e) {
+              if (!pours.rows.length) throw e;
+              // the main base is not reachable (e.g. its token was revoked): the pours alone still come back
+              return send(res, 200, { columns: [], rows: [], pours, note: `Pours pulled; the Elements table was not read: ${e instanceof Error ? e.message : e}` });
+            }
+            if (!info.exists) return send(res, 200, { columns: [], rows: [], pours, note: pours.rows.length ? undefined : 'The Elements table does not exist yet: push the model elements first.' });
             const custom = info.columns.filter((c) => !FIXED.includes(c.name) && !c.name.includes('.') && !c.name.startsWith('_') && !SKIP_TYPES.has(c.type));
             const names = custom.map((c) => c.name);
             const rows: { guid: string; values: Record<string, string | number> }[] = [];
@@ -427,7 +592,7 @@ export function seatablePlugin(): Plugin {
               }
               if (Object.keys(values).length) rows.push({ guid: String(r.GUID), values });
             }
-            return send(res, 200, { columns: custom, rows });
+            return send(res, 200, { columns: custom, rows, pours });
           }
 
           // ---- file details ("Insight Plan Files") ----
@@ -437,6 +602,20 @@ export function seatablePlugin(): Plugin {
             return send(res, 200, await pushFiles(body.files));
           }
           if (req.method === 'GET' && route === 'files') return send(res, 200, await pullFiles());
+
+          // ---- retired and extra activities ----
+          if (req.method === 'GET' && route === 'adjustments/status') return send(res, 200, await adjustmentsStatus());
+          if (req.method === 'POST' && route === 'retired/push') {
+            const body = (await readBody(req)) as { tasks: { taskId: string; name?: string; reason?: string }[] };
+            if (!Array.isArray(body.tasks) || body.tasks.length === 0) throw new HttpError(400, 'No tasks given.');
+            return send(res, 200, await pushRetired(body.tasks));
+          }
+          if (req.method === 'POST' && route === 'adjustments/pull') return send(res, 200, await pullAdjustments());
+          // The retired Task IDs of the local copy (no SeaTable needed): the app takes those tasks out of the programmes it shows.
+          if (req.method === 'GET' && route === 'adjustments/retired') {
+            const file = readAdjustments() as { retired?: { taskId: string }[] } | null;
+            return send(res, 200, { retired: (file?.retired ?? []).map((r) => r.taskId) });
+          }
 
           throw new HttpError(404, `No such route: ${route}`);
         } catch (e) {

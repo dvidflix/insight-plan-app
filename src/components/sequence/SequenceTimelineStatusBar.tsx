@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useSequenceTimelineStore, STEP_UNIT_LABELS, type StepUnit } from '../../state/sequenceTimelineStore';
-import { scheduleRange, type DateRange } from '../../schedule/linking';
+import { actualCoverage, scheduleRange, type DateRange } from '../../schedule/linking';
 import { addUnit, alignDown, nextBoundary, prevBoundary } from '../../schedule/period';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../../state/timelineSettingsStore';
 import { IconFirstPage, IconLastPage, IconPauseCircle, IconPlayCircle, IconRewind, IconStopCircle } from '../icons';
@@ -114,6 +114,15 @@ export function SequenceTimelineStatusBar() {
   const setPlaying = useSequenceTimelineStore((s) => s.setPlaying);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
   const tl = useTimelineSettingsStore();
+  const setBasis = useSequenceTimelineStore((s) => s.setBasis);
+
+  // A programme with as-built dates for most of its activities (a finished project's XER) plays as built:
+  // chosen once when it is loaded; Date basis in the view settings still switches it.
+  useEffect(() => {
+    if (model && actualCoverage(model) >= 0.5) setBasis('actual');
+    // Only when a different programme comes in.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [model?.id]);
 
   const range = useMemo(() => {
     const raw = scheduleRange(model, basis);

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { FullscreenButton } from '../components/ViewerToolbar';
 
 /** External data (SeaTable) and Dashboards (Superset): the program in a frame, already signed in
     (the dev server signs in for you — vite-plugins/externalPlugin.ts). Stays loaded once opened, so
@@ -49,6 +50,7 @@ export function ExternalPage({ target, active }: { target: Target; active: boole
         <b>{t.title}</b>
         <span className="external-page__sub">{t.name}{status?.url ? ` · ${status.url}` : ''}</span>
         <span className="external-page__spacer" />
+        <FullscreenButton />
         <button type="button" className="btn btn--small" onClick={() => setNonce((n) => n + 1)} title="Reload and sign in again">Reload</button>
         <button type="button" className="btn btn--small" onClick={() => window.open(open, '_blank', 'noopener')} title={`Open ${t.name} in its own window, signed in`}>Open in a window</button>
       </div>

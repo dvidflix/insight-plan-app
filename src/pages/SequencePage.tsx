@@ -207,9 +207,14 @@ export function SequencePanel() {
   // Bumped by the "Refresh graphics" buttons to force the driving effect to
   // re-apply visibility/colors/opacity to the viewer on demand.
   const [refreshTick, setRefreshTick] = useState(0);
+  // Colours and opacity set by anything else (painting, Models > Colour, the legend, a stage left behind) go back to the
+  // model's own first: the driving effect only re-sends the linked objects' own stages, so it never took those off.
   const refreshGraphics = () => {
     needsFullApplyRef.current = true;
-    setRefreshTick((t) => t + 1);
+    void engine.resetLooks().then(() => {
+      needsFullApplyRef.current = true;
+      setRefreshTick((t) => t + 1);
+    });
   };
   // The driving effect's engine calls are coalesced, latest-wins: only one
   // batch runs at a time, it always runs to completion, and whatever tick

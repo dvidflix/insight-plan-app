@@ -218,3 +218,20 @@ export async function extractGrids(bytes: Uint8Array): Promise<IfcGridData[]> {
   }
   return out;
 }
+
+export interface IfcStoreyData {
+  name: string;
+  /** IfcBuildingStorey.Elevation, in the IFC's own length unit (like the grids' points); null when the file leaves it out. */
+  elevation: number | null;
+}
+
+/** The building storeys with their elevations, read from the IFC text like the grids (Fragments keeps no elevation). */
+export async function extractStoreys(bytes: Uint8Array): Promise<IfcStoreyData[]> {
+  const out: IfcStoreyData[] = [];
+  await scan(bytes, new Set(['IFCBUILDINGSTOREY']), (_id, _type, a) => {
+    // GlobalId, OwnerHistory, Name, Description, ObjectType, ObjectPlacement, Representation, LongName, CompositionType, Elevation
+    const elevation = Number(a[9]);
+    out.push({ name: unquote(a[2] ?? '') || unquote(a[7] ?? ''), elevation: a[9] && a[9] !== '$' && Number.isFinite(elevation) ? elevation : null });
+  });
+  return out;
+}

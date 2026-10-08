@@ -12,6 +12,7 @@ import { useAggregateStore } from '../../state/aggregateStore';
 import { aggregate, aggType, defaultAgg, type AggKind } from '../../schedule/aggregates';
 import { AggCell } from './AggCell';
 import { IconExpander } from '../icons';
+import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 
 export interface ActivityTableHandle {
   download: () => void;
@@ -252,17 +253,25 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [expandAllSignal]);
 
+  // Ctrl+click adds or removes a row, Shift+click picks the rows between (in the order listed now).
+  const multi = useActivitySelectionStore((s) => s.ids);
+  const listedIds = (): string[] => (groupItems ? groupItems.flatMap((i) => (i.kind === 'row' ? [i.row.id] : [])) : rows.map((r) => r.id));
   const renderRow = (a: Activity) => {
     const ruleColor = getColor?.(a) ?? null;
+    const picked = multi.size > 1 && multi.has(a.id);
     return (
       <tr
         key={a.id}
-        className={`${a.id === selectedId ? 'selected' : ''}${dimmedIds?.has(a.id) ? ' is-dim' : ''}${markedIds?.has(a.id) ? ' is-marked' : ''}`}
-        onClick={() => onSelect(a)}
+        className={`${a.id === selectedId || picked ? 'selected' : ''}${dimmedIds?.has(a.id) ? ' is-dim' : ''}${markedIds?.has(a.id) ? ' is-marked' : ''}`}
+        onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
+        onClick={(e) => {
+          useActivitySelectionStore.getState().click(a.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }, listedIds());
+          onSelect(a);
+        }}
         onDoubleClick={onOpen ? () => onOpen(a) : undefined}
         style={{
           ...(ruleColor ? { background: ruleColor } : undefined),
-          ...(a.id === selectedId ? { outline: '1px solid var(--accent)' } : undefined),
+          ...(a.id === selectedId || picked ? { outline: '1px solid var(--accent)' } : undefined),
         }}
       >
         {columns.map((c) => {

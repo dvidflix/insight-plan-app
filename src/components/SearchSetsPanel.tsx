@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { SearchRow } from './SearchRow';
 import type * as OBC from '@thatopen/components';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
@@ -6,7 +6,7 @@ import { useModelsStore } from '../state/modelsStore';
 import { useSearchSetsStore } from '../state/searchSetsStore';
 import { useSelectionStore } from '../state/selectionStore';
 import {
-  SEARCH_OPS, conditionProblem, countIds, isSelectionSet, itemsOf, mergeItems, opInput, resolveItems, runSearchSet, upgradeLegacyItems,
+  SEARCH_OPS, conditionProblem, conditionsFromObjects, conversionResult, countIds, suggestFields, isSelectionSet, itemsOf, mergeItems, opInput, resolveItems, runSearchSet, upgradeLegacyItems,
   type SearchCondition, type SearchOp, type SearchSet, type SetItem,
 } from '../viewer/searchSets';
 import { FieldPicker, RuleRows, newRuleId, type PickField } from './schedule/FieldRules';
@@ -68,7 +68,7 @@ export function SearchSetsPanel({ player = false }: { /** Show the folder player
   if (draft) {
     const isNew = !sets.some((s) => s.id === draft.id);
     return isSelectionSet(draft)
-      ? <SelectionSetEditor key={draft.id} initial={draft} isNew={isNew} onClose={() => setDraft(null)} />
+      ? <SelectionSetEditor key={draft.id} initial={draft} isNew={isNew} onClose={() => setDraft(null)} onConvert={setDraft} />
       : <SearchSetEditor key={draft.id} initial={draft} isNew={isNew} onClose={() => setDraft(null)} />;
   }
   return <SearchSetList onEdit={setDraft} player={player} />;
@@ -88,7 +88,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
-  const { sets, save, remove, move, replaceGroup } = useSearchSetsStore();
+  const { sets, save, remove, move, replaceGroup, lastGroup } = useSearchSetsStore();
   const total = useTotal();
   const actions = useSetActions();
   const selection = useSelectionItems();
@@ -106,6 +106,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [converting, setConverting] = useState<string[] | null>(null);
   // Order of the sets in their folders: as dragged, or alphabetical.
   const [alpha, setAlpha] = usePersistedState('searchSets.alpha', false);
   // Which row buttons show (the popover beside the toolbar); remembered.
@@ -203,7 +204,10 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   const [activeId, setActiveId] = useState<string | null>(null);
   const [anchorId, setAnchorId] = useState<string | null>(null);
   const [selectedSets, setSelectedSets] = useState<Set<string>>(new Set());
+  // When the selection last came from a row of this list (Record leaves those alone).
+  const listPickAt = useRef(0);
   const selectSets = (ids: Set<string>) => {
+    listPickAt.current = Date.now();
     setSelectedSets(ids);
     actions.select(mergeIds([...ids].map((id) => results.get(id) ?? {})));
   };
@@ -225,7 +229,24 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   };
   /** The ids of the objects of the selected sets (the current one when none is selected). */
   const selectedIdsMap = () => mergeIds([...(selectedSets.size ? selectedSets : new Set(activeId ? [activeId] : []))].map((id) => results.get(id) ?? {}));
+  /** Delete: removes the selected sets (the current one when none is selected), after asking. */
+  const deleteSelected = () => {
+    const ids = [...(selectedSets.size ? selectedSets : new Set(activeId ? [activeId] : []))].filter((id) => sets.some((x) => x.id === id));
+    if (ids.length === 0) return;
+    const names = ids.map((id) => sets.find((x) => x.id === id)!.name);
+    const what = ids.length === 1 ? `the set “${names[0]}”` : `${ids.length} sets (${names.slice(0, 3).map((n) => `“${n}”`).join(', ')}${ids.length > 3 ? '…' : ''})`;
+    if (!window.confirm(`Delete ${what}?`)) return;
+    ids.forEach(remove);
+    setSelectedSets(new Set());
+    setActiveId(null);
+    setAnchorId(null);
+  };
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Delete' && !e.altKey && !e.ctrlKey && !e.metaKey && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) {
+      e.preventDefault();
+      deleteSelected();
+      return;
+    }
     if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== ' ') || e.altKey || e.ctrlKey || e.metaKey) return;
     const t = e.target as HTMLElement;
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
@@ -249,13 +270,87 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
       }
     }
   };
-  const create = () => onEdit({ id: newRuleId('ss'), name: `Search set ${sets.length + 1}`, group: '', kind: 'search', match: 'all', conditions: [] });
-  const saveSelection = () => onEdit({ id: newRuleId('ss'), name: `Selection set ${sets.filter(isSelectionSet).length + 1}`, group: '', kind: 'selection', match: 'all', conditions: [], items: selection });
+  // Record: every object (or group of objects, built up with Ctrl+click) picked in 3D is saved as a selection set named with
+  // the next number of the folder last used, so the pours can be clicked in construction order. A selection that is already
+  // a set (a click on a row of this list) is left alone.
+  const [recording, setRecording] = useState(false);
+  const lastRec = useRef<{ id: string; keys: Set<string> } | null>(null);
+  useEffect(() => {
+    if (!recording) lastRec.current = null;
+  }, [recording]);
+  /** Saves objects as a selection set named with the next number of the folder last used (the highest leading number + 1). */
+  const saveNumbered = (items: SetItem[]) => {
+    const st = useSearchSetsStore.getState();
+    const group = st.lastGroup;
+    const taken = st.sets.filter((x) => x.group === group).map((x) => Number(/^\s*(\d+)/.exec(x.name)?.[1] ?? 0));
+    const id = newRuleId('ss');
+    st.save({ id, name: String(Math.max(0, ...taken) + 1), group, kind: 'selection', match: 'all', conditions: [], items });
+    return id;
+  };
+  // Ctrl+S: saves the current selection the same way (without recording or hiding), whatever is selected: a group of objects as one set.
+  const selectionRef = useRef(selection);
+  selectionRef.current = selection;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== 's') return;
+      e.preventDefault(); // not the browser's "Save page"
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
+      const items = selectionRef.current;
+      if (items.length === 0) return;
+      const key = (i: SetItem) => `${i.model}|${i.guid}`;
+      const keys = new Set(items.map(key));
+      const same = useSearchSetsStore.getState().sets.some((x) => x.items && x.items.length === keys.size && x.items.every((i) => keys.has(key(i))));
+      if (!same) saveNumbered(items);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+  // Once recorded, the objects are hidden (like the sequence's steps), so the next pour is the one left to click.
+  const hidePicked = () => {
+    const picked = Object.fromEntries(Object.entries(useSelectionStore.getState().byModel).map(([m, l]) => [m, [...l]]));
+    void setShown(picked, false);
+  };
+  useEffect(() => {
+    if (!recording || selection.length === 0) return;
+    const timer = window.setTimeout(() => {
+      const st = useSearchSetsStore.getState();
+      const key = (i: SetItem) => `${i.model}|${i.guid}`;
+      const keys = new Set(selection.map(key));
+      // A click on a row of this list selects that set's objects: not a pick in 3D, nothing to record. (A pick in 3D of
+      // objects that are already a set is recorded again: the sequence is being redone.)
+      if (Date.now() - listPickAt.current < 1500) return;
+      const prev = lastRec.current;
+      const prevSet = prev ? st.sets.find((x) => x.id === prev.id) : undefined;
+      if (prev && prevSet && [...prev.keys].every((k) => keys.has(k))) {
+        st.save({ ...prevSet, items: selection });
+        lastRec.current = { id: prevSet.id, keys };
+        hidePicked();
+        return;
+      }
+      const id = saveNumbered(selection);
+      lastRec.current = { id, keys };
+      hidePicked();
+    }, 500);
+    return () => window.clearTimeout(timer);
+  }, [recording, selection]);
+  /** Renumbers a folder's sets 1, 2, 3… in the order they are kept (the manual order): the leading number of each name is
+      replaced (or added), the rest of the name stays — "7 Stitch" becomes "3 Stitch". */
+  const renumber = (g: string) => {
+    const list = sets.filter((x) => x.group === g);
+    if (list.length === 0 || !window.confirm(`Renumber the ${list.length} set${list.length === 1 ? '' : 's'} of “${g}” 1 to ${list.length}, in the order listed?`)) return;
+    list.forEach((x, i) => {
+      const rest = x.name.replace(/^\s*\d+\s*/, '');
+      save({ ...x, name: rest ? `${i + 1} ${rest}` : String(i + 1) });
+    });
+  };
+  const create = () => onEdit({ id: newRuleId('ss'), name: `Search set ${sets.length + 1}`, group: lastGroup, kind: 'search', match: 'all', conditions: [] });
+  const saveSelection = () => onEdit({ id: newRuleId('ss'), name: `Selection set ${sets.filter(isSelectionSet).length + 1}`, group: lastGroup, kind: 'selection', match: 'all', conditions: [], items: selection });
   const duplicate = (s: SearchSet) => onEdit({ ...s, id: newRuleId('ss'), name: `${s.name} (copy)`, conditions: s.conditions.map((c) => ({ ...c, id: newRuleId('c') })), items: s.items ? [...s.items] : undefined });
 
   return (
     // (A button would also "click" on the key's release: kept from doing so for Space.)
     <div className="flt ss" onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }}>
+      <div className="ss__sticky">
       <div className="ss__top">
         <button type="button" className="btn ss__tool" onClick={create} title="New search set: finds objects by their properties" aria-label="New search set">
           <IconTextInputShort width={16} height={16} /><span className="ss__tool-plus">+</span><span className="ss__tool-text">Search</span>
@@ -263,7 +358,11 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
         <button type="button" className="btn ss__tool" onClick={saveSelection} disabled={selection.length === 0} aria-label="New selection set" title={selection.length ? `Save the ${selection.length} selected object${selection.length === 1 ? '' : 's'} as a set` : 'Select objects first, then save them as a set'}>
           <IconSelectionSet width={16} height={16} /><span className="ss__tool-plus">+</span><span className="ss__tool-text">Selection</span>{selection.length ? <span className="ss__tool-n">{selection.length}</span> : null}
         </button>
+        <button type="button" className={`btn ss__tool${recording ? ' primary' : ''}`} onClick={() => { if (!recording && engine.getInteractionMode() !== 'select') void engine.setInteractionMode('select'); setRecording((v) => !v); }} aria-pressed={recording} title={recording ? `Recording: each pick in 3D is saved as the next numbered set in ${lastGroup ? `“${lastGroup}”` : 'the list (no folder)'} and hidden. Click to stop.` : 'Record picks: save each object picked in 3D as a numbered set in the folder last used, and hide it (Ctrl+click adds to the current one). Ctrl+S saves the current selection as the next numbered set without recording'}>
+          {recording ? 'Recording' : 'Record'}
+        </button>
         <button type="button" className="btn ss__tool" onClick={() => setAlpha((v) => !v)} aria-pressed={alpha} title={alpha ? 'Sorted A–Z: click to order by dragging' : 'Your own order (drag a row to move it): click to sort A–Z'}>{alpha ? 'A–Z' : 'Manual'}</button>
+        <button type="button" className="btn ss__tool" disabled={![...(selectedSets.size ? selectedSets : new Set(activeId ? [activeId] : []))].some((id) => sets.some((x) => x.id === id && isSelectionSet(x)))} onClick={() => setConverting([...(selectedSets.size ? selectedSets : new Set(activeId ? [activeId] : []))])} aria-label="Convert selected sets to search sets" title="Convert the selected selection sets to search sets, by property (select them in the list first: Shift+click for a range)">Convert</button>
         <button type="button" className="btn ss__tool" onClick={() => setImporting((v) => !v)} aria-expanded={importing} aria-label="Import steps" title="Import steps: make a set per step from a CSV / TXT file of GlobalIds and task names">
           <IconUpload width={16} height={16} /><span className="ss__tool-text">Import</span>
         </button>
@@ -276,6 +375,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
         </InfoTip>
       </div>
       {importing && <ImportSteps onDone={() => setImporting(false)} />}
+      {converting && <BulkConvert ids={converting} onDone={() => setConverting(null)} />}
       {sets.length > 0 && (
         groups.some((g) => g !== '') ? (
           <SearchRow
@@ -289,6 +389,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
           <input className="cols__search" type="search" placeholder="Search sets…" value={query} onChange={(e) => setQuery(e.target.value)} />
         )
       )}
+      </div>
       {sets.length === 0 && <div className="cols__shown"><div className="cols__empty">No sets yet. Make a search set to find objects by their properties, or select objects and save them as a selection set.</div></div>}
       {sets.length > 0 && shown.length === 0 && <div className="flt__hint">No set matches “{query}”.</div>}
 
@@ -304,6 +405,14 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                   <span className="cols__group-name">{g}</span>
                   <span className="cols__count">{inGroup.length}</span>
                 </button>
+                <button
+                  type="button"
+                  className="cols__icon"
+                  disabled={alpha}
+                  onClick={() => renumber(g)}
+                  title={alpha ? 'Switch to Manual order to renumber' : 'Renumber the sets 1, 2, 3… in the order listed (manual order)'}
+                  aria-label={`Renumber the sets of ${g}`}
+                >#</button>
                 {shownBtn('eye') && eye(mergeIds(sets.filter((x) => x.group === g).map((x) => results.get(x.id) ?? {})), `the ${sets.filter((x) => x.group === g).length} sets of “${g}”`)}
                 {shownBtn('del') && (
                   <button
@@ -372,7 +481,7 @@ function SearchSetEditor({ initial, isNew, onClose }: { initial: SearchSet; isNe
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
-  const { sets, save, remove } = useSearchSetsStore();
+  const { sets, save, remove, setLastGroup } = useSearchSetsStore();
   const fields = useModelFields();
   const total = useTotal();
   const actions = useSetActions();
@@ -454,7 +563,7 @@ function SearchSetEditor({ initial, isNew, onClose }: { initial: SearchSet; isNe
         </button>
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn--primary" disabled={!canSave} onClick={() => { save({ ...set, name: set.name.trim(), group: set.group.trim() }); onClose(); }}>Save</button>
+        <button type="button" className="btn btn--primary" disabled={!canSave} onClick={() => { save({ ...set, name: set.name.trim(), group: set.group.trim() }); setLastGroup(set.group.trim()); onClose(); }}>Save</button>
       </div>
     </div>
   );
@@ -462,11 +571,11 @@ function SearchSetEditor({ initial, isNew, onClose }: { initial: SearchSet; isNe
 
 /** A selection set: its name and folder, what it holds per model, and the
     current selection added, removed or put in its place. */
-function SelectionSetEditor({ initial, isNew, onClose }: { initial: SearchSet; isNew: boolean; onClose: () => void }) {
+function SelectionSetEditor({ initial, isNew, onClose, onConvert }: { initial: SearchSet; isNew: boolean; onClose: () => void; onConvert: (search: SearchSet) => void }) {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
-  const { sets, save, remove } = useSearchSetsStore();
+  const { sets, save, remove, setLastGroup } = useSearchSetsStore();
   const actions = useSetActions();
   const selection = useSelectionItems();
   const [set, setSet] = useState<SearchSet>(initial);
@@ -493,6 +602,30 @@ function SelectionSetEditor({ initial, isNew, onClose }: { initial: SearchSet; i
   const nameTaken = sets.some((s) => s.id !== set.id && s.name.trim().toLowerCase() === set.name.trim().toLowerCase());
   const canSave = set.name.trim() !== '' && !nameTaken;
   const n = countIds(ids);
+
+  // Convert to a search set: by which properties the set's objects are found again.
+  const allFields = useModelFields();
+  const [convFields, setConvFields] = useState<string[]>([]);
+  const [convOpen, setConvOpen] = useState(false);
+  const conv = useMemo(
+    () => conversionResult(engine.getIndexes(), ids, convFields),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, ids, convFields, tick],
+  );
+  const fieldLabel = (id: string) => { const f = allFields.find((x) => x.id === id); return f ? `${f.group ? `${f.group} › ` : ''}${f.label}` : id; };
+  const fieldGroups = useMemo(() => {
+    const map = new Map<string, PickField[]>();
+    for (const f of allFields) (map.get(f.group ?? '') ?? map.set(f.group ?? '', []).get(f.group ?? '')!).push(f);
+    return [...map];
+  }, [allFields]);
+  const convert = () => onConvert({
+    id: newRuleId('ss'),
+    name: `${set.name.trim() || 'Selection'} (search)`,
+    group: set.group.trim(),
+    kind: 'search',
+    match: 'all',
+    conditions: conditionsFromObjects(engine.getIndexes(), ids, convFields),
+  });
 
   return (
     <div className="flt ss">
@@ -550,13 +683,52 @@ function SelectionSetEditor({ initial, isNew, onClose }: { initial: SearchSet; i
         ))}
       </div>
 
+      <div className="cols__heading">
+        <button type="button" className="cols__group-toggle" onClick={() => setConvOpen((v) => !v)} aria-expanded={convOpen}>
+          <span>Convert to a search set{' '}
+            <InfoTip>Finds these objects again by property values (for instance the Pour ID) instead of by object, so the search follows the model when it is re-converted or changes. Choose the properties, check how many objects it finds, then create it.</InfoTip>
+          </span>
+        </button>
+      </div>
+      {convOpen && (
+        <div className="ss__convert">
+          <div className="ss__sel-actions">
+            <select className="ss__field" value="" onChange={(e) => { if (e.target.value && !convFields.includes(e.target.value)) setConvFields([...convFields, e.target.value]); }} aria-label="Add a property">
+              <option value="">Add a property…</option>
+              {fieldGroups.map(([g, list]) => (
+                <optgroup key={g} label={g}>
+                  {list.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+                </optgroup>
+              ))}
+            </select>
+            <button type="button" className="btn btn--small" disabled={n === 0} onClick={() => setConvFields(suggestFields(engine.getIndexes(), ids, allFields.map((f) => f.id)))} title="Picks the fewest properties that find these objects and the fewest others">Suggest</button>
+          </div>
+          <div className="cols__shown">
+            {convFields.length === 0 && <div className="cols__empty">No property yet: add one, or Suggest.</div>}
+            {convFields.map((f) => (
+              <div className="cols__row" key={f}>
+                <span className="cols__label" title={f}>{fieldLabel(f)}</span>
+                <button type="button" className="cols__icon cols__icon--remove" onClick={() => setConvFields(convFields.filter((x) => x !== f))} title="Remove this property" aria-label={`Remove ${fieldLabel(f)}`}>✕</button>
+              </div>
+            ))}
+          </div>
+          {convFields.length > 0 && (
+            <div className={`flt__hint${conv.found !== conv.total || conv.inSet !== conv.total ? ' ss__warn' : ''}`}>
+              Finds <b>{conv.found.toLocaleString()}</b> object{conv.found === 1 ? '' : 's'}: {conv.inSet.toLocaleString()} of this set’s {conv.total.toLocaleString()}
+              {conv.found > conv.inSet ? `, and ${(conv.found - conv.inSet).toLocaleString()} more` : ''}.
+            </div>
+          )}
+          <button type="button" className="btn btn--small" disabled={convFields.length === 0 || conv.found === 0} onClick={convert}>Create search set…</button>
+        </div>
+      )}
+
       <div className="ss__footer">
         {!isNew && (
           <button type="button" className="btn ss__delete" onClick={() => { if (window.confirm(`Delete the selection set “${initial.name}”?`)) { remove(set.id); onClose(); } }}>Delete</button>
         )}
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onClose}>Cancel</button>
-        <button type="button" className="btn btn--primary" disabled={!canSave} onClick={() => { save({ ...set, name: set.name.trim(), group: set.group.trim() }); onClose(); }}>Save</button>
+        <button type="button" className="btn btn--primary" disabled={!canSave} onClick={() => { save({ ...set, name: set.name.trim(), group: set.group.trim() }); setLastGroup(set.group.trim()); onClose(); }}>Save</button>
       </div>
     </div>
   );
@@ -641,6 +813,108 @@ function ValuesPicker({ condition: c, onChange }: { condition: SearchCondition; 
 
 /** Import steps: pick a CSV / TXT file, check which columns hold the
     GlobalId and the task name, then make one selection set per step. */
+/** Bulk "Convert to search sets": the selected selection sets become search sets by the same properties, each from the
+    values its own objects have. Shows, per set, how many objects the search finds against how many the set holds. */
+function BulkConvert({ ids, onDone }: { ids: string[]; onDone: () => void }) {
+  const engine = useViewerEngine();
+  const models = useModelsStore((s) => s.models);
+  const tick = useIndexTick();
+  const { sets, save } = useSearchSetsStore();
+  const allFields = useModelFields();
+  const [fields, setFields] = useState<string[]>([]);
+  const [replace, setReplace] = useState(false);
+  const [exactOnly, setExactOnly] = useState(true);
+  const targets = useMemo(() => sets.filter((x) => ids.includes(x.id) && isSelectionSet(x)), [sets, ids]);
+  const objects = useMemo(
+    () => targets.map((t) => ({ set: t, ids: resolveItems(engine.getIndexes(), t.items ?? []).ids })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, targets, models, tick],
+  );
+  const rows = useMemo(
+    () => objects.map((o) => ({ ...o, res: conversionResult(engine.getIndexes(), o.ids, fields) })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, objects, fields],
+  );
+  const fieldGroups = useMemo(() => {
+    const map = new Map<string, PickField[]>();
+    for (const f of allFields) (map.get(f.group ?? '') ?? map.set(f.group ?? '', []).get(f.group ?? '')!).push(f);
+    return [...map];
+  }, [allFields]);
+  const label = (id: string) => { const f = allFields.find((x) => x.id === id); return f ? `${f.group ? `${f.group} › ` : ''}${f.label}` : id; };
+  const exact = (r: (typeof rows)[number]) => r.res.total > 0 && r.res.found === r.res.total && r.res.inSet === r.res.total;
+  const convertible = rows.filter((r) => r.res.total > 0 && fields.length > 0 && (!exactOnly || exact(r)));
+
+  // The combination of properties that suits most of the sets.
+  const suggest = () => {
+    const votes = new Map<string, { n: number; fields: string[] }>();
+    for (const o of objects) {
+      const f = suggestFields(engine.getIndexes(), o.ids, allFields.map((x) => x.id));
+      if (f.length === 0) continue;
+      const k = f.join('|');
+      votes.set(k, { n: (votes.get(k)?.n ?? 0) + 1, fields: f });
+    }
+    const best = [...votes.values()].sort((a, b) => b.n - a.n)[0];
+    if (best) setFields(best.fields);
+  };
+  const apply = () => {
+    if (convertible.length === 0) return;
+    if (replace && !window.confirm(`Replace ${convertible.length} selection set${convertible.length === 1 ? '' : 's'} with search sets? The objects they hold are no longer kept: the search finds them again from their properties.`)) return;
+    for (const r of convertible) {
+      const conditions = conditionsFromObjects(engine.getIndexes(), r.ids, fields);
+      if (replace) save({ ...r.set, kind: 'search', match: 'all', conditions, items: undefined, legacy: undefined });
+      else save({ id: newRuleId('ss'), name: r.set.name, group: r.set.group ? `${r.set.group} (search)` : 'Search sets', kind: 'search', match: 'all', conditions });
+    }
+    onDone();
+  };
+
+  return (
+    <div className="ss__convert" style={{ marginBottom: 8 }}>
+      <div className="ss__editor-head"><b>Convert {targets.length} selection set{targets.length === 1 ? '' : 's'} to search sets</b></div>
+      {targets.length === 0 && <div className="flt__hint">Select selection sets in the list first (Shift+click for a range, Ctrl+click to add).</div>}
+      <div className="ss__sel-actions">
+        <select className="ss__field" value="" onChange={(e) => { if (e.target.value && !fields.includes(e.target.value)) setFields([...fields, e.target.value]); }} aria-label="Add a property">
+          <option value="">Add a property…</option>
+          {fieldGroups.map(([g, list]) => (
+            <optgroup key={g} label={g}>{list.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}</optgroup>
+          ))}
+        </select>
+        <button type="button" className="btn btn--small" disabled={targets.length === 0} onClick={suggest} title="The fewest properties that find most of these sets' objects and few others">Suggest</button>
+      </div>
+      <div className="cols__shown">
+        {fields.length === 0 && <div className="cols__empty">No property yet: add one (for instance the Pour ID), or Suggest.</div>}
+        {fields.map((f) => (
+          <div className="cols__row" key={f}>
+            <span className="cols__label" title={f}>{label(f)}</span>
+            <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFields(fields.filter((x) => x !== f))} aria-label={`Remove ${label(f)}`}>✕</button>
+          </div>
+        ))}
+      </div>
+      {fields.length > 0 && (
+        <>
+          <div className="flt__hint">
+            <b>{rows.filter(exact).length}</b> of {rows.length} find exactly their own objects{rows.some((r) => r.res.total === 0) ? ` · ${rows.filter((r) => r.res.total === 0).length} not in the loaded models` : ''}.
+          </div>
+          <div className="cols__shown" style={{ maxHeight: 180, overflowY: 'auto' }}>
+            {rows.filter((r) => !exact(r)).map((r) => (
+              <div className="cols__row" key={r.set.id}>
+                <span className="cols__label" title={r.set.name}>{r.set.name}</span>
+                <span className="ss__count ss__warn">{r.res.total === 0 ? 'not loaded' : `finds ${r.res.found} / ${r.res.total}`}</span>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <label className="disp__row"><span>Only the exact ones <InfoTip>Leave out the sets whose search would find more or fewer objects than the set holds.</InfoTip></span><input type="checkbox" checked={exactOnly} onChange={(e) => setExactOnly(e.target.checked)} /></label>
+      <label className="disp__row"><span>Replace the selection sets <InfoTip>Off: the search sets are added in a folder named after the sets’ folder plus “(search)”, and the selection sets are kept.</InfoTip></span><input type="checkbox" checked={replace} onChange={(e) => setReplace(e.target.checked)} /></label>
+      <div className="ss__footer">
+        <span style={{ flex: 1 }} />
+        <button type="button" className="btn" onClick={onDone}>Cancel</button>
+        <button type="button" className="btn btn--primary" disabled={convertible.length === 0} onClick={apply}>Convert {convertible.length}</button>
+      </div>
+    </div>
+  );
+}
+
 function ImportSteps({ onDone }: { onDone: () => void }) {
   const engine = useViewerEngine();
   const { sets, replaceGroup } = useSearchSetsStore();

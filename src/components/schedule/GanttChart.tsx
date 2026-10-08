@@ -27,6 +27,7 @@ import type { GanttExport, GanttExportRow } from '../../schedule/exportGanttXlsx
 import { aggregate, aggType, defaultAgg, type AggKind } from '../../schedule/aggregates';
 import { AggCell } from './AggCell';
 import { IconExpander } from '../icons';
+import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 
 export type Zoom = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
 export const ZOOMS: Zoom[] = ['hour', 'day', 'week', 'month', 'quarter', 'year'];
@@ -242,6 +243,13 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   const layout = useMemo(() => flattenLayout(rows, wbsTree, grouped, collapsedGroups), [rows, wbsTree, grouped, collapsedGroups]);
   const linkIndex = useMemo(() => buildLinkIndex(relationships), [relationships]);
   const items = layout.items;
+  // Ctrl+click adds or removes a row, Shift+click picks the rows between (in the order listed now); see activitySelectionStore.
+  const multi = useActivitySelectionStore((s) => s.ids);
+  const pickRow = (a: Activity, e: React.MouseEvent) => {
+    const order = items.flatMap((i) => (i.kind === 'row' ? [i.row.activity.id] : []));
+    useActivitySelectionStore.getState().click(a.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }, order);
+    onSelect(a);
+  };
   const contentHeight = items.length * ROW_H;
 
   // Picking a Group Level re-seeds which nodes start collapsed (depth >= N);
@@ -440,6 +448,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     while (i >= 0 && i < items.length && items[i].kind !== 'row') i += dir;
     const item = items[i];
     if (item && item.kind === 'row') {
+      useActivitySelectionStore.getState().click(item.row.activity.id, {}, []);
       onSelect(item.row.activity);
       scrollRowIntoView(i);
     }
@@ -569,7 +578,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     const barWidth = Math.max(xFor(r.f) - barLeft, 4);
     const isMilestone = a.type === 'milestone-start' || a.type === 'milestone-finish';
     const isLoe = a.type === 'loe';
-    const selected = a.id === selectedId;
+    const selected = a.id === selectedId || (multi.size > 1 && multi.has(a.id));
     const linked = highlightedIds?.has(a.id) ?? false;
     const critical = showCritical && a.isCritical;
     const color = getColor?.(a) ?? (critical ? 'var(--bar-critical)' : a.status === 'completed' ? 'var(--bar-done)' : 'var(--bar-normal)');
@@ -583,7 +592,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
         style={{ top: index * ROW_H, width: totalWidth }}
       >
         <div
-          onClick={() => onSelect(a)}
+          onClick={(e) => pickRow(a, e)}
+          onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
           onDoubleClick={() => { jumpToActivity(a); onOpen?.(a); }}
           className={`gantt-row-label gantt-row-label--cols${selected ? ' selected' : ''}${linked ? ' gantt-row-label--linked' : ''}`}
           style={{ width: LABEL_W }}
@@ -599,7 +609,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
             </span>
           ))}
         </div>
-        <div className="gantt-row-chart" style={{ width: chartWidth }} onClick={() => onSelect(a)} onDoubleClick={() => { jumpToActivity(a); onOpen?.(a); }}>
+        <div className="gantt-row-chart" style={{ width: chartWidth }} onClick={(e) => pickRow(a, e)} onDoubleClick={() => { jumpToActivity(a); onOpen?.(a); }}>
           {baseline && <div className="gantt-baseline" style={{ left: baseline.l, width: baseline.w }} />}
           {isMilestone ? (
             <div

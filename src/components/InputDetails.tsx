@@ -3,6 +3,7 @@ import { BUILT_IN_GROUPS, NO_VALUE, passesFilters, useInputDetailsStore, valuesO
 import { pushFiles } from '../seatable/filesClient';
 import { queryMatcher } from '../schedule/search';
 import { IconChevronDown, IconChevronRight, IconExpander } from './icons';
+import { SearchRow } from './SearchRow';
 
 /** Inputs page: group, filter and sort the list by a detail of the file (filled in on
     SeaTable's "Insight Plan Files" table). The setup is in the side pane's tabs;
@@ -87,7 +88,7 @@ export function InputsFilters() {
   const presetOn = (p: { key: string; value: string }) => filters[p.key]?.length === 1 && filters[p.key][0] === p.value;
 
   return (
-    <div className="flt">
+    <div className="flt flt--inputs">
       <div className="flt__result">
         <div className="flt__result-text">
           <b>{matched.toLocaleString()}</b> of {files.length.toLocaleString()} files
@@ -121,7 +122,9 @@ export function InputsFilters() {
       )}
 
       <div className="cols__heading"><span>Fields <b>{keys.length}</b></span></div>
-      <input className="cols__search" type="search" placeholder="Search fields…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <SearchRow collapsed={open.size === 0} onCollapse={() => setOpen(new Set())} onExpand={() => setOpen(new Set(keys.filter((k) => hit(k.label)).map((k) => k.id)))}>
+        <input className="cols__search" type="search" placeholder="Search fields…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      </SearchRow>
       {keys.filter((k) => hit(k.label)).map((k) => {
         const kept = filters[k.id] ?? [];
         const isOpen = open.has(k.id) || !!search.trim();
@@ -135,14 +138,16 @@ export function InputsFilters() {
                 <span className="flt__field-label">{k.label}</span>
                 {kept.length > 0 && <span className="flt__field-sum">{kept.length <= 2 ? kept.map(labelOf).join(', ') : `${kept.length} values`}</span>}
               </button>
+              {isOpen && (
+                <span className="flt__bulk flt__bulk--inline">
+                  <button type="button" className="cols__link" onClick={() => setFilter(k.id, list.map(([v]) => v))}>Select all</button>
+                  <button type="button" className="cols__link" onClick={() => setFilter(k.id, [])}>None</button>
+                </span>
+              )}
               {kept.length > 0 && <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label}`} title="Clear">✕</button>}
             </div>
             {isOpen && (
               <div className="flt__field-body">
-                <div className="flt__bulk">
-                  <button type="button" className="cols__link" onClick={() => setFilter(k.id, list.map(([v]) => v))}>Select all</button>
-                  <button type="button" className="cols__link" onClick={() => setFilter(k.id, [])}>None</button>
-                </div>
                 <div className="flt__values">
                   {list.map(([v, n]) => (
                     <label key={v} className={`cols__check${n === 0 && !kept.includes(v) ? ' flt__zero' : ''}`}>

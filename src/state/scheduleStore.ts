@@ -3,6 +3,8 @@ import { create } from 'zustand';
 import type { ScheduleModel } from '../schedule/types';
 import { mergeSchedules } from '../schedule/mergeSchedules';
 import { programmeKey, useUnloadedWbsStore, withoutUnloaded } from './unloadedWbsStore';
+import { markChoiceMade, nextChoice, useProgrammeChoiceStore } from './programmeChoiceStore';
+import { useRetiredTasksStore, withoutRetired } from './retiredTasksStore';
 
 interface ScheduleState {
   schedules: ScheduleModel[];
@@ -33,7 +35,18 @@ interface ScheduleState {
   restoreActivities: (activities: Map<string, import('../schedule/types').Activity[]>) => void;
 }
 
-export const useScheduleStore = create<ScheduleState>((set) => ({
+export const useScheduleStore = create<ScheduleState>((set, get) => {
+  /** Remembers the programme choice (selected, switched off) after the user changed it, for the scene to keep. */
+  const rememberChoice = () => {
+    markChoiceMade();
+    const s = get();
+    const selected = s.schedules.find((m) => m.id === s.selectedId);
+    const choice = useProgrammeChoiceStore.getState();
+    useProgrammeChoiceStore.getState().set(
+      nextChoice(choice, s.schedules.map(programmeKey), selected ? programmeKey(selected) : null, s.schedules.filter((m) => s.hiddenScheduleIds.has(m.id)).map(programmeKey)),
+    );
+  };
+  return {
   schedules: [],
   selectedId: null,
   visibleActivityCount: null,
@@ -47,15 +60,20 @@ export const useScheduleStore = create<ScheduleState>((set) => ({
       hiddenScheduleIds.delete(id);
       return { schedules, hiddenScheduleIds, selectedId: wasSelected ? (schedules[0]?.id ?? null) : s.selectedId };
     }),
-  select: (id) => set({ selectedId: id }),
+  select: (id) => {
+    set({ selectedId: id });
+    rememberChoice();
+  },
   setVisibleActivityCount: (count) => set({ visibleActivityCount: count }),
-  toggleScheduleHidden: (id) =>
+  toggleScheduleHidden: (id) => {
     set((s) => {
       const hiddenScheduleIds = new Set(s.hiddenScheduleIds);
       if (hiddenScheduleIds.has(id)) hiddenScheduleIds.delete(id);
       else hiddenScheduleIds.add(id);
       return { hiddenScheduleIds };
-    }),
+    });
+    rememberChoice();
+  },
   replaceAll: (schedules, hiddenIds) =>
     set({ schedules, selectedId: schedules[0]?.id ?? null, hiddenScheduleIds: new Set(hiddenIds ?? []) }),
   patchActivities: (patches) =>
@@ -78,7 +96,8 @@ export const useScheduleStore = create<ScheduleState>((set) => ({
         return { ...m, activities: m.activities.map((a) => (mine.has(a.id) ? { ...a, udf: { ...a.udf, [field]: mine.get(a.id)! } } : a)) };
       }),
     })),
-}));
+  };
+});
 
 /** The schedules currently in play — everything loaded minus what's been
     toggled off from Inputs without being removed.
@@ -90,10 +109,11 @@ export function useVisibleSchedules(): ScheduleModel[] {
   const schedules = useScheduleStore((s) => s.schedules);
   const hiddenScheduleIds = useScheduleStore((s) => s.hiddenScheduleIds);
   const unloaded = useUnloadedWbsStore((s) => s.byProgramme);
-  // Programmes with WBS branches unloaded (Programmes › WBS) lose those activities everywhere.
+  const retired = useRetiredTasksStore((s) => s.codes);
+  // Programmes with WBS branches unloaded (Programmes › WBS) lose those activities everywhere; so do the tasks retired in SeaTable.
   return useMemo(
-    () => schedules.filter((m) => !hiddenScheduleIds.has(m.id)).map((m) => withoutUnloaded(m, unloaded[programmeKey(m)] ?? [])),
-    [schedules, hiddenScheduleIds, unloaded],
+    () => schedules.filter((m) => !hiddenScheduleIds.has(m.id)).map((m) => withoutRetired(withoutUnloaded(m, unloaded[programmeKey(m)] ?? []), retired)),
+    [schedules, hiddenScheduleIds, unloaded, retired],
   );
 }
 

@@ -21,6 +21,8 @@ import { SequenceTimelineStatusBar } from './components/sequence/SequenceTimelin
 import { useModelsStore } from './state/modelsStore';
 import { useContextMeshStore, type ContextMeshRow } from './state/contextMeshStore';
 import { useActiveSchedule, useScheduleStore } from './state/scheduleStore';
+import { hasMadeChoice, useProgrammeChoiceStore } from './state/programmeChoiceStore';
+import { programmeKey } from './state/unloadedWbsStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
 import { IconBook, IconCheckboxChecked, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
@@ -83,6 +85,30 @@ function ThemeSync() {
   return null;
 }
 
+/** A scene remembers which programme to use (the selected one, and the ones switched off from Inputs). The programmes
+    load from the project database after the page starts, one by one (a big one can take a long while), so the choice is
+    applied to each as it arrives — until the user picks or hides a programme themselves, after which it is left as it is. */
+function ProgrammeChoiceSync() {
+  const schedules = useScheduleStore((s) => s.schedules);
+  const seen = useRef(new Set<string>());
+  useEffect(() => {
+    const fresh = schedules.filter((m) => !seen.current.has(m.id));
+    if (fresh.length === 0) return;
+    fresh.forEach((m) => seen.current.add(m.id));
+    if (hasMadeChoice()) return;
+    const choice = useProgrammeChoiceStore.getState();
+    const hide = fresh.filter((m) => choice.hidden.includes(programmeKey(m)));
+    const pick = choice.selected ? schedules.find((m) => programmeKey(m) === choice.selected) : undefined;
+    if (hide.length === 0 && !pick) return;
+    // Straight into the store: this restores the choice, it is not the user making one.
+    useScheduleStore.setState((s) => ({
+      hiddenScheduleIds: hide.length ? new Set([...s.hiddenScheduleIds, ...hide.map((m) => m.id)]) : s.hiddenScheduleIds,
+      selectedId: pick ? pick.id : s.selectedId,
+    }));
+  }, [schedules]);
+  return null;
+}
+
 /** Models tab: frames every model ("Fit all models") the first time it is
     opened, and again on arriving whenever the loaded models changed since. */
 function FitOnModelsTab({ page }: { page: PageId }) {
@@ -133,6 +159,17 @@ export default function App() {
     pageRef.current = to;
     setPageRaw(to);
   };
+  // Other parts of the app move to a page by asking: window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'sequence' })).
+  useEffect(() => {
+    const go = (e: Event) => {
+      const id = (e as CustomEvent<PageId>).detail;
+      if (PAGES.some((p) => p.id === id)) setPage(id);
+    };
+    window.addEventListener('ip-goto-page', go);
+    return () => window.removeEventListener('ip-goto-page', go);
+    // setPage reads the current page from a ref.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Settings › Window › Show Scenarios tab (off by default — Scenarios is
   // also in 4D Sequencing).
   const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
@@ -194,6 +231,7 @@ export default function App() {
   return (
     <ViewerEngineProvider>
       <ThemeSync />
+      <ProgrammeChoiceSync />
       <FitOnModelsTab page={page} />
       <SettingsSync />
       <CustomFieldsSync />

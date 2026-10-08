@@ -4,6 +4,7 @@ import { collectUdfKeys } from '../schedule/filterFields';
 import { useExportExclusionsStore } from '../schedule/exportFilter';
 import { PRECAST_RESOURCE } from '../schedule/virtualResources';
 import { IconSectionChevron } from './icons';
+import { usePersistedState } from '../utils/persistedState';
 import { InfoTip } from './InfoTip';
 
 type Kind = 'udfs' | 'resources' | 'codes';
@@ -22,6 +23,8 @@ export function ExportFieldsPanel({ bare = false }: { bare?: boolean } = {}) {
   const schedules = useScheduleStore((s) => s.schedules);
   const excluded = useExportExclusionsStore();
   const [openState, setOpen] = useState(false);
+  // Each group folds away; remembered (it goes with the scene).
+  const [closed, setClosed] = usePersistedState<Kind[]>('exports.closedGroups', []);
   const open = bare || openState;
 
   const names = useMemo(() => {
@@ -57,31 +60,38 @@ export function ExportFieldsPanel({ bare = false }: { bare?: boolean } = {}) {
             const out = excluded[kind];
             const extra = kind === 'resources' ? 1 : 0;
             const exported = list.length - out.length + (extra && virtualIn ? 1 : 0);
+            const isOpen = !closed.includes(kind);
+            const toggle = () => setClosed(isOpen ? [...closed, kind] : closed.filter((k) => k !== kind));
             return (
               <div key={kind} className="export-fields__group">
                 <div className="export-fields__head">
-                  <b>{title}</b>
-                  <span className="export-fields__count">{exported}/{list.length + extra} exported</span>
+                  <button type="button" className="export-fields__group-toggle" onClick={toggle} aria-expanded={isOpen}>
+                    <IconSectionChevron className="section-chevron" />
+                    <b>{title}</b>
+                    <span className="export-fields__count">{exported}/{list.length + extra}</span>
+                  </button>
                   <span className="export-fields__bulk">
                     <button type="button" className="cols__link" onClick={() => excluded.setMany(kind, list, false)}>All</button>
                     <button type="button" className="cols__link" onClick={() => excluded.setMany(kind, list, true)}>None</button>
                   </span>
                 </div>
-                {list.length === 0 && !extra && <div className="flt__hint">None in the loaded programmes.</div>}
-                <div className="export-fields__list">
-                  {list.map((n) => (
-                    <label key={n} className={`cols__check${out.includes(n) ? ' export-fields__off' : ''}`}>
-                      <input type="checkbox" checked={!out.includes(n)} onChange={(e) => excluded.setExcluded(kind, n, !e.target.checked)} />
-                      <span title={n}>{n}</span>
-                    </label>
-                  ))}
-                  {kind === 'resources' && (
-                    <label className={`cols__check${virtualIn ? '' : ' export-fields__off'}`} title="App-only: the precast concrete (m³) of each Precast Installation activity. Left out unless ticked.">
-                      <input type="checkbox" checked={virtualIn} onChange={(e) => excluded.setIncludeVirtual(PRECAST_RESOURCE, e.target.checked)} />
-                      <span>◇ {PRECAST_RESOURCE}</span>
-                    </label>
-                  )}
-                </div>
+                {isOpen && (
+                  <div className="export-fields__list">
+                    {list.length === 0 && !extra && <div className="flt__hint">None in the loaded programmes.</div>}
+                    {list.map((n) => (
+                      <label key={n} className={`cols__check${out.includes(n) ? ' export-fields__off' : ''}`}>
+                        <input type="checkbox" checked={!out.includes(n)} onChange={(e) => excluded.setExcluded(kind, n, !e.target.checked)} />
+                        <span title={n}>{n}</span>
+                      </label>
+                    ))}
+                    {kind === 'resources' && (
+                      <label className={`cols__check${virtualIn ? '' : ' export-fields__off'}`} title="App-only: the precast concrete (m³) of each Precast Installation activity. Left out unless ticked.">
+                        <input type="checkbox" checked={virtualIn} onChange={(e) => excluded.setIncludeVirtual(PRECAST_RESOURCE, e.target.checked)} />
+                        <span>◇ {PRECAST_RESOURCE}</span>
+                      </label>
+                    )}
+                  </div>
+                )}
               </div>
             );
           })}

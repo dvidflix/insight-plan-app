@@ -8,12 +8,16 @@ import { ContextMeshes } from './contextMeshes';
 import { renderTargets, slideStoreys, type BaseHeights } from './storeySlide';
 import { GrowthAnimator } from './growthAnimator';
 import { Flythrough } from './flythrough';
+import { Walkthrough } from './walkthrough';
 import { ElementRelations } from './relations';
 import { attachBoxSelect } from './boxSelect';
 import { PointMarks, copyText, formatCoords, projectCoords } from './pointMarks';
 import { configureSun, markBaseMaterials, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setMaterialsEnabled, setSkyUniforms, skyParamsFor, type RealismSettings } from './realism';
 import { SkyBackdrop } from './skyBackdrop';
-import { extractGrids, type IfcGridData } from './ifcGrids';
+import { extractGrids, extractStoreys, type IfcGridData, type IfcStoreyData } from './ifcGrids';
+import { gridDimensions, spacingText } from './gridDimensions';
+import { gridCutPlane, levelCutPlane, planeToScene, type SectionCuts } from './sectionPlanes';
+import { useSectionCutsStore } from '../state/sectionCutsStore';
 import { MarkerLayer } from './markerLayer';
 import { ConstructionPlaneLayer } from './constructionPlaneLayer';
 import type { ConstructionPlane } from '../state/constructionPlanesStore';
@@ -102,6 +106,8 @@ export class ViewerEngine {
   /** Visibility was changed by something other than the 4D timeline (Show
       all / Hide / Isolate) — the timeline re-applies everything next tick. */
   readonly onExternalVisibilityChange = new OBC.Event<void>();
+  /** The mode (Select / Isolate / Reveal) changed, from the toolbar or from code: the toolbar's buttons follow it. */
+  readonly onInteractionModeChange = new OBC.Event<InteractionMode>();
   /** Fired after every Hider change (Hide, Isolate, Show all, IFC element types). */
   readonly onVisibilityChange = new OBC.Event<void>();
   /** Reveal's focus set was pinned (true) or released (false). */
@@ -432,12 +438,29 @@ export class ViewerEngine {
     const fly = new Flythrough(world.camera, () => this.modelsSphere()?.radius ?? 10, () => this._secondary?.followMain());
     world.scene.three.add(fly.object);
     this._flythrough = fly;
+    // Walkthrough (W A S D…): the camera moves through the model with the keyboard.
+    const walk = new Walkthrough(world.camera, container, () => this._secondary?.followMain());
+    try {
+      const saved = Number(localStorage.getItem('viewer.walkSpeed'));
+      if (saved > 0) walk.speed = saved;
+    } catch {
+      // default speed
+    }
+    // Starting a fly-through leaves the walkthrough.
+    fly.onPlayingChange.add((playing) => { if (playing) walk.disable(); });
+    this._walkthrough = walk;
     for (const type of ['pointerdown', 'wheel']) container.addEventListener(type, () => fly.pause(), { capture: true, passive: true });
 
     this.markReady();
   }
 
   private _flythrough: Flythrough | null = null;
+  private _walkthrough: Walkthrough | null = null;
+
+  /** The keyboard walkthrough; null until init() has run. */
+  get walkthrough(): Walkthrough | null {
+    return this._walkthrough;
+  }
 
   /** The camera fly-through; null until init() has run. */
   get flythrough(): Flythrough | null {
@@ -474,15 +497,15 @@ export class ViewerEngine {
     return this.models.get(modelId) ?? null;
   }
 
-  /** Replaces the selection with `ids` (per model id), optionally framing it. */
-  async selectElements(ids: Record<string, number[]>, zoom = true) {
+  /** Replaces the selection with `ids` (per model id), optionally framing it; `add` keeps the current selection too. */
+  async selectElements(ids: Record<string, number[]>, zoom = true, add = false) {
     const map: OBC.ModelIdMap = {};
     for (const [modelId, list] of Object.entries(ids)) if (list.length) map[modelId] = new Set(list);
     if (OBC.ModelIdMapUtils.isEmpty(map)) {
       await this.highlighter.clear('select');
       return;
     }
-    await this.highlighter.highlightByID('select', map, true, false);
+    await this.highlighter.highlightByID('select', map, !add, false);
     if (zoom) await this.fit(map);
   }
 
@@ -507,6 +530,7 @@ export class ViewerEngine {
       this.interactionMode = 'select';
       await this.highlighter.highlightByID('select', visible, true, false);
       this.syncGhostEdgeExclusion();
+      this.onInteractionModeChange.trigger('select');
       return;
     }
     this.setPinnedState(null);
@@ -515,6 +539,7 @@ export class ViewerEngine {
     const selection = this.highlighter.selection.select;
     if (!OBC.ModelIdMapUtils.isEmpty(selection)) await this.applyInteraction(selection);
     this.syncGhostEdgeExclusion();
+    this.onInteractionModeChange.trigger(mode);
   }
 
   getInteractionMode() {
@@ -697,6 +722,7 @@ export class ViewerEngine {
 
   // ---- IFC grids (the model's IfcGrid axes, drawn as lines with a bubble at each end) ----
   private gridData = new Map<string, IfcGridData[]>();
+  private storeyData = new Map<string, IfcStoreyData[]>();
   private gridGroups = new Map<string, THREE.Group>();
   private showGrids = false;
   readonly onIfcGridsChange = new OBC.Event<void>();
@@ -709,8 +735,10 @@ export class ViewerEngine {
   private async loadGrids(modelId: string, bytes: Uint8Array) {
     try {
       const grids = await extractGrids(bytes);
+      const storeys = await extractStoreys(bytes);
       if (!this.models.has(modelId)) return;
       this.gridData.set(modelId, grids);
+      this.storeyData.set(modelId, storeys);
       if (this.showGrids) this.buildGrids(modelId);
       this.onIfcGridsChange.trigger();
     } catch (e) {
@@ -791,6 +819,42 @@ export class ViewerEngine {
       sprite.scale.setScalar(1.6);
       sprite.renderOrder = 6;
       group.add(sprite);
+    }
+    // The spacing between neighbouring parallel gridlines, in a row beyond the bubbles.
+    const dimTextures = new Map<string, THREE.CanvasTexture>();
+    const dimTexture = (text: string) => {
+      let tex = dimTextures.get(text);
+      if (!tex) {
+        const c = document.createElement('canvas');
+        c.width = 192;
+        c.height = 64;
+        const ctx = c.getContext('2d')!;
+        ctx.fillStyle = 'rgba(255,255,255,0.92)';
+        ctx.strokeStyle = '#d6336c';
+        ctx.lineWidth = 3;
+        ctx.beginPath();
+        ctx.roundRect(3, 3, 186, 58, 12);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = '#7a1238';
+        ctx.font = 'bold 34px sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(text, 96, 34, 172);
+        tex = new THREE.CanvasTexture(c);
+        dimTextures.set(text, tex);
+      }
+      return tex;
+    };
+    for (const grid of grids) {
+      for (const dim of gridDimensions(grid.axes)) {
+        const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: dimTexture(spacingText(dim.spacing)), depthTest: false, transparent: true }));
+        sprite.position.copy(toLocal(dim.at)).addScaledVector(new THREE.Vector3(dim.outward[0], 0, -dim.outward[1]), 0.9 + 1.7);
+        sprite.scale.set(2.4, 0.8, 1);
+        sprite.renderOrder = 6;
+        sprite.userData.title = `${dim.from} – ${dim.to}`;
+        group.add(sprite);
+      }
     }
     group.visible = this.showGrids;
     model.object.add(group);
@@ -1304,6 +1368,25 @@ export class ViewerEngine {
     }
     await this._secondary?.resetColors();
     // Resetting colours also took the selection highlight off: draw it again.
+    await this.highlighter.updateColors();
+    await this.forceUpdate();
+  }
+
+  /** Puts every object's colour and opacity back to the model's own, in both views (painted colours, Models > Colour,
+      the colour legend and the 4D stages alike); what is hidden stays hidden. The 4D page then draws its own again
+      ("Refresh graphics"). */
+  async resetLooks() {
+    if (!this.fragments) return;
+    this.keptColors.clear();
+    this.keptOpacities.clear();
+    for (const model of this.models.values()) {
+      for (const m of this.renderTargets(model)) {
+        await m.resetColor(undefined);
+        await m.resetOpacity(undefined);
+      }
+    }
+    await this._secondary?.resetLooks();
+    // The reset took the selection highlight off too: draw it again.
     await this.highlighter.updateColors();
     await this.forceUpdate();
   }
@@ -1933,6 +2016,7 @@ export class ViewerEngine {
     this.viewHidden.delete(modelId);
     this.basePositions.delete(modelId);
     this.gridData.delete(modelId);
+    this.storeyData.delete(modelId);
     this.gridGroups.get(modelId)?.removeFromParent();
     this.gridGroups.delete(modelId);
     this.baseHeights.delete(modelId);
@@ -2235,8 +2319,8 @@ export class ViewerEngine {
 
   setSectionsActive(on: boolean) {
     this.sectionsOn = on;
-    for (const plane of this.clipper.list.values()) {
-      plane.enabled = on;
+    for (const [id, plane] of this.clipper.list) {
+      plane.enabled = on && !this.previewPlaneIds.has(id);
       plane.visible = on && this.clipper.visible;
     }
     this.onToolContentChange.trigger();
@@ -2254,7 +2338,64 @@ export class ViewerEngine {
 
   clearSections() {
     this.clipper.deleteAll();
+    this.cutPlaneIds = [];
+    useSectionCutsStore.getState().clearAll();
     this.onToolContentChange.trigger();
+  }
+
+  // ---- Section cuts (Views > Section cuts): a cut along a gridline and a cut at a level ----
+  private cutPlaneIds: string[] = [];
+  /** Cut planes shown as a sheet only (the cut switched off). */
+  private previewPlaneIds = new Set<string>();
+  private cutChain: Promise<void> = Promise.resolve();
+
+  /** What the cuts can name: the gridlines' tags and the storeys, from the loaded models (first one wins on a repeat). */
+  sectionCutOptions(): { grids: { name: string; family: 'U' | 'V' | 'W' }[]; storeys: { name: string; elevation: number }[] } {
+    const grids = new Map<string, 'U' | 'V' | 'W'>();
+    for (const list of this.gridData.values()) for (const g of list) for (const a of g.axes) if (a.tag && !grids.has(a.tag)) grids.set(a.tag, a.family);
+    const storeys = new Map<string, number>();
+    for (const list of this.storeyData.values()) for (const st of list) if (st.name && st.elevation !== null && !storeys.has(st.name)) storeys.set(st.name, st.elevation);
+    return {
+      grids: [...grids].map(([name, family]) => ({ name, family })).sort((a, b) => a.family.localeCompare(b.family) || a.name.localeCompare(b.name, undefined, { numeric: true })),
+      storeys: [...storeys].map(([name, elevation]) => ({ name, elevation })).sort((a, b) => a.elevation - b.elevation),
+    };
+  }
+
+  /** Draws the cuts as clipping planes (replacing the ones it drew before). A name the loaded models do not have draws nothing. */
+  applySectionCuts(cuts: SectionCuts): Promise<void> {
+    this.cutChain = this.cutChain.then(async () => {
+      const world = this._world;
+      if (!world) return;
+      for (const id of this.cutPlaneIds) await this.clipper.delete(world, id);
+      this.cutPlaneIds = [];
+      this.previewPlaneIds.clear();
+      const g = this.globalOffset();
+      const planes: { plane: ReturnType<typeof gridCutPlane>; cut: boolean }[] = [];
+      if (cuts.grid.name) {
+        const axis = [...this.gridData.values()].flatMap((list) => list.flatMap((grid) => grid.axes)).find((a) => a.tag === cuts.grid.name);
+        const first = axis?.points[0];
+        const last = axis?.points[axis.points.length - 1];
+        planes.push({ plane: first && last ? gridCutPlane(first, last, cuts.grid.offset, cuts.grid.flip) : null, cut: cuts.grid.cut });
+      }
+      if (cuts.level.name) {
+        const storey = [...this.storeyData.values()].flatMap((list) => list).find((st) => st.name === cuts.level.name && st.elevation !== null);
+        planes.push({ plane: storey ? levelCutPlane(storey.elevation!, cuts.level.offset, cuts.level.flip) : null, cut: cuts.level.cut });
+      }
+      for (const { plane, cut } of planes) {
+        if (!plane) continue;
+        const scene = planeToScene(plane, g);
+        const id = this.clipper.createFromNormalAndCoplanarPoint(world, new THREE.Vector3(...scene.normal), new THREE.Vector3(...scene.point));
+        const simple = this.clipper.list.get(id);
+        if (simple) {
+          simple.enabled = cut && this.sectionsOn;
+          simple.visible = this.clipper.visible;
+        }
+        if (!cut) this.previewPlaneIds.add(id);
+        this.cutPlaneIds.push(id);
+      }
+      this.onToolContentChange.trigger();
+    });
+    return this.cutChain;
   }
 
   dispose() {
@@ -2263,6 +2404,8 @@ export class ViewerEngine {
     this.removeBoxSelect?.();
     this._flythrough?.dispose();
     this._flythrough = null;
+    this._walkthrough?.dispose();
+    this._walkthrough = null;
     this._components?.dispose();
     this._components = null;
     this._world = null;

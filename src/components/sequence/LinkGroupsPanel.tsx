@@ -1,6 +1,7 @@
-import { useMemo, useState } from 'react';
+import { Fragment, useMemo, useState } from 'react';
 import type { ScheduleModel } from '../../schedule/types';
 import type { ElementSummary } from '../../viewer/types';
+import { usePropertyVisibilityStore } from '../../state/propertyVisibilityStore';
 import {
   buildMatchExportRows,
   computeGroupLinks,
@@ -70,11 +71,27 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
   const [editing, setEditing] = useState<LinkGroup | null>(null);
 
   const taskOptions = useMemo(() => taskFieldOptions(model), [model]);
+  // The object properties to pick from: all but those hidden on the Properties tab (Show / hide properties),
+  // plus any a group already uses, so its rules still show.
+  const hiddenPsets = usePropertyVisibilityStore((st) => st.hiddenPsets);
+  const hiddenProps = usePropertyVisibilityStore((st) => st.hiddenProps);
   const objectKeys = useMemo(() => {
     const keys = new Set<string>(['_file']);
-    for (const set of elementSets ?? [elements]) for (const k of samplePropKeys(set)) keys.add(k);
+    const hiddenSet = new Set(hiddenPsets);
+    const hiddenOne = new Set(hiddenProps);
+    for (const set of elementSets ?? [elements]) {
+      for (const k of samplePropKeys(set)) {
+        const dot = k.indexOf('.');
+        if (hiddenOne.has(k) || (dot > 0 && hiddenSet.has(k.slice(0, dot)))) continue;
+        keys.add(k);
+      }
+    }
+    for (const g of groups) {
+      for (const r of g.objectFilters) keys.add(objectFieldKey(r.propertySet, r.attribute));
+      for (const r of g.matchRules) keys.add(objectFieldKey(r.objectPropertySet, r.objectAttribute));
+    }
     return [...keys];
-  }, [elements, elementSets]);
+  }, [elements, elementSets, groups, hiddenPsets, hiddenProps]);
 
   // Each group's links once, and the totals (a task or object in several groups counts once).
   const linked = useMemo(() => {
@@ -356,10 +373,11 @@ function GroupEditor({
 
       <h3 style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Matching Criteria</h3>
       <div style={{ color: 'var(--text-dim)', fontSize: 11, marginBottom: 4 }}>
-        Links a filtered task to a filtered object when these fields hold equal values. "And" rules must all match the same object at once; "Or" rules are independent alternatives.
+        Links a filtered task to a filtered object when these fields hold equal values. "And" rules must all match the same object at once; "Or" rules are independent alternatives. A field that holds several values at once (like "A || B") can be split on one or more separators: it then matches when any one of its values is equal.
       </div>
       {g.matchRules.map((r, i) => (
-        <div key={r.id} className="rule-row rule-row--match">
+        <Fragment key={r.id}>
+        <div className="rule-row rule-row--match">
           {i > 0 ? (
             <select value={r.conj} onChange={(e) => updateMatchRule(r.id, { conj: e.target.value as Conjunction })}>
               <option value="or">Or</option>
@@ -391,6 +409,11 @@ function GroupEditor({
             {'✕'}
           </button>
         </div>
+        <div className="rule-seps">
+          <SeparatorsEditor label="Task value holds several, split on" value={r.taskSeparators ?? []} onChange={(taskSeparators) => updateMatchRule(r.id, { taskSeparators })} />
+          <SeparatorsEditor label="Object value holds several, split on" value={r.objectSeparators ?? []} onChange={(objectSeparators) => updateMatchRule(r.id, { objectSeparators })} />
+        </div>
+        </Fragment>
       ))}
       <button className="btn" onClick={addMatchRule} style={{ marginBottom: 12 }}>
         + matching rule
@@ -409,6 +432,39 @@ function GroupEditor({
           </button>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Separators for a field that holds several values: the usual ones to switch on, any other typed in (Enter). */
+const COMMON_SEPARATORS = ['||', '|', ',', ';', '/'];
+function SeparatorsEditor({ label, value, onChange }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
+  const [draft, setDraft] = useState('');
+  const toggle = (sep: string) => onChange(value.includes(sep) ? value.filter((x) => x !== sep) : [...value, sep]);
+  const add = () => {
+    // Spaces count here (" - " is a separator); only an empty entry is ignored.
+    if (draft.trim() !== '' && !value.includes(draft)) onChange([...value, draft]);
+    setDraft('');
+  };
+  const custom = value.filter((x) => !COMMON_SEPARATORS.includes(x));
+  return (
+    <div className="rule-seps__side" title="Several values in one field: the text is cut at each separator, and one equal value is enough to link">
+      <span className="rule-seps__label">{label}</span>
+      {COMMON_SEPARATORS.map((sep) => (
+        <button key={sep} type="button" className={`tags__chip${value.includes(sep) ? ' active' : ''}`} aria-pressed={value.includes(sep)} onClick={() => toggle(sep)}>{sep}</button>
+      ))}
+      {custom.map((sep) => (
+        <button key={sep} type="button" className="tags__chip active" title="Remove this separator" onClick={() => toggle(sep)}>{JSON.stringify(sep).slice(1, -1)} ×</button>
+      ))}
+      <input
+        className="rule-seps__input"
+        value={draft}
+        placeholder="other…"
+        onChange={(e) => setDraft(e.target.value)}
+        onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(); } }}
+        onBlur={add}
+        aria-label="Add a separator"
+      />
     </div>
   );
 }

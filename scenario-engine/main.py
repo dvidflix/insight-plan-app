@@ -31,6 +31,7 @@ from core.wbs_manager import WBSManager
 from core.activity_generator import create_activities
 from core.excel_exporter import export_activities_to_excel, merge_excel_files, load_overrides, _safe_int
 from core.cpm_apply import apply_cpm_to_xml
+from core.adjustments import load_adjustments, drop_retired, extra_activities, extra_predecessors, apply_baselines, EXTRA_WBS_NAME
 from core.xml_builder import (
     create_p6_xml_root,
     add_project_and_calendar,
@@ -772,6 +773,11 @@ def create_all_activities(records, overrides):
 
     activities.sort(key=lambda a: _option3_key(a["rec"]))
 
+    # Tasks retired in SeaTable (Settings > Retired and extra activities) are not regenerated.
+    activities, retired_count = drop_retired(activities, load_adjustments()["retired"])
+    if retired_count:
+        print(f"  {retired_count} retired task(s) left out")
+
     return activities
 
 
@@ -847,6 +853,24 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
     # The WBS order set in the app (Programmes > WBS) is written into the schedule.
     if xml_wbs_manager.reorder(overrides.get("__wbs_order__")):
         print("  WBS order from the app applied")
+
+    # Extra activities from SeaTable (with their baseline dates): their own WBS under the building's Construction node.
+    adjustments = load_adjustments()
+    extras_acts = []
+    if adjustments["extras"] and xml_activities:
+        first_rec = xml_activities[0].get("rec", {})
+        wbs_prefix = str(first_rec.get("wbs_prefix", "") or "").strip()
+        root_name = f"{wbs_prefix} - Construction"
+        if xml_wbs_manager.get_id(root_name):
+            extras_name = f"{wbs_prefix} - {EXTRA_WBS_NAME}"
+            xml_wbs_manager.register(extras_name, root_name)
+            extras_acts = extra_activities(adjustments["extras"], [a["task_id"] for a in xml_activities], xml_wbs_manager.get_id(extras_name))
+            if extras_acts:
+                print(f"  {len(extras_acts)} extra activit{'y' if len(extras_acts) == 1 else 'ies'} added")
+                xml_activities = xml_activities + extras_acts
+                extra_edges = extra_predecessors(adjustments["extras"], [a["task_id"] for a in xml_activities])
+                if extra_edges:
+                    automatic_predecessor_sources.append(("extra_activities", extra_edges))
     project_building_code = (
         str(records[0].get("building", "DEFAULT") or "DEFAULT")
         if records else
@@ -891,6 +915,11 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
             planned_start = act.findtext("PlannedStartDate")
             if task_id and planned_start:
                 task_start_dates[task_id] = planned_start
+
+    if extras_acts and xml_project_elem is not None:
+        n = apply_baselines(xml_project_elem, extras_acts)
+        if n:
+            print(f"  {n} extra activit{'y' if n == 1 else 'ies'} given their baseline dates as target dates")
 
     save_p6_xml(xml_root, str(xml_path))
     return {"intra_predecessors": intra_predecessors, "skipped_edges_by_source": skipped_edges_by_source, "task_start_dates": task_start_dates}

@@ -7,6 +7,7 @@ import { ModelDataTable } from '../components/ModelDataTable';
 import { ModelConfigPanel } from '../components/ModelConfigPanel';
 import { useRecordingStore } from '../state/recordingStore';
 import { ModelColorSync } from '../components/ModelColorPanel';
+import { ColourLegend } from '../components/ColourLegend';
 import { ViewerToolbar } from '../components/ViewerToolbar';
 import { useClashRunner } from './useClashRunner';
 
@@ -64,6 +65,8 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
         <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
           <ViewerCanvas layout={effectiveLayout} />
           {overlay}
+          {/* Models > Colour: what each colour stands for. */}
+          {!inSequence && paneActive && <ColourLegend />}
         </div>
         <ModelDataTable />
       </div>

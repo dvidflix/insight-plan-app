@@ -9,6 +9,7 @@ import arrowLineUpSvg from '../icons/modus-icon-arrow-line-up.svg?raw';
 import arrowLineDownSvg from '../icons/modus-icon-arrow-line-down.svg?raw';
 import arrowLineLeftSvg from '../icons/modus-icon-arrow-line-left.svg?raw';
 import navigationArrowSvg from '../icons/modus-icon-navigation-arrow.svg?raw';
+import walkSvg from '../icons/walk.svg?raw';
 import shortTextSvg from '../icons/short-text.svg?raw';
 import tagOutlineSvg from '../icons/modus-icon-tag.svg?raw';
 import modelGeometrySvg from '../icons/model-geometry-outline.svg?raw';
@@ -116,6 +117,8 @@ export const IconArrowLineUp = svgIcon(arrowLineUpSvg);
 export const IconArrowLineDown = svgIcon(arrowLineDownSvg);
 /** North arrow (viewer overlay). */
 export const IconNavigationArrow = svgIcon(navigationArrowSvg);
+/** Walkthrough: move through the model with the keyboard. */
+export const IconWalk = svgIcon(walkSvg);
 /** Text lines (date label). */
 export const IconShortText = svgIcon(shortTextSvg);
 /** Tag, outline (menus, next to the other outline icons). */

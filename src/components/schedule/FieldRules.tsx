@@ -55,7 +55,7 @@ export function FieldPicker<F extends PickField>({ catalog, picked, onPick, plac
         const open = q ? true : !closed.has(g.name);
         const used = g.fields.filter((f) => picked.has(f.id)).length;
         return (
-          <div className="cols__group" key={g.name}>
+          <div className={`cols__group${used > 0 ? ' is-active' : ''}`} key={g.name}>
             <div className="cols__group-head">
               <button type="button" className="cols__group-toggle" onClick={() => toggle(g.name)} aria-expanded={open}>
                 <IconSectionChevron className="section-chevron" />

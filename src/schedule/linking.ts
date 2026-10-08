@@ -58,13 +58,29 @@ export type SequenceStatus = 'pending' | 'in-progress' | 'done';
     the same element is the "current" one) uses the exact same notion of
     "start" those already use. */
 export function activityStartMs(activity: Activity, basis: 'planned' | 'actual'): number | null {
-  const start = basis === 'actual' ? activity.actualStart ?? activity.earlyStart : activity.earlyStart ?? activity.targetStart;
-  return start ? start.getTime() : null;
+  return basisStart(activity, basis)?.getTime() ?? null;
 }
 
 export function activityFinishMs(activity: Activity, basis: 'planned' | 'actual'): number | null {
-  const finish = basis === 'actual' ? activity.actualFinish ?? activity.earlyFinish : activity.earlyFinish ?? activity.targetFinish;
-  return finish ? finish.getTime() : null;
+  return basisFinish(activity, basis)?.getTime() ?? null;
+}
+
+/** An activity's start / finish for a basis: Actual prefers the as-built dates, Planned the scheduled ones — and each
+    falls back to the other family when its own is missing. A P6 export of a finished project often carries no early
+    or target dates for completed work, only actual ones; without the fallback such an activity had no finish (so it
+    stayed active for ever) or none at all (so it was left out of the timeline's range). */
+export function basisStart(activity: Activity, basis: 'planned' | 'actual'): Date | null {
+  return (basis === 'actual' ? activity.actualStart ?? activity.earlyStart ?? activity.targetStart : activity.earlyStart ?? activity.targetStart ?? activity.actualStart) ?? null;
+}
+
+export function basisFinish(activity: Activity, basis: 'planned' | 'actual'): Date | null {
+  return (basis === 'actual' ? activity.actualFinish ?? activity.earlyFinish ?? activity.targetFinish : activity.earlyFinish ?? activity.targetFinish ?? activity.actualFinish) ?? null;
+}
+
+/** The share of activities that have an actual start: near 1 for a finished project's as-built programme. */
+export function actualCoverage(model: ScheduleModel | null): number {
+  const real = model?.activities.filter((a) => a.type !== 'wbs-summary') ?? [];
+  return real.length ? real.filter((a) => a.actualStart).length / real.length : 0;
 }
 
 export function statusAt(activity: Activity, date: Date, basis: 'planned' | 'actual'): SequenceStatus {
@@ -102,8 +118,8 @@ export interface DateRange {
     panel and the viewer's floating timeline overlay so both agree on it. */
 export function scheduleRange(model: ScheduleModel | null, basis: 'planned' | 'actual'): DateRange | null {
   if (!model) return null;
-  const starts = model.activities.map((a) => (basis === 'actual' ? a.actualStart ?? a.earlyStart : a.earlyStart ?? a.targetStart)).filter((d): d is Date => !!d);
-  const finishes = model.activities.map((a) => (basis === 'actual' ? a.actualFinish ?? a.earlyFinish : a.earlyFinish ?? a.targetFinish)).filter((d): d is Date => !!d);
+  const starts = model.activities.map((a) => basisStart(a, basis)).filter((d): d is Date => !!d);
+  const finishes = model.activities.map((a) => basisFinish(a, basis)).filter((d): d is Date => !!d);
   if (starts.length === 0 || finishes.length === 0) return null;
   return { min: Math.min(...starts.map((d) => d.getTime())), max: Math.max(...finishes.map((d) => d.getTime())) };
 }
@@ -112,8 +128,8 @@ export function scheduleRange(model: ScheduleModel | null, basis: 'planned' | 'a
     for interpolating an appearance profile's active-start -> active-finish
     color/opacity. Clamped; 0 before start, 1 at/after finish. */
 export function progressAt(activity: Activity, date: Date, basis: 'planned' | 'actual'): number {
-  const start = basis === 'actual' ? activity.actualStart ?? activity.earlyStart : activity.earlyStart ?? activity.targetStart;
-  const finish = basis === 'actual' ? activity.actualFinish ?? activity.earlyFinish : activity.earlyFinish ?? activity.targetFinish;
+  const start = basisStart(activity, basis);
+  const finish = basisFinish(activity, basis);
   if (!start || !finish) return 0;
   const total = finish.getTime() - start.getTime();
   if (total <= 0) return 1;

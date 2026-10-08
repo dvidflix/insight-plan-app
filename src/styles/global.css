@@ -7422,6 +7422,9 @@ body.is-col-resizing * {
   gap: 10px;
 }
 
+/* The toolbar, import form and search box stay at the top while the sets scroll. */
+.ss__sticky { position: sticky; top: 0; z-index: 5; margin: -8px -10px 0; padding: 8px 10px 6px; background: #ffffff; border-bottom: 1px solid var(--border); }
+.ss__sticky .ss__top { margin-bottom: 6px; }
 .ss__top {
   display: flex;
   flex-wrap: wrap;
@@ -10212,7 +10215,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 /* Programme download: icon button with a small format caret (components/ProgrammeDownload.tsx) */
 .dl-split { display: inline-flex; align-items: stretch; }
 .dl-split__main { border-top-right-radius: 0; border-bottom-right-radius: 0; }
-.dl-split__caret { width: 16px; height: 28px; padding: 0; margin-left: -1px; font-size: 10px; border-top-left-radius: 0; border-bottom-left-radius: 0; }
+.dl-split__caret { width: 20px; height: 28px; padding: 0; margin-left: -1px; font-size: 14px; line-height: 1; border-top-left-radius: 0; border-bottom-left-radius: 0; }
 .dl-split__caret:disabled { opacity: 0.4; }
 
 /* Columns panel: the search box with the expand / collapse-all button after it. */
@@ -10258,7 +10261,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .layouts-dock__item.drop-before, .ld-folder.drop-before { box-shadow: inset 0 2px 0 var(--accent); }
 .layouts-dock__item.drop-after, .ld-folder.drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
 .ld-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-.ld-savefolder { margin-top: 6px; width: 100%; font-size: 12px; }
+.ld-savefolder { margin-top: 6px; width: 100%; box-sizing: border-box; font-size: 12px; }
 .ld-folder { display: flex; align-items: center; gap: 4px; padding: 0 6px 0 6px; min-height: 30px; background: var(--bg-soft); border-bottom: 1px solid var(--border); border-top: 1px solid var(--border); }
 .ld-folder[draggable='true'] { cursor: grab; }
 .ld-folder--into { outline: 2px solid var(--accent); outline-offset: -2px; background: var(--accent-dim); }
@@ -10363,7 +10366,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .mkt__def { display: flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); }
 .mkt__def select { height: 26px; font-size: 12px; }
 .mkt__grid { display: flex; flex-direction: column; gap: 2px; }
-.mkt__head, .mkt__edit { display: grid; grid-template-columns: minmax(70px, 1.4fr) repeat(3, minmax(48px, 1fr)) minmax(80px, 1.2fr) 22px 22px; gap: 3px; align-items: center; }
+.mkt__head, .mkt__edit { display: grid; grid-template-columns: minmax(70px, 1.4fr) repeat(3, minmax(48px, 1fr)) minmax(80px, 1.2fr) 22px 22px 22px; gap: 3px; align-items: center; }
 .mkt__head { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); padding: 0 2px; }
 .mkt__edit input, .mkt__edit select { min-width: 0; height: 26px; box-sizing: border-box; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: #ffffff; font: inherit; font-size: 12px; }
 .mkt__edit .mkt__num { text-align: right; }
@@ -10593,7 +10596,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .flt__match-label { color: var(--text-dim); }
 
 /* Construction planes (beside Markers): name, min X Y Z, max X Y Z, colour. */
-.cpl__head, .cpl__edit { display: grid; grid-template-columns: repeat(6, minmax(40px, 1fr)) 26px 22px 22px; gap: 3px; align-items: center; }
+.cpl__head, .cpl__edit { display: grid; grid-template-columns: minmax(90px, 1fr) minmax(90px, 1fr) 26px 22px 22px 22px; gap: 3px; align-items: center; }
 .cpl__name { grid-column: 1 / -1; }
 .cpl__head { font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); padding: 0 2px; }
 .cpl__item { display: flex; flex-direction: column; gap: 3px; padding: 4px 0; border-top: 1px solid var(--border); }
@@ -10604,3 +10607,194 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .cpl__row:hover { background: rgba(0, 0, 0, 0.05); }
 .cpl__swatch { width: 12px; height: 12px; border-radius: 3px; flex: none; }
 .cpl__row.is-off { opacity: 0.45; }
+
+/* Models > Colour legend, over the viewer's bottom-left. */
+.colour-legend-stack { position: absolute; left: 10px; bottom: 10px; z-index: 5; display: flex; flex-direction: column; gap: 6px; max-width: min(300px, 40%); pointer-events: none; }
+.colour-legend { pointer-events: auto; display: flex; flex-direction: column; min-width: 160px; max-height: 45vh; border: 1px solid var(--border); border-radius: 6px; background: color-mix(in srgb, var(--bg-elevated) 94%, transparent); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); font-size: 12px; }
+.colour-legend__head { display: flex; align-items: center; gap: 6px; padding: 3px 4px 3px 6px; border-bottom: 1px solid var(--border); }
+.colour-legend__toggle { display: flex; align-items: center; gap: 5px; flex: 1; min-width: 0; border: none; background: none; padding: 0; font: inherit; font-weight: 700; color: var(--text); cursor: pointer; text-align: left; }
+.colour-legend__title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colour-legend__n { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.colour-legend__close { width: 20px; height: 20px; border: none; border-radius: 4px; background: none; color: var(--text-dim); font-size: 16px; line-height: 1; cursor: pointer; }
+.colour-legend__close:hover { background: rgba(0, 0, 0, 0.08); color: var(--text); }
+.colour-legend__rows { overflow: auto; padding: 2px 0; }
+.colour-legend__row { display: flex; align-items: center; gap: 7px; width: 100%; padding: 2px 8px; border: none; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; }
+.colour-legend__row:hover { background: rgba(0, 0, 0, 0.06); }
+.colour-legend__swatch { flex: none; width: 12px; height: 12px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.25); }
+.colour-legend__swatch.is-own { background: repeating-linear-gradient(45deg, #bbb 0 3px, #eee 3px 6px); }
+.colour-legend__label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.colour-legend__count { color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.colour-legend__empty { padding: 3px 8px; color: var(--text-dim); }
+
+/* Link Groups > Matching Criteria: separators for fields that hold several values. */
+.rule-seps { display: flex; flex-direction: column; gap: 3px; margin: -2px 0 8px 22px; font-size: 11px; color: var(--text-dim); }
+.rule-seps__side { display: flex; align-items: center; flex-wrap: wrap; gap: 4px; }
+.rule-seps__label { min-width: 190px; }
+.rule-seps__input { width: 64px; height: 20px; box-sizing: border-box; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; font: inherit; font-size: 11px; }
+
+.cpl__corner { min-width: 0; height: 26px; box-sizing: border-box; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; background: #ffffff; font: inherit; font-size: 12px; font-variant-numeric: tabular-nums; }
+.cpl__edit .cpl__corner.is-invalid { border-color: var(--danger, #b3261e); background: color-mix(in srgb, var(--danger, #b3261e) 8%, #ffffff); }
+
+/* Decorators rows: the row (click to fly) and its eye. */
+.mkt__line { display: flex; align-items: center; gap: 2px; border-bottom: 1px solid var(--border); }
+.mkt__line .mkt__row, .mkt__line .cpl__row { flex: 1; min-width: 0; border-bottom: 0; }
+.mkt__line.is-off .mkt__row, .mkt__line.is-off .cpl__row { opacity: 0.5; }
+
+/* Scenarios: the folder of sets "From steps" follows. */
+.scn-step-folder { min-width: 0; max-width: 110px; height: 30px; font-size: 12px; }
+
+/* Scenarios list as a table: one row per scenario (name, status, delete), edge to edge, striped, with a header. */
+.scn-card--grow > .scn-list__head, .scn-card--grow > .scn-list { margin-left: -12px; margin-right: -12px; }
+.scn-list__head { display: flex; justify-content: space-between; padding: 3px 34px 3px 20px; font-size: 11px; font-weight: 600; color: var(--text-dim); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--bg-panel, #f3f3f3); }
+.scn-card--grow > .scn-list { gap: 0; }
+.scn-list .scn-list__item { border-radius: 0; border: 0; border-bottom: 1px solid var(--border); border-left: 3px solid transparent; }
+.scn-list .scn-list__item:nth-child(even) { background: rgb(0 0 0 / 0.025); }
+.scn-list .scn-list__item:hover { background: var(--accent-dim); }
+.scn-list .scn-list__item.active { border-left-color: var(--accent); background: var(--accent-dim); }
+.scn-list .scn-list__pick { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 8px 3px 10px; }
+.scn-list .scn-list__name { font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.scn-list .scn-list__meta { flex-wrap: nowrap; flex: none; }
+.scn-list .scn-chip { white-space: nowrap; }
+.scn-list .scn-list__delete { margin-right: 4px; }
+
+/* Scenarios panel: flat and full width like a table (as the Layouts dock) - no rounded cards, a header band per section,
+   square buttons / inputs / dropdowns. The Inputs tab is not part of it. */
+.scn-panel__body { gap: 0; padding: 0; }
+.scn-panel__body .scn-card { background: transparent; border: 0; border-bottom: 1px solid var(--border); border-radius: 0; padding: 0 0 6px; gap: 0; }
+.scn-panel__body .scn-card--grow { border-bottom: 0; }
+.scn-panel__body .scn-card__title { margin: 0 0 6px; padding: 5px 12px; background: var(--bg-panel, #f3f3f3); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.scn-panel__body .scn-card > :not(.scn-card__title):not(.scn-list__head):not(.scn-list) { margin: 0 12px 6px; }
+.scn-panel__body .scn-card > .scn-list__head, .scn-panel__body .scn-card > .scn-list { margin-left: 0; margin-right: 0; }
+.scn-panel__body .scn-list__head { padding-left: 15px; }
+.scn-panel__body .scn-new { margin-top: 6px; }
+.scn-panel__body .btn, .scn-panel__body input, .scn-panel__body textarea { border-radius: 0 !important; }
+.scn-panel__body select:not([multiple]) { border-radius: 0 !important; }
+.scn-panel__body .scn-chip { border-radius: 2px; }
+
+/* A field with its label on the left and its value on the same line (Current scenario > Building). */
+.scn-field--row { flex-direction: row; align-items: center; justify-content: space-between; gap: 8px; }
+.scn-field--row select { flex: 1; max-width: none; min-width: 0; min-height: 26px; padding-top: 2px; padding-bottom: 2px; }
+.scn-field--row .scn-building { flex: 1; min-width: 0; text-align: right; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Scenario card, start date + Update 4D + the buttons below: full-size controls, but as short in width as they can be. */
+.scn-panel__body .scn-inline--head { gap: 4px; white-space: nowrap; }
+.scn-panel__body .scn-inline--head input { flex: 0 0 auto; width: 112px; min-height: 28px; height: 28px; padding: 0 4px; font-size: 12px; }
+.scn-panel__body .scn-compact-row { gap: 4px; }
+.scn-panel__body .scn-compact-row .btn { min-height: 28px; height: 28px; padding: 0 8px; font-size: 12px; }
+.scn-panel__body .scn-compact-row .scn-update { min-width: 0; padding: 0 8px; }
+.scn-panel__body .scn-compact-row .scn-icon-btn { width: 28px; padding: 0; }
+/* The one download button (XML, ▾ for XER) as tall as the buttons beside it. */
+.scn-panel__body .scn-compact-row .dl-split .mini-btn { height: 28px; min-height: 28px; border-radius: 0; }
+.scn-panel__body .scn-compact-row .dl-split__main { width: 28px; padding: 0; }
+.scn-panel__body .scn-compact-row .dl-split__caret { width: 22px; font-size: 16px; line-height: 1; }
+
+/* Start, Update 4D, auto-update, Save, Load and the download on one line. */
+.scn-panel__body .scn-compact-row--one { flex-wrap: nowrap; align-items: center; }
+.scn-panel__body .scn-compact-row--one > * { flex: none; }
+.scn-panel__body .scn-compact-row--one .scn-inline--head input { width: 108px; }
+
+/* The start date centred in its box. */
+.scn-inline--head input[type="date"] { text-align: center; }
+.scn-inline--head input[type="date"]::-webkit-datetime-edit { flex: 1; text-align: center; }
+
+/* Scenarios list as a grid: vertical lines between the Scenario, Status and delete columns, in the header and every row. */
+.scn-panel__body .scn-list__head { padding: 0; justify-content: flex-start; }
+.scn-panel__body .scn-list__head > span { padding: 3px 8px; }
+.scn-panel__body .scn-list__head > span:first-child { flex: 1; min-width: 0; padding-left: 18px; }
+.scn-panel__body .scn-list__head > span:nth-child(2) { flex: none; width: 168px; box-sizing: border-box; border-left: 1px solid var(--border); text-align: center; }
+.scn-panel__body .scn-list__head > span:nth-child(3) { flex: none; width: 28px; box-sizing: border-box; border-left: 1px solid var(--border); }
+.scn-list .scn-list__pick { align-items: stretch; padding: 0 0 0 10px; gap: 0; }
+.scn-list .scn-list__name { flex: 1; min-width: 0; align-self: center; padding: 4px 6px 4px 0; }
+.scn-list .scn-list__meta { flex: none; width: 168px; box-sizing: border-box; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center; padding: 2px 6px; }
+.scn-list .scn-list__delete { align-self: stretch; flex: none; width: 28px; margin: 0; padding: 0; border-left: 1px solid var(--border); border-radius: 0; display: inline-flex; align-items: center; justify-content: center; }
+
+/* Status as plain text in the grid: no pill, no background. */
+.scn-list .scn-chip { border: 0; background: transparent; padding: 0; border-radius: 0; font-size: 11px; color: var(--text-dim); }
+.scn-list .scn-chip--ok { color: var(--text); }
+
+/* Scenarios grid: a touch larger. */
+.scn-list .scn-list__name { font-size: 13px; padding-top: 6px; padding-bottom: 6px; }
+.scn-list .scn-chip { font-size: 12px; }
+.scn-panel__body .scn-list__head { font-size: 12px; }
+.scn-list .scn-list__delete { font-size: 14px; }
+
+/* Layouts dock: the save form and the folder dropdown use the whole width, like the list under them. */
+.layouts-dock .scn-card > form.scn-row, .layouts-dock .scn-card > .ld-savefolder { margin-left: 0 !important; margin-right: 0 !important; }
+.layouts-dock .scn-card > .ld-savefolder { width: 100%; }
+
+/* Inputs filters: the field rows (and their highlight) run the full width of the pane, past its 12px padding. */
+.flt--inputs .flt__field { margin-left: -12px; margin-right: -12px; }
+.flt--inputs .flt__field-toggle { padding-left: 22px; }
+.flt--inputs .flt__field-head { padding-right: 18px; }
+.flt--inputs .flt__field-body { padding-left: 40px; padding-right: 22px; }
+
+/* Select all / None on the field's own header line. */
+.flt__bulk--inline { margin: 0 6px 0 0; flex: none; white-space: nowrap; font-size: 12px; }
+
+/* Columns, Group and Sort (the panels built on .cols): the same flat, full-width list as the Inputs filters - rows split by
+   thin lines past the pane's padding, a bold name with its count and the All / None links on the right, and a tint on the
+   groups that have something shown or used. */
+.cols > .cols__group { margin: 0 -12px; border: 0; border-top: 1px solid #edefee; border-radius: 0; overflow: visible; background: transparent; }
+.cols > .cols__group + .cols__group { border-top: 1px solid #edefee; }
+.cols > .cols__group.is-active { background: var(--accent-dim); }
+.cols > .cols__group > .cols__group-head { height: auto; min-height: 34px; padding-right: 12px; background: transparent; }
+.cols > .cols__group > .cols__group-head:hover { background: rgb(0 0 0 / 0.03); }
+.cols > .cols__group .cols__group-toggle { padding: 6px 0 6px 12px; gap: 8px; }
+.cols > .cols__group .cols__group-name { font-weight: 600; }
+.cols > .cols__group > .cols__group-body { border-top: 0; background: transparent; padding: 2px 22px 10px 40px; }
+.cols > .cols__shown { gap: 0; margin: 0 -12px; }
+.cols > .cols__shown > .cols__row { border: 0; border-top: 1px solid #edefee; border-radius: 0; background: transparent; padding: 6px 12px 6px 14px; }
+.cols > .cols__shown > .cols__empty { margin: 0 12px; }
+
+/* The rows of Shown / Grouped by / Sorted by: the move and remove buttons run the full height of the row, a little larger,
+   with no padding of their own. */
+.cols > .cols__shown > .cols__row { padding: 0 0 0 14px; align-items: stretch; }
+.cols > .cols__shown > .cols__row > .cols__grip { align-self: center; }
+.cols > .cols__shown > .cols__row > .cols__label { align-self: center; padding: 7px 0; }
+.cols > .cols__shown > .cols__row > .rule-item__body { align-self: center; padding: 5px 0; }
+.cols__row > .cols__icon { align-self: stretch; width: 30px; height: auto; min-height: 30px; padding: 0; border-radius: 0; font-size: 16px; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.cols__row.rule-item > .cols__icon { align-self: stretch; }
+
+/* Exports (XML / XER): the same flat list as the filters - each group a full-width row with a chevron, its count and All / None,
+   folding away; the names listed under it with no box around them. */
+.export-fields__body { display: block; padding: 0; }
+.export-fields__group { border-top: 1px solid #edefee; }
+.export-fields__head { margin: 0; min-height: 34px; padding: 0 12px 0 0; gap: 8px; }
+.export-fields__head:hover { background: rgb(0 0 0 / 0.03); }
+.export-fields__group-toggle { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; align-self: stretch; padding: 6px 0 6px 12px; border: 0; background: none; font: inherit; font-size: 13px; color: inherit; text-align: left; cursor: pointer; }
+.export-fields__group-toggle b { font-weight: 600; }
+.export-fields__list { max-height: none; overflow: visible; border: 0; border-radius: 0; padding: 2px 22px 10px 40px; }
+
+/* Exports: each listed name is a row with a line under it, edge to edge. */
+.export-fields__list { padding: 0; }
+.export-fields__list .cols__check { padding: 6px 22px 6px 40px; border-bottom: 1px solid #edefee; }
+.export-fields__list .flt__hint { padding: 6px 22px 6px 40px; border-bottom: 1px solid #edefee; }
+
+/* Shown / Grouped by / Sorted by: a line under the last row too, so every item is closed off. */
+.cols > .cols__shown > .cols__row:last-child { border-bottom: 1px solid #edefee; }
+
+/* Walkthrough (viewer/walkthrough.ts): the keys, along the bottom of the view while it is on. */
+.walk-hint { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 30; max-width: calc(100% - 24px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 6px 10px; background: rgb(24 24 27 / 0.82); color: #fff; font-size: 12px; pointer-events: none; }
+.walk-hint kbd { display: inline-block; min-width: 16px; margin: 0 1px; padding: 0 4px; border: 1px solid rgb(255 255 255 / 0.45); font: inherit; font-size: 11px; line-height: 16px; text-align: center; }
+
+/* Scenarios > Manual links > Suggested groups: a full-width list, a tick box icon on each group to apply or leave out. */
+.scn-panel__body .scn-card > .sg__list, .scn-panel__body .scn-card > .sg__bar, .scn-panel__body .scn-card > .sg__targets { margin-left: 0 !important; margin-right: 0 !important; }
+.sg__targets { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 4px 8px; padding: 6px 12px; border-top: 1px solid #edefee; border-bottom: 1px solid #edefee; font-size: 12px; }
+.sg__targets label { display: flex; align-items: center; gap: 6px; }
+.sg__targets label span { min-width: 34px; color: var(--text-dim); }
+.sg__targets input { width: 100%; min-width: 0; height: 24px; padding: 0 4px; font-size: 12px; }
+.sg__targets > .cols__link, .sg__targets > .scn-dim { grid-column: 1 / -1; text-align: left; }
+.sg__bar { display: flex; align-items: center; gap: 6px; padding: 4px 12px; border-top: 1px solid #edefee; font-size: 12px; }
+.sg__spacer { flex: 1; }
+.sg__list { border-top: 1px solid #edefee; }
+.sg__item { border-bottom: 1px solid #edefee; }
+.sg__item.is-on { background: var(--accent-dim); }
+.sg__row { display: flex; align-items: stretch; }
+.sg__tick { flex: none; width: 36px; display: inline-flex; align-items: center; justify-content: center; border: 0; background: none; color: var(--text-dim); cursor: pointer; }
+.sg__item.is-on .sg__tick { color: var(--accent-strong); }
+.sg__main { flex: 1; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 7px 12px 7px 0; border: 0; background: none; font: inherit; font-size: 12px; text-align: left; color: inherit; cursor: pointer; }
+.sg__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; }
+.sg__rate { flex: none; font-variant-numeric: tabular-nums; color: var(--text-dim); }
+.sg__members { padding: 0 12px 6px 46px; font-size: 12px; }
+.sg__member { display: grid; grid-template-columns: 1fr 44px 90px 80px; gap: 6px; padding: 3px 0; border-top: 1px solid #edefee; }
+.sg__member .sg__rate { text-align: right; }

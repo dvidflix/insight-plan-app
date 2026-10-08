@@ -16,8 +16,9 @@ export interface GanttRow {
 export function buildGanttRows(activities: Activity[]): GanttRow[] {
   const rows: GanttRow[] = [];
   for (const a of activities) {
-    const start = a.earlyStart ?? a.targetStart;
-    const finish = a.earlyFinish ?? a.targetFinish;
+    // An activity with only as-built dates (completed work in a finished project's XER) is drawn at those.
+    const start = a.earlyStart ?? a.targetStart ?? a.actualStart;
+    const finish = a.earlyFinish ?? a.targetFinish ?? a.actualFinish;
     if (!start || !finish) continue;
     rows.push({ activity: a, s: start.getTime(), f: finish.getTime() });
   }

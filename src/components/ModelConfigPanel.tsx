@@ -9,6 +9,7 @@ import { rerenderTables, type ModelPanelId } from '../viewer/viewerUI';
 import { ViewpointsList } from './ViewpointsList';
 import { MarkersPanel } from './MarkersPanel';
 import { ConstructionPlanesPanel } from './ConstructionPlanesPanel';
+import { SectionCutsPanel } from './SectionCutsPanel';
 import { ExpandCollapseToggle } from './ExpandCollapseToggle';
 import { useViewSettingsGroups } from '../state/viewSettingsGroups';
 import { View3DPanel } from './View3DPanel';
@@ -192,19 +193,19 @@ function ViewSettingsFoldButton() {
 }
 
 /** The Views tab (Models and 4D Sequencing): Viewpoints, with what they keep (Viewpoint
-    attributes), and the page's view settings (`settings`) after Saved views, then the Fly-through and any `extra` sections at
-    the end. Only one page shows at a time, so both can host the same panel. */
+    attributes), and the Fly-through, Decorators, Section cuts and any `extra` sections (the 4D page's Output), and last the page's view settings (`settings`). Only one page shows at a time, so both can host the same panel. */
 export function ViewpointsPanel({ element, settings, extra = [] }: { element: HTMLElement; settings: ReactNode; extra?: { label: string; content: ReactNode }[] }) {
   return (
     <BottomDock title="Viewpoint attributes" storageKey="savedViewAttrs" dock={<SavedViewAttrsPanel />}>
       <LitPanel element={element} />
       <LitSection panel={element} label="Viewpoints" leading defaultOpen><ViewpointsList /></LitSection>
-      <LitSection panel={element} label="View settings" second headerAction={<ViewSettingsFoldButton />}>{settings}</LitSection>
       <LitSection panel={element} label="Fly-through"><FlythroughPanel /></LitSection>
-      <LitSection panel={element} label="Decorators"><MarkersPanel /><ConstructionPlanesPanel /></LitSection>
+      <LitSection panel={element} label="Decorators"><div className="disp vsp"><MarkersPanel /><ConstructionPlanesPanel /></div></LitSection>
+      <LitSection panel={element} label="Section cuts"><SectionCutsPanel /></LitSection>
       {extra.map((x) => (
         <LitSection key={x.label} panel={element} label={x.label}>{x.content}</LitSection>
       ))}
+      <LitSection panel={element} label="View settings" headerAction={<ViewSettingsFoldButton />}>{settings}</LitSection>
     </BottomDock>
   );
 }

@@ -37,6 +37,11 @@ export interface MatchRule {
       cluster must hold simultaneously for the same task/object pair); 'or'
       starts a new, independent alternative. Ignored on the first rule. */
   conj: Conjunction;
+  /** A field can hold several values at once ("A || B", "A, B"): split the task's value on any of
+      `taskSeparators`, and the object's on any of `objectSeparators`, and link when one value of each
+      is equal. None (or absent): the whole value is the one value, as before. */
+  taskSeparators?: string[];
+  objectSeparators?: string[];
 }
 
 export interface LinkGroup {
@@ -158,6 +163,29 @@ function matchesObjectFilters(el: ElementSummary, rules: ObjectFilterRule[]): bo
   return evalChain(active, (r) => evalOp(objectFieldValue(el, r.propertySet, r.attribute), r.value, r.op, r.caseSensitive));
 }
 
+/** The values a field holds: the text split on any of `separators`, each trimmed and lower-cased, empty ones
+    left out and repeats dropped. Without separators the whole text is the one value. */
+export function splitValues(text: string, separators?: string[]): string[] {
+  let parts = [text];
+  for (const sep of (separators ?? []).filter((x) => x !== '')) parts = parts.flatMap((p) => p.split(sep));
+  return [...new Set(parts.map((p) => p.trim().toLowerCase()).filter(Boolean))];
+}
+
+const KEY_JOIN = String.fromCharCode(1);
+
+/** The keys a pair of values joins on: every combination of one value from each part (a rule cluster
+    joins on several fields at once). Empty when any part has no value. Capped, so a field full of
+    separators cannot blow up. */
+export function joinKeys(parts: string[][], cap = 500): string[] {
+  if (parts.length === 0 || parts.some((p) => p.length === 0)) return [];
+  let keys = [''];
+  parts.forEach((values, i) => {
+    keys = keys.flatMap((k) => values.map((v) => (i === 0 ? v : k + KEY_JOIN + v)));
+    if (keys.length > cap) keys = keys.slice(0, cap);
+  });
+  return keys;
+}
+
 /** Groups consecutive matchRules into clusters: an 'and' rule joins the
     previous cluster (all its fields must hold for the same task/object pair
     at once, i.e. a composite-key join); an 'or' rule (or the first rule)
@@ -201,17 +229,13 @@ export function computeGroupLinks(model: ScheduleModel, elements: ElementSummary
   for (const cluster of clusterMatchRules(group.matchRules)) {
     const index = new Map<string, number[]>();
     for (const el of candidateObjects) {
-      const parts = cluster.map((rule) => objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute).trim().toLowerCase());
-      if (parts.some((p) => !p)) continue;
-      const key = parts.join('');
-      (index.get(key) ?? index.set(key, []).get(key)!).push(el.localId);
+      const parts = cluster.map((rule) => splitValues(objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute), rule.objectSeparators));
+      for (const key of joinKeys(parts)) (index.get(key) ?? index.set(key, []).get(key)!).push(el.localId);
     }
     for (const task of candidateTasks) {
-      const parts = cluster.map((rule) => taskFieldValue(task, rule.taskField).trim().toLowerCase());
-      if (parts.some((p) => !p)) continue;
-      const key = parts.join('');
-      const ids = index.get(key);
-      if (!ids || ids.length === 0) continue;
+      const parts = cluster.map((rule) => splitValues(taskFieldValue(task, rule.taskField), rule.taskSeparators));
+      const ids = [...new Set(joinKeys(parts).flatMap((key) => index.get(key) ?? []))];
+      if (ids.length === 0) continue;
       taskIds.add(task.id);
       const existing = taskToElements.get(task.id) ?? [];
       taskToElements.set(task.id, [...new Set([...existing, ...ids])]);
@@ -269,9 +293,8 @@ export function buildMatchExportRows(model: ScheduleModel, elements: ElementSumm
         const clusters = clusterMatchRules(group.matchRules);
         const matchedClusters = clusters.filter((cluster) =>
           cluster.every((rule) => {
-            const taskVal = taskFieldValue(task, rule.taskField).trim().toLowerCase();
-            const objVal = objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute).trim().toLowerCase();
-            return taskVal !== '' && taskVal === objVal;
+            const objVals = new Set(splitValues(objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute), rule.objectSeparators));
+            return splitValues(taskFieldValue(task, rule.taskField), rule.taskSeparators).some((v) => objVals.has(v));
           }),
         );
         const matchedOn = matchedClusters

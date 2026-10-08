@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useExperimental } from '../state/appPrefsStore';
 import { useMarkersStore } from '../state/markersStore';
 import { useConstructionPlanesStore } from '../state/constructionPlanesStore';
+import { useSectionCutsStore } from '../state/sectionCutsStore';
 import { markerShownAt } from './markerActivity';
 import { CLOSED_STATUSES, STATUS_COLORS, useTopicsStore, type Topic } from '../state/topicsStore';
 import { topicActiveAt, topicWindow } from '../topics/topicDates';
@@ -249,7 +250,7 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   const seqSchedule = useSequenceSchedule();
   const seqDate = useSequenceTimelineStore((s) => s.date);
   const seqBasis = useSequenceTimelineStore((s) => s.basis);
-  const shownKey = markers.map((m) => (page !== 'sequence' || markerShownAt(m, seqSchedule, seqDate, seqBasis) ? '1' : '0')).join('');
+  const shownKey = markers.map((m) => (!m.hidden && (page !== 'sequence' || markerShownAt(m, seqSchedule, seqDate, seqBasis)) ? '1' : '0')).join('');
   // Redrawn only when the shown set changes, not on every playback step.
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const shownMarkers = useMemo(() => markers.filter((_, i) => shownKey[i] === '1'), [markers, shownKey]);
@@ -292,6 +293,17 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   useEffect(() => {
     if (ready) engine.syncConstructionPlanes(planes, planesVisible);
   }, [engine, ready, planes, planesVisible, models]);
+  // Section cuts name gridlines and storeys, so they are drawn once the models (and their grids) are in.
+  const sectionCuts = useSectionCutsStore((s) => s.cuts);
+  const [gridsTick, setGridsTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setGridsTick((t) => t + 1);
+    engine.onIfcGridsChange.add(bump);
+    return () => { engine.onIfcGridsChange.remove(bump); };
+  }, [engine]);
+  useEffect(() => {
+    if (ready) void engine.applySectionCuts(sectionCuts);
+  }, [engine, ready, sectionCuts, models, gridsTick]);
   // Saved viewpoints belong to the models they were taken with: back when those are loaded, set aside when not.
   useEffect(() => {
     if (ready) syncViewpoints(engine);

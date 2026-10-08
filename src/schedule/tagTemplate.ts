@@ -59,7 +59,7 @@ const fmtDate = (ms: number | null) =>
 
 /** Does the label depend on the task/objects (so it repeats per active task)? */
 export function isPerTask(template: string): boolean {
-  return /\{(TaskName|TaskCode|Start|Finish|Duration|Remaining|Complete|Float|Status|Type|WBS|ActualStart|ActualFinish|Task:[^}]*|Obj:[^}]*)\}/i.test(template);
+  return /\{(TaskName|TaskCode|Start|Finish|Duration|Remaining|Complete|Float|Status|Type|WBS|ActualStart|ActualFinish|Task:[^}]*|Obj:[^}]*|[^{}:]*\.[^{}]*)\}/i.test(template);
 }
 
 function objectValues(elements: ElementSummary[] | undefined, key: string): string {
@@ -95,6 +95,7 @@ export function renderTag(template: string, ctx: TagContext): string {
     if (lower === 'actualfinish') return t?.actualFinish ? fmtDate(t.actualFinish.getTime()) : '';
     if (lower.startsWith('task:')) return ctx.task ? taskFieldValue(ctx.task, token.slice(5).trim()) : '';
     if (lower.startsWith('obj:')) return objectValues(ctx.elements, token.slice(4).trim());
+    if (token.includes('.')) return objectValues(ctx.elements, token); // {Pset.Property} without "Obj:", e.g. {Custom.Weight (t)}
     return `{${raw}}`; // unknown: leave visible so a typo is noticed
   });
 }

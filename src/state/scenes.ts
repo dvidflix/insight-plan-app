@@ -26,12 +26,17 @@ const SCENE_DATA = new Set([
   'viewer.viewpoints',
   'viewer.searchSets',
   'viewer.markers',
+  'viewer.constructionPlanes',
   'viewer.flythrough',
   'models.topics',
   'views.savedAttributes',
   'ip.viewer.selectionSets',
   'ip.viewer.finderQueries',
 ]);
+
+/** Layout keys a scene written before they were part of scenes does not have: opening it keeps what the browser has
+    (the project folder, so an older scene does not open with none). */
+const KEEP_WHEN_ABSENT = ['scenarios.root'];
 
 /** Browser keys that are neither layout nor a scene's lists: the user's other data, caches, or the scenes themselves. */
 const NOT_LAYOUT = new Set([
@@ -40,7 +45,6 @@ const NOT_LAYOUT = new Set([
   'inputs.fileSizes',
   'inputs.fileUploads',
   'models.propEdit.backup',
-  'scenarios.root',
   'scenarios.startDate',
   'resources.capacity',
   'sequence.linkGroups',
@@ -57,8 +61,9 @@ const NOT_LAYOUT = new Set([
   'schedule.calcColumns',
 ]);
 
-const isDataKey = (key: string) => SCENE_DATA.has(key);
-const isLayoutKey = (key: string) => !NOT_LAYOUT.has(key) && !SCENE_DATA.has(key);
+/** Which part of a scene a browser key belongs to (exported for the tests). */
+export const isDataKey = (key: string) => SCENE_DATA.has(key);
+export const isLayoutKey = (key: string) => !NOT_LAYOUT.has(key) && !SCENE_DATA.has(key);
 
 /** What a scene holds: localStorage key → its stored text. */
 export interface Snapshot {
@@ -197,8 +202,10 @@ function applyKeys(snap: Snapshot) {
         if (key && match(key)) localStorage.removeItem(key);
       }
     };
+    const kept = KEEP_WHEN_ABSENT.filter((k) => !(k in snap.settings)).map((k) => [k, localStorage.getItem(k)] as const);
     drop(isLayoutKey);
     for (const [k, v] of Object.entries(snap.settings)) if (isLayoutKey(k) && typeof v === 'string') localStorage.setItem(k, v);
+    for (const [k, v] of kept) if (v !== null) localStorage.setItem(k, v);
     if (snap.data) {
       drop(isDataKey);
       for (const [k, v] of Object.entries(snap.data)) if (isDataKey(k) && typeof v === 'string') localStorage.setItem(k, v);
