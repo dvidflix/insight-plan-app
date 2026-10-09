@@ -57,6 +57,11 @@ import cubeSvg from '../icons/modus-icon-cube.svg?raw';
 import checkboxCheckedSvg from '../icons/checkbox-checked.svg?raw';
 import checkboxUncheckedSvg from '../icons/checkbox-unchecked.svg?raw';
 import downloadFileSvg from '../icons/download.svg?raw';
+import addCircleOutlineSvg from '../icons/add-circle-outline.svg?raw';
+import folderNewSvg from '../icons/folder-new.svg?raw';
+import roadSurfaceSvg from '../icons/road-surface.svg?raw';
+import imageSvg from '../icons/modus-icon-image.svg?raw';
+import cameraPhotoAddSvg from '../icons/camera-photo-add (1).svg?raw';
 import folderOpenSvg from '../icons/folder-open (1).svg?raw';
 import expandMoreSvg from '../icons/expand-more.svg?raw';
 import rerouteSvg from '../icons/reroute.svg?raw';
@@ -440,6 +445,11 @@ export const IconPerspective = svgIcon(cubeSvg);
 export const IconCheckboxChecked = svgIcon(checkboxCheckedSvg);
 export const IconCheckboxUnchecked = svgIcon(checkboxUncheckedSvg);
 export const IconDownloadFile = svgIcon(downloadFileSvg);
+export const IconAddCircleOutline = svgIcon(addCircleOutlineSvg);
+export const IconFolderNew = svgIcon(folderNewSvg);
+export const IconRoadSurface = svgIcon(roadSurfaceSvg);
+export const IconImage = svgIcon(imageSvg);
+export const IconCameraPhotoAdd = svgIcon(cameraPhotoAddSvg);
 export const IconExpandMore = svgIcon(expandMoreSvg);
 
 /** The expander for any group that opens and closes: a chevron pointing down

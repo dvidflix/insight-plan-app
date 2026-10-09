@@ -4,6 +4,9 @@ import { pushFiles, type PushFile } from '../seatable/filesClient';
 import { queryMatcher } from '../schedule/search';
 import { IconChevronDown, IconChevronRight, IconExpander } from './icons';
 import { SearchRow } from './SearchRow';
+import { useModelsStore } from '../state/modelsStore';
+import { useScheduleStore } from '../state/scheduleStore';
+import { useContextMeshStore } from '../state/contextMeshStore';
 
 /** Inputs page: group, filter and sort the list by a detail of the file (filled in on
     SeaTable's "Insight Plan Files" table). The setup is in the side pane's tabs;
@@ -22,7 +25,7 @@ function legacyDetails(): Record<string, Record<string, string[]>> {
 
 const labelOf = (v: string) => (v === NO_VALUE ? '(none)' : v);
 
-/** The Inputs page's status bar: how many files pass the filters and what they are grouped by. */
+/** The Inputs page's status bar: how many files pass the filters, how many are open (loaded and not hidden) and what they are grouped by. */
 export function InputsStatusBar() {
   const groupRules = useInputDetailsStore((s) => s.groupRules);
   const filters = useInputDetailsStore((s) => s.filters);
@@ -32,6 +35,12 @@ export function InputsStatusBar() {
   const active = Object.keys(filters).length;
   const total = files.length;
   const shown = useMemo(() => files.filter((f) => passesFilters(f, filters, details)).length, [files, filters, details]);
+  const models = useModelsStore((s) => s.models);
+  const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
+  const schedules = useScheduleStore((s) => s.schedules);
+  const hiddenScheduleIds = useScheduleStore((s) => s.hiddenScheduleIds);
+  const meshes = useContextMeshStore((s) => s.meshes);
+  const open = models.filter((m) => !hiddenModelIds.has(m.modelId)).length + schedules.filter((x) => !hiddenScheduleIds.has(x.id)).length + meshes.filter((m) => !m.hidden).length;
 
   // Read the details when the page opens (quietly: the last read is kept when SeaTable is off).
   useEffect(() => {
@@ -43,7 +52,7 @@ export function InputsStatusBar() {
   return (
     <footer className="app-statusbar">
       <span>
-        <strong>{shown}</strong>{shown !== total ? ` of ${total}` : ''} file{total === 1 ? '' : 's'} · grouped by <strong>{groupLabel}</strong>
+        <strong>{shown}</strong>{shown !== total ? ` of ${total}` : ''} file{total === 1 ? '' : 's'} · <strong>{open}</strong> open · grouped by <strong>{groupLabel}</strong>
         {active > 0 && <> · {active} filter{active === 1 ? '' : 's'} on</>}
       </span>
       {active > 0 && <button type="button" className="cols__link" onClick={clearFilters}>Clear filters</button>}

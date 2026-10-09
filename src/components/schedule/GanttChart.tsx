@@ -20,6 +20,7 @@ import { useResizableWidth } from '../ResizeHandle';
 import type { ColumnCtx, ColumnDef } from '../../schedule/columns';
 import { usePersistedState } from '../../utils/persistedState';
 import type { GroupRule } from './GroupPanel';
+import type { SortRule } from './SortPanel';
 import { useTableStyleStore } from '../../state/tableStyleStore';
 import { useAggregateStore } from '../../state/aggregateStore';
 import { applyWbsOrder, useWbsOrder } from '../../state/wbsOrder';
@@ -63,6 +64,8 @@ interface GanttChartProps {
   /** Group rules (Configuration > Group): one nesting level per rule, by the
       field's value, sorted up or down. When set they replace the WBS grouping. */
   groupRules?: GroupRule[];
+  /** Sort rules (Configuration > Sort): the rows in each group (or the whole list) ordered by these fields, in turn; none leaves them by start date. */
+  sortRules?: SortRule[];
   /** The column catalog, to read each rule's field value. */
   catalog?: ColumnDef[];
   /** Programmes: totals bar and group subtotals as set with Σ Totals. */
@@ -94,6 +97,8 @@ interface GanttChartProps {
   onSelect: (activity: Activity) => void;
   /** Double-click on a row (after the chart has scrolled to it). */
   onOpen?: (activity: Activity) => void;
+  /** Alt+S (start together: SS links) and Alt+F (one after another: FS links) on the activities picked. */
+  onLinkShortcut?: (kind: 'SS' | 'FS') => void;
 }
 
 const HEADER_H = 44;
@@ -130,6 +135,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     getColor,
     groupByWbs = true,
     groupRules,
+    sortRules,
+    onLinkShortcut,
     catalog,
     aggregatable = false,
     wbsLevel = '',
@@ -206,7 +213,26 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
 
   // ---- data ---------------------------------------------------------------
 
-  const rows = useMemo(() => buildGanttRows(activities), [activities]);
+  const rows = useMemo(() => {
+    const byStart = buildGanttRows(activities);
+    const keys = (sortRules ?? []).flatMap((r) => {
+      const col = catalog?.find((c) => c.id === r.field);
+      return col ? [{ col, dir: r.direction === 'down' ? -1 : 1 }] : [];
+    });
+    if (keys.length === 0) return byStart;
+    // Stable: ties stay in start-date order.
+    const keyed = byStart.map((row) => ({ row, k: keys.map((x) => x.col.sort(row.activity, columnCtx)) }));
+    keyed.sort((x, y) => {
+      for (let i = 0; i < keys.length; i++) {
+        const a = x.k[i];
+        const b = y.k[i];
+        const c = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true });
+        if (c !== 0) return keys[i].dir * c;
+      }
+      return 0;
+    });
+    return keyed.map((e) => e.row);
+  }, [activities, sortRules, catalog, columnCtx]);
   const rowById = useMemo(() => new Map(rows.map((r) => [r.activity.id, r])), [rows]);
   // Group rules win over the WBS tree; both become the same kind of tree
   // (a " / " path per row), so headers, collapsing and Group level work alike.
@@ -463,6 +489,9 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     } else if (e.key === 'Enter' && selectedId) {
       const row = rowById.get(selectedId);
       if (row) jumpToActivity(row.activity);
+    } else if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key.toLowerCase() === 's' || e.key.toLowerCase() === 'f') && onLinkShortcut) {
+      e.preventDefault();
+      onLinkShortcut(e.key.toLowerCase() === 's' ? 'SS' : 'FS');
     }
   };
 

@@ -32,7 +32,7 @@ export interface WikiSection {
 }
 
 /** Sections listed first, in this order; any other folder follows. */
-const SECTION_ORDER = ['standards', 'app-guide'];
+const SECTION_ORDER = ['standards', 'assumptions', 'calculations', 'app-guide'];
 
 const titleOf = (md: string, fallback: string) => /^#\s+(.+)$/m.exec(md)?.[1].trim() ?? fallback;
 const orderOf = (md: string) => Number(/^<!--\s*order:\s*(-?\d+)\s*-->/.exec(md)?.[1] ?? 1000);

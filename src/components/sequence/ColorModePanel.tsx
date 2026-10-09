@@ -31,8 +31,28 @@ export function propertyColorer(field: string, rules: PropertyColorRule[], fallb
   return (el: ElementSummary): string | null => byValue.get(valueOf(el, field).trim().toLowerCase()) ?? fallback;
 }
 
-/** Colour mode of one 3D view (Appearance Profiles / original colours / by
-    model property) — a section of the View settings configuration tab. */
+/** The colour mode of one 3D view (Appearance Profiles / original colours / by model property), as a compact row
+    for 4D › Options. */
+export function ColorModeRow({ view, elements, label }: { view: ViewId; elements: ElementSummary[]; label?: string }) {
+  const settings = useColorModeStore((s) => s[view]);
+  const patchView = useColorModeStore((s) => s.patch);
+  const { mode, field, rules } = settings;
+  const modeInfo = COLOR_MODES.find((m) => m.id === mode)!;
+  return (
+    <label className="disp__row">
+      <span>{label ?? 'Color mode'} <InfoTip>{modeInfo.hint}</InfoTip></span>
+      <select value={mode} onChange={(e) => {
+        const next = e.target.value as typeof mode;
+        // First switch to "By property" with no rules yet: start from the model's values.
+        patchView(view, next === 'property' && rules.length === 0 ? { mode: next, rules: generateRules(elements, field) } : { mode: next });
+      }}>
+        {COLOR_MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
+      </select>
+    </label>
+  );
+}
+
+/** The by-property rules of one 3D view's colour mode — the Colour section of the View settings tab (the mode itself is in 4D › Options). */
 export function ViewColorSettings({ view, elements }: { view: ViewId; elements: ElementSummary[] }) {
   const settings = useColorModeStore((s) => s[view]);
   const patchView = useColorModeStore((s) => s.patch);
@@ -45,15 +65,7 @@ export function ViewColorSettings({ view, elements }: { view: ViewId; elements: 
 
   return (
     <>
-      <div className="cols__heading"><span>Color mode <InfoTip>{modeInfo.hint}</InfoTip></span></div>
-      <select className="filter-select" value={mode} onChange={(e) => {
-        const next = e.target.value as typeof mode;
-        // First switch to "By property" with no rules yet: start from the model's values.
-        patch(next === 'property' && rules.length === 0 ? { mode: next, rules: generateRules(elements, field) } : { mode: next });
-      }}>
-        {COLOR_MODES.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}
-      </select>
-
+      {mode !== 'property' && <div className="cols__empty">Colour mode: {modeInfo.label} (set under 4D › Options).</div>}
       {mode === 'property' && (
         <>
           <div className="cols__heading"><span>Property</span></div>

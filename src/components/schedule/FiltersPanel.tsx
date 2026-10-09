@@ -120,7 +120,7 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
   const quick = QUICK.filter((qf) => visibleFields.some((f) => f.id === qf.fieldId));
 
   return (
-    <div className="flt">
+    <div className="cols flt flt--groups">
       <div className="flt__result">
         <div className="flt__result-text">
           <b>{matched.length.toLocaleString()}</b> of {baseActivities.length.toLocaleString()} activities
@@ -163,7 +163,7 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
         </>
       )}
 
-      <div className="cols__heading"><span>Fields <b>{visibleFields.length}</b></span></div>
+      <div className="cols__heading"><span>Available fields <b>{visibleFields.length}</b></span></div>
       <SearchRow
         collapsed={groupNames.length > 0 && groupNames.every((g) => closedGroups.has(g))}
         onCollapse={() => { setClosedGroups(new Set(groupNames)); setOpenFields(new Set()); }}
@@ -187,9 +187,10 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
                 <span className="cols__count">{on > 0 ? `${on} active · ` : ''}{inGroup.length}</span>
               </button>
             </div>
-            {open && shown.map((f) => (
+            {open && <div className="cols__group-body">{shown.map((f) => (
               <FieldCard
                 key={f.id}
+                bare={inGroup.length === 1 && group.toLowerCase().startsWith(f.label.toLowerCase())}
                 field={f}
                 fields={fields}
                 base={baseActivities}
@@ -199,7 +200,7 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
                 onChange={onChange}
                 onClear={() => clear(f.id)}
               />
-            ))}
+            ))}</div>}
           </div>
         );
       })}
@@ -208,6 +209,8 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
 }
 
 interface FieldCardProps {
+  /** The group's only field, when its name just repeats the group's (Resources › Resource): the row is left out and the field is always open. */
+  bare?: boolean;
   field: FilterFieldDef;
   fields: FilterFieldDef[];
   base: Activity[];
@@ -218,8 +221,20 @@ interface FieldCardProps {
   onClear: () => void;
 }
 
-function FieldCard({ field: f, fields, base, state, open, onToggle, onChange, onClear }: FieldCardProps) {
+function FieldCard({ bare, field: f, fields, base, state, open, onToggle, onChange, onClear }: FieldCardProps) {
   const active = fieldActive(f, state);
+  if (bare) {
+    return (
+      <div className={`flt__field flt__field--bare${active ? ' active' : ''}`}>
+        <div className="flt__field-body">
+          {f.kind === 'text' && <TextBody field={f} state={state} onChange={onChange} />}
+          {f.kind === 'select' && <SelectBody field={f} fields={fields} base={base} state={state} onChange={onChange} />}
+          {(f.kind === 'number' || f.kind === 'date') && <RangeBody field={f} state={state} onChange={onChange} />}
+          {active && f.kind !== 'select' && <button type="button" className="cols__link" onClick={onClear}>Clear</button>}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className={`flt__field${active ? ' active' : ''}`}>
       <div className="flt__field-head">

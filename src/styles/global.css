@@ -6936,6 +6936,30 @@ body.is-col-resizing * {
   min-width: 0;
 }
 
+.config-section__actions {
+  display: inline-flex;
+  gap: 4px;
+  /* The right edge lines up with the switches and fields in the section bodies (12px body padding + the scrollbar gutter). */
+  padding: 0 15px 0 6px;
+}
+
+.config-section__actions .mini-btn--icon {
+  width: 38px;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+/* A switch in a section header is as wide as the icon buttons above it, so their right edges line up. */
+.config-section__actions .switch { box-sizing: border-box; width: 38px; }
+.config-section__actions .switch.on .switch__thumb { transform: translateX(18px); }
+
+/* Hover as on the .btn buttons: an accent outline and a faint accent fill. */
+.config-section__actions .mini-btn--icon:hover:not(:disabled),
+.config-section__actions .mini-btn--icon:focus-visible,
+.config-section__actions .ss__cols .mini-btn--icon[aria-expanded='true'] {
+  border-color: var(--accent);
+  background: rgb(var(--accent-rgb) / 0.04);
+}
+
 .config-section__tip {
   display: inline-flex;
   padding: 0 10px 0 4px;
@@ -6971,7 +6995,9 @@ body.is-col-resizing * {
 .jump {
   display: flex;
   align-items: stretch;
+  justify-content: flex-end;
   gap: 4px;
+  margin-bottom: 4px;
 }
 
 .jump__arrow {
@@ -6991,12 +7017,23 @@ body.is-col-resizing * {
 }
 
 .jump__date {
-  flex: 1;
+  flex: 0 1 150px;
   min-width: 0;
+}
+
+/* The label at the left, then the date and an icon-only Jump button at the right (38px, like the header icon buttons). */
+.jump__label {
+  margin-right: auto;
+  align-self: center;
 }
 
 .jump__go {
   flex-shrink: 0;
+  width: 38px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .jump__notice {
@@ -7773,7 +7810,7 @@ body.is-col-resizing * {
 .agg-cell__btn:hover { background: rgb(var(--accent-rgb) / 0.12); }
 .agg-cell__kind { color: var(--text-dim); font-size: 10px; }
 .agg-cell__add { color: var(--text-dim); opacity: 0; }
-.mdt__totals:hover .agg-cell__add, .agg-cell__btn:focus-visible .agg-cell__add { opacity: 0.7; }
+.mdt__totals:hover .agg-cell__add, .totals-row:hover .agg-cell__add, .agg-cell__btn:focus-visible .agg-cell__add { opacity: 0.7; }
 .mdt__aggmenu {
   position: fixed;
   z-index: 60;
@@ -9466,6 +9503,11 @@ body.hide-statusbar .app-statusbar:not(.sequence-statusbar) {
   border-top: 1px solid var(--border);
 }
 
+/* 4D › Options: colour mode and the ignore / unassigned switches in one tight block. */
+.seq-options { padding: 2px 12px 4px 24px; }
+.seq-options .disp__row { padding: 2px 0; min-height: 26px; }
+.seq-options .disp__row select { width: 190px; max-width: 60%; }
+
 /* Scenarios toolbar: unsaved changes, click to save. */
 .scn-unsaved {
   align-self: center;
@@ -9865,7 +9907,9 @@ select:not([multiple]):focus {
 .props-grid__bar { padding: 10px 12px 4px; }
 .props-grid__title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .props-grid__tools { display: flex; gap: 6px; padding: 4px 8px 8px; align-items: center; }
-.props-grid__tools input { flex: 1; min-width: 0; min-height: 28px; padding: 2px 8px; }
+.props-grid__tools input { flex: 1; min-width: 0; height: 30px; min-height: 30px; box-sizing: border-box; padding: 2px 8px; }
+/* The expand / collapse button keeps its size, and the filter box is as tall as it. */
+.props-grid__tools > .btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box; width: 38px; height: 30px; padding: 0; }
 .props-table th { width: 44%; }
 .props-twisty { background: none; border: 0; padding: 0 4px 0 0; cursor: pointer; color: var(--text-dim); font-size: 11px; }
 .props-value { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -10815,6 +10859,17 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .flt--inputs .flt__field-head { padding-right: 18px; }
 .flt--inputs .flt__field-body { padding-left: 40px; padding-right: 22px; }
 
+/* Programme filters: the same flat grouped list as Columns, Group and Sort (.cols). The field rows run the full width (their
+   separator lines start where the groups' do) and their text is indented one step under the group name. */
+.cols.flt--groups > .cols__group > .cols__group-body { padding: 0; }
+.flt--groups .flt__field { margin: 0; }
+.flt--groups .flt__field-toggle { padding-left: 24px; }
+.flt--groups .flt__field-head { padding-right: 18px; }
+.flt--groups .flt__field-body { padding-left: 48px; padding-right: 22px; }
+/* A group's only field has no row of its own: its controls sit right under the group. */
+.flt--groups .flt__field--bare { border-top: 0; }
+.flt--groups .flt__field--bare .flt__field-body { padding-left: 44px; padding-top: 6px; }
+
 /* Select all / None on the field's own header line. */
 .flt__bulk--inline { margin: 0 6px 0 0; flex: none; white-space: nowrap; font-size: 12px; }
 
@@ -10941,6 +10996,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .cc-chart svg { display: block; }
 .cc-grid { stroke: var(--border); stroke-width: 1; }
 .cc-axis { fill: var(--text-dim); font-size: 11px; }
+.cc-axis-sub { fill: var(--text-dim); font-size: 10px; font-weight: 600; opacity: 0.8; }
 .cc-axis-title { fill: var(--text-dim); font-size: 11px; font-weight: 600; }
 .cc-hover { fill: rgb(0 0 0 / 0.05); pointer-events: none; }
 .cc-tip { position: absolute; z-index: 2; min-width: 190px; padding: 6px 10px; font-size: 12px; background: var(--bg-elevated, #fff); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.12); pointer-events: none; }
@@ -10966,3 +11022,31 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 
 /* The timeline's Step and Speed selects are only as wide as the option showing. */
 .sequence-statusbar__step select { field-sizing: content; width: auto; min-width: 0; padding-right: 4px; }
+
+/* Activity details: editing the fields (the pencil next to the close button). */
+.activity-details .ad-edit { width: 100%; box-sizing: border-box; height: 24px; padding: 0 6px; font: inherit; font-size: 12px; border: 1px solid var(--border); border-radius: 4px; background: #ffffff; }
+.activity-details .ad-edit:focus { outline: none; border-color: var(--accent); }
+.activity-details .layouts-dock__close.is-on { color: var(--accent-strong); background: rgb(var(--accent-rgb) / 0.12); border-radius: 6px; }
+.activity-details .layouts-dock__close:disabled { opacity: 0.4; cursor: default; }
+.ad-edit-bar { display: flex; align-items: center; gap: 6px; padding: 6px; }
+.ad-edit-bar__note { margin-left: auto; font-size: 11px; font-weight: 600; color: var(--accent-strong); }
+.ad-edit-bar__note + .btn { margin-left: 0; }
+
+/* A short message after a keyboard shortcut (Gantt: Alt+S / Alt+F links). */
+.shortcut-note { position: fixed; left: 50%; bottom: 44px; transform: translateX(-50%); z-index: 70; max-width: 80vw; padding: 8px 14px; border-radius: 8px; background: #27272a; color: #ffffff; font-size: 12px; box-shadow: 0 6px 16px rgba(0, 0, 0, 0.25); pointer-events: none; }
+
+/* Links pane: the edit pencil is on while editing. */
+.links-pane__title .mini-btn--icon.is-on { color: var(--accent-strong); border-color: var(--accent); background: rgb(var(--accent-rgb) / 0.12); }
+.links-pane__title .mini-btn--icon { width: 26px; height: 22px; }
+.links-pane__title .mini-btn { font-weight: 400; }
+
+/* Links pane, editing: the type and lag sit in the row like the Σ Totals cells - small, no box until hovered - so the rows stay compact. */
+.links-pane .lp-edit { box-sizing: border-box; height: 20px; min-height: 0; width: auto; padding: 0 2px; font: inherit; font-size: 12px; color: inherit; background: transparent; border: 1px solid transparent; border-radius: 3px; }
+.links-pane .lp-edit:hover, .links-pane .lp-edit:focus { background: #ffffff; border-color: var(--accent); outline: none; }
+.links-pane select.lp-edit { width: 44px; padding: 0; cursor: pointer; }
+.links-pane .lp-edit--lag { width: 44px; text-align: right; -moz-appearance: textfield; }
+.links-pane .lp-edit--lag::-webkit-outer-spin-button, .links-pane .lp-edit--lag::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.links-pane .ad-edit-bar { padding: 4px 6px; }
+.links-pane .ad-edit-bar .lp-edit { background: #ffffff; border-color: var(--border); }
+.links-pane .ad-edit-bar .lp-edit--lag, .links-pane .ad-edit-bar select.lp-edit { width: 52px; }
+.links-pane td .cols__icon { width: 18px; height: 18px; padding: 0; }

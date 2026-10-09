@@ -1,9 +1,9 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSelectionStore } from '../../state/selectionStore';
 import { usePropertyQueueStore } from '../../state/propertyQueueStore';
 import type { Activity, ResourceAssignment, ScheduleModel } from '../../schedule/types';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
-import { IconClose, IconList } from '../icons';
+import { IconClose, IconList, IconPencil, IconRoadSurface } from '../icons';
 import { applyVirtualResources } from '../../schedule/virtualResources';
 import { ActivityNote } from './ActivityNote';
 import { relationDetail, sharedContactIndex } from '../../schedule/activityRelation';
@@ -18,6 +18,9 @@ import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { activityStartMs } from '../../schedule/linking';
 import { alignDown } from '../../schedule/period';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
+import { useVisibleSchedules } from '../../state/scheduleStore';
+import { programmeKey } from '../../state/unloadedWbsStore';
+import { useActivityOverridesStore } from '../../state/activityOverridesStore';
 
 type SectionId = 'details' | 'cpm' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
 const DEFAULT_OPEN: SectionId[] = ['details', 'cpm', 'notes', 'suggested', 'codes', 'udf', 'resources'];
@@ -36,6 +39,9 @@ const days = (hours: number) => Math.round((hours / 8) * 10) / 10;
 
 /** The Activity pane of the Table and Gantt: the activity's fields in collapsible
     sections (remembered); its predecessors and successors are in the pane under the Gantt / table. */
+/** The buttons under Details share one height. */
+const DETAIL_BTN = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', height: 30, verticalAlign: 'top' } as const;
+
 export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarget, onSelect, onClose }: {
   activity: Activity;
   model: ScheduleModel;
@@ -44,7 +50,7 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
   onSelect: (activity: Activity) => void;
   onClose: () => void;
 }) {
-  const sections = useOpenSections<SectionId>('schedule.detailSections', DEFAULT_OPEN);
+  const sections = useOpenSections<SectionId>('schedule.detailSections2', DEFAULT_OPEN);
   // The objects each activity is linked to (Link Groups), and the contacts found between objects (Clashes & contacts).
   const loadedModels = useModelsStore((s) => s.models);
   const groups = useLinkGroupsStore((s) => s.groups);
@@ -133,17 +139,55 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
   }, [proposed, objects, activity]);
 
 
+  // ---- Editing: the pencil next to the close button makes the fields below editable. An edit is kept with the project on top of
+  // the programme (imported or generated), matched by Activity ID, and can be reset here.
+  const visible = useVisibleSchedules();
+  const overrides = useActivityOverridesStore((s) => s.byProgramme);
+  const origin = useMemo(() => {
+    const own = visible.length === 1 ? visible[0] : visible.find((v) => activity.id.startsWith(`${v.id}:`));
+    return own ? programmeKey(own) : null;
+  }, [visible, activity.id]);
+  const edited = origin !== null && !!overrides[origin]?.[activity.code.trim().toUpperCase()];
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState({ name: '', days: '', calendarId: '' });
+  useEffect(() => setEditing(false), [activity.id]);
+  const startEdit = () => {
+    setDraft({ name: activity.name, days: String(days(activity.durationHours)), calendarId: activity.calendarId ?? '' });
+    setEditing(true);
+  };
+  const saveEdit = () => {
+    if (origin === null) return;
+    const patch: Partial<Activity> = {};
+    if (draft.name.trim() && draft.name !== activity.name) patch.name = draft.name.trim();
+    const d = Number(draft.days);
+    if (draft.days.trim() !== '' && Number.isFinite(d) && d >= 0) {
+      const hours = Math.round(d * 8 * 4) / 4;
+      if (hours !== activity.durationHours) {
+        patch.durationHours = hours;
+        // Work still to do follows; a started activity keeps its remaining duration.
+        if (activity.status === 'not-started') patch.remainingDurationHours = hours;
+      }
+    }
+    if (draft.calendarId && draft.calendarId !== (activity.calendarId ?? '')) patch.calendarId = draft.calendarId;
+    if (Object.keys(patch).length) useActivityOverridesStore.getState().set(origin, new Map([[activity.code, patch]]));
+    setEditing(false);
+  };
+  const resetEdits = () => {
+    if (origin !== null) useActivityOverridesStore.getState().reset(origin, [activity.code]);
+    setEditing(false);
+  };
+
   const codes = Object.entries(activity.activityCodes);
   const udfs = Object.entries(activity.udf);
 
 
-  const grid = (rows: [string, string | number][]) => (
+  const grid = (rows: [string, ReactNode][]) => (
     <table className="ad-grid">
       <tbody>
         {rows.map(([k, v]) => (
           <tr key={k}>
             <th scope="row" title={k}>{k}</th>
-            <td title={String(v)}>{v}</td>
+            <td title={typeof v === 'string' || typeof v === 'number' ? String(v) : undefined}>{v}</td>
           </tr>
         ))}
       </tbody>
@@ -159,6 +203,17 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
         <span className="layouts-dock__title">
           <IconList /> Activity
         </span>
+        <button
+          type="button"
+          className={`side-pane__hide layouts-dock__close${editing ? ' is-on' : ''}`}
+          title={origin === null ? 'Editing needs a single programme (or a combined one from files)' : editing ? 'Stop editing' : 'Edit this activity: name, original duration, calendar'}
+          aria-label="Edit activity"
+          aria-pressed={editing}
+          disabled={origin === null}
+          onClick={() => (editing ? setEditing(false) : startEdit())}
+        >
+          <IconPencil />
+        </button>
         <button type="button" className="side-pane__hide layouts-dock__close" title="Close activity details" aria-label="Close activity details" onClick={onClose}>
           <IconClose />
         </button>
@@ -167,45 +222,65 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
       <CollapsibleSection title="Details" flush open={sections.isOpen('details')} onToggle={() => sections.toggle('details')}>
         {grid([
           ['Code', activity.code],
-          ['Name', activity.name],
+          ['Name', editing ? <input className="ad-edit" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} aria-label="Name" /> : activity.name],
           ['Status', activity.status],
-          ['Calendar', activity.calendarId ? (model.calendars.find((c) => c.id === activity.calendarId)?.name || activity.calendarId) : '—'],
+          ['Calendar', editing
+            ? (
+              <select className="ad-edit" value={draft.calendarId} onChange={(e) => setDraft({ ...draft, calendarId: e.target.value })} aria-label="Calendar">
+                {!activity.calendarId && <option value="">—</option>}
+                {model.calendars.map((c) => <option key={c.id} value={c.id}>{c.name || c.id}</option>)}
+              </select>
+            )
+            : activity.calendarId ? (model.calendars.find((c) => c.id === activity.calendarId)?.name || activity.calendarId) : '—'],
+          ['Original duration (d)', editing
+            ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.days} onChange={(e) => setDraft({ ...draft, days: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }} aria-label="Original duration in days" />
+            : days(activity.durationHours)],
           ['Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours) : '—'],
           ['% Complete', `${activity.percentComplete}%`],
         ])}
+        {(editing || edited) && (
+          <div className="ad-edit-bar">
+            {editing && <button type="button" className="btn btn--small primary" onClick={saveEdit}>Save</button>}
+            {editing && <button type="button" className="btn btn--small" onClick={() => setEditing(false)}>Cancel</button>}
+            {edited && <span className="ad-edit-bar__note" title="Kept with the project on top of the programme, so re-importing or regenerating it keeps this edit">Edited</span>}
+            {edited && <button type="button" className="btn btn--small" onClick={resetEdits} title="Put this activity back as in the imported or generated programme">Reset</button>}
+          </div>
+        )}
         <button
           type="button"
           className={`btn btn--small${drivingTarget === activity.id ? ' primary' : ''}`}
-          style={{ margin: 6 }}
+          style={{ ...DETAIL_BTN, margin: 6, minWidth: 52, padding: 0 }}
           onClick={() => onDrivingTarget(drivingTarget === activity.id ? null : activity.id)}
-          title="Pick out the chain of predecessors that drives this activity's start"
+          title={drivingTarget === activity.id ? 'Hide driving path' : "Show driving path: pick out the chain of predecessors that drives this activity's start"}
+          aria-label={drivingTarget === activity.id ? 'Hide driving path' : 'Show driving path'}
+          aria-pressed={drivingTarget === activity.id}
         >
-          {drivingTarget === activity.id ? 'Hide driving path' : 'Show driving path'}
+          <IconRoadSurface width={18} height={18} />
         </button>
         <button
           type="button"
           className="btn btn--small"
-          style={{ margin: '6px 6px 6px 0' }}
+          style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0', minWidth: 52 }}
           onClick={showIn4D}
           disabled={linkedCount === 0}
           title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to select` : `Go to 4D Sequencing: select ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'} and move the timeline to ${many ? 'the earliest start' : 'its start'}`}
         >
-          {many ? `Show ${targets.length} in 4D` : 'Show in 4D'}
+          {many ? `4D (${targets.length})` : '4D'}
         </button>
         <button
           type="button"
           className="btn btn--small"
-          style={{ margin: '6px 6px 6px 0' }}
+          style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0', minWidth: 52 }}
           onClick={showIn3D}
           disabled={linkedCount === 0}
           title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to show` : `Go to the 3D models and isolate ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'}: only the pours are shown`}
         >
-          {many ? `Show ${targets.length} in 3D` : 'Show in 3D'}
+          {many ? `3D (${targets.length})` : '3D'}
         </button>
         <button
           type="button"
           className="btn btn--small"
-          style={{ margin: '6px 6px 6px 0' }}
+          style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0' }}
           onClick={queueIdAndName}
           disabled={selectedCount === 0}
           title={selectedCount === 0 ? 'Select objects in the 3D model first' : `Add this activity's ID and Name to the Edit properties queue (Program › Activity ID, Activity Name) for the ${selectedCount.toLocaleString()} selected object${selectedCount === 1 ? '' : 's'}`}

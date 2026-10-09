@@ -58,7 +58,9 @@ function DistributionChart({ series, bars, lines, pct, period, unit, xTitle }: {
   const rightMax = pct ? 100 : niceMax(Math.max(0, ...series.map((s) => s.total)));
   const cum = (s: ConcreteSeries, v: number) => (pct ? (s.total > 0 ? (v / s.total) * 100 : 0) : v);
   const plotW = width - PAD.left - PAD.right;
-  const plotH = HEIGHT - PAD.top - PAD.bottom;
+  // Grouped by month, a second axis line numbers the project months (M1 = the first month).
+  const padBottom = period === 'month' ? PAD.bottom + 14 : PAD.bottom;
+  const plotH = HEIGHT - PAD.top - padBottom;
   const step = plotW / weeks;
   const x = (week: number) => PAD.left + week * step; // left edge of week index `week` (0-based)
   const yLeft = (v: number) => PAD.top + plotH - (v / leftMax) * plotH;
@@ -85,7 +87,10 @@ function DistributionChart({ series, bars, lines, pct, period, unit, xTitle }: {
           );
         })}
         {Array.from({ length: Math.ceil(weeks / every) }, (_, i) => i * every).map((w) => (
-          <text key={w} x={x(w) + step / 2} y={PAD.top + plotH + 16} textAnchor="middle" className="cc-axis">{period === 'week' ? w + 1 : (periodName(series, period, w) ?? w + 1)}</text>
+          <text key={w} x={x(w) + step / 2} y={PAD.top + plotH + 16} textAnchor="middle" className="cc-axis">
+            {period === 'week' ? w + 1 : (periodName(series, period, w) ?? w + 1)}
+            {period === 'month' && <tspan x={x(w) + step / 2} dy={13} className="cc-axis-sub">M{w + 1}</tspan>}
+          </text>
         ))}
         <text x={PAD.left + plotW / 2} y={HEIGHT - 4} textAnchor="middle" className="cc-axis-title">{xTitle}</text>
         <text transform={`translate(12 ${PAD.top + plotH / 2}) rotate(-90)`} textAnchor="middle" className="cc-axis-title">{PERIOD_LABEL[period]}ly {unit}</text>
@@ -109,7 +114,7 @@ function DistributionChart({ series, bars, lines, pct, period, unit, xTitle }: {
       </svg>
       {hover !== null && (
         <div className="cc-tip" style={{ left: Math.min(width - 230, Math.max(8, x(hover) + step + 8)), top: PAD.top + 6 }}>
-          <b>{PERIOD_LABEL[period]} {hover + 1}</b>{startLabel(series, period, hover)}
+          <b>{period === 'month' ? `Project month ${hover + 1}` : `${PERIOD_LABEL[period]} ${hover + 1}`}</b>{startLabel(series, period, hover)}
           {series.map((s) => (
             <div key={s.key}>
               <span className="cc-dot" style={{ background: s.color }} />

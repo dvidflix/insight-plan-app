@@ -9,7 +9,7 @@ const HOURS_PER_DAY = 8;
     (falls back to a standard Mon-Fri week per activity's calendar — see
     calendar.ts — when the source calendar carries no decodable weekly
     pattern, which is always true for XER and sometimes true for XML). */
-export function recomputeCpm(model: ScheduleModel): ScheduleModel {
+export function recomputeCpm(model: ScheduleModel, opts: { keepOwnStarts?: boolean } = {}): ScheduleModel {
   const byId = new Map(model.activities.map((a) => [a.id, a]));
   const calendarsById = new Map<string, ScheduleCalendar>(model.calendars.map((c) => [c.id, c]));
   const preds = new Map<string, Relationship[]>();
@@ -53,7 +53,9 @@ export function recomputeCpm(model: ScheduleModel): ScheduleModel {
       }
       if (!start || candidate > start) start = candidate;
     }
-    if (!start) start = anchor;
+    // With no link to drive it an activity starts at the data date; with `keepOwnStarts` (an edit layer over a programme that
+    // already has dates) it keeps where it already starts.
+    if (!start) start = (opts.keepOwnStarts && (activity.earlyStart ?? activity.targetStart ?? activity.actualStart)) || anchor;
     es.set(id, start);
     ef.set(id, addWorkingDays(start, durationDays, cal));
   }

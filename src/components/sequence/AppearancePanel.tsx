@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { create } from 'zustand';
 import { HexColorInput } from '../HexColorInput';
 import {
   DEFAULT_GROWTH_DISTANCE,
@@ -23,13 +24,26 @@ const ACTIONS: { value: AppearanceAction; label: string }[] = [
   { value: 'maintain', label: 'Maintain — always visible' },
 ];
 
-export function AppearancePanel({ onRefresh }: { onRefresh?: () => void }) {
+/** The section header's "New profile" button asks the panel (mounted once the section is open) to start a new profile. */
+export const useAppearanceUiStore = create<{ newRequested: boolean; requestNew: () => void; clearNew: () => void }>((set) => ({
+  newRequested: false,
+  requestNew: () => set({ newRequested: true }),
+  clearNew: () => set({ newRequested: false }),
+}));
+
+export function AppearancePanel() {
   const profiles = useAppearanceStore((s) => s.profiles);
   const add = useAppearanceStore((s) => s.add);
   const update = useAppearanceStore((s) => s.update);
   const remove = useAppearanceStore((s) => s.remove);
   const replaceAll = useAppearanceStore((s) => s.replaceAll);
   const [editing, setEditing] = useState<AppearanceProfile | null>(null);
+  const newRequested = useAppearanceUiStore((st) => st.newRequested);
+  useEffect(() => {
+    if (!newRequested) return;
+    useAppearanceUiStore.getState().clearNew();
+    setEditing(emptyAppearanceProfile());
+  }, [newRequested]);
   // Drag a row onto another: it goes before or after it (the line shows which), as in the Link Groups table.
   const [dragId, setDragId] = useState<string | null>(null);
   const [drop, setDrop] = useState<{ id: string; after: boolean } | null>(null);
@@ -73,16 +87,6 @@ export function AppearancePanel({ onRefresh }: { onRefresh?: () => void }) {
 
   return (
     <div>
-      <div style={{ padding: '4px 8px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <button className="btn primary" onClick={() => setEditing(emptyAppearanceProfile())}>
-          + New Profile
-        </button>
-        {onRefresh && (
-          <button className="btn" onClick={onRefresh} title="Apply appearance profiles to the 3D viewer">
-            {'⟳'} Refresh graphics
-          </button>
-        )}
-      </div>
       {profiles.length === 0 && (
         <div style={{ padding: '8px', color: 'var(--text-dim)' }}>
           No profiles yet. A profile sets Start / Active / End colors and opacity for 4D playback, then gets attached to a Link Group.

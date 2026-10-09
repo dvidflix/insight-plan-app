@@ -34,6 +34,8 @@ import { usePersistedState } from '../utils/persistedState';
 import { LayoutsDock } from '../components/schedule/LayoutsDock';
 import { LookaheadView } from '../components/schedule/LookaheadView';
 import { BulkEditView } from '../components/schedule/BulkEditView';
+import { applyLinkShortcut } from '../schedule/linkShortcuts';
+import { useActivitySelectionStore } from '../state/activitySelectionStore';
 import { RenumberView } from '../components/schedule/RenumberView';
 import { LinksPane } from '../components/schedule/LinksPane';
 import { useSelectedActivityStore } from '../state/selectedActivityStore';
@@ -342,6 +344,17 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
       onSelect={handleSelect}
     />
   );
+  // Alt+S / Alt+F on the Gantt: link the picked activities (all in one programme).
+  const [shortcutNote, setShortcutNote] = useState<string | null>(null);
+  const linkShortcut = (kind: 'SS' | 'FS') => {
+    const ids = useActivitySelectionStore.getState().ids;
+    const own = schedules.length === 1 ? schedules[0] : schedules.find((m) => ids.size > 0 && [...ids].every((id) => id.startsWith(`${m.id}:`)));
+    // A combined display prefixes each id with its programme's; the programme's own are plain.
+    const plain = new Set([...ids].map((id) => (own && schedules.length > 1 ? id.slice(own.id.length + 1) : id)));
+    const note = own ? applyLinkShortcut(kind, own, plain).message : 'Pick activities of one programme.';
+    setShortcutNote(note);
+    window.setTimeout(() => setShortcutNote((cur) => (cur === note ? null : cur)), 4000);
+  };
   const exportGantt = () => {
     const data = ganttRef.current?.getExport();
     if (data) exportGanttXlsx(data, `Gantt ${new Date().toISOString().slice(0, 10)}.xlsx`);
@@ -357,6 +370,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
       getColor={(a) => resolveRuleColor(ganttSet.colorRules, a, colorLookup)}
       groupByWbs={ganttSet.groupByWbs}
       groupRules={ganttSet.groupRules}
+      sortRules={ganttSet.sortRules}
       catalog={catalog}
       aggregatable
       wbsLevel={ganttSet.groupLevel}
@@ -368,6 +382,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
       dataDate={model.project.dataDate}
       collapseAllSignal={collapseAllSignal}
       expandAllSignal={expandAllSignal}
+      onLinkShortcut={linkShortcut}
       zoom={zoom}
       columns={ganttColumns}
       columnCtx={columnCtx!}
@@ -395,6 +410,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
     <ToolbarSlotContext.Provider value={toolbarSlot}>
     <div className="page">
       {error && <div style={{ color: 'var(--danger)', padding: '0 12px' }}>{error}</div>}
+      {shortcutNote && <div className="shortcut-note" role="status">{shortcutNote}</div>}
       <div className="filterbar schedule-toolbar">
         <div className="schedule-toolbar__left">
           <div className="workspaces-picker" aria-label="Views selector">

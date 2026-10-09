@@ -239,6 +239,29 @@ export function WikiPage() {
                   >
                     Export PDF
                   </button>
+                  {(page.section === 'assumptions' || page.section === 'calculations') && (
+                    <button
+                      type="button"
+                      className="btn"
+                      disabled={busy}
+                      title="Copy this section into its SeaTable table (Assumptions: the rows with an ASM-nnn Ref; Calculations: one row per calculation page): existing rows are updated by Ref, new ones added"
+                      onClick={async () => {
+                        setBusy(true);
+                        try {
+                          const r = await fetch(`/api/seatable/${page.section}/push`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' });
+                          const out = await r.json().catch(() => ({}));
+                          if (!r.ok) throw new Error(out.error ?? `SeaTable bridge: ${r.status}`);
+                          setMessage({ kind: 'ok', text: `SeaTable ${page.section === 'calculations' ? 'Calculations' : 'Assumptions'}: ${out.added} added, ${out.updated} updated.` });
+                        } catch (e) {
+                          setMessage({ kind: 'error', text: e instanceof Error ? e.message : String(e) });
+                        } finally {
+                          setBusy(false);
+                        }
+                      }}
+                    >
+                      Sync to SeaTable
+                    </button>
+                  )}
                   {page.page !== 'index' && <button type="button" className="btn" onClick={() => void remove()}>Delete</button>}
                   <button type="button" className="btn primary" onClick={() => { setDraft(page.markdown); setMessage(null); }}>Edit</button>
                 </>

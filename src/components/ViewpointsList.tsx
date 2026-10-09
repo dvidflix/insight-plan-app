@@ -1,4 +1,5 @@
-import { useState, type DragEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { create } from 'zustand';
 import type * as OBC from '@thatopen/components';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { createViewpoint, dataOf, deleteViewpoint, openViewpoint, renameViewpoint, setViewpointFolder, thumbnailUrl, updateViewpoint, useViewpoints, viewpointTitle } from '../viewer/savedViews';
@@ -6,11 +7,11 @@ import { useViewSettingsStore } from '../state/viewSettingsStore';
 import { useSavedViewAttrsStore } from '../state/savedViewAttrsStore';
 import { usePersistedState } from '../utils/persistedState';
 import { InfoTip } from './InfoTip';
-import { IconPencil, IconSync, IconTrash } from './icons';
+import { IconCameraPhotoAdd, IconFolderNew, IconImage, IconPencil, IconSync, IconTrash } from './icons';
 import { RowButtonsChooser, useRowButtons, type RowButtonDef } from './RowButtonsChooser';
 
 const VP_BUTTONS = [
-  { id: 'thumb', glyph: '▣', label: 'Thumbnail' },
+  { id: 'thumb', glyph: <IconImage width={14} height={14} />, label: 'Thumbnail' },
   { id: 'move', glyph: '🗀', label: 'Move to a folder' },
   { id: 'date', glyph: '◷', label: 'Timeline date (4D)' },
   { id: 'update', glyph: '⟳', label: 'Update from the view as it is now' },
@@ -18,6 +19,27 @@ const VP_BUTTONS = [
   { id: 'delete', glyph: '✕', label: 'Delete' },
 ] as const satisfies readonly RowButtonDef<string>[];
 type VpButton = (typeof VP_BUTTONS)[number]['id'];
+
+/** The section header's "New viewpoint" / "New folder" buttons ask the list (always mounted) to do it; it reports when it is busy. */
+const useViewpointsUiStore = create<{ newViewpoint: number; newFolder: number; saving: boolean }>(() => ({ newViewpoint: 0, newFolder: 0, saving: false }));
+
+/** The icons at the right end of the Viewpoints section's header. */
+export function ViewpointsHeaderActions() {
+  const saving = useViewpointsUiStore((s) => s.saving);
+  const rb = useRowButtons<VpButton>('viewpoints.hiddenButtons');
+  const bump = (k: 'newViewpoint' | 'newFolder') => useViewpointsUiStore.setState((s) => ({ [k]: s[k] + 1 }));
+  return (
+    <span className="config-section__actions">
+      <RowButtonsChooser buttons={VP_BUTTONS} rb={rb} title="Choose which buttons show on each viewpoint" compact />
+      <button type="button" className="mini-btn mini-btn--icon" onClick={() => bump('newFolder')} title="New folder" aria-label="New folder">
+        <IconFolderNew width={18} height={18} />
+      </button>
+      <button type="button" className="mini-btn mini-btn--icon" disabled={saving} onClick={() => bump('newViewpoint')} title={saving ? 'Saving…' : 'New viewpoint: saves the camera and what is ticked in Viewpoint attributes'} aria-label="New viewpoint">
+        <IconCameraPhotoAdd width={20} height={20} />
+      </button>
+    </span>
+  );
+}
 
 /** Views > Viewpoints: one compact row per viewpoint — small thumbnail and name
     (click either to open it) with update, rename and delete icons on the right.
@@ -59,6 +81,27 @@ export function ViewpointsList() {
     const name = window.prompt('Folder name:', '')?.trim();
     if (name && !folders.includes(name)) setSavedFolders([...savedFolders, name]);
   };
+  // The header's buttons (ViewpointsHeaderActions). The latest handlers are kept in a ref so a request runs once.
+  const vpRequests = useViewpointsUiStore((s) => s.newViewpoint);
+  const folderRequests = useViewpointsUiStore((s) => s.newFolder);
+  const seen = useRef({ vp: vpRequests, folder: folderRequests });
+  const latest = useRef({ addFolder, run, engine });
+  latest.current = { addFolder, run, engine };
+  // The Models and 4D pages each keep a list mounted: only the one on screen answers.
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const visible = !!root.current && getComputedStyle(root.current).visibility !== 'hidden' && root.current.getClientRects().length > 0;
+    if (!visible) {
+      seen.current = { vp: vpRequests, folder: folderRequests };
+      return;
+    }
+    if (folderRequests !== seen.current.folder) latest.current.addFolder();
+    if (vpRequests !== seen.current.vp) void latest.current.run('new', () => createViewpoint(latest.current.engine));
+    seen.current = { vp: vpRequests, folder: folderRequests };
+  }, [vpRequests, folderRequests]);
+  useEffect(() => {
+    useViewpointsUiStore.setState({ saving: busy !== null });
+  }, [busy]);
   const renameFolder = (from: string, to: string) => {
     const name = to.trim();
     setRenamingFolder(null);
@@ -138,12 +181,8 @@ export function ViewpointsList() {
   };
 
   return (
-    <div className="vp">
+    <div className="vp" ref={root}>
       <div className="vp__bar">
-        <button type="button" className="btn primary btn--small" disabled={busy !== null} onClick={() => void run('new', () => createViewpoint(engine))}>
-          {busy === 'new' ? 'Saving…' : '+ New viewpoint'}
-        </button>
-        <button type="button" className="btn btn--small" onClick={addFolder}>+ New folder</button>
         {page === 'sequence' && (
           <label className="vp__opt" title="Remember the date the timeline is at, and jump to it when the viewpoint is opened">
             <input type="checkbox" checked={withTimeline} onChange={() => toggleAttr('timeline')} />
@@ -153,8 +192,6 @@ export function ViewpointsList() {
         <InfoTip>
           Saves the camera plus what is ticked in Viewpoint attributes (hidden objects, selection, sections, style, display, placement{page === 'sequence' ? ', timeline position' : ''}). Click a viewpoint to open it; the icons update it from the view as it is now, rename it or delete it. Drag a viewpoint onto a folder to file it.
         </InfoTip>
-        <span className="vp__spacer" />
-        <RowButtonsChooser buttons={VP_BUTTONS} rb={rb} title="Choose which buttons show on each viewpoint" />
       </div>
       {error && <div className="flt__hint" style={{ color: 'var(--danger)' }}>{error}</div>}
       {list.length === 0 && folders.length === 0 ? (

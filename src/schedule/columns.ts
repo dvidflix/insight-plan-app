@@ -67,8 +67,12 @@ export function isoWeekLabel(d: Date): string {
 }
 /** Calendar month of a date, "2029-07". */
 export const monthLabel = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}`;
+/** Calendar quarter of a date, "2029-Q3". */
+export const quarterLabel = (d: Date) => `${d.getFullYear()}-Q${Math.floor(d.getMonth() / 3) + 1}`;
+/** Calendar year of a date, "2029". */
+export const yearLabel = (d: Date) => String(d.getFullYear());
 
-/** A column that buckets a date into a week or month, for grouping and sorting (text sorts chronologically). */
+/** A column that buckets a date into a year, quarter, week or month, for grouping and sorting (text sorts chronologically). */
 function period(id: string, label: string, get: (a: Activity) => Date | null | undefined, fmt: (d: Date) => string): ColumnDef {
   const of = (a: Activity) => { const d = get(a); return d ? fmt(d) : ''; };
   return { id, label, group: 'Dates', width: 100, text: of, sort: of };
@@ -115,8 +119,12 @@ const STATIC_COLUMNS: ColumnDef[] = [
   // Dates
   date('start', 'Start', 'Dates', startOf),
   date('finish', 'Finish', 'Dates', finishOf),
+  period('startYear', 'Start Year', startOf, yearLabel),
+  period('startQuarter', 'Start Quarter', startOf, quarterLabel),
   period('startWeek', 'Start Week', startOf, isoWeekLabel),
   period('startMonth', 'Start Month', startOf, monthLabel),
+  period('finishYear', 'Finish Year', finishOf, yearLabel),
+  period('finishQuarter', 'Finish Quarter', finishOf, quarterLabel),
   period('finishWeek', 'Finish Week', finishOf, isoWeekLabel),
   period('finishMonth', 'Finish Month', finishOf, monthLabel),
   date('actualStart', 'Actual Start', 'Dates', (a) => a.actualStart),

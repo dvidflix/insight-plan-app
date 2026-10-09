@@ -49,6 +49,7 @@ export function JumpToDate() {
 
   return (
     <div className="jump">
+      <span className="jump__label">Jump to date</span>
       <input
         type="date"
         className="jump__date"
@@ -58,7 +59,7 @@ export function JumpToDate() {
         onChange={(e) => setDraft(e.target.value)}
         onKeyDown={(e) => { if (e.key === 'Enter') jump(); }}
       />
-      <button type="button" className="btn primary jump__go" disabled={fromInput(draft) === null} onClick={jump}>▶ Jump</button>
+      <button type="button" className="btn primary jump__go" disabled={fromInput(draft) === null} onClick={jump} title="Jump: move the 4D timeline to this date" aria-label="Jump to this date">▶</button>
     </div>
   );
 }

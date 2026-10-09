@@ -4,6 +4,7 @@ import { useExperimental } from '../state/appPrefsStore';
 import { useMarkersStore } from '../state/markersStore';
 import { useConstructionPlanesStore } from '../state/constructionPlanesStore';
 import { useSectionCutsStore } from '../state/sectionCutsStore';
+import { NO_CUTS } from './sectionPlanes';
 import { markerShownAt } from './markerActivity';
 import { CLOSED_STATUSES, STATUS_COLORS, useTopicsStore, type Topic } from '../state/topicsStore';
 import { topicActiveAt, topicWindow } from '../topics/topicDates';
@@ -304,8 +305,9 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
     return () => { engine.onIfcGridsChange.remove(bump); };
   }, [engine]);
   useEffect(() => {
-    if (ready) void engine.applySectionCuts(sectionCuts);
-  }, [engine, ready, sectionCuts, models, gridsTick]);
+    // Switched off in Settings › Experimental features: no cut is drawn, whatever was saved.
+    if (ready) void engine.applySectionCuts(cutsExperiment ? sectionCuts : NO_CUTS);
+  }, [engine, ready, sectionCuts, cutsExperiment, models, gridsTick]);
   // Saved viewpoints belong to the models they were taken with: back when those are loaded, set aside when not.
   useEffect(() => {
     if (ready) syncViewpoints(engine);

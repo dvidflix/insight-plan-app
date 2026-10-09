@@ -19,8 +19,8 @@ import { isPerTask, renderTag, renderTagLines } from '../schedule/tagTemplate';
 import { tagStyleOf, useActiveTagsStore, useTagsStore, type ActiveTagLabel, type TagCallout } from '../state/tagsStore';
 import { lerpStage, type AppearanceProfile, type AppearanceStage } from '../schedule/appearance';
 import { ResizeHandle, useResizableWidth } from '../components/ResizeHandle';
-import { LinkGroupsPanel } from '../components/sequence/LinkGroupsPanel';
-import { AppearancePanel } from '../components/sequence/AppearancePanel';
+import { LinkGroupsPanel, exportLinkGroupMatches, useLinkGroupsUiStore } from '../components/sequence/LinkGroupsPanel';
+import { AppearancePanel, useAppearanceUiStore } from '../components/sequence/AppearancePanel';
 import { TaskFieldFromSets } from '../components/sequence/TaskFieldFromSets';
 import { LabelPanel } from '../components/sequence/LabelPanel';
 import { GanttChart } from '../components/schedule/GanttChart';
@@ -29,12 +29,12 @@ import { DEFAULT_GANTT_COLUMNS, buildColumnContext, resolveColumns } from '../sc
 import { useColumnCatalog } from '../schedule/calculatedColumns';
 import { TasksPanel } from '../components/sequence/TasksPanel';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
-import { ViewColorSettings, propertyColorer } from '../components/sequence/ColorModePanel';
+import { ColorModeRow, ViewColorSettings, propertyColorer } from '../components/sequence/ColorModePanel';
 import { View3DPanel } from '../components/View3DPanel';
 import { NavisworksExport } from '../components/sequence/ExportPanel';
 import { MediaExport } from '../components/sequence/MediaExport';
 import { SidePane, type SidePaneTab } from '../components/SidePane';
-import { IconChevronLeft, IconCamera, IconClose, IconCube, IconList, IconSchema, IconSearch, IconTree, IconViewTable } from '../components/icons';
+import { IconAddCircleOutline, IconChevronLeft, IconDownload, IconSync, IconCamera, IconClose, IconCube, IconList, IconSchema, IconSearch, IconTree, IconViewTable } from '../components/icons';
 import { DataTablePanel } from '../components/DataTablePanel';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { useDataTableStore } from '../state/dataTableStore';
@@ -172,7 +172,7 @@ export function SequencePanel() {
   // A topic marker clicked in the 3D view opens the 4D tab's Topics section.
   const topicOpenRequest = useTopicsStore((s) => s.openRequest);
   const topicSeen = useRef(topicOpenRequest);
-  const fourD = useOpenSections<'jump' | 'groups' | 'appearance' | 'taskField' | 'why'>('sequence.4dSections', ['jump', 'groups', 'appearance']);
+  const fourD = useOpenSections<'options' | 'groups' | 'appearance' | 'taskField' | 'why'>('sequence.4dSections2', ['options', 'groups', 'appearance']);
   const basis = useSequenceTimelineStore((s) => s.basis);
   const setBasis = useSequenceTimelineStore((s) => s.setBasis);
   const stepUnit = useSequenceTimelineStore((s) => s.stepUnit);
@@ -879,16 +879,80 @@ export function SequencePanel() {
         bodyClassName={(linkTab === 'view3d' && modelPanels) || linkTab === 'models' || linkTab === 'tree' || linkTab === 'search' || linkTab === 'datatable' || linkTab === 'properties' || linkTab === 'groups' ? 'config-panel__body model-config__body' : undefined}
       >
               {linkTab === 'groups' && (
-                // Jump to date, Link Groups and Appearance Profiles, one collapsible section each.
+                // Options (with Jump to date), Link Groups and Appearance Profiles, one collapsible section each.
                 <div>
-                  <CollapsibleSection title="Jump to date" open={fourD.isOpen('jump')} onToggle={() => fourD.toggle('jump')}>
-                    <JumpToDate />
+                  <CollapsibleSection title="Options" open={fourD.isOpen('options')} onToggle={() => fourD.toggle('options')}>
+                    <div className="disp vsp seq-options">
+                      <JumpToDate />
+                      <ColorModeRow view="a" elements={allElements} label={split ? 'Color mode (left)' : 'Color mode'} />
+                      {split && <ColorModeRow view="b" elements={allElements} label="Color mode (right)" />}
+                      <div className="disp__row">
+                        <span>
+                          Ignore timeliner{' '}
+                          <InfoTip>Every linked object stays visible whatever the date: nothing is hidden before it starts or after a Remove. Appearance colours for the current date still apply (unless ignored below).</InfoTip>
+                        </span>
+                        <button type="button" role="switch" aria-checked={ignoreTimeliner} className={`switch${ignoreTimeliner ? ' on' : ''}`} onClick={() => setIgnoreTimeliner(!ignoreTimeliner)}>
+                          <span className="switch__thumb" />
+                        </button>
+                      </div>
+                      <div className="disp__row">
+                        <span>
+                          Ignore appearance profiles{' '}
+                          <InfoTip>Objects keep their own colours: no profile colours, opacity or growth animation. The timeline still shows and hides them by date (unless ignored above).</InfoTip>
+                        </span>
+                        <button type="button" role="switch" aria-checked={ignoreAppearance} className={`switch${ignoreAppearance ? ' on' : ''}`} onClick={() => setIgnoreAppearance(!ignoreAppearance)}>
+                          <span className="switch__thumb" />
+                        </button>
+                      </div>
+                      <div className="disp__row">
+                        <span>Show unassigned objects</span>
+                        <button type="button" role="switch" aria-checked={showUnassigned} className={`switch${showUnassigned ? ' on' : ''}`} onClick={() => setShowUnassigned((v) => !v)}>
+                          <span className="switch__thumb" />
+                        </button>
+                      </div>
+                      {showUnassigned && (
+                        <div className="segmented-choice" style={{ marginTop: 4 }}>
+                          <button className={unassignedMode === 'original' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('original')}>Original colors</button>
+                          <button className={unassignedMode === 'red' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('red')}>Highlighted red</button>
+                        </div>
+                      )}
+                    </div>
                   </CollapsibleSection>
-                  <CollapsibleSection title={`Link Groups (${groups.length})`} open={fourD.isOpen('groups')} onToggle={() => fourD.toggle('groups')} flush>
+                  <CollapsibleSection
+                    title={`Link Groups (${groups.length})`}
+                    open={fourD.isOpen('groups')}
+                    onToggle={() => fourD.toggle('groups')}
+                    flush
+                    actions={
+                      <>
+                        <button type="button" className="mini-btn mini-btn--icon" onClick={() => exportLinkGroupMatches(model, allElements, groups)} title="Export matches (CSV): the matched task/object pairs and which fields matched them" aria-label="Export matches (CSV)">
+                          <IconDownload width={16} height={16} />
+                        </button>
+                        <button type="button" className="mini-btn mini-btn--icon" onClick={() => { if (!fourD.isOpen('groups')) fourD.toggle('groups'); useLinkGroupsUiStore.getState().requestNew(); }} title="New group" aria-label="New group">
+                          <IconAddCircleOutline width={20} height={20} />
+                        </button>
+                      </>
+                    }
+                  >
                     <LinkGroupsPanel model={model} elements={allElements} elementSets={models.map((m) => m.elements)} onPreview={previewGroup} />
                   </CollapsibleSection>
-                  <CollapsibleSection title={`Appearance Profiles (${appearanceProfiles.length})`} open={fourD.isOpen('appearance')} onToggle={() => fourD.toggle('appearance')} flush>
-                    <AppearancePanel onRefresh={refreshGraphics} />
+                  <CollapsibleSection
+                    title={`Appearance Profiles (${appearanceProfiles.length})`}
+                    open={fourD.isOpen('appearance')}
+                    onToggle={() => fourD.toggle('appearance')}
+                    flush
+                    actions={
+                      <>
+                        <button type="button" className="mini-btn mini-btn--icon" onClick={refreshGraphics} title="Refresh graphics: apply appearance profiles to the 3D viewer" aria-label="Refresh graphics">
+                          <IconSync width={16} height={16} />
+                        </button>
+                        <button type="button" className="mini-btn mini-btn--icon" onClick={() => { if (!fourD.isOpen('appearance')) fourD.toggle('appearance'); useAppearanceUiStore.getState().requestNew(); }} title="New profile" aria-label="New profile">
+                          <IconAddCircleOutline width={20} height={20} />
+                        </button>
+                      </>
+                    }
+                  >
+                    <AppearancePanel />
                   </CollapsibleSection>
                   {experimental.whyShown && <CollapsibleSection title="Why is it shown?" open={fourD.isOpen('why')} onToggle={() => fourD.toggle('why')} tip={<p>Select an object in the 3D view: this lists every task that links to it, which Link Group each comes from, where each stands at the current step, and which one controls the object (and so whether it is shown, hidden or recoloured).</p>}>
                     <WhyShown
@@ -906,40 +970,6 @@ export function SequencePanel() {
                   {experimental.taskFields && <CollapsibleSection title="Task fields from search sets" open={fourD.isOpen('taskField')} onToggle={() => fourD.toggle('taskField')}>
                     <TaskFieldFromSets results={groupResultsByModel} />
                   </CollapsibleSection>}
-                  <div className="disp seq-ignore">
-                    <div className="disp__row">
-                      <span>
-                        Ignore timeliner{' '}
-                        <InfoTip>Every linked object stays visible whatever the date: nothing is hidden before it starts or after a Remove. Appearance colours for the current date still apply (unless ignored below).</InfoTip>
-                      </span>
-                      <button type="button" role="switch" aria-checked={ignoreTimeliner} className={`switch${ignoreTimeliner ? ' on' : ''}`} onClick={() => setIgnoreTimeliner(!ignoreTimeliner)}>
-                        <span className="switch__thumb" />
-                      </button>
-                    </div>
-                    <div className="disp__row">
-                      <span>
-                        Ignore appearance profiles{' '}
-                        <InfoTip>Objects keep their own colours: no profile colours, opacity or growth animation. The timeline still shows and hides them by date (unless ignored above).</InfoTip>
-                      </span>
-                      <button type="button" role="switch" aria-checked={ignoreAppearance} className={`switch${ignoreAppearance ? ' on' : ''}`} onClick={() => setIgnoreAppearance(!ignoreAppearance)}>
-                        <span className="switch__thumb" />
-                      </button>
-                    </div>
-                  </div>
-                  <div className="disp seq-ignore">
-                    <div className="disp__row">
-                      <span>Show unassigned objects</span>
-                      <button type="button" role="switch" aria-checked={showUnassigned} className={`switch${showUnassigned ? ' on' : ''}`} onClick={() => setShowUnassigned((v) => !v)}>
-                        <span className="switch__thumb" />
-                      </button>
-                    </div>
-                    {showUnassigned && (
-                      <div className="segmented-choice" style={{ marginTop: 6 }}>
-                        <button className={unassignedMode === 'original' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('original')}>Original colors</button>
-                        <button className={unassignedMode === 'red' ? 'active' : ''} type="button" onClick={() => setUnassignedMode('red')}>Highlighted red</button>
-                      </div>
-                    )}
-                  </div>
                   <LabelPanel />
                 </div>
               )}

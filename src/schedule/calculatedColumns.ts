@@ -16,7 +16,7 @@ import type { Activity, ScheduleModel } from './types';
     table and the 4D Tasks list.
 
     Formula: numbers, + - * / ^, brackets, [Column name] for a column's value (any numeric
-    column, spelt as in the column picker) and the functions ABS, ROUND(x, digits), MIN, MAX.
+    column, spelt as in the column picker) and the functions ABS, ROUND(x, digits), CEIL(x, step) (up to the next multiple of step, 1 if left out), MIN, MAX.
     A row where a used column is empty, or a division by zero, shows nothing. */
 export interface CalcColumn {
   id: string;
@@ -27,8 +27,24 @@ export interface CalcColumn {
   decimals?: number;
 }
 
+/** Wiki › Calculations SF-003: days of steel fixing from the rebar quantity at 75 Mh/t, 12 men, 2 shifts, 9.17 h/day.
+    Added once to every browser (edit or delete it like any other calculated column). */
+export const COMPUTED_DURATION: CalcColumn = { id: 'computed-duration', name: 'Computed duration (days)', formula: '[Rebar (t) (units)] * 75 / (12 * 2 * 9.17)', unit: 'days', decimals: 2 };
+/** The first version used the resource's own name, which the programmes show as "Rebar (t)": a saved copy still carrying it is corrected. */
+/** The same, rounded up to whole days. */
+export const COMPUTED_DURATION_UP: CalcColumn = { id: 'computed-duration-up', name: 'Computed duration (days, rounded up)', formula: 'CEIL([Rebar (t) (units)] * 75 / (12 * 2 * 9.17), 1)', unit: 'days', decimals: 0 };
+/** The built-in columns, with the version they came in: a browser gets the ones newer than what it has seen (so a deleted one stays deleted). */
+const BUILT_INS: { version: number; column: CalcColumn }[] = [
+  { version: 1, column: COMPUTED_DURATION },
+  { version: 2, column: COMPUTED_DURATION_UP },
+];
+
+const OLD_COMPUTED_FORMULA = '[MCW - Reinforcement(T) (units)] * 75 / (12 * 2 * 9.17)';
+
 interface CalcColumnsState {
   columns: CalcColumn[];
+  /** The built-in columns were added (so deleting one keeps it deleted). */
+  seeded?: boolean | number;
   save: (c: CalcColumn) => void;
   remove: (id: string) => void;
 }
@@ -40,7 +56,19 @@ export const useCalcColumnsStore = create<CalcColumnsState>()(
       save: (c) => set((s) => ({ columns: s.columns.some((x) => x.id === c.id) ? s.columns.map((x) => (x.id === c.id ? c : x)) : [...s.columns, c] })),
       remove: (id) => set((s) => ({ columns: s.columns.filter((x) => x.id !== id) })),
     }),
-    { name: 'schedule.calcColumns' },
+    {
+      name: 'schedule.calcColumns',
+      merge: (saved, current) => {
+        const next = { ...current, ...(saved as Partial<CalcColumnsState>) };
+        const seen = next.seeded === true ? 1 : next.seeded || 0;
+        for (const b of BUILT_INS) {
+          if (b.version > seen && !next.columns.some((c) => c.id === b.column.id)) next.columns = [...next.columns, b.column];
+        }
+        next.seeded = BUILT_INS[BUILT_INS.length - 1].version;
+        next.columns = next.columns.map((c) => (c.id === COMPUTED_DURATION.id && c.formula === OLD_COMPUTED_FORMULA ? { ...c, formula: COMPUTED_DURATION.formula, decimals: COMPUTED_DURATION.decimals } : c));
+        return next;
+      },
+    },
   ),
 );
 
@@ -92,7 +120,7 @@ function tokenize(src: string): Tok[] {
   return out;
 }
 
-const FUNCTIONS: Record<string, { min: number; max: number }> = { ABS: { min: 1, max: 1 }, ROUND: { min: 1, max: 2 }, MIN: { min: 2, max: 8 }, MAX: { min: 2, max: 8 } };
+const FUNCTIONS: Record<string, { min: number; max: number }> = { ABS: { min: 1, max: 1 }, ROUND: { min: 1, max: 2 }, CEIL: { min: 1, max: 2 }, MIN: { min: 2, max: 8 }, MAX: { min: 2, max: 8 } };
 
 function parse(src: string): Node {
   const toks = tokenize(src);
@@ -142,7 +170,7 @@ function parse(src: string): Node {
     if (t.k === 'id') {
       const name = t.s.toUpperCase();
       const spec = FUNCTIONS[name];
-      if (!spec) throw new Error(`Unknown function ${t.s}. Use ABS, ROUND, MIN or MAX, or put a column name in [brackets].`);
+      if (!spec) throw new Error(`Unknown function ${t.s}. Use ABS, ROUND, CEIL, MIN or MAX, or put a column name in [brackets].`);
       if (take()?.k !== 'lp') throw new Error(`${name} needs brackets: ${name}( … ).`);
       const args: Node[] = [];
       if (peek()?.k !== 'rp') {
@@ -219,6 +247,11 @@ export function compileFormula(formula: string, catalog: ColumnDef[]): Compiled 
         if (vals.some((v) => v === null)) return null;
         const v = vals as number[];
         if (n.name === 'ABS') return Math.abs(v[0]);
+        if (n.name === 'CEIL') {
+          // Up to the next multiple of `step` (1 if left out); a tiny tolerance keeps 3.0000000001 from jumping to 4.
+          const step = v[1] ?? 1;
+          return step > 0 ? Math.ceil(v[0] / step - 1e-9) * step : null;
+        }
         if (n.name === 'ROUND') return Number(v[0].toFixed(Math.max(0, Math.min(10, Math.round(v[1] ?? 0)))));
         return n.name === 'MIN' ? Math.min(...v) : Math.max(...v);
       }

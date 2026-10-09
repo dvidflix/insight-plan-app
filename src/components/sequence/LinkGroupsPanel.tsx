@@ -1,4 +1,5 @@
-import { Fragment, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useState } from 'react';
+import { create } from 'zustand';
 import type { ScheduleModel } from '../../schedule/types';
 import type { ElementSummary } from '../../viewer/types';
 import { usePropertyVisibilityStore } from '../../state/propertyVisibilityStore';
@@ -26,6 +27,23 @@ import { TagEditor } from './TagEditor';
 import { HexColorInput } from '../HexColorInput';
 import { downloadCsv } from '../../utils/csv';
 import { IconCopy, IconEye, IconEyeOff, IconPencil } from '../icons';
+
+/** The section header's "New group" button asks the panel (mounted once the section is open) to start a new group. */
+export const useLinkGroupsUiStore = create<{ newRequested: boolean; requestNew: () => void; clearNew: () => void }>((set) => ({
+  newRequested: false,
+  requestNew: () => set({ newRequested: true }),
+  clearNew: () => set({ newRequested: false }),
+}));
+
+/** The matched task / object pairs of every group as a CSV (the section header's export button). */
+export function exportLinkGroupMatches(model: ScheduleModel, elements: ElementSummary[], groups: LinkGroup[]) {
+  const rows = buildMatchExportRows(model, elements, groups);
+  downloadCsv(
+    'link-group-matches.csv',
+    ['Group', 'Activity ID', 'Activity Name', 'Element GUID', 'Element Name', 'Element Category', 'Matched On'],
+    rows.map((r) => [r.group, r.activityId, r.activityName, r.elementGuid, r.elementName, r.elementCategory, r.matchedOn]),
+  );
+}
 
 const OPS: { value: CompareOp; label: string }[] = [
   { value: 'equals', label: 'Equals' },
@@ -69,6 +87,12 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
     replaceAll([...groups.slice(0, i + 1), copy, ...groups.slice(i + 1)]);
   };
   const [editing, setEditing] = useState<LinkGroup | null>(null);
+  const newRequested = useLinkGroupsUiStore((st) => st.newRequested);
+  useEffect(() => {
+    if (!newRequested) return;
+    useLinkGroupsUiStore.getState().clearNew();
+    setEditing(emptyGroup());
+  }, [newRequested]);
 
   const taskOptions = useMemo(() => taskFieldOptions(model), [model]);
   // The object properties to pick from: all but those hidden on the Properties tab (Show / hide properties),
@@ -107,15 +131,6 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
     return { byGroup, totalTasks: tasks.size, totalObjects: objects.size };
   }, [model, elements, groups]);
 
-  const handleExportMatches = () => {
-    const rows = buildMatchExportRows(model, elements, groups);
-    downloadCsv(
-      'link-group-matches.csv',
-      ['Group', 'Activity ID', 'Activity Name', 'Element GUID', 'Element Name', 'Element Category', 'Matched On'],
-      rows.map((r) => [r.group, r.activityId, r.activityName, r.elementGuid, r.elementName, r.elementCategory, r.matchedOn]),
-    );
-  };
-
   if (editing) {
     return (
       <GroupEditor
@@ -143,14 +158,6 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
 
   return (
     <div>
-      <div style={{ padding: '4px 8px', display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-        <button className="btn primary" onClick={() => setEditing(emptyGroup())}>
-          + New Group
-        </button>
-        <button className="btn" onClick={handleExportMatches} title="Export the matched task/object pairs and which fields matched them">
-          Export matches (CSV)
-        </button>
-      </div>
       {groups.length === 0 && <div style={{ padding: '8px', color: 'var(--text-dim)' }}>No groups yet. A group filters tasks and objects, then pairs them by matching field values.</div>}
       {groups.length > 0 && (
         <table className="seq-grid">

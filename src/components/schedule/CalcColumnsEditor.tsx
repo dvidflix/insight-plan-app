@@ -1,7 +1,7 @@
 import { useMemo, useRef, useState } from 'react';
 import type { ColumnDef } from '../../schedule/columns';
 import { buildColumnContext } from '../../schedule/columns';
-import { calcColumnDefs, compileFormula, numericColumns, useCalcColumnsStore, type CalcColumn } from '../../schedule/calculatedColumns';
+import { COMPUTED_DURATION, calcColumnDefs, compileFormula, numericColumns, useCalcColumnsStore, type CalcColumn } from '../../schedule/calculatedColumns';
 import { useActiveSchedule } from '../../state/scheduleStore';
 import { IconPencil } from '../icons';
 import { InfoTip } from '../InfoTip';
@@ -56,8 +56,9 @@ export function CalcColumnsEditor({ catalog }: { catalog: ColumnDef[] }) {
         <button type="button" className="calc-cols__toggle" aria-expanded={open} onClick={() => setOpen(!open)}>
           Calculated columns <b>{columns.length}</b>
         </button>
-        <InfoTip>A column worked out from a formula over the numeric columns, for example <code>[Rebar (t) (units)] / [Original Duration (h)]</code> for tonnes per hour. Use [Column name] as in the list below, numbers, + - * / ^, brackets, and ABS, ROUND, MIN, MAX. Rows where a used column is empty show nothing. Once saved, tick it under “Calculated” in the list below.</InfoTip>
+        <InfoTip>A column worked out from a formula over the numeric columns, for example <code>[Rebar (t) (units)] / [Original Duration (h)]</code> for tonnes per hour. Use [Column name] as in the list below, numbers, + - * / ^, brackets, and ABS, ROUND, CEIL (round up to the next multiple: <code>CEIL(x, 1)</code>), MIN, MAX. Rows where a used column is empty show nothing. Once saved, tick it under “Calculated” in the list below.</InfoTip>
         <button type="button" className="cols__link" onClick={() => { setOpen(true); setDraft({ id: newId(), ...EXAMPLE }); }}>+ New</button>
+        <button type="button" className="cols__link" title="Duration in days from the rebar quantity (SF-003): quantity × 75 Mh/t ÷ (12 men × 2 shifts × 9.17 h). Edit the resource name and crew in the formula to suit, then Save." onClick={() => { setOpen(true); setDraft(columns.find((c) => c.id === COMPUTED_DURATION.id) ?? COMPUTED_DURATION); }}>+ Computed duration</button>
       </div>
       {open && (
         <>

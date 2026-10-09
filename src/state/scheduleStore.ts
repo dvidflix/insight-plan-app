@@ -5,6 +5,7 @@ import { mergeSchedules } from '../schedule/mergeSchedules';
 import { programmeKey, useUnloadedWbsStore, withoutUnloaded } from './unloadedWbsStore';
 import { markChoiceMade, nextChoice, useProgrammeChoiceStore } from './programmeChoiceStore';
 import { useRetiredTasksStore, withoutRetired } from './retiredTasksStore';
+import { useActivityOverridesStore, withOverrides } from './activityOverridesStore';
 
 interface ScheduleState {
   schedules: ScheduleModel[];
@@ -110,10 +111,13 @@ export function useVisibleSchedules(): ScheduleModel[] {
   const hiddenScheduleIds = useScheduleStore((s) => s.hiddenScheduleIds);
   const unloaded = useUnloadedWbsStore((s) => s.byProgramme);
   const retired = useRetiredTasksStore((s) => s.codes);
+  const overrides = useActivityOverridesStore((s) => s.byProgramme);
+  const linkEdits = useActivityOverridesStore((s) => s.links);
   // Programmes with WBS branches unloaded (Programmes › WBS) lose those activities everywhere; so do the tasks retired in SeaTable.
+  // The edits of Programmes › Bulk edit are applied on top of every programme, imported or generated.
   return useMemo(
-    () => schedules.filter((m) => !hiddenScheduleIds.has(m.id)).map((m) => withoutRetired(withoutUnloaded(m, unloaded[programmeKey(m)] ?? []), retired)),
-    [schedules, hiddenScheduleIds, unloaded, retired],
+    () => schedules.filter((m) => !hiddenScheduleIds.has(m.id)).map((m) => withoutRetired(withoutUnloaded(withOverrides(m, overrides[programmeKey(m)], linkEdits[programmeKey(m)]), unloaded[programmeKey(m)] ?? []), retired)),
+    [schedules, hiddenScheduleIds, unloaded, retired, overrides, linkEdits],
   );
 }
 

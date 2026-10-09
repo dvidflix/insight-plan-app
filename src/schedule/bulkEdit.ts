@@ -27,6 +27,8 @@ export type BulkAction =
   | { kind: 'replace'; find: string; replaceWith: string; matchCase: boolean }
   | { kind: 'shift'; days: number; includeActuals: boolean }
   | { kind: 'duration'; mode: 'set' | 'scale'; value: number }
+  /** Original Duration from a numeric column of the table, read in days (e.g. a calculated column). */
+  | { kind: 'durationFrom'; column: string }
   | { kind: 'constraint'; type: string; date: string }
   | { kind: 'calendar'; calendarId: string };
 
@@ -95,7 +97,7 @@ export function fillTemplate(template: string, a: Activity): string {
 const escapeRegex = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** The change `action` makes to one activity, or null when it leaves it as it is. */
-function changeFor(a: Activity, action: BulkAction, calendarName: (id: string | null) => string): BulkChange | null {
+function changeFor(a: Activity, action: BulkAction, calendarName: (id: string | null) => string, valueOf: (a: Activity, fieldId: string) => number | null): BulkChange | null {
   const base = { id: a.id, code: a.code, name: a.name };
   switch (action.kind) {
     case 'setField': {
@@ -135,6 +137,14 @@ function changeFor(a: Activity, action: BulkAction, calendarName: (id: string | 
       if (rounded === a.durationHours) return null;
       return { ...base, what: 'Duration (d)', before: String(a.durationHours / 8), after: String(rounded / 8), patch: { durationHours: rounded, remainingDurationHours: rounded } };
     }
+    case 'durationFrom': {
+      if (a.status !== 'not-started' || a.type === 'milestone-start' || a.type === 'milestone-finish') return null;
+      const days = valueOf(a, action.column);
+      if (days === null || !Number.isFinite(days) || days < 0) return null;
+      const rounded = Math.round(days * 8 * 4) / 4;
+      if (rounded === a.durationHours) return null;
+      return { ...base, what: 'Original duration (d)', before: String(a.durationHours / 8), after: String(rounded / 8), patch: { durationHours: rounded, remainingDurationHours: rounded } };
+    }
     case 'constraint': {
       const date = action.date ? new Date(`${action.date}T00:00:00`) : null;
       const type = action.type || null;
@@ -159,17 +169,21 @@ export function planBulkEdit(
   action: BulkAction,
   textOf: (a: Activity, fieldId: string) => string,
   calendarName: (id: string | null) => string,
+  valueOf: (a: Activity, fieldId: string) => number | null = () => null,
+  /** When given, only these activities (by id) are picked, whatever the rules say: the ones selected in the table. */
+  onlyIds?: ReadonlySet<string>,
 ): { picked: number; changes: BulkChange[] } {
   const active = rules.filter((r) => r.field && (r.op === 'empty' || r.op === 'notEmpty' || r.value !== ''));
   const picked = activities.filter((a) => {
     if (a.type === 'wbs-summary') return false;
+    if (onlyIds) return onlyIds.has(a.id);
     if (active.length === 0) return true;
     const hit = (r: BulkRule) => ruleMatches(r, textOf(a, r.field));
     return match === 'all' ? active.every(hit) : active.some(hit);
   });
   const changes: BulkChange[] = [];
   for (const a of picked) {
-    const c = changeFor(a, action, calendarName);
+    const c = changeFor(a, action, calendarName, valueOf);
     if (c) changes.push(c);
   }
   return { picked: picked.length, changes };

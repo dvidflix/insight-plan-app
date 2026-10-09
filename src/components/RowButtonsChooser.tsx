@@ -13,8 +13,24 @@ export interface RowButtonDef<Id extends string> {
   label: string;
 }
 
+/** The chooser can sit apart from its list (e.g. in a section header): every use of the same key hears a change at once. */
+const ROW_BUTTONS_EVENT = 'ip-row-buttons';
+
 export function useRowButtons<Id extends string>(storageKey: string) {
-  const [hidden, setHidden] = usePersistedState<Id[]>(storageKey, []);
+  const [hidden, setHiddenOwn] = usePersistedState<Id[]>(storageKey, []);
+  useEffect(() => {
+    const onChange = (e: Event) => {
+      const d = (e as CustomEvent<{ key: string; value: Id[] }>).detail;
+      if (d.key === storageKey) setHiddenOwn(d.value);
+    };
+    window.addEventListener(ROW_BUTTONS_EVENT, onChange);
+    return () => window.removeEventListener(ROW_BUTTONS_EVENT, onChange);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [storageKey]);
+  const setHidden = (v: Id[]) => {
+    setHiddenOwn(v);
+    window.dispatchEvent(new CustomEvent(ROW_BUTTONS_EVENT, { detail: { key: storageKey, value: v } }));
+  };
   return { hidden, setHidden, shown: (id: Id) => !hidden.includes(id) };
 }
 

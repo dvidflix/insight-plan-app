@@ -7,12 +7,17 @@ import { fmtDate } from '../../schedule/reports';
 import { useModelsStore } from '../../state/modelsStore';
 import { useLinkGroupsStore } from '../../state/linkGroupsStore';
 import { useClashStore } from '../../state/clashStore';
-import { IconDriver } from '../icons';
+import { IconDriver, IconPencil } from '../icons';
+import { useVisibleSchedules } from '../../state/scheduleStore';
+import { programmeKey } from '../../state/unloadedWbsStore';
+import { useActivityOverridesStore } from '../../state/activityOverridesStore';
+import { reaches } from '../../schedule/linkShortcuts';
 import { ResizeHandle, useResizableWidth } from '../ResizeHandle';
 
 const days = (hours: number) => Math.round((hours / 8) * 10) / 10;
 
 type Kind = 'predecessor' | 'successor';
+const REL_TYPES = ['FS', 'SS', 'FF', 'SF'] as const;
 type SortKey = 'driving' | 'id' | 'link' | 'name' | 'start' | 'finish' | 'dur' | 'float' | 'relation';
 interface Sort { key: SortKey; dir: 1 | -1 }
 
@@ -75,6 +80,46 @@ export function LinksPane({ activity, model, height, onSelect }: {
   onSelect: (activity: Activity) => void;
 }) {
   const split = useResizableWidth('schedule.linksSplit', 820, 320, 2400);
+
+  // ---- Editing the links: the pencil makes the type and lag editable, lets a link be taken out and another added. Edits are
+  // kept with the project on top of the programme (imported or generated), matched by Activity ID, so they survive re-importing.
+  const visible = useVisibleSchedules();
+  const linkEdits = useActivityOverridesStore((s) => s.links);
+  const origin = useMemo(() => {
+    const own = visible.length === 1 ? visible[0] : visible.find((v) => activity.id.startsWith(`${v.id}:`));
+    return own ? programmeKey(own) : null;
+  }, [visible, activity.id]);
+  const [editing, setEditing] = useState(false);
+  const [note, setNote] = useState<string | null>(null);
+  const [add, setAdd] = useState<Record<Kind, { code: string; type: (typeof REL_TYPES)[number]; lag: string }>>({
+    predecessor: { code: '', type: 'FS', lag: '0' },
+    successor: { code: '', type: 'FS', lag: '0' },
+  });
+  const codeOf = (id: string) => model.activities.find((a) => a.id === id)?.code ?? id;
+  const changed = origin !== null && (linkEdits[origin] ?? []).some((o) => o.pred === activity.code.toUpperCase() || o.succ === activity.code.toUpperCase());
+  const setLink = (rel: Relationship, patch: { type?: Relationship['type']; lagHours?: number }) => {
+    if (origin !== null) useActivityOverridesStore.getState().setLink(origin, { op: 'set', pred: codeOf(rel.predId), succ: codeOf(rel.succId), ...patch });
+  };
+  const removeLink = (rel: Relationship) => {
+    if (origin !== null) useActivityOverridesStore.getState().setLink(origin, { op: 'remove', pred: codeOf(rel.predId), succ: codeOf(rel.succId) });
+  };
+  const addLink = (kind: Kind) => {
+    const d = add[kind];
+    const other = model.activities.find((a) => a.code.toLowerCase() === d.code.trim().toLowerCase());
+    if (origin === null) return;
+    if (!other || other.id === activity.id) return setNote(other ? 'A link needs two different activities.' : `No activity with the ID "${d.code.trim()}".`);
+    const pred = kind === 'predecessor' ? other : activity;
+    const succ = kind === 'predecessor' ? activity : other;
+    if (reaches(model, succ.id, pred.id, [])) return setNote(`${pred.code} → ${succ.code} would make a loop (${succ.code} already leads to ${pred.code}).`);
+    const lag = Number(d.lag);
+    useActivityOverridesStore.getState().setLink(origin, { op: 'add', pred: pred.code, succ: succ.code, type: d.type, lagHours: Number.isFinite(lag) ? Math.round(lag * 8 * 4) / 4 : 0 });
+    setAdd((s) => ({ ...s, [kind]: { ...s[kind], code: '' } }));
+    setNote(`Linked ${pred.code} → ${succ.code} (${d.type}).`);
+  };
+  const resetLinks = () => {
+    if (origin !== null) useActivityOverridesStore.getState().resetLinks(origin, [activity.code]);
+    setNote('The links of this activity are back as in the imported or generated programme.');
+  };
   const [sorts, setSorts] = useState<Record<Kind, Sort | null>>({ predecessor: null, successor: null });
 
   const loadedModels = useModelsStore((s) => s.models);
@@ -140,12 +185,24 @@ export function LinksPane({ activity, model, height, onSelect }: {
     const rows = sortRows(rowsOf[kind], sort);
     return (
       <div className="links-pane__half" style={style}>
-        <div className="links-pane__title">{title} ({rows.length}) <span className="scn-dim" style={{ fontWeight: 400 }}>· {activity.code}</span></div>
+        <div className="links-pane__title">
+          {title} ({rows.length}) <span className="scn-dim" style={{ fontWeight: 400 }}>· {activity.code}</span>
+          {kind === 'successor' && (
+            <span style={{ float: 'right', display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              {note && editing && <span className="scn-dim" style={{ fontWeight: 400 }}>{note}</span>}
+              {changed && editing && <button type="button" className="mini-btn" onClick={resetLinks} title="Put this activity's links back as in the imported or generated programme">Reset links</button>}
+              <button type="button" className={`mini-btn mini-btn--icon${editing ? ' is-on' : ''}`} disabled={origin === null} aria-pressed={editing} aria-label="Edit links" title={editing ? 'Stop editing the links' : 'Edit the links: type, lag, take one out, add one'} onClick={() => { setEditing(!editing); setNote(null); }}>
+                <IconPencil />
+              </button>
+            </span>
+          )}
+        </div>
         <div className="links-pane__scroll">
           {rows.length ? (
             <table>
               <thead>
                 <tr>
+                  {editing && <th aria-label="Remove" />}
                   {COLUMNS.map((c) => (
                     <th key={c.key} title={c.title} className="links-pane__sortable" aria-sort={sort?.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'} onClick={() => toggleSort(kind, c.key)}>
                       {c.key === 'driving' ? <IconDriver width={13} height={13} /> : c.label}{sort?.key === c.key ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}
@@ -159,9 +216,19 @@ export function LinksPane({ activity, model, height, onSelect }: {
                   const other = r.other;
                   return (
                     <tr key={`${r.rel.predId}>${r.rel.succId}:${r.rel.type}:${r.rel.lagHours}:${ri}`}>
+                      {editing && <td><button type="button" className="cols__icon cols__icon--remove" onClick={() => removeLink(r.rel)} aria-label="Take this link out" title="Take this link out">✕</button></td>}
                       <td>{r.driving && <span className="ad-driver" title="Driving: its date sets the start of the later activity"><IconDriver width={14} height={14} /></span>}</td>
                       <td>{other ? <button type="button" className="link-btn" onClick={() => onSelect(other)} title={`Go to ${other.code}`}>{other.code}</button> : (kind === 'predecessor' ? r.rel.predId : r.rel.succId)}</td>
-                      <td>{r.rel.type}{lag ? ` ${lag > 0 ? '+' : ''}${lag}d` : ''}</td>
+                      <td>
+                        {editing ? (
+                          <span style={{ display: 'inline-flex', gap: 3 }}>
+                            <select className="lp-edit" value={r.rel.type} onChange={(e) => setLink(r.rel, { type: e.target.value as Relationship['type'] })} aria-label="Link type">
+                              {REL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                            </select>
+                            <input className="lp-edit lp-edit--lag" type="number" step="0.25" defaultValue={lag} key={`${r.rel.lagHours}`} onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && Math.round(v * 8 * 4) / 4 !== r.rel.lagHours) setLink(r.rel, { lagHours: Math.round(v * 8 * 4) / 4 }); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label="Lag in days" title="Lag in days" />
+                          </span>
+                        ) : `${r.rel.type}${lag ? ` ${lag > 0 ? '+' : ''}${lag}d` : ''}`}
+                      </td>
                       <td className="links-pane__name" title={other?.name}>{other?.name ?? ''}</td>
                       <td>{fmtDate(other?.earlyStart ?? other?.targetStart)}</td>
                       <td>{fmtDate(other?.earlyFinish ?? other?.targetFinish)}</td>
@@ -174,6 +241,16 @@ export function LinksPane({ activity, model, height, onSelect }: {
               </tbody>
             </table>
           ) : <div className="scn-dim" style={{ padding: 10 }}>None.</div>}
+          {editing && (
+            <div className="ad-edit-bar" style={{ position: 'sticky', left: 0 }}>
+              <input className="lp-edit" style={{ width: 150 }} list="links-pane-codes" placeholder={kind === 'predecessor' ? 'Predecessor ID…' : 'Successor ID…'} value={add[kind].code} onChange={(e) => setAdd((s) => ({ ...s, [kind]: { ...s[kind], code: e.target.value } }))} onKeyDown={(e) => { if (e.key === 'Enter') addLink(kind); }} aria-label={`Activity ID to add as a ${kind}`} />
+              <select className="lp-edit" style={{ width: 54 }} value={add[kind].type} onChange={(e) => setAdd((s) => ({ ...s, [kind]: { ...s[kind], type: e.target.value as (typeof REL_TYPES)[number] } }))} aria-label="Link type">
+                {REL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+              <input className="lp-edit" style={{ width: 54 }} type="number" step="0.25" value={add[kind].lag} onChange={(e) => setAdd((s) => ({ ...s, [kind]: { ...s[kind], lag: e.target.value } }))} aria-label="Lag in days" title="Lag in days" />
+              <button type="button" className="btn btn--small" onClick={() => addLink(kind)} disabled={!add[kind].code.trim()}>+ Add</button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -181,6 +258,7 @@ export function LinksPane({ activity, model, height, onSelect }: {
 
   return (
     <div className="links-pane" style={{ height }}>
+      <datalist id="links-pane-codes">{editing && model.activities.slice(0, 20000).map((a) => <option key={a.id} value={a.code}>{a.name}</option>)}</datalist>
       {half('predecessor', 'Predecessors', { flex: '0 1 auto', width: split.width })}
       <ResizeHandle onMouseDown={split.startDrag(false)} />
       {half('successor', 'Successors', { flex: '1 1 0', minWidth: 200 })}

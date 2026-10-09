@@ -5,7 +5,7 @@ import { useSequenceLabelStore, type LabelPosition } from '../../state/sequenceL
 import { useTagsStore } from '../../state/tagsStore';
 import { useAppearanceKeyStore } from '../../state/appearanceKeyStore';
 import { TagEditor } from './TagEditor';
-import { IconPencil } from '../icons';
+import { IconAddCircleOutline, IconPencil } from '../icons';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
 import { scheduleRange } from '../../schedule/linking';
 import { alignDown, nextBoundary } from '../../schedule/period';
@@ -74,6 +74,14 @@ export function LabelPanel() {
         title="Tags"
         open={sections.isOpen('tags')}
         onToggle={() => sections.toggle('tags')}
+        flush
+        actions={
+          !editing && (
+            <button type="button" className="mini-btn mini-btn--icon" onClick={() => { if (!sections.isOpen('tags')) sections.toggle('tags'); setEditingId(addTag()); }} title="New tag" aria-label="New tag">
+              <IconAddCircleOutline width={20} height={20} />
+            </button>
+          )
+        }
         tip={
           <>
             <p>A tag is a label shown while a Link Group that uses it has an active task. Build it from task fields, properties of the linked objects and your own text; pick the tag in the group's editor (you can also create one there).</p>
@@ -82,13 +90,13 @@ export function LabelPanel() {
           </>
         }
       >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div className="segmented-choice">
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 0 0' }}>
+      <div className="segmented-choice" style={{ margin: '0 12px' }}>
         <button type="button" className={placement === 'corner' ? 'active' : ''} onClick={() => setPlacement('corner')}>Bottom corner</button>
         <button type="button" className={placement === 'objects' ? 'active' : ''} onClick={() => setPlacement('objects')}>Next to objects</button>
       </div>
       {editing ? (
-        <>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 10px' }}>
           <TagEditor
             tag={editing}
             onChange={(patch) => updateTag(editing.id, patch)}
@@ -99,11 +107,10 @@ export function LabelPanel() {
             }}
           />
           <button type="button" className="btn btn--small" onClick={() => setEditingId(null)} style={{ alignSelf: 'flex-start' }}>Done</button>
-        </>
+        </div>
       ) : (
         <>
-          <button type="button" className="btn primary" onClick={() => setEditingId(addTag())} style={{ alignSelf: 'flex-start' }}>+ New Tag</button>
-          {tags.length === 0 && <div style={{ color: 'var(--text-dim)' }}>No tags yet.</div>}
+          {tags.length === 0 && <div style={{ color: 'var(--text-dim)', padding: '0 12px 10px' }}>No tags yet. Use the + above.</div>}
           {tags.length > 0 && (
             <table className="seq-grid">
               <thead>
@@ -117,7 +124,7 @@ export function LabelPanel() {
                 {tags.map((t) => (
                   <tr key={t.id}>
                     <td className="seq-grid__name" title="Click to edit" onClick={() => setEditingId(t.id)} style={{ fontWeight: t.bold ? 700 : undefined, fontStyle: t.italic ? 'italic' : undefined }}>{t.name}</td>
-                    <td style={{ maxWidth: 120, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-dim)' }} title={t.template}>{t.template}</td>
+                    <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-dim)' }} title={t.template}>{t.template}</td>
                     <td className="seq-grid__actions">
                       <button type="button" title="Edit" aria-label="Edit" onClick={() => setEditingId(t.id)}><IconPencil /></button>
                     </td>
@@ -131,14 +138,17 @@ export function LabelPanel() {
       </div>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Appearance key" open={sections.isOpen('key')} onToggle={() => sections.toggle('key')}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} title="A key of the Appearance profiles used by the Link Groups: a swatch (active | complete) and the profile's name">
-          <span>Show key on viewer</span>
-          <button type="button" role="switch" aria-checked={keyOn} className={`switch${keyOn ? ' on' : ''}`} onClick={() => setKeyOn(!keyOn)}>
+      <CollapsibleSection
+        title="Appearance key"
+        open={sections.isOpen('key')}
+        onToggle={() => sections.toggle('key')}
+        actions={
+          <button type="button" role="switch" aria-checked={keyOn} aria-label="Show key on viewer" title="Show key on viewer" className={`switch${keyOn ? ' on' : ''}`} onClick={() => setKeyOn(!keyOn)}>
             <span className="switch__thumb" />
           </button>
-        </div>
+        }
+      >
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 4 }}>Position</div>
           <div className="label-position-grid">
@@ -159,15 +169,17 @@ export function LabelPanel() {
       </div>
       </CollapsibleSection>
 
-      <CollapsibleSection title="Date label" open={sections.isOpen('date')} onToggle={() => sections.toggle('date')}>
+      <CollapsibleSection
+        title="Date label"
+        open={sections.isOpen('date')}
+        onToggle={() => sections.toggle('date')}
+        actions={
+          <button type="button" role="switch" aria-checked={enabled} aria-label="Show label on viewer" title="Show label on viewer" className={`switch${enabled ? ' on' : ''}`} onClick={() => setEnabled(!enabled)}>
+            <span className="switch__thumb" />
+          </button>
+        }
+      >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-        <span>Show label on viewer</span>
-        <button type="button" role="switch" aria-checked={enabled} className={`switch${enabled ? ' on' : ''}`} onClick={() => setEnabled(!enabled)}>
-          <span className="switch__thumb" />
-        </button>
-      </div>
-
       <div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 4 }}>Position</div>
         <div className="label-position-grid">

@@ -423,11 +423,12 @@ function InputsPage() {
   // The columns shown, in order: the list's own and the details read from SeaTable.
   const shownColumns = columns.filter((c) => DEFAULT_INPUT_COLUMNS.includes(c) || detailFields.includes(c));
   const tableStyle = useInputsTableStyle(shownColumns);
-  // The filters of the side pane's Filters tab keep only some of the files.
+  // The filters of the side pane's Filters tab keep only some of the files, plus the open ones (loaded and not hidden), so a filter never takes an open file out of the list.
   const filters = useInputDetailsStore((s) => s.filters);
+  const isOpenRow = (r: InputRow) => !r.unloaded && !r.hidden && (r.kind !== 'programme' || !!r.programme?.schedule);
   const formatOfRow = (r: InputRow) => (r.programme?.db?.sourceFormat ?? /\.([a-z0-9]+)$/i.exec(r.name)?.[1] ?? '').toUpperCase();
   const visibleRows = useMemo(
-    () => (Object.keys(filters).length === 0 ? rows : rows.filter((r) => passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, filters, detailValues))),
+    () => (Object.keys(filters).length === 0 ? rows : rows.filter((r) => isOpenRow(r) || passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, filters, detailValues))),
     [rows, filters, detailValues],
   );
   // Groups, outermost level first.

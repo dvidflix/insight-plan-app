@@ -59,6 +59,7 @@ const NOT_LAYOUT = new Set([
   'schedule.unloadedWbs',
   'schedule.autoLinks',
   'schedule.calcColumns',
+  'schedule.activityOverrides',
 ]);
 
 /** Which part of a scene a browser key belongs to (exported for the tests). */

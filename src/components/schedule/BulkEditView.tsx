@@ -1,9 +1,13 @@
 import { useMemo, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
-import { buildColumnContext, buildColumns } from '../../schedule/columns';
+import { buildColumnContext } from '../../schedule/columns';
+import { useColumnCatalog } from '../../schedule/calculatedColumns';
 import { CONSTRAINT_TYPES, RULE_OPS, planBulkEdit, type BulkAction, type BulkRule, type RuleOp } from '../../schedule/bulkEdit';
 import { exportScheduleXlsx } from '../../schedule/exportXlsx';
-import { useScheduleStore, useVisibleSchedules } from '../../state/scheduleStore';
+import { useVisibleSchedules } from '../../state/scheduleStore';
+import { programmeKey } from '../../state/unloadedWbsStore';
+import { overrideCount, useActivityOverridesStore } from '../../state/activityOverridesStore';
+import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { newId } from '../../schedule/linkGroups';
 import { Section, Tiles } from '../reports/ReportParts';
 
@@ -13,27 +17,30 @@ const KINDS: { value: Kind; label: string }[] = [
   { value: 'replace', label: 'Find and replace in the name' },
   { value: 'shift', label: 'Shift dates' },
   { value: 'duration', label: 'Change durations' },
+  { value: 'durationFrom', label: 'Original duration from a column' },
   { value: 'constraint', label: 'Set a constraint' },
   { value: 'calendar', label: 'Set the calendar' },
 ];
 const PREVIEW_ROWS = 100;
 
-/** Programmes > Bulk edit: pick activities with rules, choose one change, check the
-    preview, then apply it to all of them. The edit is kept in the app (undo it with
-    one click; download the result as Excel). A programme read from the project
-    database is not written back. */
+/** Programmes > Bulk edit: pick activities (with rules, or the ones selected in the table), choose one change, check the
+    preview, then apply it to all of them. Edits are kept with the project on top of the programme, imported or generated,
+    so re-importing or regenerating it does not lose them; dates and float are calculated again from the links. Undo the
+    last edit with one click, reset them all, or download the result as Excel. */
 export function BulkEditView({ model }: { model: ScheduleModel }) {
   const visible = useVisibleSchedules();
-  const patchActivities = useScheduleStore((s) => s.patchActivities);
-  const restoreActivities = useScheduleStore((s) => s.restoreActivities);
+  const overrides = useActivityOverridesStore((s) => s.byProgramme);
+  const selectedIds = useActivitySelectionStore((s) => s.ids);
 
-  const catalog = useMemo(() => buildColumns(model), [model]);
+  const catalog = useColumnCatalog(model);
   const ctx = useMemo(() => buildColumnContext(model), [model]);
   const columnById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
   const calendarName = (id: string | null) => (id ? ctx.calendarNameById[id] ?? id : '');
 
   const [rules, setRules] = useState<BulkRule[]>([{ id: newId(), field: 'name', op: 'contains', value: '' }]);
   const [match, setMatch] = useState<'all' | 'any'>('all');
+  const [source, setSource] = useState<'rules' | 'selected'>('rules');
+  const [fromColumn, setFromColumn] = useState('calc:computed-duration-up');
   const [kind, setKind] = useState<Kind>('setField');
   const [field, setField] = useState('CWA-Methods Break Down');
   const [template, setTemplate] = useState('{wbsName}');
@@ -47,7 +54,7 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
   const [conType, setConType] = useState('CS_MSOA');
   const [conDate, setConDate] = useState('');
   const [calendarId, setCalendarId] = useState('');
-  const [undo, setUndo] = useState<Map<string, Activity[]> | null>(null);
+  const [undo, setUndo] = useState<ReturnType<typeof useActivityOverridesStore.getState>['byProgramme'] | null>(null);
   const [message, setMessage] = useState<string | null>(null);
 
   const action: BulkAction =
@@ -55,13 +62,14 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
     : kind === 'replace' ? { kind, find, replaceWith, matchCase }
     : kind === 'shift' ? { kind, days, includeActuals }
     : kind === 'duration' ? { kind, mode: durMode, value: durValue }
+    : kind === 'durationFrom' ? { kind, column: fromColumn }
     : kind === 'constraint' ? { kind, type: conType, date: conDate }
     : { kind, calendarId };
 
   const plan = useMemo(
-    () => planBulkEdit(model.activities, rules, match, action, (a, id) => columnById.get(id)?.text(a, ctx) ?? '', calendarName),
+    () => planBulkEdit(model.activities, rules, match, action, (a, id) => columnById.get(id)?.text(a, ctx) ?? '', calendarName, (a, id) => columnById.get(id)?.value?.(a, ctx) ?? null, source === 'selected' ? selectedIds : undefined),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [model, rules, match, kind, field, template, find, replaceWith, matchCase, days, includeActuals, durMode, durValue, conType, conDate, calendarId, columnById, ctx],
+    [model, rules, match, source, selectedIds, fromColumn, kind, field, template, find, replaceWith, matchCase, days, includeActuals, durMode, durValue, conType, conDate, calendarId, columnById, ctx],
   );
 
   /** A row of the (possibly combined) display model back to its programme and own id. */
@@ -72,23 +80,34 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
   };
 
   const apply = () => {
+    // Per programme: Activity ID -> the fields changed.
     const bySchedule = new Map<string, Map<string, Partial<Activity>>>();
     for (const c of plan.changes) {
       const o = originOf(c.id);
-      if (!o) continue;
-      (bySchedule.get(o.scheduleId) ?? bySchedule.set(o.scheduleId, new Map()).get(o.scheduleId)!).set(o.id, c.patch);
+      const m = o && visible.find((v) => v.id === o.scheduleId);
+      if (!m) continue;
+      const key = programmeKey(m);
+      (bySchedule.get(key) ?? bySchedule.set(key, new Map()).get(key)!).set(c.code, c.patch);
     }
-    // Remember the activities as they are now, to undo.
-    setUndo(new Map([...bySchedule.keys()].map((id) => [id, visible.find((v) => v.id === id)!.activities])));
-    patchActivities(bySchedule);
-    setMessage(`Changed ${plan.changes.length} activities. Undo puts them back; Download Excel keeps the result.`);
+    // Remember the edits as they are now, to undo.
+    setUndo(useActivityOverridesStore.getState().byProgramme);
+    for (const [key, edits] of bySchedule) useActivityOverridesStore.getState().set(key, edits);
+    setMessage(`Changed ${plan.changes.length} activities, kept with the project. Undo puts them back; Reset all edits clears every edit of this programme.`);
   };
 
   const revert = () => {
     if (!undo) return;
-    restoreActivities(undo);
+    useActivityOverridesStore.setState({ byProgramme: undo });
     setUndo(null);
     setMessage('Back as it was before the last bulk edit.');
+  };
+
+  const editCount = visible.reduce((n, m) => n + overrideCount(overrides, programmeKey(m)), 0);
+  const resetAll = () => {
+    if (!window.confirm(`Remove all ${editCount} edited activities of ${visible.length === 1 ? 'this programme' : 'these programmes'}? Their original values come back.`)) return;
+    setUndo(useActivityOverridesStore.getState().byProgramme);
+    for (const m of visible) useActivityOverridesStore.getState().reset(programmeKey(m));
+    setMessage('All edits removed: the programme is as it was imported or generated.');
   };
 
   const setRule = (id: string, patch: Partial<BulkRule>) => setRules((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
@@ -103,11 +122,21 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
               <h2 className="report-header__title">Bulk edit</h2>
               <button type="button" className="checks-export-btn report-header__export" onClick={() => exportScheduleXlsx(model, 'programme-edited.xlsx')}>Download Excel</button>
             </div>
-            <div className="report-header__desc">Edits stay in the app · a programme from the project database is not written back · {model.project.name}</div>
+            <div className="report-header__desc">Edits are kept with the project on top of the programme (they survive re-importing or regenerating it) · {model.project.name} · {editCount} edited {editCount === 1 ? 'activity' : 'activities'}</div>
           </div>
 
           <Section title="1. Which activities">
             <div className="report-filters" style={{ alignItems: 'center' }}>
+              <label className="report-filter">
+                <span>Pick by</span>
+                <select value={source} onChange={(e) => setSource(e.target.value as 'rules' | 'selected')}>
+                  <option value="rules">rules</option>
+                  <option value="selected">the activities selected in the table / Gantt ({selectedIds.size})</option>
+                </select>
+              </label>
+            </div>
+            {source === 'selected' && <div className="report-table__footnote">Click rows in the Table or Gantt (Ctrl+click to add, Shift+click for a range) and come back here: the change applies only to them.</div>}
+            {source === 'rules' && <><div className="report-filters" style={{ alignItems: 'center' }}>
               <label className="report-filter">
                 <span>Match</span>
                 <select value={match} onChange={(e) => setMatch(e.target.value as 'all' | 'any')}>
@@ -130,7 +159,7 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
                 )}
                 {rules.length > 1 && <button type="button" className="report-toggle" onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))} aria-label="Remove the rule">✕</button>}
               </div>
-            ))}
+            ))}</>}
           </Section>
 
           <Section title="2. What to change">
@@ -196,7 +225,17 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
                 </label>
               )}
             </div>
-            {kind === 'duration' && <div className="report-table__footnote">Only activities not started yet change; started and finished ones keep their durations.</div>}
+            {kind === 'durationFrom' && (
+              <div className="report-filters" style={{ alignItems: 'center' }}>
+                <label className="report-filter">
+                  <span>Column (in days)</span>
+                  <select value={fromColumn} onChange={(e) => setFromColumn(e.target.value)}>
+                    {catalog.filter((c) => c.value).sort((a, b) => Number(b.group === 'Calculated') - Number(a.group === 'Calculated')).map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                  </select>
+                </label>
+              </div>
+            )}
+            {(kind === 'duration' || kind === 'durationFrom') && <div className="report-table__footnote">Only activities not started yet change; started and finished ones keep their durations.</div>}
           </Section>
 
           <Section title="3. Preview">
@@ -207,6 +246,7 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
             <div className="report-filters" style={{ alignItems: 'center' }}>
               <button type="button" className="report-toggle active" disabled={plan.changes.length === 0} onClick={apply}>Apply to {plan.changes.length} activities</button>
               <button type="button" className="report-toggle" disabled={!undo} onClick={revert}>Undo the last edit</button>
+              <button type="button" className="report-toggle" disabled={editCount === 0} onClick={resetAll}>Reset all edits ({editCount})</button>
               {message && <span className="report-filters__summary">{message}</span>}
             </div>
             <div className="report-table">

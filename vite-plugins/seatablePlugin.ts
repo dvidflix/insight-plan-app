@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { Plugin } from 'vite';
 import { HttpError, readBody, send, sendError } from './http';
+import { WIKI_DIR } from './wiki';
 
 /** Dev-server bridge to SeaTable (the local Docker instance in C:\insight-stack): the model
     elements go into its "Elements" table, and the columns its users add come back as custom
@@ -421,6 +422,131 @@ async function pushRetired(list: { taskId: string; name?: string; reason?: strin
   return { added: rows.length, skipped };
 }
 
+// ---- assumptions (table "Assumptions" of the Files base) ----
+//   The Wiki is the source: the tables of docs/wiki/assumptions/*.md whose header starts with "Ref" (ASM-nnn). A push
+//   copies them into SeaTable, keyed by Ref: rows are updated or added, never deleted. SeaTable's own edits do not come back.
+const ASSUMPTIONS = 'Assumptions';
+const ASSUMPTION_COLUMNS = ['Page', 'Project', 'Category', 'Item', 'Value', 'Unit', 'Type', 'Source', 'Last pushed'];
+
+function readAssumptions(): Record<string, string>[] {
+  const dir = path.join(WIKI_DIR, 'assumptions');
+  const out: Record<string, string>[] = [];
+  const seen = new Set<string>();
+  for (const file of fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md')).sort() : []) {
+    let header: string[] | null = null;
+    for (const line of fs.readFileSync(path.join(dir, file), 'utf8').split(/\r?\n/)) {
+      if (!line.trim().startsWith('|')) {
+        header = null;
+        continue;
+      }
+      const cells = line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((c) => c.trim().replace(/\\\|/g, '|'));
+      if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
+      if (cells[0] === 'Ref') {
+        header = cells;
+        continue;
+      }
+      if (!header || !/^ASM-\d+$/.test(cells[0])) continue;
+      if (seen.has(cells[0])) throw new HttpError(400, `${cells[0]} appears twice (second time in ${file}): every assumption needs its own Ref.`);
+      seen.add(cells[0]);
+      const row: Record<string, string> = { Page: `assumptions/${file.replace(/\.md$/, '')}` };
+      header.forEach((h, i) => (row[h] = cells[i] ?? ''));
+      out.push(row);
+    }
+  }
+  return out;
+}
+
+async function pushAssumptions() {
+  const list = readAssumptions();
+  if (list.length === 0) throw new HttpError(400, 'No assumptions found: add tables with a Ref column (ASM-nnn) to docs/wiki/assumptions.');
+  if (!(await tableNames()).includes(ASSUMPTIONS)) {
+    await call('POST', '/tables/', { base: ADJ_BASE, json: { table_name: ASSUMPTIONS, columns: [{ column_name: 'Ref', column_type: 'text' }, ...ASSUMPTION_COLUMNS.map((c) => ({ column_name: c, column_type: 'text' }))] } });
+  }
+  const existing = new Map<string, string>();
+  for (const r of await allRows(ASSUMPTIONS, ADJ_BASE)) if (r.Ref) existing.set(String(r.Ref).trim(), r._id);
+  const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const appends: Record<string, unknown>[] = [];
+  const updates: { row_id: string; row: Record<string, unknown> }[] = [];
+  for (const a of list) {
+    const row: Record<string, unknown> = { Ref: a.Ref, 'Last pushed': when };
+    for (const c of ASSUMPTION_COLUMNS) if (c in a) row[c] = a[c];
+    const id = existing.get(a.Ref);
+    if (id) updates.push({ row_id: id, row });
+    else appends.push(row);
+  }
+  for (let i = 0; i < appends.length; i += 200) await call('POST', '/rows/', { base: ADJ_BASE, json: { table_name: ASSUMPTIONS, rows: appends.slice(i, i + 200) } });
+  for (let i = 0; i < updates.length; i += 200) await call('PUT', '/rows/', { base: ADJ_BASE, json: { table_name: ASSUMPTIONS, updates: updates.slice(i, i + 200) } });
+  return { added: appends.length, updated: updates.length };
+}
+
+// ---- calculations (table "Calculations" of the Files base) ----
+//   The Wiki is the source: each docs/wiki/calculations/<ref>-*.md page (title "# SF-001 Name (n men, n shifts)", then the
+//   Inputs, Calculations, Summary tables and optionally a "Programme field" section). A push writes one row per page, keyed by Ref.
+const CALCULATIONS = 'Calculations';
+const CALCULATION_COLUMNS = ['Title', 'Inputs', 'Calculations', 'Summary', 'Programme field', 'Page', 'Last pushed'];
+
+/** The rows of the first markdown table under a "## heading" (cells trimmed, header and divider left out). */
+function sectionTable(md: string, heading: string): string[][] {
+  const lines = md.split(/\r?\n/);
+  const at = lines.findIndex((l) => l.trim().toLowerCase() === `## ${heading}`.toLowerCase());
+  if (at < 0) return [];
+  const rows: string[][] = [];
+  for (const line of lines.slice(at + 1)) {
+    if (line.startsWith('## ')) break;
+    if (!line.trim().startsWith('|')) {
+      if (rows.length) break;
+      continue;
+    }
+    const cells = line.trim().replace(/^\||\|$/g, '').split('|').map((c) => c.trim().replace(/\*\*/g, ''));
+    if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
+    rows.push(cells);
+  }
+  return rows;
+}
+
+function readCalculations(): Record<string, string>[] {
+  const dir = path.join(WIKI_DIR, 'calculations');
+  const out: Record<string, string>[] = [];
+  const seen = new Set<string>();
+  for (const file of fs.existsSync(dir) ? fs.readdirSync(dir).filter((f) => f.endsWith('.md') && f !== 'index.md').sort() : []) {
+    const md = fs.readFileSync(path.join(dir, file), 'utf8');
+    const title = /^#\s+(.+)$/m.exec(md)?.[1].trim() ?? '';
+    const ref = /^([A-Z]+-\d+)\b/.exec(title)?.[1];
+    if (!ref) continue;
+    if (seen.has(ref)) throw new HttpError(400, `${ref} appears twice (second time in ${file}): every calculation needs its own Ref.`);
+    seen.add(ref);
+    const inputs = sectionTable(md, 'Inputs').slice(1).map((r) => `${r[0]}: ${r[1]} ${r[2] ?? ''}`.trim()).join('\n');
+    const steps = sectionTable(md, 'Calculations').slice(1).map((r) => `${r[0]}. ${r[1]}: ${r[2]} = ${r[3]}`).join('\n');
+    const sum = sectionTable(md, 'Summary');
+    const summary = sum.length > 1 ? sum[0].map((h, i) => `${h}: ${sum[1][i] ?? ''}`).join('\n') : '';
+    const field = /## Programme field[\s\S]*?```\r?\n([\s\S]*?)```/.exec(md)?.[1].trim() ?? '';
+    out.push({ Ref: ref, Title: title.replace(/^[A-Z]+-\d+\s*/, ''), Inputs: inputs, Calculations: steps, Summary: summary, 'Programme field': field, Page: `calculations/${file.replace(/\.md$/, '')}` });
+  }
+  return out;
+}
+
+async function pushCalculations() {
+  const list = readCalculations();
+  if (list.length === 0) throw new HttpError(400, 'No calculations found in docs/wiki/calculations (pages titled "SF-001 Name…").');
+  if (!(await tableNames()).includes(CALCULATIONS)) {
+    await call('POST', '/tables/', { base: ADJ_BASE, json: { table_name: CALCULATIONS, columns: [{ column_name: 'Ref', column_type: 'text' }, ...CALCULATION_COLUMNS.map((c) => ({ column_name: c, column_type: 'text' }))] } });
+  }
+  const existing = new Map<string, string>();
+  for (const r of await allRows(CALCULATIONS, ADJ_BASE)) if (r.Ref) existing.set(String(r.Ref).trim(), r._id);
+  const when = new Date().toISOString().slice(0, 16).replace('T', ' ');
+  const appends: Record<string, unknown>[] = [];
+  const updates: { row_id: string; row: Record<string, unknown> }[] = [];
+  for (const c of list) {
+    const row: Record<string, unknown> = { ...c, 'Last pushed': when };
+    const id = existing.get(c.Ref);
+    if (id) updates.push({ row_id: id, row });
+    else appends.push(row);
+  }
+  for (let i = 0; i < appends.length; i += 200) await call('POST', '/rows/', { base: ADJ_BASE, json: { table_name: CALCULATIONS, rows: appends.slice(i, i + 200) } });
+  for (let i = 0; i < updates.length; i += 200) await call('PUT', '/rows/', { base: ADJ_BASE, json: { table_name: CALCULATIONS, updates: updates.slice(i, i + 200) } });
+  return { added: appends.length, updated: updates.length };
+}
+
 async function adjustmentsStatus() {
   const names = await tableNames();
   const count = async (n: string) => (names.includes(n) ? (await allRows(n, ADJ_BASE)).length : null);
@@ -611,6 +737,8 @@ export function seatablePlugin(): Plugin {
             return send(res, 200, await pushRetired(body.tasks));
           }
           if (req.method === 'POST' && route === 'adjustments/pull') return send(res, 200, await pullAdjustments());
+          if (req.method === 'POST' && route === 'calculations/push') return send(res, 200, await pushCalculations());
+          if (req.method === 'POST' && route === 'assumptions/push') return send(res, 200, await pushAssumptions());
           // The retired Task IDs of the local copy (no SeaTable needed): the app takes those tasks out of the programmes it shows.
           if (req.method === 'GET' && route === 'adjustments/retired') {
             const file = readAdjustments() as { retired?: { taskId: string }[] } | null;
