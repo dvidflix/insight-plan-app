@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BUILT_IN_GROUPS, NO_VALUE, passesFilters, useInputDetailsStore, valuesOfFile } from '../state/inputDetailsStore';
-import { pushFiles } from '../seatable/filesClient';
+import { pushFiles, type PushFile } from '../seatable/filesClient';
 import { queryMatcher } from '../schedule/search';
 import { IconChevronDown, IconChevronRight, IconExpander } from './icons';
 import { SearchRow } from './SearchRow';
@@ -168,12 +168,30 @@ export function InputsFilters() {
   );
 }
 
+/** Sends the files to SeaTable's "Insight Plan Files" table and reads the details back; the outcome goes to the store's pushNote. */
+export async function pushToSeaTable(files: PushFile[], auto = false): Promise<{ ok: boolean; text: string }> {
+  let note: { ok: boolean; text: string };
+  try {
+    const old = legacyDetails();
+    const r = await pushFiles(files.map((f) => ({ ...f, details: old[f.name] })));
+    const back = await useInputDetailsStore.getState().read();
+    note = { ok: back.ok, text: `${auto ? 'Sent automatically' : 'Sent'} ${files.length} file${files.length === 1 ? '' : 's'}: ${r.added} added, ${r.updated} updated. ${back.ok ? 'Fill in the details in SeaTable, then Read.' : back.message}` };
+  } catch (e) {
+    note = { ok: false, text: `${auto ? 'Automatic push failed: ' : ''}${e instanceof Error ? e.message : String(e)}` };
+  }
+  useInputDetailsStore.getState().setPushNote(note);
+  return note;
+}
+
 /** Settings (Inputs): the details of each file live in SeaTable's "Insight Plan Files" table. Push the files there, read the details back. */
 export function FileDetailsSync() {
   const files = useInputDetailsStore((s) => s.files);
   const readAt = useInputDetailsStore((s) => s.readAt);
   const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<{ ok: boolean; text: string } | null>(null);
+  const message = useInputDetailsStore((s) => s.pushNote);
+  const setMessage = useInputDetailsStore((s) => s.setPushNote);
+  const autoPush = useInputDetailsStore((s) => s.autoPush);
+  const setAutoPush = useInputDetailsStore((s) => s.setAutoPush);
 
   const doRead = async () => {
     setBusy(true);
@@ -183,14 +201,7 @@ export function FileDetailsSync() {
   };
   const doPush = async () => {
     setBusy(true);
-    try {
-      const old = legacyDetails();
-      const r = await pushFiles(files.map((f) => ({ ...f, details: old[f.name] })));
-      const back = await useInputDetailsStore.getState().read();
-      setMessage({ ok: back.ok, text: `Sent ${files.length} file${files.length === 1 ? '' : 's'}: ${r.added} added, ${r.updated} updated. ${back.ok ? 'Fill in the details in SeaTable, then Read.' : back.message}` });
-    } catch (e) {
-      setMessage({ ok: false, text: e instanceof Error ? e.message : String(e) });
-    }
+    await pushToSeaTable(files);
     setBusy(false);
   };
 
@@ -200,6 +211,10 @@ export function FileDetailsSync() {
         <button type="button" className="btn btn--small" disabled={busy} onClick={() => void doPush()}>Push {files.length} files</button>
         <button type="button" className="btn btn--small" disabled={busy} onClick={() => void doRead()}>Read details</button>
         </div>
+        <label style={{ display: 'flex', alignItems: 'center', gap: 6, margin: '6px 0', fontSize: 12 }} title="When a file is uploaded on the Inputs page, the files are pushed to SeaTable right away">
+          <input type="checkbox" checked={autoPush} onChange={(e) => setAutoPush(e.target.checked)} />
+          Push automatically when a file is uploaded
+        </label>
         {message && <div className={`inputs-details-pop__msg${message.ok ? '' : ' is-bad'}`}>{message.text}</div>}
         {!message && readAt && <div className="inputs-details-pop__msg">Last read {new Date(readAt).toLocaleString()}.</div>}
     </div>
@@ -245,7 +260,9 @@ export function DetailValue({ item, field }: { item: string; field: string }) {
 
 const COLUMN_WIDTH: Record<string, number> = { type: 44, items: 70, bounds: 160, size: 90, uploaded: 130, version: 70 };
 const DETAIL_WIDTH = 100;
-const ACTION_WIDTH = 150;
+const ACTION_WIDTH = 120;
+/** The leading column: open and hide / show. */
+const SHOW_WIDTH = 64;
 const NAME_MIN = 220;
 export const MIN_COLUMN_WIDTH = 44;
 
@@ -256,7 +273,7 @@ const widthOf = (col: string, widths: Record<string, number>) => widths[col] ?? 
     NAME_MIN the table scrolls sideways instead. */
 export function useInputsTableStyle(columns: string[]): React.CSSProperties {
   const widths = useInputDetailsStore((s) => s.widths);
-  return { width: '100%', minWidth: columns.reduce((sum, c) => sum + (c === 'name' ? NAME_MIN : widthOf(c, widths)), ACTION_WIDTH) };
+  return { width: '100%', minWidth: columns.reduce((sum, c) => sum + (c === 'name' ? NAME_MIN : widthOf(c, widths)), ACTION_WIDTH + SHOW_WIDTH) };
 }
 
 /** Column widths of the Inputs page's list; drag a heading's right edge to change one (Name is the flexible one). */
@@ -264,6 +281,7 @@ export function InputsColgroup({ columns }: { columns: string[] }) {
   const widths = useInputDetailsStore((s) => s.widths);
   return (
     <colgroup>
+      <col style={{ width: SHOW_WIDTH }} />
       {columns.map((c) => <col key={c} style={c === 'name' ? undefined : { width: widthOf(c, widths) }} />)}
       <col style={{ width: ACTION_WIDTH }} />
     </colgroup>

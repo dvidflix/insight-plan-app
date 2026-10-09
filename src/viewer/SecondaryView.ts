@@ -858,6 +858,11 @@ export class SecondaryView {
     r.resize(undefined);
   }
 
+  /** This view's own world (camera and renderer), for overlays that project onto it (tags next to objects). */
+  get overlayWorld(): World {
+    return this.world;
+  }
+
   /** Renders now and returns the canvas — read it before yielding (the
       drawing buffer is cleared after the frame is shown). */
   renderNow(): HTMLCanvasElement | null {

@@ -39,7 +39,7 @@ import { useModelPlacementStore } from './state/modelPlacementStore';
 import modelIcon from './icons/BuildingSMART_RGB_Icon_colour_v3.jpg';
 import programmeIcon from './icons/window_15139098.png';
 import { DEFAULT_INPUT_COLUMNS, buildCombinedGroups, buildGroups, passesFilters, useInputDetailsStore, valuesOfFile, type GroupNode } from './state/inputDetailsStore';
-import { DetailValue, GroupHeaderRow, ColumnResizer, InputsColgroup, InputsStatusBar, useInputsTableStyle } from './components/InputDetails';
+import { pushToSeaTable, DetailValue, GroupHeaderRow, ColumnResizer, InputsColgroup, InputsStatusBar, useInputsTableStyle } from './components/InputDetails';
 import { InputsSidePane } from './components/InputsSidePane';
 import type { PushFile } from './seatable/filesClient';
 import { StoredModelsNotes, useStoredModels } from './components/StoredModelsPanel';
@@ -278,7 +278,12 @@ export default function App() {
             />
           </div>
           {page === 'inputs' && <InputsPage />}
-          {page === 'schedule' && <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} />}
+          {/* Stays mounted once opened, so its filters, selection and scroll are as left when coming back. */}
+          {(page === 'schedule' || visited.has('schedule')) && (
+            <div style={page === 'schedule' ? { display: 'contents' } : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' }}>
+              <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} />
+            </div>
+          )}
           {page === 'scenarios' && <ScenariosPage />}
           {page === 'timelines' && <TimelinesPage />}
           {page === 'wiki' && <WikiPage />}
@@ -549,6 +554,20 @@ function InputsPage() {
     useInputDetailsStore.getState().setFiles(filesToPush);
   }, [filesToPush]);
 
+  // A file uploaded here is pushed to SeaTable once it has landed in the list (when Settings say so).
+  const uploaded = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    if (uploaded.current.size === 0) return;
+    const landed = filesToPush.some((f) => uploaded.current.has(f.name));
+    if (!landed) return;
+    // Wait for the rest of a multi-file upload to arrive; each new file restarts the wait.
+    const timer = window.setTimeout(() => {
+      uploaded.current.clear();
+      if (useInputDetailsStore.getState().autoPush) void pushToSeaTable(filesToPush, true);
+    }, 2500);
+    return () => window.clearTimeout(timer);
+  }, [filesToPush]);
+
   const sortArrow = (field: string) => {
     const i = sortRules.findIndex((r) => r.field === field);
     return i < 0 ? '' : ` ${sortRules[i].direction === 'up' ? '▲' : '▼'}${sortRules.length > 1 ? i + 1 : ''}`;
@@ -711,7 +730,11 @@ function InputsPage() {
     }
   };
 
-  const handleFile = (file: File) =>
+  const handleFile = (file: File) => {
+    uploaded.current.add(file.name);
+    return handleFileByKind(file);
+  };
+  const handleFileByKind = (file: File) =>
     /\.(ifc|frag)$/i.test(file.name) ? handleModelFile(file) : /\.(glb|gltf)$/i.test(file.name) ? handleContextFile(file) : handleScheduleFile(file);
 
   const xerPick = xerPicks[0];
@@ -778,13 +801,14 @@ function InputsPage() {
                 <InputsColgroup columns={shownColumns} />
                 <thead>
                   <tr>
+                    <th aria-label="Open, hide / show" />
                     {shownColumns.map((col) => headerCell(col))}
                     <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Action</th>
                   </tr>
                 </thead>
                 <tbody>
                   {sections.flatMap((section) => {
-                    const colSpan = 1 + shownColumns.length;
+                    const colSpan = 2 + shownColumns.length;
                     const node = section.node;
                     const header = !node
                       ? []
@@ -802,6 +826,24 @@ function InputsPage() {
                         className={`inputs-row${node ? ' inputs-in-folder' : ''}${selectedKeys.has(rowId(row)) ? ' is-active' : ''}${activeKey === rowId(row) ? ' is-current' : ''}`}
                         onClick={(e) => { if (!(e.target as HTMLElement).closest('button, input, select, a, label')) pickRow(row, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }); }}
                       >
+                        <td>
+                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                            {row.unloaded && row.stored ? (
+                              inputBtns.shown('open') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.open(row.stored!)} aria-label="Open" title="Open the model">
+                                <IconCheckboxUnchecked width={16} height={16} />
+                              </button>
+                            ) : (
+                              inputBtns.shown('hide') && <button
+                                className="mini-btn mini-btn--icon"
+                                onClick={() => toggleRowHidden(row)}
+                                title={hidden ? 'Show — unload without removing' : 'Hide — unload without removing'}
+                                aria-label={hidden ? 'Show' : 'Hide'}
+                              >
+                                {hidden ? <IconEyeOff /> : <IconEye />}
+                              </button>
+                            )}
+                          </div>
+                        </td>
                         {shownColumns.map((col) => {
                           switch (col) {
                             case 'type': return (<td key={col} className="inputs-table__type">
@@ -866,9 +908,6 @@ function InputsPage() {
                             {row.stored && inputBtns.shown('versions') && row.stored.versions > 0 && <button type="button" className="mini-btn" onClick={() => void storedActions.showVersions(row.stored!)} title={`${row.stored.versions} earlier IFC${row.stored.versions === 1 ? '' : 's'} (kept when an edit or a new file replaces the model)`}>{row.stored.versions}</button>}
                             {row.unloaded && row.stored ? (
                               <>
-                                {inputBtns.shown('open') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.open(row.stored!)} aria-label="Open" title="Open the model">
-                                  <IconCheckboxUnchecked width={16} height={16} />
-                                </button>}
                                 {inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
                                   <IconDownloadFile width={16} height={16} />
                                 </button>}
@@ -881,14 +920,6 @@ function InputsPage() {
                             {inputBtns.shown('download') && (p ? (
                               <ProgrammeDownload canXml={!!p.db?.scenario && !!p.db?.stem} disabled={!p.db && !p.schedule} onDownload={(f) => void downloadProgramme(p, f)} />
                             ) : <span style={{ width: 44 }} aria-hidden />)}
-                            {inputBtns.shown('hide') && <button
-                              className="mini-btn mini-btn--icon"
-                              onClick={() => toggleRowHidden(row)}
-                              title={hidden ? 'Show — unload without removing' : 'Hide — unload without removing'}
-                              aria-label={hidden ? 'Show' : 'Hide'}
-                            >
-                              {hidden ? <IconEyeOff /> : <IconEye />}
-                            </button>}
                             {inputBtns.shown('sync') && <button
                               className="mini-btn mini-btn--icon"
                               disabled={row.context ? true : p ? !p.schedule : false}

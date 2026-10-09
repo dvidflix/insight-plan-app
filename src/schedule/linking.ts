@@ -124,6 +124,21 @@ export function scheduleRange(model: ScheduleModel | null, basis: 'planned' | 'a
   return { min: Math.min(...starts.map((d) => d.getTime())), max: Math.max(...finishes.map((d) => d.getTime())) };
 }
 
+/** The range narrowed to the timeline's own start / finish limits (Settings > 4D timeline), each "YYYY-MM-DD" or empty.
+    The finish limit takes the whole of its day. A limit outside the programme, or one that would leave nothing, is ignored. */
+export function limitRange(range: DateRange | null, limitStart: string | null | undefined, limitEnd: string | null | undefined): DateRange | null {
+  if (!range) return range;
+  const day = (v: string | null | undefined, end: boolean) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v ?? '');
+    return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), end ? 23 : 0, end ? 59 : 0, end ? 59 : 0).getTime() : null;
+  };
+  const from = day(limitStart, false);
+  const to = day(limitEnd, true);
+  const min = from !== null ? Math.max(range.min, from) : range.min;
+  const max = to !== null ? Math.min(range.max, to) : range.max;
+  return min < max ? { min, max } : range;
+}
+
 /** 0..1 fraction of the way through the activity's active window at `date`,
     for interpolating an appearance profile's active-start -> active-finish
     color/opacity. Clamped; 0 before start, 1 at/after finish. */

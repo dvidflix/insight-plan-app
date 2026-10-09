@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { queryMatcher } from '../schedule/search';
 import { useModelsStore } from '../state/modelsStore';
+import { useModelEdgesStore } from '../state/modelEdgesStore';
 import { IconEye, IconEyeOff, IconSectionChevron } from './icons';
 
 /** The loaded models with an eye each (the same on / off as the Inputs list). Click a name to select it,
@@ -10,6 +11,8 @@ export function ModelsList() {
   const allModels = useModelsStore((s) => s.models);
   const hidden = useModelsStore((s) => s.hiddenModelIds);
   const toggleHidden = useModelsStore((s) => s.toggleModelHidden);
+  const edgesOff = useModelEdgesStore((s) => s.off);
+  const toggleEdges = useModelEdgesStore((s) => s.toggle);
   const [open, setOpen] = useState(true);
   const [activeId, setActiveId] = useState<string | null>(null);
   const [anchorId, setAnchorId] = useState<string | null>(null);
@@ -81,9 +84,20 @@ export function ModelsList() {
                   id={`models-row-${m.modelId}`}
                   className={`ss__row${selected.has(m.modelId) ? ' is-active' : ''}${activeId === m.modelId ? ' is-current' : ''}`}
                   style={off ? { opacity: 0.5 } : undefined}
-                  onClick={(e) => { if (!(e.target as HTMLElement).closest('button.ss__eye')) pick(m.modelId, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }); }}
+                  onClick={(e) => { if (!(e.target as HTMLElement).closest('button.ss__eye, button.ss__edges')) pick(m.modelId, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }); }}
                 >
                   <span className="ss__name" style={{ flex: 1, minWidth: 0 }} title={m.name}><span className="ss__label">{m.name}</span></span>
+                  <button
+                    type="button"
+                    className={`ss__eye ss__edges${edgesOff[m.name] ? ' is-off' : ''}`}
+                    onClick={() => toggleEdges(m.name)}
+                    title={edgesOff[m.name] ? 'Edge lines are off for this model: turn them on' : 'Turn edge lines off for this model'}
+                    aria-label={edgesOff[m.name] ? `Show edges on ${m.name}` : `Hide edges on ${m.name}`}
+                    aria-pressed={!edgesOff[m.name]}
+                    style={{ fontSize: 11, fontWeight: 600, width: 'auto', padding: '0 5px' }}
+                  >
+                    Edges
+                  </button>
                   <button
                     type="button"
                     className={`ss__eye${off ? ' is-off' : ''}`}

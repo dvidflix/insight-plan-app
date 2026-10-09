@@ -106,6 +106,19 @@ export function buildFilterFields(model: ScheduleModel, extra: ExtraNumberField[
   text('code', 'Activity ID', 'General', (a) => a.code || '');
   text('name', 'Activity Name', 'General', (a) => a.name || '');
   text('wbs', 'WBS', 'General', (a) => a.wbsPath);
+  // The Activity IDs of an activity's predecessors / successors: type one (or several, one per line or comma-separated) to find what follows / precedes it.
+  const codeOf = new Map(acts.map((a) => [a.id, a.code || a.id]));
+  const predsOf = new Map<string, string[]>();
+  const succsOf = new Map<string, string[]>();
+  for (const r of model.relationships) {
+    const p = codeOf.get(r.predId);
+    const q = codeOf.get(r.succId);
+    if (p === undefined || q === undefined) continue;
+    (predsOf.get(r.succId) ?? predsOf.set(r.succId, []).get(r.succId)!).push(p);
+    (succsOf.get(r.predId) ?? succsOf.set(r.predId, []).get(r.predId)!).push(q);
+  }
+  text('predecessors', 'Predecessors (IDs)', 'General', (a) => (predsOf.get(a.id) ?? []).join(', '));
+  text('successors', 'Successors (IDs)', 'General', (a) => (succsOf.get(a.id) ?? []).join(', '));
   select('status', 'Activity Status', 'General', (a) => [a.status], (v) => STATUS_LABEL[v as ActivityStatus] ?? v, 'chips');
   select('type', 'Activity Type', 'General', (a) => [a.type], (v) => TYPE_LABEL[v as ActivityType] ?? v);
   const calendarNames = new Map(model.calendars.map((c) => [c.id, c.name || c.id]));

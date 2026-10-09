@@ -162,7 +162,7 @@ export function ModelComparePanel() {
   }
 
   return (
-    <div>
+    <div className="model-compare">
       <div className="disp">
         <label className="disp__row">
           <span>Old model</span>

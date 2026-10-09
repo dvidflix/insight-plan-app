@@ -132,6 +132,18 @@ export function ifcSchema(text: string): string {
   return /FILE_SCHEMA\s*\(\s*\(\s*'([^']+)'/i.exec(text.slice(0, 20000))?.[1].toUpperCase() ?? '';
 }
 
+/** The IFC header's originating system (FILE_NAME's sixth attribute), or ''. */
+export function originatingSystem(text: string): string {
+  const head = text.slice(0, 20000);
+  const m = /FILE_NAME\s*\(/i.exec(head);
+  if (!m) return '';
+  const open = m.index + m[0].length - 1;
+  const close = closingBracket(head, open);
+  if (close < 0) return '';
+  const t = (splitArgs(head.slice(open + 1, close))[5] ?? '').trim();
+  return t.startsWith("'") ? t.slice(1, -1).replace(/''/g, "'") : '';
+}
+
 /** Rewrites the file: `replace` gives an entity's new attribute text (null
     deletes it, with its line), `added` are appended to the DATA section
     as "#id=TYPE(args);" lines. */

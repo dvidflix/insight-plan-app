@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
-import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataTableTab } from '../state/dataTableStore';
+import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataTablePosition, type DataTableTab } from '../state/dataTableStore';
 import { useTwin } from './useTwin';
 import { SEVERAL } from '../viewer/twinMatch';
 import { useSearchSetsStore } from '../state/searchSetsStore';
@@ -98,10 +98,18 @@ export function DataTablePanel() {
   return (
     <div className="dtp">
       <div className="disp dtp__top">
+        <label className="disp__row">
+          <span>Position <InfoTip>Under the 3D view, or beside it on the left or right.</InfoTip></span>
+          <select value={store.position} onChange={(e) => patch({ position: e.target.value as DataTablePosition })}>
+            <option value="bottom">Bottom</option>
+            <option value="left">Left</option>
+            <option value="right">Right</option>
+          </select>
+        </label>
         <div className="disp__row">
           <span>
             Totals and subtotals{' '}
-            <InfoTip>A totals row under the table and a subtotal on each group row. Number columns are summed by default; pick sum, average, min, max, count or none with each column's ▾ in the totals row.</InfoTip>
+            <InfoTip>A totals row under the table and a subtotal on each group row. Number columns are summed by default; click a total in the totals row to pick sum, average, min, max, count or none for that column.</InfoTip>
           </span>
           <button type="button" role="switch" aria-checked={totals} className={`switch${totals ? ' on' : ''}`} onClick={() => patch({ totals: !totals })}>
             <span className="switch__thumb" />

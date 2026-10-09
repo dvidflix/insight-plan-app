@@ -69,6 +69,7 @@ const toNumber = (v: string) => {
   return Number.isFinite(n) ? n : null;
 };
 
+const AGG_SHORT: Record<DataAgg, string> = { none: '', sum: 'Σ', avg: 'avg', min: 'min', max: 'max', count: '#' };
 const AGG_LABELS: Record<DataAgg, string> = { none: 'None', sum: 'Sum', avg: 'Average', min: 'Min', max: 'Max', count: 'Count' };
 const NUMBER_AGGS: DataAgg[] = ['sum', 'avg', 'min', 'max', 'count', 'none'];
 const TEXT_AGGS: DataAgg[] = ['count', 'none'];
@@ -109,12 +110,22 @@ export function ModelDataTable() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
-  const { open, height, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setOpen, setHeight, setWidth, patch, configure } = useDataTableStore();
+  const { open, height, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setOpen, setHeight, setWidth, patch, configure, position, width: tableWidth, setWidth_: setTableWidth } = useDataTableStore();
 
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scrollTop, setScrollTop] = useState(0);
+  // The totals row's "how to sum up" menu, opened by clicking a total.
+  const [aggMenu, setAggMenu] = useState<{ col: string; x: number; y: number } | null>(null);
+  useEffect(() => {
+    if (!aggMenu) return;
+    const away = (e: MouseEvent) => { if (!(e.target as HTMLElement).closest('.mdt__aggmenu')) setAggMenu(null); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setAggMenu(null); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [aggMenu]);
   const [viewH, setViewH] = useState(200);
   const scrollRef = useRef<HTMLDivElement>(null);
   const anchorRef = useRef<number | null>(null);
@@ -411,6 +422,18 @@ export function ModelDataTable() {
     window.addEventListener('mouseup', up);
   };
 
+  /** Beside the view: drag the edge facing it to change the width. */
+  const startResizeWidth = (e: React.MouseEvent) => {
+    e.preventDefault();
+    const startX = e.clientX;
+    const startW = tableWidth;
+    const dir = position === 'left' ? 1 : -1;
+    const move = (m: MouseEvent) => setTableWidth(Math.min(window.innerWidth * 0.7, Math.max(260, startW + dir * (m.clientX - startX))));
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
   const startResizeHeight = (e: React.MouseEvent) => {
     e.preventDefault();
     const startY = e.clientY;
@@ -439,8 +462,10 @@ export function ModelDataTable() {
   const selectedShown = shown.reduce((n, r) => n + (selected.has(r.key) ? 1 : 0), 0);
 
   return (
-    <div className="mdt" style={{ height }}>
-      <div className="mdt__grip" onMouseDown={startResizeHeight} role="separator" aria-label="Resize data table" />
+    <div className={`mdt${position === 'bottom' ? '' : ` mdt--${position}`}`} style={position === 'bottom' ? { height } : { width: tableWidth }}>
+      {position === 'bottom'
+        ? <div className="mdt__grip" onMouseDown={startResizeHeight} role="separator" aria-label="Resize data table" />
+        : <div className={`mdt__grip mdt__grip--side mdt__grip--${position}`} onMouseDown={startResizeWidth} role="separator" aria-orientation="vertical" aria-label="Resize data table" />}
       <div className="mdt__bar">
         <button type="button" className="mdt__toggle" onClick={() => setOpen(false)} title="Hide the data table (the side pane's Data table tab shows it again)">{'▼'} Data table</button>
         <span className="mdt__count">
@@ -583,7 +608,7 @@ Now: ${summary}` : ''}`}>
             <div className="mdt__empty">{rows.length === 0 ? 'Load a model from the Inputs tab to see its elements here.' : 'No elements match the search or filters.'}</div>
           )}
           {totals && shown.length > 0 && (
-            <div className="mdt__row mdt__totals" title="Totals of the rows shown (search and filters applied). Pick how each column is summed up with its ▾.">
+            <div className="mdt__row mdt__totals" title="Totals of the rows shown (search and filters applied). Click a total to change how that column is summed up.">
               {columns.map((c, ci) => {
                 const kind = aggOf(c);
                 const value = aggregate(shown, c, kind);
@@ -592,16 +617,18 @@ Now: ${summary}` : ''}`}>
                   <div key={c} className={`mdt__td${numeric.has(c) ? ' is-num' : ''}`} style={{ width: colW(c) }}>
                     <span className="agg-cell">
                       {ci === 0 && <span className="mdt__totals-label">Total ({shown.length.toLocaleString()})</span>}
-                      {value && <span className="agg-cell__value" title={`${AGG_LABELS[kind]}: ${value}`}>{value}</span>}
-                      <select
-                        className={`agg-cell__pick${kind === 'none' ? ' is-none' : ''}`}
-                        value={kind}
-                        onChange={(e) => patch({ aggs: { ...aggs, [c]: e.target.value as DataAgg } })}
-                        title={`Sum up ${labelOf(c)}: ${AGG_LABELS[kind]}`}
+                      <button
+                        type="button"
+                        className={`agg-cell__btn${kind === 'none' ? ' is-none' : ''}`}
+                        onClick={(e) => {
+                          const r = e.currentTarget.getBoundingClientRect();
+                          setAggMenu({ col: c, x: r.left, y: r.top });
+                        }}
+                        title={kind === 'none' ? `Sum up ${labelOf(c)}…` : `${AGG_LABELS[kind]} of ${labelOf(c)}: ${value} (click to change)`}
                         aria-label={`Sum up ${labelOf(c)}`}
                       >
-                        {options.map((o) => <option key={o} value={o}>{AGG_LABELS[o]}</option>)}
-                      </select>
+                        {kind === 'none' ? <span className="agg-cell__add">＋</span> : <><span className="agg-cell__kind">{AGG_SHORT[kind]}</span><span className="agg-cell__value">{value}</span></>}
+                      </button>
                     </span>
                   </div>
                 );
@@ -610,6 +637,22 @@ Now: ${summary}` : ''}`}>
           )}
         </div>
       </div>
+      {aggMenu && (
+        <div className="mdt__aggmenu" style={{ left: aggMenu.x, bottom: window.innerHeight - aggMenu.y + 4 }} role="menu">
+          {(numeric.has(aggMenu.col) ? NUMBER_AGGS : TEXT_AGGS).map((o) => (
+            <button
+              key={o}
+              type="button"
+              role="menuitemradio"
+              aria-checked={aggOf(aggMenu.col) === o}
+              className={aggOf(aggMenu.col) === o ? 'is-on' : ''}
+              onClick={() => { patch({ aggs: { ...aggs, [aggMenu.col]: o } }); setAggMenu(null); }}
+            >
+              <span className="mdt__aggmenu-tick">{aggOf(aggMenu.col) === o ? '✓' : ''}</span>{AGG_LABELS[o]}
+            </button>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

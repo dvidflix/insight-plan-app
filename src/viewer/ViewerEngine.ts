@@ -289,7 +289,17 @@ export class ViewerEngine {
       // In Reveal (and X-ray), the faded tiles are hidden from the edge
       // capture too, so only the solid elements get (normal, dark) edge lines.
       const restoreGhosts = this.interactionMode === 'reveal' || this.xray ? this.hideRevealGhostTiles() : null;
+      const swapped: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];
+      for (const [group, flat] of this.edgeFreeObjects) {
+        group.traverse((o) => {
+          const mesh = o as THREE.Mesh;
+          if (!mesh.isMesh) return;
+          swapped.push([mesh, mesh.material]);
+          mesh.material = flat;
+        });
+      }
       renderEdges(renderer, writeBuffer, readBuffer);
+      for (const [mesh, material] of swapped) mesh.material = material;
       restoreGhosts?.();
       grid.three.visible = gridVisible;
       if (this.shadowCatcher) this.shadowCatcher.visible = catcherVisible;
@@ -328,6 +338,7 @@ export class ViewerEngine {
       return best;
     };
     world.camera.controls.addEventListener('update', () => fragments.core.update());
+    world.camera.controls.addEventListener('update', () => this.updateNearFar());
     // Switching Perspective <-> Orthographic swaps world.camera.three (fired
     // by projection.onChanged; onCameraChanged only covers replacing the whole
     // camera component). The base and ambient-occlusion passes keep a
@@ -390,6 +401,29 @@ export class ViewerEngine {
       transparent: true,
       renderedFaces: 0,
     });
+    // A storey slide draws the moved elements through a delta model, and the Highlighter adds the original
+    // model to every selection of one: the element would light up in its old place as well. Leave out of the
+    // original's highlight whatever the delta draws.
+    if (this.fragments) {
+      const manager = this.fragments;
+      const highlightAll = manager.highlight.bind(manager);
+      manager.highlight = async (style, map) => {
+        if (!map) return highlightAll(style, map);
+        const adjusted: OBC.ModelIdMap = {};
+        for (const [modelId, ids] of Object.entries(map)) {
+          const deltaId = manager.core.models.list.get(modelId)?.deltaModelId;
+          const delta = deltaId ? manager.core.models.list.get(deltaId) : undefined;
+          if (!delta) {
+            adjusted[modelId] = ids;
+            continue;
+          }
+          const moved = new Set(await delta.getItemsIdsWithGeometry());
+          const kept = new Set([...ids].filter((id) => !moved.has(id)));
+          if (kept.size) adjusted[modelId] = kept;
+        }
+        return highlightAll(style, adjusted);
+      };
+    }
     // Every selection change resets all highlights before drawing the
     // styles — and colours / opacities (Models > Colour, the 4D look) are
     // highlights too. Put them back on everything the styles don't cover.
@@ -509,6 +543,17 @@ export class ViewerEngine {
     if (zoom) await this.fit(map);
   }
 
+  /** Shows only `ids` (per model id): they become the selection, everything else is hidden (Show all brings it back), and the view frames them. */
+  async isolateElements(ids: Record<string, number[]>, zoom = true) {
+    const map: OBC.ModelIdMap = {};
+    for (const [modelId, list] of Object.entries(ids)) if (list.length) map[modelId] = new Set(list);
+    if (OBC.ModelIdMapUtils.isEmpty(map)) return;
+    await this.highlighter.highlightByID('select', map, true, false);
+    await this.hider.isolate(map);
+    this.onExternalVisibilityChange.trigger();
+    if (zoom) await this.fit(map);
+  }
+
   /** Touching / overlapping pairs from geometry (Clashes & contacts, Related tab). */
   readonly relations = new ElementRelations(this);
 
@@ -579,8 +624,12 @@ export class ViewerEngine {
     if (!OBC.ModelIdMapUtils.isEmpty(selection)) await this.applyInteraction(selection);
   }
 
+  /** Bumped by every apply / clear, so a Ghost pass still running when the mode or selection changes can tell it is stale. */
+  private interactionRun = 0;
+
   private async applyInteraction(selection: OBC.ModelIdMap) {
     if (this.revealPinned) return;
+    const run = ++this.interactionRun;
     if (this.interactionMode === 'isolate') {
       await this.hider.isolate(selection);
       this.onExternalVisibilityChange.trigger();
@@ -594,8 +643,14 @@ export class ViewerEngine {
         const others = (await getGeometryLocalIds(model)).filter((id) => !chosen?.has(id));
         if (others.length) rest[modelId] = new Set(others);
       }
+      // Switched to Isolate / Select (or picked again) while that ran: no ghost.
+      if (run !== this.interactionRun || this.interactionMode !== 'reveal') return;
       // (Through withHighlighter: with Box select on, the Highlighter is paused.)
       await this.withHighlighter((h) => h.highlightByID('ghost', rest, true, false));
+      if (run !== this.interactionRun || this.interactionMode !== 'reveal') {
+        await this.withHighlighter((h) => h.clear('ghost'));
+        return;
+      }
       this.ghosted = rest;
       await this._secondary?.showGhost(rest);
       await this.forceUpdate();
@@ -611,6 +666,7 @@ export class ViewerEngine {
 
   private async clearInteraction() {
     if (this.revealPinned) return;
+    this.interactionRun++;
     if (this.interactionMode === 'isolate') {
       await this.hider.set(true);
       this.onExternalVisibilityChange.trigger();
@@ -1187,10 +1243,37 @@ export class ViewerEngine {
       real opacity, so a low-opacity 4D "ghost" element still gets
       full-strength edges. excludedObjectsPass is the official mechanism for
       skipping such materials in every postproduction pass. */
+  /** Materials drawn without edge lines: growth stand-ins whose profile turns edges off (see growthAnimator.ts). */
+  readonly edgeFreeMaterials = new Set<THREE.Material>();
+  /** The same stand-ins, each with the flat material it takes in the edge pass's capture: still there to hide
+      the edges behind it, but one plain colour, so it draws none of its own. */
+  readonly edgeFreeObjects = new Map<THREE.Object3D, THREE.Material>();
+
+  /** Models drawn without edge lines (Models page › the list's Edges toggle), by model id. */
+  private edgelessModels = new Set<string>();
+  setModelEdges(modelId: string, on: boolean) {
+    if (on) this.edgelessModels.delete(modelId);
+    else this.edgelessModels.add(modelId);
+    this.syncGhostEdgeExclusion();
+    const renderer = this._world?.renderer as unknown as { needsUpdate?: boolean } | undefined;
+    if (renderer) renderer.needsUpdate = true;
+  }
+
+  refreshEdgeExclusion() {
+    this.syncGhostEdgeExclusion();
+  }
+
   private syncGhostEdgeExclusion() {
     if (!this._world?.renderer?.postproduction) return;
     const pass = this._world.renderer.postproduction.excludedObjectsPass;
-    const ghostMaterials = new Set<THREE.Material>();
+    const ghostMaterials = new Set<THREE.Material>(this.edgeFreeMaterials);
+    for (const id of this.edgelessModels) {
+      this.models.get(id)?.object.traverse((obj) => {
+        const mesh = obj as THREE.Mesh;
+        if (!mesh.isMesh || !mesh.material) return;
+        for (const material of Array.isArray(mesh.material) ? mesh.material : [mesh.material]) ghostMaterials.add(material);
+      });
+    }
     // Reveal hides every faded tile from the edge pass instead (see
     // hideRevealGhostTiles). The excluded pass would paint the ghosts back
     // over the final image, covering the focused elements' edges behind them.
@@ -1440,9 +1523,32 @@ export class ViewerEngine {
     if (!camera || box.isEmpty()) return;
     const size = box.getSize(new THREE.Vector3()).length();
     if (!Number.isFinite(size) || size <= 0) return;
+    this.sceneSphere = box.getBoundingSphere(new THREE.Sphere());
     for (const cam of [camera.threePersp, camera.threeOrtho]) {
       cam.far = Math.max(1000, size * 20);
       cam.near = Math.max(cam.near, Math.min(size / 2000, 1));
+      cam.updateProjectionMatrix();
+    }
+  }
+
+  /** The loaded models' bounding sphere (set with the clipping range): the near / far planes follow the camera's distance to it. */
+  private sceneSphere: THREE.Sphere | null = null;
+
+  /** Keeps the perspective camera's near plane just short of the nearest geometry (and the far plane beyond the farthest),
+      so a large model (a terrain hundreds of metres across) is not cut away close to the camera while the depth buffer
+      keeps its precision. Runs as the camera moves. */
+  private updateNearFar() {
+    const cam = this._world?.camera.threePersp;
+    const s = this.sceneSphere;
+    if (!cam || !s) return;
+    const dist = cam.position.distanceTo(s.center);
+    const outside = dist - s.radius;
+    // Outside the models: the near plane can come close to the nearest point; inside them: a small one.
+    const near = Math.max(Math.min(s.radius / 5000, 0.5), outside > 0 ? outside * 0.5 : 0, 0.01);
+    const far = Math.max(1000, dist + s.radius * 2);
+    if (Math.abs(near - cam.near) > cam.near * 0.05 || Math.abs(far - cam.far) > cam.far * 0.05) {
+      cam.near = near;
+      cam.far = far;
       cam.updateProjectionMatrix();
     }
   }

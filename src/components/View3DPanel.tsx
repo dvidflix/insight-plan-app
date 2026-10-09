@@ -5,7 +5,7 @@ import { DEFAULT_OUTLINE, DEFAULT_SECTION_STYLE, SECTION_CATEGORY_DEFS, type Out
 import { MATERIAL_CLASSES, MATERIAL_CLASS_LABELS, type ClassChoice, type MaterialEntry } from '../viewer/materialClasses';
 import { useModelsStore } from '../state/modelsStore';
 import type { ViewId } from '../state/colorModeStore';
-import { useViewSettingsStore, type CompareMode, type Projection, type ViewKey, type ViewPage, type ViewStyle } from '../state/viewSettingsStore';
+import { DEFAULT_CAPTION, useViewSettingsStore, type CaptionPosition, type CompareMode, type Projection, type ViewKey, type ViewPage, type ViewStyle } from '../state/viewSettingsStore';
 import { InfoTip } from './InfoTip';
 import { CollapsibleSection } from './CollapsibleSection';
 import { useViewSettingsGroups, type ViewSettingsGroup } from '../state/viewSettingsGroups';
@@ -71,6 +71,7 @@ export function View3DPanel({ page, colorSection, extra }: { page: ViewPage; col
               <button type="button" role="tab" aria-selected={view === 'b'} className={view === 'b' ? 'active' : ''} onClick={() => setPicked('b')}>Right view</button>
             </div>
             <ViewModels page={page} view={view === 'a' ? 'main' : 'second'} />
+            <ViewLabels page={page} view={view === 'a' ? 'main' : 'second'} />
           </>
         )}
         {/* View cube and north arrow are switched on / off from the toolbar's Visibility menu. */}
@@ -135,6 +136,52 @@ function ViewModels({ page, view }: { page: ViewPage; view: ViewKey }) {
             <span title={m.name} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{m.name}</span>
           </label>
         ))
+      )}
+    </>
+  );
+}
+
+const CAPTION_POSITIONS: { value: CaptionPosition; label: string }[] = [
+  { value: 'top-left', label: 'Top left' },
+  { value: 'top-center', label: 'Top centre' },
+  { value: 'top-right', label: 'Top right' },
+  { value: 'bottom-left', label: 'Bottom left' },
+  { value: 'bottom-center', label: 'Bottom centre' },
+  { value: 'bottom-right', label: 'Bottom right' },
+];
+
+/** What one view of a side-by-side split labels itself with: its models, its programmes, and a custom label. */
+function ViewLabels({ page, view }: { page: ViewPage; view: ViewKey }) {
+  const stored = useViewSettingsStore((st) => st.pages[page][view].caption);
+  const patch = useViewSettingsStore((st) => st.patch);
+  const c = { ...DEFAULT_CAPTION, ...(stored ?? {}) };
+  const set = (p: Partial<typeof c>) => patch(page, view, { caption: { ...stored, ...p } });
+  return (
+    <>
+      <div className="cols__heading"><span>Labels in this view <InfoTip>Shown on each view of a side-by-side split.</InfoTip></span></div>
+      <Switch label="Models" on={c.models} onChange={(v) => set({ models: v })} />
+      <Switch label="Programme" on={c.programme} onChange={(v) => set({ programme: v })} tip="The programmes linked to objects of this view's models." />
+      <Switch label="Custom label" on={c.custom} onChange={(v) => set({ custom: v })} />
+      {c.custom && (
+        <>
+          <label className="disp__row"><span>Text</span><textarea rows={2} value={c.text} onChange={(e) => set({ text: e.target.value })} style={{ width: '60%' }} /></label>
+          <label className="disp__row">
+            <span>Position</span>
+            <select value={c.position} onChange={(e) => set({ position: e.target.value as CaptionPosition })}>
+              {CAPTION_POSITIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+          </label>
+          <label className="disp__row"><span>Size (px)</span><input type="number" min={8} max={96} value={c.size} onChange={(e) => set({ size: Math.max(8, Math.min(96, Number(e.target.value) || 16)) })} style={{ width: 70 }} /></label>
+          <label className="disp__row"><span>Text colour</span><input type="color" value={c.color} onChange={(e) => set({ color: e.target.value })} /></label>
+          <label className="disp__row">
+            <span>Background</span>
+            <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <input type="color" value={c.background ?? '#18181b'} disabled={c.background === null} onChange={(e) => set({ background: e.target.value })} />
+              <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={c.background === null} onChange={(e) => set({ background: e.target.checked ? null : '#18181b' })} />None</label>
+            </span>
+          </label>
+          <Switch label="Bold" on={c.bold} onChange={(v) => set({ bold: v })} />
+        </>
       )}
     </>
   );

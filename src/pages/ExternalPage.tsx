@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { FullscreenButton } from '../components/ViewerToolbar';
+import { dbRoot } from '../state/projectDbStore';
 
 /** External data (SeaTable) and Dashboards (Superset): the program in a frame, already signed in
     (the dev server signs in for you — vite-plugins/externalPlugin.ts). Stays loaded once opened, so
@@ -32,7 +33,42 @@ export function ExternalPage({ target, active }: { target: Target; active: boole
   const t = TEXT[target];
   const [status, setStatus] = useState<Status | null>(null);
   const [nonce, setNonce] = useState(0);
-  const open = `/api/external/open?target=${target}${LANDING[target] ? `&to=${encodeURIComponent(LANDING[target])}` : ''}`;
+  // Dashboards: rebuild Superset's datasets from the programmes loaded in the app (and the Project A extract).
+  const [updating, setUpdating] = useState(false);
+  const [updateMsg, setUpdateMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const updateData = async () => {
+    setUpdating(true);
+    setUpdateMsg(null);
+    try {
+      const r = (await (await fetch('/api/external/refresh-analysis', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ root: dbRoot() }) })).json()) as { ok?: boolean; log?: string; seconds?: number; error?: string };
+      setUpdateMsg(r.error ? { ok: false, text: r.error } : { ok: !!r.ok, text: r.ok ? `Data updated in ${r.seconds}s. Refresh the charts in Superset.` : `The update failed: ${(r.log ?? '').trim().split(/\r?\n/).slice(-3).join(' ')}` });
+      if (r.ok) setNonce((n) => n + 1);
+    } catch (e) {
+      setUpdateMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setUpdating(false);
+    }
+  };
+  // Dashboards can be pointed at the comparison dashboard (built on demand).
+  const [landing, setLanding] = useState<string | null>(null);
+  const to = landing ?? LANDING[target];
+  const open = `/api/external/open?target=${target}${to ? `&to=${encodeURIComponent(to)}` : ''}`;
+  const [building, setBuilding] = useState(false);
+  const buildCompare = async () => {
+    setBuilding(true);
+    setUpdateMsg(null);
+    try {
+      const res = await fetch('/api/external/build-dashboard', { method: 'POST' });
+      const r = (await res.json()) as { url?: string; error?: string };
+      if (!res.ok || !r.url) throw new Error(r.error ?? `Superset: ${res.status}`);
+      setLanding(r.url);
+      setNonce((n) => n + 1);
+    } catch (e) {
+      setUpdateMsg({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    } finally {
+      setBuilding(false);
+    }
+  };
 
   useEffect(() => {
     if (!active) return;
@@ -50,6 +86,17 @@ export function ExternalPage({ target, active }: { target: Target; active: boole
         <b>{t.title}</b>
         <span className="external-page__sub">{t.name}{status?.url ? ` · ${status.url}` : ''}</span>
         <span className="external-page__spacer" />
+        {target === 'superset' && updateMsg && <span className={updateMsg.ok ? 'scn-dim' : 'scn-error'} title={updateMsg.text}>{updateMsg.text.slice(0, 120)}</span>}
+        {target === 'superset' && (
+          <button type="button" className="btn btn--small" disabled={updating} onClick={() => void updateData()} title="Rebuild the dashboards' data from the programmes loaded in the app (Inputs) and the Project A extract: run it after loading a programme or a scenario">
+            {updating ? 'Updating data…' : 'Update data'}
+          </button>
+        )}
+        {target === 'superset' && (
+          <button type="button" className="btn btn--small" disabled={building} onClick={() => void buildCompare()} title="Make (or update) the Compare programmes dashboard in Superset and open it: concrete and rebar by week, programmes over each other">
+            {building ? 'Building…' : 'Compare programmes'}
+          </button>
+        )}
         <FullscreenButton />
         <button type="button" className="btn btn--small" onClick={() => setNonce((n) => n + 1)} title="Reload and sign in again">Reload</button>
         <button type="button" className="btn btn--small" onClick={() => window.open(open, '_blank', 'noopener')} title={`Open ${t.name} in its own window, signed in`}>Open in a window</button>

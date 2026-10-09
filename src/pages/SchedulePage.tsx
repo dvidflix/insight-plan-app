@@ -18,6 +18,7 @@ import { ActivityCodesView } from '../components/schedule/ActivityCodesView';
 import { NetworkView } from '../components/schedule/NetworkView';
 import { WhatIfPanel } from '../components/schedule/WhatIfPanel';
 import { ComparePanel } from '../components/schedule/ComparePanel';
+import { ConcreteComparison } from '../components/schedule/ConcreteComparison';
 import { resolveRuleColor, type ColorRule } from '../components/schedule/ColorPanel';
 import { DEFAULT_WBS_PALETTE } from '../schedule/wbsPalette';
 import { type GroupRule } from '../components/schedule/GroupPanel';
@@ -41,7 +42,7 @@ import { MonteCarloView } from '../components/schedule/MonteCarloView';
 import { PpcView } from '../components/schedule/PpcView';
 import { ActivityDetails } from '../components/schedule/ActivityDetails';
 import { drivingPath } from '../schedule/drivingPath';
-import { takePendingFilters, useScheduleLayoutsStore } from '../state/scheduleLayoutsStore';
+import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from '../state/scheduleLayoutsStore';
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
 import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel } from '../components/icons';
@@ -49,13 +50,14 @@ import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { useAggregateStore } from '../state/aggregateStore';
 import { useAppPrefsStore, type ExperimentalId } from '../state/appPrefsStore';
 
-export type TabId = 'explorer' | 'activities' | 'wbs' | 'gantt' | 'resources' | 'heatmap' | 'calendars' | 'codes' | 'network' | 'checks' | 'reports' | 'whatif' | 'compare' | 'lookahead' | 'ppc' | 'montecarlo' | 'anonymise' | 'bulkedit' | 'renumber';
+export type TabId = 'explorer' | 'activities' | 'wbs' | 'gantt' | 'resources' | 'heatmap' | 'calendars' | 'codes' | 'network' | 'checks' | 'reports' | 'whatif' | 'compare' | 'concrete' | 'lookahead' | 'ppc' | 'montecarlo' | 'anonymise' | 'bulkedit' | 'renumber';
 
 /** The Views list, in this order. Views marked `experimental` are still being tried out and
     only show when switched on in Settings › Experimental features. */
 export const SCHEDULE_TABS: { id: TabId; label: string; experimental?: ExperimentalId }[] = [
   { id: 'gantt', label: 'Gantt' },
   { id: 'compare', label: 'Schedule Comparison' },
+  { id: 'concrete', label: 'Concrete Comparison' },
   { id: 'wbs', label: 'WBS' },
   { id: 'codes', label: 'Activity Codes' },
   { id: 'resources', label: 'Resources' },
@@ -152,6 +154,8 @@ function mergeSchedulesForDisplay(schedules: ScheduleModel[]): ScheduleModel | n
 type SchedulePageProps = {
   selectedTab?: TabId;
   onTabChange?: (tab: TabId) => void;
+  /** False while the page is kept mounted but hidden: it must not claim the shared side pane. */
+  active?: boolean;
 };
 
 /** The two activity views, each with its own filters, grouping, sorting,
@@ -186,7 +190,7 @@ export function SchedulePage(props: SchedulePageProps = {}) {
   return <SchedulePageView key={revision} {...props} />;
 }
 
-function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
+function SchedulePageView({ selectedTab, onTabChange, active = true }: SchedulePageProps) {
   const schedules = useVisibleSchedules();
   const model = useMemo(() => mergeSchedulesForDisplay(schedules), [schedules]);
   // Experimental views only show when switched on; a saved one that is off falls back to the Gantt.
@@ -228,7 +232,8 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
   const cfg = cfgView === 'gantt' ? ganttSet : tableSet;
   // The Table groups like the Gantt: by the Group rules, else by WBS when that is on.
   const tableGroupBy = tableSet.groupRules[0]?.field ?? (tableSet.groupByWbs ? 'wbs' : '');
-  const [filtersByView, setFiltersByView] = useState<Record<ListView, FieldFilterState>>(() => takePendingFilters() ?? { table: emptyFilterState(), gantt: emptyFilterState() });
+  const [filtersByView, setFiltersByView] = useState<Record<ListView, FieldFilterState>>(() => peekPendingFilters() ?? { table: emptyFilterState(), gantt: emptyFilterState() });
+  useEffect(() => clearPendingFilters(), []); // the layout's filters are in the state now
   const fieldFilters = filtersByView[cfgView];
   const setViewFilters = (view: ListView, next: FieldFilterState | ((prev: FieldFilterState) => FieldFilterState)) =>
     setFiltersByView((all) => ({ ...all, [view]: typeof next === 'function' ? next(all[view]) : next }));
@@ -591,6 +596,7 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
           {tab === 'anonymise' && <AnonymiseView model={model} />}
           {tab === 'whatif' && <WhatIfPanel model={model} />}
           {tab === 'compare' && <ComparePanel current={model} />}
+          {tab === 'concrete' && <ConcreteComparison />}
           </div>
           {linksShown && selected && (
             <>
@@ -624,7 +630,7 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
             </div>
           </>
         )}
-        {(tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
+        {active && (tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
           <>
             <ConfigPanel
               onClose={() => useSidePaneStore.getState().setOpen(false)}
@@ -650,7 +656,7 @@ function SchedulePageView({ selectedTab, onTabChange }: SchedulePageProps) {
             />
           </>
         )}
-        {listTools && layoutsOpen && <LayoutsDock filters={filtersByView} tab={tab} onClose={() => setLayoutsOpen(false)} />}
+        {listTools && layoutsOpen && <LayoutsDock filters={filtersByView} tab={tab} importContext={model ? { catalog, filterFields } : null} onClose={() => setLayoutsOpen(false)} />}
       </div>
     </div>
     </ToolbarSlotContext.Provider>

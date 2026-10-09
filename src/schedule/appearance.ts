@@ -11,8 +11,23 @@ export type AppearanceAction = 'install' | 'remove' | 'maintain';
     - 'drop': appears `distance` above and eases down into place (precast, steel)
     - 'slideIn': appears `distance` further from the site origin and slides in
     - 'bottomToTop': rises from its base across the task's duration (backfill)
+    - 'leftToRight' / 'rightToLeft' / 'frontToBack' / 'backToFront' / 'custom': grows the same way along a
+      horizontal axis or a vector (project axes: X east, Y north, Z up; front is the south side)
     - 'liftUp' / 'slideAway': a removed object lifts / slides away as it goes. */
-export type GrowthIn = 'none' | 'drop' | 'slideIn' | 'bottomToTop';
+export type GrowthIn = 'none' | 'drop' | 'slideIn' | 'bottomToTop' | 'leftToRight' | 'rightToLeft' | 'frontToBack' | 'backToFront' | 'custom';
+
+/** Growth ("over the task") arrivals: they span the whole task and scale the object along a direction. */
+export const GROWS_OVER_TASK: GrowthIn[] = ['bottomToTop', 'leftToRight', 'rightToLeft', 'frontToBack', 'backToFront', 'custom'];
+
+/** Project-axis direction (X east, Y north, Z up) of each growth arrival; 'custom' uses the profile's vector. */
+export const GROWTH_DIRECTIONS: Record<string, { x: number; y: number; z: number }> = {
+  bottomToTop: { x: 0, y: 0, z: 1 },
+  leftToRight: { x: 1, y: 0, z: 0 },
+  rightToLeft: { x: -1, y: 0, z: 0 },
+  frontToBack: { x: 0, y: 1, z: 0 },
+  backToFront: { x: 0, y: -1, z: 0 },
+};
+export const DEFAULT_GROWTH_VECTOR = { x: 1, y: 0, z: 0 };
 export type GrowthOut = 'none' | 'liftUp' | 'slideAway';
 
 export const GROWTH_IN: { value: GrowthIn; label: string }[] = [
@@ -20,6 +35,11 @@ export const GROWTH_IN: { value: GrowthIn; label: string }[] = [
   { value: 'drop', label: 'Reveal and drop (e.g. precast lifted in)' },
   { value: 'slideIn', label: 'Reveal and slide in towards origin' },
   { value: 'bottomToTop', label: 'Bottom to top, over the task (e.g. backfill)' },
+  { value: 'leftToRight', label: 'Left to right, over the task' },
+  { value: 'rightToLeft', label: 'Right to left, over the task' },
+  { value: 'frontToBack', label: 'Front to back, over the task' },
+  { value: 'backToFront', label: 'Back to front, over the task' },
+  { value: 'custom', label: 'Custom direction (vector), over the task' },
 ];
 
 export const GROWTH_OUT: { value: GrowthOut; label: string }[] = [
@@ -51,6 +71,12 @@ export interface AppearanceProfile {
       plays (the object waits at its start position until then); blank =
       the whole task. Bottom to top always spans the whole task. */
   growthHours?: number | null;
+  /** Direction of a 'custom' growth, in project axes (X east, Y north, Z up). */
+  growthVector?: { x: number; y: number; z: number };
+  /** Draw edge lines on the object while it drops / slides in; blank = on, except for the growths over the task. */
+  growthEdges?: boolean;
+  /** Left out of the key on the 4D viewer (Label > Appearance key); the eye in the profiles list. */
+  hideInKey?: boolean;
 }
 
 export function newAppearanceId(): string {

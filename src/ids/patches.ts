@@ -1,4 +1,5 @@
 import { expectedBuilding, propertyValues, type UnitBuildingSource } from './rules';
+import { elevationOf, levelCodeOf, type AvevaLevelSource } from './avevaLevels';
 import { closingBracket, ifcSchema, newGuid, orderedGuids, readEntities, ref, refList, refsIn, splitArgs, stepReal, stepString, writeEntities, type StepEntity } from './step';
 
 /** Patches: fixes for IDS failures, kept as JSON files in docs/ids/patches
@@ -89,7 +90,18 @@ export interface PadPropertyOperation {
   digits: number;
 }
 
-export type PatchOperation = ReclassifyOperation | SpatialStructureOperation | SetPropertyOperation | MergeBuildingsOperation | NameFromPropertyOperation | PadPropertyOperation;
+/** For AVEVA models: rebuilds the spatial structure from the objects' names:
+    one IfcSite, one IfcBuilding and an IfcBuildingStorey per level (named by
+    the level code, at its elevation), each object in its level's storey.
+    Ported from group_ifc_objects_by_level.py; add_location_property.py is
+    the `writeLocation` step. */
+export interface AvevaStoreysOperation extends AvevaLevelSource {
+  type: 'aveva-storeys';
+  /** Also writes the level as this property ("Pset.Property") on the objects moved, where they have none. */
+  writeLocation?: string;
+}
+
+export type PatchOperation = ReclassifyOperation | SpatialStructureOperation | SetPropertyOperation | MergeBuildingsOperation | NameFromPropertyOperation | PadPropertyOperation | AvevaStoreysOperation;
 
 export interface Patch {
   id: string;
@@ -135,6 +147,7 @@ export interface PatchPlan {
 export interface IndexedElement {
   guid: string;
   category: string;
+  name?: string;
   props: Record<string, unknown>;
 }
 
@@ -164,7 +177,30 @@ export function planPatch(
   if (op.type === 'name-from-property') return planNameFromProperty(op, failures, elementsOf);
   if (op.type === 'pad-property') return planPad(op, failures, elementsOf);
   if (op.type === 'merge-buildings') return planMergeBuildings(op, [...new Set(failures.map((f) => f.modelId))], elementsOf, spatialOf);
+  if (op.type === 'aveva-storeys') return planAvevaStoreys(op, [...new Set(failures.map((f) => f.modelId))], elementsOf, spatialOf);
   return { changes: [], skipped: [], modelWide: false };
+}
+
+/** Every object with a level goes in that level's storey; the model's own
+    sites, buildings and storeys are replaced by one site, one building and a
+    storey per level. */
+function planAvevaStoreys(op: AvevaStoreysOperation, modelIds: string[], elementsOf: (modelId: string) => ReadonlyMap<number, IndexedElement> | undefined, spatialOf: (modelId: string) => SpatialNode[]): PatchPlan {
+  const plan: PatchPlan = { changes: [], skipped: [], modelWide: true };
+  for (const modelId of modelIds) {
+    for (const [localId, e] of elementsOf(modelId) ?? []) {
+      const code = levelCodeOf({ category: e.category, guid: e.guid, name: e.name ?? '', props: e.props }, op);
+      if (!code) continue;
+      plan.changes.push({ modelId, localId, guid: e.guid, from: '', to: `Level ${code}`, value: code, level: code, levelNumber: elevationOf(code) });
+    }
+    const nodes = spatialOf(modelId);
+    const note = (category: string, skip: number, from: string, to: string) => {
+      for (const n of nodes.filter((x) => x.category.toUpperCase() === category).slice(skip)) plan.changes.push({ modelId, localId: n.localId, guid: '', from, to, value: '' });
+    };
+    note('IFCSITE', 1, 'IfcSite', 'merged into the first');
+    note('IFCBUILDING', 1, 'IfcBuilding', 'merged into the first');
+    note('IFCBUILDINGSTOREY', 0, 'IfcBuildingStorey', 'replaced by one per level');
+  }
+  return plan;
 }
 
 function planSetProperty(op: SetPropertyOperation, failures: { modelId: string; localId: number }[], elementsOf: (modelId: string) => ReadonlyMap<number, IndexedElement> | undefined): PatchPlan {
@@ -502,6 +538,167 @@ export function applySpatial(text: string, op: SpatialStructureOperation, change
     notes.push(`${leftovers.length} element(s) without a level are contained in the site.`);
   }
   return { text: writeEntities(text, entities, replace, added), applied, failed, schema, notes };
+}
+
+/** Merges every IfcSite into the first: what the extra sites held (buildings,
+    contained elements) goes to it, they leave the project's list, and are
+    deleted; anything else pointing at one is dropped from its list. */
+function mergeSites(text: string): { text: string; count: number } {
+  const entities = readEntities(text);
+  const sites = entities.filter((e) => e.type === 'IFCSITE');
+  if (sites.length < 2) return { text, count: 0 };
+  const target = sites[0].id;
+  const extra = new Set(sites.slice(1).map((s) => s.id));
+  const replace = new Map<number, string | null>();
+  for (const id of extra) replace.set(id, null);
+  const relating: Record<string, number> = { IFCRELAGGREGATES: 4, IFCRELCONTAINEDINSPATIALSTRUCTURE: 5 };
+  for (const e of entities) {
+    if (!e.type.startsWith('IFCREL') || !refsIn(e.args).some((id) => extra.has(id))) continue;
+    const a = splitArgs(e.args);
+    let drop = false;
+    a.forEach((arg, i) => {
+      const t = arg.trim();
+      if (t.startsWith('(')) {
+        const ids = refsIn(t);
+        if (!ids.some((id) => extra.has(id))) return;
+        const kept = ids.filter((id) => !extra.has(id));
+        if (!kept.length) drop = true;
+        a[i] = refList(kept);
+      } else if (/^#\d+$/.test(t) && extra.has(Number(t.slice(1)))) {
+        if (relating[e.type] === i) a[i] = ref(target);
+        else drop = true;
+      }
+    });
+    replace.set(e.id, drop ? null : a.join(','));
+  }
+  return { text: writeEntities(text, entities, replace, []), count: extra.size };
+}
+
+/** Rebuilds an AVEVA model's spatial structure (see AvevaStoreysOperation):
+    one site, one building (the first outermost one, kept with its name), the
+    others and every storey removed, and a storey per level the objects'
+    names give, named by the level code at its elevation, in elevation order.
+    The objects go in their level's storey; other elements that were in a
+    removed storey or building are contained in the building. */
+export function applyAvevaStoreys(source: string, op: AvevaStoreysOperation, allChanges: PlannedChange[]): ApplyResult {
+  const schema = ifcSchema(source);
+  const structural = allChanges.filter((c) => !c.level);
+  const changes = allChanges.filter((c) => c.level);
+  if (changes.length === 0) return { text: source, applied: [], failed: allChanges.map((change) => ({ change, why: 'No object has a level.' })), schema, notes: [] };
+  const merged = mergeSites(source);
+  const text = merged.text;
+  const entities = readEntities(text);
+  const replace = new Map<number, string | null>();
+  const added: string[] = [];
+  const notes: string[] = [];
+  let nextId = entities.reduce((n, e) => Math.max(n, e.id), 0) + 1;
+  const add = (type: string, args: string[]) => {
+    const id = nextId++;
+    added.push(`#${id}=${type}(${args.join(',')});`);
+    return id;
+  };
+  if (merged.count) notes.push(`Merged ${merged.count} extra IfcSite(s) into the first.`);
+  const project = entities.find((e) => e.type === 'IFCPROJECT');
+  if (!project) throw new Error('The file has no IfcProject.');
+  const owner = splitArgs(project.args)[1]?.trim() || '$';
+
+  // The building to keep: the first that is not inside another building.
+  const buildings = entities.filter((e) => e.type === 'IFCBUILDING');
+  const buildingIds = new Set(buildings.map((b) => b.id));
+  const nested = new Set<number>();
+  for (const e of entities) {
+    if (e.type !== 'IFCRELAGGREGATES') continue;
+    const a = splitArgs(e.args);
+    if (buildingIds.has(refsIn(a[4] ?? '')[0])) for (const id of refsIn(a[5] ?? '')) if (buildingIds.has(id)) nested.add(id);
+  }
+  let buildingId = (buildings.find((b) => !nested.has(b.id)) ?? buildings[0])?.id;
+  const deleted = new Set<number>(buildings.filter((b) => b.id !== buildingId).map((b) => b.id));
+  const oldStoreys = entities.filter((e) => e.type === 'IFCBUILDINGSTOREY');
+  for (const s of oldStoreys) deleted.add(s.id);
+  if (buildingId === undefined) {
+    let siteId = entities.find((e) => e.type === 'IFCSITE')?.id;
+    if (siteId === undefined) {
+      siteId = add('IFCSITE', [stepString(newGuid()), owner, stepString('Site'), '$', "'Site'", '$', '$', '$', '.ELEMENT.', '$', '$', '$', '$', '$']);
+      add('IFCRELAGGREGATES', [stepString(newGuid()), owner, '$', '$', ref(project.id), refList([siteId])]);
+    }
+    buildingId = add('IFCBUILDING', [stepString(newGuid()), owner, stepString('Building'), '$', "'Building'", '$', '$', '$', '.ELEMENT.', '$', '$', '$']);
+    add('IFCRELAGGREGATES', [stepString(newGuid()), owner, '$', '$', ref(siteId), refList([buildingId])]);
+    notes.push('Added a building to hold the storeys.');
+  }
+  const keep = buildingId;
+
+  // The objects by GlobalId, grouped by level.
+  const wanted = new Set(changes.map((c) => c.guid));
+  const idByGuid = new Map<string, number>();
+  for (const e of entities) {
+    if (e.type.startsWith('IFCREL') || e.type.startsWith('IFCPROPERTY')) continue;
+    const g = /^\s*'([^']{22})'/.exec(e.args)?.[1];
+    if (g && wanted.has(g)) idByGuid.set(g, e.id);
+  }
+  const failed: ApplyResult['failed'] = [];
+  const applied: PlannedChange[] = [];
+  const byLevel = new Map<string, { elevation: number; elements: number[] }>();
+  for (const c of changes) {
+    const id = idByGuid.get(c.guid);
+    if (id === undefined) {
+      failed.push({ change: c, why: 'No element with this GlobalId in the file.' });
+      continue;
+    }
+    const l = byLevel.get(c.level!) ?? byLevel.set(c.level!, { elevation: c.levelNumber ?? 0, elements: [] }).get(c.level!)!;
+    l.elements.push(id);
+    applied.push(c);
+  }
+  const moved = new Set([...byLevel.values()].flatMap((l) => l.elements));
+
+  // Relationships: moved objects leave their containment; what pointed at a
+  // removed building or storey is dropped from its lists, and a container
+  // that went is replaced by the kept building (or the relationship goes,
+  // when nothing is left in it).
+  for (const e of entities) {
+    if (!e.type.startsWith('IFCREL')) continue;
+    const contained = e.type === 'IFCRELCONTAINEDINSPATIALSTRUCTURE';
+    if (!refsIn(e.args).some((id) => deleted.has(id) || (contained && moved.has(id)))) continue;
+    const a = splitArgs(e.args);
+    const relatingAt = contained ? 5 : e.type === 'IFCRELAGGREGATES' ? 4 : -1;
+    let drop = false;
+    a.forEach((arg, i) => {
+      const t = arg.trim();
+      if (t.startsWith('(')) {
+        const ids = refsIn(t);
+        const kept = ids.filter((id) => !deleted.has(id) && !(contained && moved.has(id)));
+        if (kept.length === ids.length) return;
+        if (kept.length === 0) drop = true;
+        a[i] = refList(kept);
+      } else if (/^#\d+$/.test(t) && deleted.has(Number(t.slice(1)))) {
+        if (i === relatingAt) a[i] = ref(keep);
+        else drop = true;
+      }
+    });
+    replace.set(e.id, drop ? null : a.join(','));
+  }
+  for (const id of deleted) replace.set(id, null);
+
+  // The storeys, in elevation order (and GlobalId order, see orderedGuids).
+  const scale = unitsPerMetre(entities);
+  const levels = [...byLevel].sort((a, b) => a[1].elevation - b[1].elevation || a[0].localeCompare(b[0], undefined, { numeric: true }));
+  const guids = orderedGuids(levels.length);
+  const storeyIds: number[] = [];
+  levels.forEach(([code, { elevation, elements }], i) => {
+    const sId = add('IFCBUILDINGSTOREY', [stepString(guids[i]), owner, stepString(code), '$', "'Storey'", '$', '$', stepString(`Level ${code}`), '.ELEMENT.', stepReal(elevation * scale)]);
+    storeyIds.push(sId);
+    add('IFCRELCONTAINEDINSPATIALSTRUCTURE', [stepString(newGuid()), owner, '$', '$', refList(elements), ref(sId)]);
+  });
+  add('IFCRELAGGREGATES', [stepString(newGuid()), owner, '$', '$', ref(keep), refList(storeyIds)]);
+  notes.push(`Replaced ${oldStoreys.length} storey(s) and ${Math.max(buildings.length - 1, 0)} extra building(s) with ${storeyIds.length} storey(s), one per level: ${levels.map(([c]) => c).join(', ')}.`);
+
+  let out = writeEntities(text, entities, replace, added);
+  if (op.writeLocation && applied.length) {
+    const dot = op.writeLocation.indexOf('.');
+    const r = applySetProperties(out, applied.map((c) => ({ guid: c.guid, pset: op.writeLocation!.slice(0, dot), name: op.writeLocation!.slice(dot + 1), value: c.value, valueType: 'IfcLabel' as const })), false);
+    out = r.text;
+    notes.push(...r.notes, `Wrote ${op.writeLocation} on ${r.applied.length} object(s).`);
+  }
+  return { text: out, applied: [...applied, ...structural], failed, schema, notes };
 }
 
 /** One property to write on one element (found by GlobalId). */
@@ -875,6 +1072,7 @@ export function applyPatch(patch: Patch, text: string, changes: PlannedChange[])
   if (op.type === 'reclassify') return applyReclassify(text, changes);
   if (op.type === 'spatial-structure') return applySpatial(text, op, changes);
   if (op.type === 'name-from-property') return applyNames(text, changes);
+  if (op.type === 'aveva-storeys') return applyAvevaStoreys(text, op, changes);
   if (op.type === 'pad-property') {
     const r = applySetProperties(text, changes.map((c) => ({ guid: c.guid, pset: c.pset ?? '', name: c.property ?? '', value: c.value, valueType: 'IfcLabel' as const })), true);
     const done = new Set(r.applied.map((a) => a.guid));

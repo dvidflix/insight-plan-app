@@ -1,0 +1,11 @@
+{
+  "id": "AVEVA-STOREYS",
+  "name": "AVEVA models: one site, one building, a storey per level",
+  "description": "In a model whose Originating System contains AVEVA, the objects' names give their level (characters 5-6 of the Name, e.g. the 07 in ABCD07…). The model should have one IfcSite, one IfcBuilding, and one IfcBuildingStorey per level, named by its code (07, 0B). Other models are not checked.",
+  "instructions": "Run the linked patch: it rebuilds the site, building and storeys from the object names.",
+  "type": "aveva-storeys",
+  "originatingSystem": "AVEVA",
+  "nameStart": 4,
+  "nameLength": 2,
+  "locationProperty": "ePset_LocationTool.Location 0"
+}

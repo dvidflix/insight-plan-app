@@ -5,7 +5,7 @@ import { pipeline } from 'node:stream/promises';
 import type { Plugin } from 'vite';
 import { HttpError, readBody, send, sendError } from './http';
 import { legacyFolders, migrateLayout } from './projectLayout';
-import { closeAllDatabases, listP6Projects, p6Database, projectDb } from './db/projectDb';
+import { closeAllDatabases, listP6Projects, p6Database, projectDb, openProjectFiles } from './db/projectDb';
 
 /** Dev-server API for the project database (vite-plugins/db/projectDb.ts):
     <project folder>/insight-plan.db. Every call names the project folder
@@ -39,6 +39,7 @@ export function projectDbPlugin(): Plugin {
           if (get && route === 'layout') return send(res, 200, { legacy: legacyFolders(projectDb(q.get('root')).root) });
           if (req.method === 'POST' && route === 'layout/migrate') return send(res, 200, migrateLayout(projectDb((await readBody(req)).root).root));
 
+          if (get && route === 'opened') return send(res, 200, { files: openProjectFiles() });
           if (get && route === 'changes') return send(res, 200, { changes: projectDb(q.get('root')).changes() });
 
           // ---- programmes ----

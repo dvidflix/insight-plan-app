@@ -193,18 +193,43 @@ const set = useScenarioStore.setState;
 
 export const stemsInInputs = (models: { name: string }[]) => models.map((m) => m.name.replace(/\.(ifc|frag)$/i, ''));
 
-/** Scenarios are worked one building at a time: the picked one if it is
-    loaded in Inputs, else the first loaded. */
+const sameBuilding = (a: string, b: string) => baseStem(a).toLowerCase() === baseStem(b).toLowerCase();
+
+/** Scenarios are worked one building at a time. With several loaded in Inputs, the building is the one the current
+    scenario belongs to (if the picked one has no such scenario, another loaded building that has it), else the picked
+    one, else the first loaded — preferring buildings that are in the project folder. */
+function resolveStem(stems: string[], picked: string | null, project: ProjectInfo | null, scenario: string | null): string | null {
+  const chosen = chooseStem(stems, picked, project, scenario);
+  // The IFC loaded may be the _FIXED copy: work on the project folder's own stem for that building.
+  return chosen !== null ? project?.models.find((m) => sameBuilding(m.stem, chosen))?.stem ?? chosen : null;
+}
+function chooseStem(stems: string[], picked: string | null, project: ProjectInfo | null, scenario: string | null): string | null {
+  const saved = scenario ? project?.scenarios.find((s) => s.name === scenario) : undefined;
+  if (saved) {
+    const owners = stems.filter((stem) => saved.models.some((m) => sameBuilding(m.stem, stem)));
+    if (picked && owners.some((o) => sameBuilding(o, picked))) return picked;
+    if (owners.length) return owners[0];
+  }
+  if (picked && stems.some((st) => sameBuilding(st, picked))) return picked;
+  const inProject = stems.find((stem) => project?.models.some((m) => sameBuilding(m.stem, stem)));
+  return inProject ?? stems[0] ?? null;
+}
 export function useScenarioStem(): string | null {
   const models = useModelsStore((s) => s.models);
   const picked = useScenarioStore((s) => s.pickedStem);
-  const stems = stemsInInputs(models);
-  return picked && stems.includes(picked) ? picked : stems[0] ?? null;
+  const project = useScenarioStore((s) => s.project);
+  const scenario = useScenarioStore((s) => s.scenario);
+  return resolveStem(stemsInInputs(models), picked, project, scenario);
 }
 function currentStem(): string | null {
-  const stems = stemsInInputs(useModelsStore.getState().models);
-  const picked = get().pickedStem;
-  return picked && stems.includes(picked) ? picked : stems[0] ?? null;
+  const { pickedStem, project, scenario } = get();
+  return resolveStem(stemsInInputs(useModelsStore.getState().models), pickedStem, project, scenario);
+}
+
+/** The scenarios of every loaded building (plus unsaved ones): picking one moves to the building it belongs to. */
+export function scenarioNamesForStems(project: ProjectInfo | null, drafts: string[], stems: string[]): string[] {
+  const own = project?.scenarios.filter((s) => s.models.some((m) => stems.some((stem) => sameBuilding(m.stem, stem)))).map((s) => s.name) ?? [];
+  return [...new Set([...own, ...drafts])].sort((a, b) => a.localeCompare(b));
 }
 
 export function scenarioNamesFor(project: ProjectInfo | null, drafts: string[], stem: string | null): string[] {

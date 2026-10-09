@@ -3,11 +3,12 @@ import { movedKeys, stepNumbers, type PourRow } from './pourOrder';
 import { applyView, BASE_COL, COMPUTED_COLUMNS, FINISH_MONTH_COL, FINISH_WEEK_COL, SHIFT_COL, START_MONTH_COL, START_WEEK_COL, STEP_COL } from './tableView';
 import { scenarioFileName } from './api';
 import { baseStem } from './fromProgramme';
+import { useModelsStore } from '../state/modelsStore';
 import { useScheduleStore } from '../state/scheduleStore';
 import { elementIdField } from '../schedule/activityObjects';
 import { taskFieldValue } from '../schedule/linkGroups';
 import { finishOf, isoWeekLabel, monthLabel, startOf } from '../schedule/columns';
-import { scenarioNamesFor, useScenarioStem, useScenarioStore } from '../state/scenarioStore';
+import { scenarioNamesForStems, stemsInInputs, useScenarioStem, useScenarioStore } from '../state/scenarioStore';
 import { queryMatcher } from '../schedule/search';
 
 export type ScnItem = { r: PourRow; i: number };
@@ -27,8 +28,10 @@ export function useScenarioView() {
   const flaggedOnly = useScenarioStore((s) => s.flaggedOnly);
   const stem = useScenarioStem();
 
-  const scenarioNames = useMemo(() => scenarioNamesFor(project, drafts, stem), [project, drafts, stem]);
-  const modelInfo = project?.models.find((m) => m.stem === stem) ?? null;
+  const loadedModels = useModelsStore((s) => s.models);
+  const scenarioNames = useMemo(() => scenarioNamesForStems(project, drafts, stemsInInputs(loadedModels)), [project, drafts, loadedModels]);
+  // The IFC loaded may be the _FIXED copy of the one in the project folder.
+  const modelInfo = (stem !== null ? project?.models.find((m) => m.stem === stem) ?? project?.models.find((m) => baseStem(m.stem).toLowerCase() === baseStem(stem).toLowerCase()) : null) ?? null;
   const generatedAt = project?.scenarios.find((s) => s.name === scenario)?.models.find((m) => stem !== null && baseStem(m.stem).toLowerCase() === baseStem(stem).toLowerCase())?.generated ?? null;
   const ready = !!(project && scenario && stem && loaded && loaded.stem === stem && loaded.scenario === scenario);
 

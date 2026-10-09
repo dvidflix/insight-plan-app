@@ -18,6 +18,8 @@ export type DataAgg = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
 
 export type DataTableScope = 'all' | 'visible' | 'selected';
 
+export type DataTablePosition = 'bottom' | 'left' | 'right';
+
 /** Twin columns: a column id starting with this is a property of the object's
     twin in the twin model (TWIN_PREFIX + the property key). */
 export const TWIN_PREFIX = 'twin:';
@@ -57,6 +59,10 @@ export interface DataTablePreset {
 interface DataTableState {
   open: boolean;
   height: number;
+  /** Where the table sits: under the 3D view, or beside it on the left / right. */
+  position: DataTablePosition;
+  /** Its width when beside the view. */
+  width: number;
   columns: string[];
   widths: Record<string, number>;
   /** Conditions a row must meet (all, or any), as in Search sets. */
@@ -92,9 +98,10 @@ interface DataTableState {
   setGroupsCollapsed: (collapsed: boolean) => void;
   setOpen: (v: boolean) => void;
   setHeight: (v: number) => void;
+  setWidth_: (v: number) => void;
   setColumns: (v: string[]) => void;
   setWidth: (col: string, w: number) => void;
-  patch: (p: Partial<Pick<DataTableState, 'filters' | 'filterMatch' | 'groupRules' | 'sortRules' | 'colorRules' | 'tab' | 'totals' | 'aggs' | 'scope' | 'twin'>>) => void;
+  patch: (p: Partial<Pick<DataTableState, 'filters' | 'filterMatch' | 'groupRules' | 'sortRules' | 'colorRules' | 'tab' | 'totals' | 'aggs' | 'scope' | 'twin' | 'position'>>) => void;
   /** Opens the side pane on the Data table tab (at `tab`). */
   configure: (tab?: DataTableTab) => void;
 }
@@ -109,6 +116,8 @@ export const useDataTableStore = create<DataTableState>()(
     (set, get) => ({
       open: false,
       height: 300,
+      position: 'bottom' as DataTablePosition,
+      width: 520,
       columns: [COL_NAME, COL_CLASS, COL_MODEL],
       widths: {},
       filters: [],
@@ -142,6 +151,7 @@ export const useDataTableStore = create<DataTableState>()(
       setGroupsCollapsed: (collapsed) => set((s) => ({ groupCommand: { kind: collapsed ? 'collapse' : 'expand', n: (s.groupCommand?.n ?? 0) + 1 } })),
       setOpen: (open) => set({ open }),
       setHeight: (height) => set({ height }),
+      setWidth_: (width) => set({ width }),
       setColumns: (columns) => set({ columns }),
       setWidth: (col, w) => set((s) => ({ widths: { ...s.widths, [col]: w } })),
       patch: (p) => set(p),

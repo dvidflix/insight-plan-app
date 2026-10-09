@@ -1,0 +1,19 @@
+{
+  "id": "aveva-storeys",
+  "name": "Rebuild site, building and storeys from AVEVA object names",
+  "description": "Merges the sites and buildings into one of each, replaces the storeys with one per level the objects' names give (named 0J … 80 at its elevation: 07 = 0 m, 01 = -10 m, 11 and up = number - 7), and puts each object in its level's storey. Other elements that were in a removed storey go in the building. Writes ePset_LocationTool / Location 0 = level on the objects.",
+  "fixes": [
+    {
+      "ids": "Custom rules",
+      "specification": "AVEVA-STOREYS"
+    }
+  ],
+  "operation": {
+    "type": "aveva-storeys",
+    "originatingSystem": "AVEVA",
+    "nameStart": 4,
+    "nameLength": 2,
+    "locationProperty": "ePset_LocationTool.Location 0",
+    "writeLocation": "ePset_LocationTool.Location 0"
+  }
+}

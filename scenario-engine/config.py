@@ -214,6 +214,8 @@ ENABLE_COMPLETION_CLOSEOUT = True
 # vertical gap, like the level gate).
 ENABLE_OPEN_END_SEQUENCING = True
 OPEN_END_MAX_DISTANCE_M = 0.3
+# With none in reach, precede the nearest slab above instead (only the roof's pours then end on the completion milestone).
+OPEN_END_NEAREST_SLAB_FALLBACK = True
 
 # Level gate: only tie SLAB pours back to the level below; walls/columns/
 # stairs follow their own slab via clash-derived slab-support edges. Set
@@ -325,7 +327,7 @@ PRECAST_ACTIVITY_DEFINITIONS = [
         "suffix": "-I",
         "resource": "",
         "duration_days": 1,
-        "task_name_suffix": " - Precast Installation"
+        "task_name_suffix": " - Installation"
     },
     {
         "name": "Stitching",

@@ -1,9 +1,13 @@
-import { useState, type DragEvent } from 'react';
+import { useRef, useState, type DragEvent } from 'react';
 import { IconBookmark, IconChevronDown, IconChevronRight, IconClose, IconFolder, IconPencil, IconSync, IconTrash } from '../icons';
 import { ResizeHandle, useResizableWidth } from '../ResizeHandle';
 import { usePersistedState } from '../../utils/persistedState';
+import { decodePlf, plfToLayout } from '../../schedule/plfLayout';
+import type { ColumnDef } from '../../schedule/columns';
+import type { FilterFieldDef } from '../../schedule/filterFields';
 import {
   addFolder,
+  addImportedLayout,
   applyLayout,
   deleteFolder,
   deleteLayout,
@@ -32,11 +36,13 @@ type Drop =
     between layouts. Layouts can be filed in folders, and dragged to reorder:
     onto another layout (before / after it), onto a folder (into it) or
     onto "No folder"; folders are dragged by their header to reorder. */
-export function LayoutsDock({ filters, tab, onClose }: { filters: ViewFilters; /** The Programmes view that is open (saved with the layout). */ tab: string; onClose: () => void }) {
+export function LayoutsDock({ filters, tab, importContext, onClose }: { filters: ViewFilters; /** The Programmes view that is open (saved with the layout). */ tab: string; /** The schedule's columns and filter fields, for importing P6 layouts (null: no schedule loaded). */ importContext: { catalog: ColumnDef[]; filterFields: FilterFieldDef[] } | null; onClose: () => void }) {
   const layouts = useScheduleLayoutsStore((s) => s.layouts);
   const folders = useScheduleLayoutsStore((s) => s.folders);
   const currentId = useScheduleLayoutsStore((s) => s.currentId);
   const [name, setName] = useState('');
+  const fileInput = useRef<HTMLInputElement>(null);
+  const [importMsg, setImportMsg] = useState<{ kind: 'ok' | 'error'; text: string; notes: string[] } | null>(null);
   const [saveFolder, setSaveFolder] = useState('');
   const [renaming, setRenaming] = useState<{ id: string; name: string } | null>(null);
   const [closed, setClosed] = usePersistedState<string[]>('programmes.layoutsFoldersClosed', []);
@@ -60,6 +66,26 @@ export function LayoutsDock({ filters, tab, onClose }: { filters: ViewFilters; /
     return e.clientY > r.top + r.height / 2;
   };
   const toggleClosed = (f: string) => setClosed((c) => (c.includes(f) ? c.filter((x) => x !== f) : [...c, f]));
+
+
+  /** P6 layouts (.plf) -> layouts in the "P6" folder; what could not carry over is listed under the button. */
+  const importFiles = async (files: FileList | null) => {
+    if (!files || files.length === 0 || !importContext) return;
+    const notes: string[] = [];
+    const done: string[] = [];
+    for (const file of Array.from(files)) {
+      try {
+        const r = plfToLayout(decodePlf(await file.arrayBuffer()), importContext, file.name.replace(/\.plf$/i, ''));
+        const unique = addImportedLayout(r.name, r.settings, r.filters, 'P6');
+        done.push(unique);
+        for (const n of r.notes) notes.push(`${unique}: ${n}`);
+      } catch (e) {
+        notes.push(`${file.name}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    }
+    setImportMsg({ kind: done.length ? 'ok' : 'error', text: done.length ? `Imported ${done.length} P6 layout${done.length === 1 ? '' : 's'} into the "P6" folder.` : 'Nothing was imported.', notes });
+    if (fileInput.current) fileInput.current.value = '';
+  };
 
   const row = (l: ScheduleLayout, indent: boolean) => {
     const current = l.id === currentId;
@@ -238,6 +264,29 @@ export function LayoutsDock({ filters, tab, onClose }: { filters: ViewFilters; /
             >
               + New folder
             </button>
+          </div>
+          <div className="ld-import">
+            <input ref={fileInput} type="file" accept=".plf" multiple hidden onChange={(e) => void importFiles(e.target.files)} />
+            <button
+              type="button"
+              className="btn btn--small"
+              disabled={!importContext}
+              onClick={() => fileInput.current?.click()}
+              title={importContext ? 'Bring in layouts saved from Primavera P6 (.plf): columns, widths, sort, group and filters, as far as this app has them' : 'Load a programme first: the layouts are matched to its columns'}
+            >
+              Import P6 layouts…
+            </button>
+            {importMsg && (
+              <div className={importMsg.kind === 'error' ? 'scn-error' : 'scn-dim'}>
+                {importMsg.text}
+                {importMsg.notes.length > 0 && (
+                  <details>
+                    <summary>{importMsg.notes.length} note{importMsg.notes.length === 1 ? '' : 's'}</summary>
+                    <ul className="ld-import__notes">{importMsg.notes.map((n, i) => <li key={i}>{n}</li>)}</ul>
+                  </details>
+                )}
+              </div>
+            )}
           </div>
           {layouts.length === 0 && folders.length === 0 && <div className="scn-dim">No layouts yet.</div>}
           <div className="layouts-dock__list">

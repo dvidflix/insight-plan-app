@@ -227,24 +227,24 @@ def create_activities(rec, wbs_manager, overrides=None):
     if is_landing:
         phase_sequence = [
             {"original_name": "Decking",  "display_name": "Decking",  "suffix": "-DK", "short_label": "Decking"},
-            {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R",  "short_label": "Rebar & EP/AP"},
+            {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R",  "short_label": "Rebar and EP/AP"},
             {"original_name": "Concrete", "display_name": "Concrete", "suffix": "-C",  "short_label": "Concrete"},
         ]
     elif is_slab and is_raft:
         phase_sequence = [
             {"original_name": "Rebar",       "display_name": "Rebar",       "suffix": "-R",  "short_label": "Rebar"},
-            {"original_name": "EOP on Slab", "display_name": "EOP on Slab", "suffix": "-E2", "short_label": "EOP on Slab"},
-            {"original_name": "FWK",         "display_name": "FWK",         "suffix": "-F",  "short_label": "FWK"},
+            {"original_name": "EOP on Slab", "display_name": "EOP on Slab", "suffix": "-E2", "short_label": "E/P on Slab"},
+            {"original_name": "FWK",         "display_name": "FWK",         "suffix": "-F",  "short_label": "Formwork"},
             {"original_name": "Concrete",    "display_name": "Concrete",    "suffix": "-C",  "short_label": "Concrete"},
         ]
     elif is_slab:
         phase_sequence = [
             {"original_name": "Works before slab", "display_name": "Works before slab", "suffix": "-ALL", "short_label": "Works before slab"},
-            {"original_name": "Decking",           "display_name": "Decking",           "suffix": "-DK",  "short_label": "Decking"},
-            {"original_name": "Under Slab",         "display_name": "Under Slab",       "suffix": "-D",   "short_label": "Under Slab"},
+            {"original_name": "Decking",           "display_name": "Decking",           "suffix": "-DK",  "short_label": "Mills and Decking"},
+            {"original_name": "Under Slab",         "display_name": "Under Slab",       "suffix": "-D",   "short_label": "E/P under Slab"},
             {"original_name": "Rebar",              "display_name": "Rebar",            "suffix": "-R",   "short_label": "Rebar"},
-            {"original_name": "EOP on Slab",        "display_name": "EOP on Slab",      "suffix": "-E2",  "short_label": "EOP on Slab"},
-            {"original_name": "FWK",                "display_name": "FWK",              "suffix": "-F",   "short_label": "FWK"},
+            {"original_name": "EOP on Slab",        "display_name": "EOP on Slab",      "suffix": "-E2",  "short_label": "E/P on Slab"},
+            {"original_name": "FWK",                "display_name": "FWK",              "suffix": "-F",   "short_label": "Formwork"},
             {"original_name": "Concrete",           "display_name": "Concrete",         "suffix": "-C",   "short_label": "Concrete"},
         ]
         if not ENABLE_WORKS_BEFORE_SLAB:
@@ -252,7 +252,7 @@ def create_activities(rec, wbs_manager, overrides=None):
     else:
         phase_sequence = [
             {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R", "short_label": "Rebar"},
-            {"original_name": "Formwork", "display_name": "Formwork", "suffix": "-F", "short_label": "EP+FWK"},
+            {"original_name": "Formwork", "display_name": "Formwork", "suffix": "-F", "short_label": "E/P and Formwork"},
             {"original_name": "Concrete", "display_name": "Concrete", "suffix": "-C", "short_label": "Concrete"},
         ]
 

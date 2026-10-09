@@ -1,7 +1,9 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import * as THREE from 'three';
 import { useViewerEngine } from '../../viewer/ViewerEngineContext';
 import { tagCss, useActiveTagsStore, type TagCallout, type TagStyle } from '../../state/tagsStore';
+import { useModelsStore } from '../../state/modelsStore';
+import { useViewSettingsStore } from '../../state/viewSettingsStore';
 
 interface Placed {
   key: string;
@@ -121,9 +123,28 @@ function layout(items: { key: string; color: string; text: string; style?: TagSt
 /** Tags drawn next to the objects they label (Label tab > Tags placement),
     over the main 3D view: each callout sits by the middle of its objects
     with a leader line, kept clear of the others, following the camera. */
-export function TagCallouts() {
+export function TagCallouts({ view = 'main' }: { view?: 'main' | 'second' }) {
   const engine = useViewerEngine();
-  const callouts = useActiveTagsStore((s) => s.callouts);
+  const allCallouts = useActiveTagsStore((s) => s.callouts);
+  // Side by side, each view tags only the objects of the models it shows (View settings > Models in this view).
+  const models = useModelsStore((s) => s.models);
+  const hiddenNames = useViewSettingsStore((s) => (s.pages.sequence.split ? s.pages.sequence[view].hiddenModels : undefined));
+  const callouts = useMemo(() => {
+    let list = allCallouts;
+    if (hiddenNames?.length) {
+      const out = new Set(hiddenNames);
+      const shown = new Set(models.filter((m) => !out.has(m.name)).map((m) => m.modelId));
+      list = list.filter((c) => Object.keys(c.targets).some((id) => shown.has(id)));
+    }
+    // The same text on the same objects (two programmes driving one element) is drawn once.
+    const seen = new Set<string>();
+    return list.filter((c) => {
+      const k = `${c.text}|${Object.entries(c.targets).map(([m, ids]) => `${m}:${[...ids].sort((x, y) => x - y).join(',')}`).join(';')}`;
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }, [allCallouts, models, hiddenNames]);
   const rootRef = useRef<HTMLDivElement>(null);
   const [placed, setPlaced] = useState<Placed[]>([]);
   // World-space anchor of each callout (a point on its objects' top), keyed by callout + targets.
@@ -167,7 +188,8 @@ export function TagCallouts() {
 
   // Project + lay out on every camera move / resize.
   useEffect(() => {
-    const world = engine.world;
+    const world = view === 'second' ? engine.secondary?.overlayWorld : engine.world;
+    if (!world) return;
     const canvas = world.renderer?.three.domElement;
     const root = rootRef.current;
     if (!canvas || !root) return;
@@ -202,7 +224,7 @@ export function TagCallouts() {
     };
     // sig only reads the callout
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [callouts, engine, tick]);
+  }, [callouts, engine, tick, view]);
 
   return (
     <div ref={rootRef} className="tag-callouts">

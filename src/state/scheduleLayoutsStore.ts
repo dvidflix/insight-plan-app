@@ -28,7 +28,7 @@ const VIEW_KEYS = new Set([
 ]);
 export const isLayoutKey = (k: string) => k !== STORE_KEY && (VIEW_KEYS.has(k) || VIEW_PREFIXES.some((p) => k.startsWith(p)));
 
-type SerializedFilters = { combine?: FieldFilterState['combine']; selectModes?: FieldFilterState['selectModes']; selections: Record<string, string[]>; textFilters: FieldFilterState['textFilters']; textModes?: FieldFilterState['textModes']; ranges: FieldFilterState['ranges'] };
+export type SerializedFilters = { combine?: FieldFilterState['combine']; selectModes?: FieldFilterState['selectModes']; selections: Record<string, string[]>; textFilters: FieldFilterState['textFilters']; textModes?: FieldFilterState['textModes']; ranges: FieldFilterState['ranges'] };
 
 export interface ScheduleLayout {
   id: string;
@@ -99,6 +99,10 @@ const serialize = (filters: FieldFilterState): SerializedFilters => {
   return { combine: filters.combine, selectModes: filters.selectModes, selections, textFilters: filters.textFilters, textModes: filters.textModes, ranges: filters.ranges };
 };
 
+/** The filter state as plain JSON (sets as lists), and back: for settings that keep filters (layouts, the concrete comparison). */
+export const serializeFilters = (f: FieldFilterState): SerializedFilters => serialize(f);
+export const deserializeFilters = (f: SerializedFilters): FieldFilterState => deserialize(f);
+
 const deserialize = (f: SerializedFilters): FieldFilterState => {
   const selections: Record<string, Set<string>> = {};
   for (const [k, v] of Object.entries(f.selections)) selections[k] = new Set(v);
@@ -117,6 +121,15 @@ function snapshot(filters: ViewFilters, tab?: string): Omit<ScheduleLayout, 'id'
 export function saveLayout(name: string, filters: ViewFilters, folder?: string, tab?: string) {
   const layout: ScheduleLayout = { id: crypto.randomUUID(), name, ...snapshot(filters, tab), ...(folder ? { folder } : {}) };
   set((s) => ({ layouts: [...s.layouts, layout], currentId: layout.id }));
+}
+
+/** Files an imported layout (a P6 .plf, see schedule/plfLayout.ts) under `folder`, made if needed. Its name gets a number when taken. */
+export function addImportedLayout(name: string, settings: Record<string, string>, filters: FieldFilterState, folder: string, tab = 'activities'): string {
+  let unique = name;
+  for (let n = 2; get().layouts.some((l) => l.folder === folder && l.name.toLowerCase() === unique.toLowerCase()); n++) unique = `${name} (${n})`;
+  const layout: ScheduleLayout = { id: crypto.randomUUID(), name: unique, savedAt: new Date().toISOString(), settings, filters: serialize(filters), folder, tab };
+  set((s) => ({ layouts: [...s.layouts, layout], folders: s.folders.includes(folder) ? s.folders : [...s.folders, folder] }));
+  return unique;
 }
 
 /** Overwrites a layout with the view as it is now. */
@@ -210,11 +223,14 @@ export function applyLayout(id: string) {
   }));
 }
 
-/** The filters an apply left for the page (read once, on mount). */
-export function takePendingFilters(): ViewFilters | null {
-  const f = get().pendingFilters;
-  if (f) set({ pendingFilters: null });
-  return f;
+/** The filters an apply left for the page to start with. Reading does not use them up (in development React runs a
+    component's start-up code twice and keeps the second result): the page calls clearPendingFilters once it is mounted. */
+export function peekPendingFilters(): ViewFilters | null {
+  return get().pendingFilters;
+}
+
+export function clearPendingFilters() {
+  if (get().pendingFilters) set({ pendingFilters: null });
 }
 
 /** The view an apply left to open (read once by the app). */

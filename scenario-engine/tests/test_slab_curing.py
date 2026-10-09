@@ -99,7 +99,7 @@ def test_a_landing_is_decking_rebar_concrete_chained_in_order(monkeypatch):
     monkeypatch.setattr(gen, "SLAB_CURING_DAYS", 7)
     acts = gen.create_activities(rec("LANDING", lg1="Landing"), FakeWbs())
     assert phases(acts) == ["Decking", "Rebar", "Concrete"]
-    assert [a["task_name"].rsplit(" - ", 1)[1] for a in acts] == ["Decking", "Rebar & EP/AP", "Concrete"]
+    assert [a["task_name"].rsplit(" - ", 1)[1] for a in acts] == ["Decking", "Rebar and EP/AP", "Concrete"]
     edges = xml_builder._build_intra_pour_predecessors(acts)
     assert edges["P1-R"] == ["P1-DK"] and edges["P1-C"] == ["P1-R"]
 

@@ -12,7 +12,8 @@ import { defaultColumnIds, periodLabel, tasksInPeriod, type TasksMode } from './
 import { alignDown } from '../../schedule/period';
 import { usePersistedState } from '../../utils/persistedState';
 import { useSequenceTimelineStore, STEP_UNIT_LABELS } from '../../state/sequenceTimelineStore';
-import { scheduleRange } from '../../schedule/linking';
+import { limitRange, scheduleRange } from '../../schedule/linking';
+import { useTimelineSettingsStore } from '../../state/timelineSettingsStore';
 import { nextBoundary } from '../../schedule/period';
 
 const QUALITY = { standard: 0.08, high: 0.18, max: 0.35 } as const;
@@ -47,7 +48,9 @@ export function MediaExport({ schedule }: { schedule: ScheduleModel }) {
   const engine = useViewerEngine();
   const basis = useSequenceTimelineStore((s) => s.basis);
   const stepUnit = useSequenceTimelineStore((s) => s.stepUnit);
-  const range = useMemo(() => scheduleRange(schedule, basis), [schedule, basis]);
+  const limitStart = useTimelineSettingsStore((s) => s.limitStart);
+  const limitEnd = useTimelineSettingsStore((s) => s.limitEnd);
+  const range = useMemo(() => limitRange(scheduleRange(schedule, basis), limitStart, limitEnd), [schedule, basis, limitStart, limitEnd]);
 
   const [output, setOutput] = useState<Output>('mp4');
   const [from, setFrom] = useState('');

@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
-import { scheduleRange } from '../../schedule/linking';
+import { limitRange, scheduleRange } from '../../schedule/linking';
+import { useTimelineSettingsStore } from '../../state/timelineSettingsStore';
 import { IconInfo } from '../icons';
 
 const pad = (n: number) => String(n).padStart(2, '0');
@@ -24,7 +25,9 @@ export function JumpToDate() {
   const date = useSequenceTimelineStore((s) => s.date);
   const setDate = useSequenceTimelineStore((s) => s.setDate);
   const setPlaying = useSequenceTimelineStore((s) => s.setPlaying);
-  const range = useMemo(() => (model ? scheduleRange(model, basis) : null), [model, basis]);
+  const limitStart = useTimelineSettingsStore((s) => s.limitStart);
+  const limitEnd = useTimelineSettingsStore((s) => s.limitEnd);
+  const range = useMemo(() => (model ? limitRange(scheduleRange(model, basis), limitStart, limitEnd) : null), [model, basis, limitStart, limitEnd]);
 
   const [draft, setDraft] = useState('');
   // The field follows the timeline (playback, scrubber) until edited.

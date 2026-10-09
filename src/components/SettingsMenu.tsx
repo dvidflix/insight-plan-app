@@ -87,6 +87,16 @@ function TimelineSettings() {
         <span className="settings-field__label">Playback speed: {(1000 / t.stepIntervalMs).toFixed(1)} steps / s</span>
         <input type="range" min={100} max={2000} step={50} value={2100 - t.stepIntervalMs} onChange={(e) => t.patch({ stepIntervalMs: 2100 - Number(e.target.value) })} style={{ width: '100%' }} />
       </label>
+      <div className="settings-field" title="Limit the timeline to these dates (inside the programme's own). Leave a date empty to use the programme's.">
+        <span className="settings-field__label">Timeline limits</span>
+        {([['limitStart', 'Start'], ['limitEnd', 'Finish']] as const).map(([key, label]) => (
+          <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4 }}>
+            <span style={{ width: 44, fontSize: 12 }}>{label}</span>
+            <input type="date" value={t[key] ?? ''} onChange={(e) => t.patch({ [key]: e.target.value || null })} style={{ flex: 1, minWidth: 0 }} />
+            {t[key] && <button type="button" className="mini-btn" onClick={() => t.patch({ [key]: null })} title="Back to the programme's own date" aria-label={`Clear the ${label.toLowerCase()} limit`}>✕</button>}
+          </label>
+        ))}
+      </div>
       {toggle('Show years', t.showYears, (v) => t.patch({ showYears: v }))}
       {toggle('Show months', t.showMonths, (v) => t.patch({ showMonths: v }), 'Monthly and Weekly stepping only.')}
       <label className="settings-field">

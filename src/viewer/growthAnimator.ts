@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import type { ViewerEngine } from './ViewerEngine';
 
-export type GrowthMode = 'drop' | 'slideIn' | 'bottomToTop' | 'liftUp' | 'slideAway';
+export type GrowthMode = 'drop' | 'slideIn' | 'grow' | 'liftUp' | 'slideAway';
 
 /** One group of elements animating during the current step. */
 export interface GrowthSpec {
@@ -17,6 +17,10 @@ export interface GrowthSpec {
       runs between them. */
   from: number;
   to: number;
+  /** 'grow': unit direction (viewer axes, y up) the object grows along; default up. */
+  direction?: { x: number; y: number; z: number };
+  /** Draw edge lines on the stand-in (the viewer's edge pass); default yes. */
+  edges?: boolean;
 }
 
 interface Proxy {
@@ -25,6 +29,12 @@ interface Proxy {
   /** World-space bottom (y) and horizontal centre, for scaling / sliding. */
   bottom: number;
   centre: THREE.Vector3;
+  /** 'grow': the direction and where the object starts along it (smallest projection of its box). */
+  dir: THREE.Vector3;
+  start: number;
+  /** Length of the box along dir, and the clipping plane the reveal moves. */
+  extent: number;
+  plane: THREE.Plane;
 }
 
 const easeOut = (t: number) => 1 - (1 - t) ** 3;
@@ -157,9 +167,10 @@ export class GrowthAnimator {
           m.makeTranslation(radial.x * spec.distance * easeIn(k), 0, radial.z * spec.distance * easeIn(k));
           visible = k < 1;
           break;
-        case 'bottomToTop': {
-          const s = Math.max(0.001, k);
-          m.makeTranslation(0, p.bottom, 0).multiply(new THREE.Matrix4().makeScale(1, s, 1)).multiply(new THREE.Matrix4().makeTranslation(0, -p.bottom, 0));
+        case 'grow': {
+          // Revealed, not scaled: a clipping plane sweeps along the direction and cuts the geometry.
+          p.plane.constant = p.start + Math.max(0, Math.min(1, k)) * p.extent;
+          visible = k > 0.0005;
           break;
         }
       }
@@ -187,12 +198,18 @@ export class GrowthAnimator {
       group.matrixAutoUpdate = false;
       const box = new THREE.Box3();
       const materialCache = new Map<string, THREE.Material>();
+      // 'grow': keeps what lies on the near side of the plane (x·dir <= constant); its constant is moved in apply().
+      const dir = spec.direction ? new THREE.Vector3(spec.direction.x, spec.direction.y, spec.direction.z).normalize() : new THREE.Vector3(0, 1, 0);
+      const plane = new THREE.Plane(dir.clone().negate(), 0);
       const materialFor = (c: THREE.Color) => {
         const key = c.getHexString();
         let mat = materialCache.get(key);
         if (!mat) {
           const opacity = spec.opacity ?? 1;
           mat = new THREE.MeshLambertMaterial({ color: c, transparent: opacity < 1, opacity, side: THREE.DoubleSide });
+          // Kept out of the edge pass (painted over it) when the profile turns edges off for the movement.
+          if (spec.edges === false) this.engine.edgeFreeMaterials.add(mat);
+          if (spec.mode === 'grow') mat.clippingPlanes = [plane];
           materialCache.set(key, mat);
         }
         return mat;
@@ -215,7 +232,22 @@ export class GrowthAnimator {
         }
       });
       if (group.children.length === 0) return null;
-      return { spec, group, bottom: box.min.y, centre: box.getCenter(new THREE.Vector3()) };
+      let start = Infinity;
+      let end = -Infinity;
+      for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) {
+        const along = x * dir.x + y * dir.y + z * dir.z;
+        start = Math.min(start, along);
+        end = Math.max(end, along);
+      }
+      plane.constant = start;
+      if (spec.mode === 'grow') (this.engine.world.renderer as unknown as { three: THREE.WebGLRenderer }).three.localClippingEnabled = true;
+      if (spec.edges === false) {
+        const flat = new THREE.MeshBasicMaterial({ color: 0x808080, side: THREE.DoubleSide });
+        if (spec.mode === 'grow') flat.clippingPlanes = [plane];
+        this.engine.edgeFreeObjects.set(group, flat);
+        this.engine.refreshEdgeExclusion();
+      }
+      return { spec, group, bottom: box.min.y, centre: box.getCenter(new THREE.Vector3()), dir, start, extent: Math.max(1e-6, end - start), plane };
     } catch (e) {
       console.warn('GrowthAnimator: could not build', e);
       return null;
@@ -224,6 +256,8 @@ export class GrowthAnimator {
 
   private dispose(p: Proxy) {
     this.root.remove(p.group);
+    this.engine.edgeFreeObjects.get(p.group)?.dispose();
+    this.engine.edgeFreeObjects.delete(p.group);
     const mats = new Set<THREE.Material>();
     p.group.traverse((o) => {
       const mesh = o as THREE.Mesh;
@@ -232,10 +266,14 @@ export class GrowthAnimator {
         mats.add(mesh.material as THREE.Material);
       }
     });
-    mats.forEach((m) => m.dispose());
+    mats.forEach((m) => {
+      this.engine.edgeFreeMaterials.delete(m);
+      m.dispose();
+    });
+    this.engine.refreshEdgeExclusion();
   }
 }
 
 function sameSpec(a: GrowthSpec, b: GrowthSpec) {
-  return a.modelId === b.modelId && a.mode === b.mode && a.color === b.color && a.opacity === b.opacity && a.localIds.length === b.localIds.length && a.localIds.every((id, i) => id === b.localIds[i]);
+  return a.modelId === b.modelId && a.mode === b.mode && a.edges === b.edges && a.direction?.x === b.direction?.x && a.direction?.y === b.direction?.y && a.direction?.z === b.direction?.z && a.color === b.color && a.opacity === b.opacity && a.localIds.length === b.localIds.length && a.localIds.every((id, i) => id === b.localIds[i]);
 }

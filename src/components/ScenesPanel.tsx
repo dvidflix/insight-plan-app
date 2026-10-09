@@ -1,7 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { queryMatcher } from '../schedule/search';
 import { scenes, START_PAGE_KEY, type Scene } from '../state/scenes';
-import { IconDownload, IconPencil, IconPlus, IconTrash, IconUpload } from './icons';
+import { InfoTip } from './InfoTip';
+import { RowButtonsChooser, useRowButtons } from './RowButtonsChooser';
+import { IconDownload, IconFolderOpen, IconPencil, IconPlus, IconTrash, IconUpload } from './icons';
+
+/** The buttons on each scene that can be hidden. */
+const SCENE_BUTTONS = [
+  { id: 'open', glyph: <IconFolderOpen width={14} height={14} />, label: 'Open' },
+  { id: 'rename', glyph: <IconPencil width={14} height={14} />, label: 'Rename' },
+  { id: 'export', glyph: <IconDownload width={14} height={14} />, label: 'Download' },
+  { id: 'delete', glyph: <IconTrash width={14} height={14} />, label: 'Delete' },
+] as const;
+type SceneButton = (typeof SCENE_BUTTONS)[number]['id'];
 
 const START_PAGES = [
   { id: 'inputs', label: 'Inputs' },
@@ -73,6 +84,7 @@ export function ScenesPanel() {
       return false;
     }
   };
+  const rb = useRowButtons<SceneButton>('scenes.hiddenButtons');
   const open = (s: Scene) => {
     if (window.confirm(`Open the scene “${s.name}”?\n\nThe page reloads with its layout and lists (models loaded now are unloaded). “${current?.name ?? 'This scene'}” is saved first.`)) void attempt('The scene was not opened', () => scenes.activate(s.id));
   };
@@ -108,9 +120,9 @@ export function ScenesPanel() {
     );
   const tools = (s: Scene, isCurrent: boolean) => (
     <div className="scene-card__actions">
-      <button type="button" className="mini-btn mini-btn--icon" onClick={() => setRenaming(s.id)} title="Rename" aria-label={`Rename ${s.name}`}><IconPencil width={14} height={14} /></button>
-      <button type="button" className="mini-btn mini-btn--icon" onClick={() => void attempt('The scene was not exported', () => scenes.exportScene(s.id))} title="Download as a JSON file, with its viewpoints and topics" aria-label={`Export ${s.name}`}><IconDownload width={14} height={14} /></button>
-      {store.scenes.length > 1 && (
+      {rb.shown('rename') && <button type="button" className="mini-btn mini-btn--icon" onClick={() => setRenaming(s.id)} title="Rename" aria-label={`Rename ${s.name}`}><IconPencil width={14} height={14} /></button>}
+      {rb.shown('export') && <button type="button" className="mini-btn mini-btn--icon" onClick={() => void attempt('The scene was not exported', () => scenes.exportScene(s.id))} title="Download as a JSON file, with its viewpoints and topics" aria-label={`Export ${s.name}`}><IconDownload width={14} height={14} /></button>}
+      {rb.shown('delete') && store.scenes.length > 1 && (
         <button type="button" className="mini-btn mini-btn--icon danger" onClick={() => remove(s, isCurrent)} title="Delete this scene" aria-label={`Delete ${s.name}`}><IconTrash width={14} height={14} /></button>
       )}
     </div>
@@ -121,10 +133,13 @@ export function ScenesPanel() {
       {current && (
         <div className="scene-card is-current scene-here">
           <div className="scene-here__label">You are in</div>
-          <div className="scene-card__top">{nameOf(current, 'scene-here__name')}</div>
+          <div className="scene-card__top">
+            {nameOf(current, 'scene-here__name')}
+            <span className="scene-card__spacer" />
+            <InfoTip>Everything you change here (layout, grouping, filters, sorting, pane sizes, viewpoints, topics…) is kept in this scene.</InfoTip>
+          </div>
           <div className="scene-here__saved"><span className="scene-here__dot" aria-hidden /> Saved automatically · last {ago(current.savedAt)}</div>
           <div className="scene-card__meta">{contents(current)}</div>
-          <div className="scene-here__hint">Everything you change here (layout, grouping, filters, sorting, pane sizes, viewpoints, topics…) is kept in this scene.</div>
           {tools(current, true)}
         </div>
       )}
@@ -154,19 +169,19 @@ export function ScenesPanel() {
         </div>
       )}
 
-      <div className="cols__heading"><span>Other scenes <b>{query.trim() ? `${listed.length} of ${others.length}` : others.length}</b></span></div>
+      <div className="cols__heading">
+        <span>Other scenes <b>{query.trim() ? `${listed.length} of ${others.length}` : others.length}</b></span>
+        <RowButtonsChooser compact buttons={SCENE_BUTTONS} rb={rb} title="Choose which buttons show on each scene" />
+      </div>
       {others.length > 0 && <input className="cols__search" type="search" placeholder="Search scenes…" value={query} onChange={(e) => setQuery(e.target.value)} aria-label="Search scenes" />}
       <div className="scenes__list">
         {others.length === 0 && <div className="flt__hint">No other scenes yet. Use New scene to make one; then Open switches between them.</div>}
         {others.length > 0 && listed.length === 0 && <div className="flt__hint">No scene matches “{query}”.</div>}
         {listed.map((s) => (
-          <div key={s.id} className="scene-card">
-            <div className="scene-card__top">
-              {nameOf(s, 'scene-card__name')}
-              <span className="scene-card__spacer" />
-              <button type="button" className="scene-card__open" onClick={() => open(s)} title="Switch to this scene (the page reloads)">Open</button>
-            </div>
-            <div className="scene-card__meta">{contents(s)} · saved {ago(s.savedAt)}</div>
+          <div key={s.id} className="scene-card scene-card--row" title={`${contents(s)} · saved ${ago(s.savedAt)}`}>
+            {rb.shown('open') && <button type="button" className="mini-btn mini-btn--icon scene-card__open-icon" onClick={() => open(s)} title="Open this scene (the page reloads)" aria-label={`Open ${s.name}`}><IconFolderOpen width={16} height={16} /></button>}
+            {nameOf(s, 'scene-card__name')}
+            <span className="scene-card__spacer" />
             {tools(s, false)}
           </div>
         ))}

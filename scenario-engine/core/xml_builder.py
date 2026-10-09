@@ -49,6 +49,9 @@ SLAB_CURING_GATES_SUCCESSORS = getattr(_config, "SLAB_CURING_GATES_SUCCESSORS", 
 # Activities left with no successor precede the slab above them before falling back to the completion milestone.
 ENABLE_OPEN_END_SEQUENCING = getattr(_config, "ENABLE_OPEN_END_SEQUENCING", True)
 OPEN_END_MAX_DISTANCE_M = getattr(_config, "OPEN_END_MAX_DISTANCE_M", 0.3)
+# No slab within that reach (a wall whose top stops short of the soffit, or beside the slab's edge): precede the
+# nearest slab above it instead, so only pours with no slab above them at all (the roof) end on the completion milestone.
+OPEN_END_NEAREST_SLAB_FALLBACK = getattr(_config, "OPEN_END_NEAREST_SLAB_FALLBACK", True)
 
 
 def _concrete_done_task(task_map):
@@ -875,14 +878,19 @@ def _build_open_end_successors(activities, open_tasks):
         fp = _footprint(guid)
         if fp is None:
             continue
+        above = []  # (gap, start task) of the slabs above this pour
         for slab_guid in slabs_by_building.get(_building(rec), []):
             slab_fp = _footprint(slab_guid)
             if slab_fp is None or slab_fp[1] < fp[2] - 0.05:
                 continue  # not above this pour
-            gap = math.hypot(fp[0].distance(slab_fp[0]), max(0.0, slab_fp[1] - fp[2]))
             start = _start_task(slab_guid)
-            if start and gap <= OPEN_END_MAX_DISTANCE_M:
-                successors[task_id].append(start)
+            if start:
+                above.append((math.hypot(fp[0].distance(slab_fp[0]), max(0.0, slab_fp[1] - fp[2])), start))
+        near = [start for gap, start in above if gap <= OPEN_END_MAX_DISTANCE_M]
+        if near:
+            successors[task_id].extend(near)
+        elif above and OPEN_END_NEAREST_SLAB_FALLBACK:
+            successors[task_id].append(min(above, key=lambda a: a[0])[1])
     return successors
 
 

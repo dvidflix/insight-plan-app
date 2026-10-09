@@ -34,6 +34,7 @@ Some checks can't be written in IDS: it can't count ("only one building"), and i
 | --- | --- |
 | One building, named Unit + Building (`1HN`, `9HVD`): not the zones or groups an export turns into buildings (CONNECTED_HL, DISCONNECTED…) | Merge buildings into one |
 | Element names are their pour ID: the Name equals Full Pour ID String, Pour ID Number or Pour ID (any property set; the variants Full Pour ID, FullPourID and PourID count too; numbers by value, so `0389` = `389`) | Name elements after their pour ID: copies the first of those it has, in that order |
+| AVEVA models: one site, one building, a storey per level: where the IFC header's Originating System contains AVEVA, the level is read from each object's Name (characters 5-6, or `ePset_LocationTool` / `Location 0` when present). The model needs one IfcSite, one IfcBuilding and one IfcBuildingStorey per level, named by its code (07, 0B). Other models are N/A | Rebuild site, building and storeys from the names |
 
 The name comes from the model's first pour element with a *Building* (Unit + Building, from the CWA property sets). If the elements don't all agree, the check says which values they carry.
 
@@ -49,6 +50,7 @@ A patch is a JSON file in `docs/ids/patches`, one per patch. It names the specif
 - **name-from-property**: sets the failing elements' Name to the first of a list of properties they have (by name, in any property set).
 - **pad-property**: pads the failing elements' numeric properties (by name) with leading zeros to a number of digits (389 → 0389), written as text. Values that aren't whole numbers or are longer are left alone.
 - **merge-buildings**: keeps the first IfcBuilding, renamed Unit + Building, and moves the other buildings' storeys and contents under it. Storeys with the same name are merged, their elements put together. The emptied buildings and storeys are removed, and nothing is left pointing at them.
+- **aveva-storeys**: for AVEVA models, merges the sites and buildings into one of each and replaces the storeys with one per level the object names give, named by the level code at its elevation (07 = 0 m, 01 = -10 m, 11 and up = number - 7). Each object goes in its level's storey; other elements that were in a removed storey go in the building. Writes `ePset_LocationTool` / `Location 0` = level on the objects. Ported from the `add_location_property.py` and `group_ifc_objects_by_level.py` scripts.
 - **set-property**: gives the failing elements a property value, creating the property set where missing. With `overwrite: false`, existing values stay.
 
 In a failing check, **Preview** shows what the patch would change and what it leaves alone. **Apply** then:

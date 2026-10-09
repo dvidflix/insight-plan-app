@@ -259,6 +259,8 @@ interface WorkerReply {
     of a full run's ~15 s. Requests go one at a time; (re)started on demand. */
 class EngineWorker {
   private child: ChildProcess | null = null;
+  /** When the process was started: Python keeps the modules it imported, so edited engine code needs a restart. */
+  private startedAt = 0;
   private buffer = '';
   private stderr = '';
   private nextId = 1;
@@ -266,6 +268,7 @@ class EngineWorker {
   private chain: Promise<unknown> = Promise.resolve();
 
   private ensure() {
+    if (this.child && sourcesChangedSince(this.startedAt)) this.stop(); // edited engine code (names, rules...) takes effect on the next request
     if (this.child) return this.child;
     const python = process.env.SCENARIO_PYTHON || 'python';
     const child = spawn(python, [ENGINE_SERVE], {
@@ -274,6 +277,7 @@ class EngineWorker {
       windowsHide: true,
     });
     this.child = child;
+    this.startedAt = Date.now();
     this.buffer = '';
     this.stderr = '';
     child.stdout!.on('data', (d: Buffer) => {
@@ -336,6 +340,28 @@ class EngineWorker {
     this.child?.kill();
     this.child = null;
   }
+}
+
+/** Has a Python file of the generator been saved since `since` (ms)? */
+function sourcesChangedSince(since: number): boolean {
+  const root = path.dirname(ENGINE_SERVE);
+  for (const dir of [root, path.join(root, 'core')]) {
+    let names: string[];
+    try {
+      names = fs.readdirSync(dir);
+    } catch {
+      continue;
+    }
+    for (const n of names) {
+      if (!n.endsWith('.py')) continue;
+      try {
+        if (fs.statSync(path.join(dir, n)).mtimeMs > since) return true;
+      } catch {
+        // gone while looking
+      }
+    }
+  }
+  return false;
 }
 
 const worker = new EngineWorker();

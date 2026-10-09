@@ -50,6 +50,12 @@ interface InputDetailsState {
   filters: Record<string, string[]>;
   /** The files of the Inputs page right now (set by the page, not saved): what the Settings panel counts values over. */
   files: PushFile[];
+  /** Push the files to SeaTable as soon as a file is uploaded. */
+  autoPush: boolean;
+  setAutoPush: (on: boolean) => void;
+  /** How the last push went (not saved): shown in Settings, also for the automatic ones. */
+  pushNote: { ok: boolean; text: string } | null;
+  setPushNote: (note: { ok: boolean; text: string } | null) => void;
   setGroupRules: (rules: SortRule[]) => void;
   setGroupCombine: (on: boolean) => void;
   setFilter: (key: string, values: string[]) => void;
@@ -76,6 +82,10 @@ export const useInputDetailsStore = create<InputDetailsState>()(
       readAt: null,
       filters: {},
       files: [],
+      autoPush: true,
+      setAutoPush: (autoPush) => set({ autoPush }),
+      pushNote: null,
+      setPushNote: (pushNote) => set({ pushNote }),
       widths: {},
       setWidth: (col, w) => set((s) => ({ widths: { ...s.widths, [col]: Math.round(w) } })),
       setGroupRules: (groupRules) => set({ groupRules }),
@@ -117,7 +127,7 @@ export const useInputDetailsStore = create<InputDetailsState>()(
         if (next.filters) delete next.filters.folder;
         return next;
       },
-      partialize: (s) => ({ fields: s.fields, columns: s.columns, sortRules: s.sortRules, groupRules: s.groupRules, groupCombine: s.groupCombine, values: s.values, filters: s.filters, widths: s.widths, collapsed: s.collapsed, readAt: s.readAt }),
+      partialize: (s) => ({ fields: s.fields, columns: s.columns, sortRules: s.sortRules, groupRules: s.groupRules, groupCombine: s.groupCombine, values: s.values, filters: s.filters, widths: s.widths, collapsed: s.collapsed, readAt: s.readAt, autoPush: s.autoPush }),
     },
   ),
 );

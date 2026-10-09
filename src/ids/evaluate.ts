@@ -27,6 +27,8 @@ export interface Candidate {
 export interface ModelContext {
   modelId: string;
   candidates: Candidate[];
+  /** The IFC header's Originating System ('' when unknown). */
+  originatingSystem?: string;
   /** Spatial ancestors, nearest first, as [localId, IFC class]. */
   ancestors: Map<number, [number, string][]>;
   /** An element's IFC attributes (Name, ObjectType, Tag, PredefinedType…). */

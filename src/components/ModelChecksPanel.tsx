@@ -11,6 +11,9 @@ import { RULES_FILE, runRules } from '../ids/rules';
 import { runIdsFile, type SpecResult } from '../ids/runIds';
 import { ancestorsOf, spatialItems, type Candidate, type ModelContext } from '../ids/evaluate';
 import { applyPatch, planPatch, type Patch, type PatchPlan, type SpatialNode } from '../ids/patches';
+import { originatingSystem } from '../ids/step';
+import { ensureModelFile } from '../state/modelFiles';
+import { dbRoot } from '../state/projectDbStore';
 import { IconDownload, IconUpload } from './icons';
 import { IconExpander } from './icons';
 
@@ -27,6 +30,16 @@ const bandOf = (r: SpecResult): Band => (r.error ? 'red' : r.applicable === 0 ? 
 const BADGE: Record<Band, string> = { green: 'PASS', red: 'FAIL', info: 'N/A' };
 const pctOf = (r: SpecResult) => (r.applicable ? (r.passed / r.applicable) * 100 : null);
 const fmtPct = (n: number) => (n === 100 ? '100%' : n > 99.9 ? '>99.9%' : `${n.toFixed(1)}%`);
+/** The Originating System in a loaded IFC's header ('' for a model without its IFC at hand). */
+async function originatingSystemOf(modelName: string): Promise<string> {
+  try {
+    const file = await ensureModelFile(modelName, dbRoot());
+    return file ? originatingSystem(await file.slice(0, 20000).text()) : '';
+  } catch {
+    return '';
+  }
+}
+
 export function ModelChecksPanel() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
@@ -48,7 +61,7 @@ export function ModelChecksPanel() {
 
   /** What evaluate.ts needs of a loaded model: its elements and spatial
       nodes, their spatial ancestors, and a reader for IFC attributes. */
-  const contextOf = (modelId: string): ModelContext => {
+  const contextOf = (modelId: string, originatingSystem = ''): ModelContext => {
     const index = engine.getIndexes().get(modelId);
     const candidates: Candidate[] = [...(index?.elements.values() ?? [])].map((e) => ({ localId: e.localId, category: e.category, guid: e.guid, name: e.name, description: e.description ?? '', props: e.props }));
     // Spatial nodes (site, building, storey…) too: they aren't in the element index.
@@ -61,6 +74,7 @@ export function ModelChecksPanel() {
     return {
       modelId,
       candidates,
+      originatingSystem,
       ancestors: ancestorsOf(index?.tree),
       attributes: async (localIds) => {
         const model = engine.getFragmentsModel(modelId);
@@ -91,11 +105,12 @@ export function ModelChecksPanel() {
     if (!keepMessage) setMessage(null);
     try {
       const out: SpecResult[] = [];
+      const contexts = await Promise.all(list.map(async (m) => contextOf(m.modelId, await originatingSystemOf(m.name))));
       for (const f of idsFiles()) {
         if (off.has(f.name)) continue;
-        out.push(...(await runIdsFile(engine.components, f.name, f.xml, list.map((m) => contextOf(m.modelId)))));
+        out.push(...(await runIdsFile(engine.components, f.name, f.xml, contexts)));
       }
-      if (!off.has(RULES_FILE) && libraryRules().length) out.push(...runRules(libraryRules(), list.map((m) => contextOf(m.modelId))));
+      if (!off.has(RULES_FILE) && libraryRules().length) out.push(...runRules(libraryRules(), contexts));
       setResults(out);
       setTestedNames(list.map((m) => m.name));
     } catch (e) {

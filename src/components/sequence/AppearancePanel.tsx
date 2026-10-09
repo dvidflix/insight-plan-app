@@ -2,6 +2,8 @@ import { useState } from 'react';
 import { HexColorInput } from '../HexColorInput';
 import {
   DEFAULT_GROWTH_DISTANCE,
+  DEFAULT_GROWTH_VECTOR,
+  GROWS_OVER_TASK,
   GROWTH_IN,
   GROWTH_OUT,
   type GrowthIn,
@@ -13,7 +15,7 @@ import {
   type AppearanceStage,
 } from '../../schedule/appearance';
 import { useAppearanceStore } from '../../state/appearanceStore';
-import { IconCopy, IconPencil } from '../icons';
+import { IconCopy, IconEye, IconEyeOff, IconPencil } from '../icons';
 
 const ACTIONS: { value: AppearanceAction; label: string }[] = [
   { value: 'install', label: 'Install — hidden before start, stays after finish' },
@@ -131,6 +133,7 @@ export function AppearancePanel({ onRefresh }: { onRefresh?: () => void }) {
                 <td className="seq-grid__name" title={p.name} onClick={() => setEditing(p)}>{p.name}</td>
                 <td style={{ textTransform: 'capitalize' }}>{p.action}</td>
                 <td className="seq-grid__actions">
+                  <button type="button" title={p.hideInKey ? 'Not in the key on the viewer: click to show it' : 'In the key on the viewer: click to hide it'} aria-label={p.hideInKey ? 'Show in the key' : 'Hide from the key'} aria-pressed={!p.hideInKey} style={p.hideInKey ? { opacity: 0.45 } : undefined} onClick={() => update({ ...p, hideInKey: !p.hideInKey })}>{p.hideInKey ? <IconEyeOff /> : <IconEye />}</button>
                   <button type="button" title="Edit" aria-label="Edit" onClick={() => setEditing(p)}><IconPencil /></button>
                   <button type="button" title="Duplicate" aria-label="Duplicate" onClick={() => duplicate(p)}><IconCopy /></button>
                 </td>
@@ -217,6 +220,22 @@ function ProfileEditor({ profile, onSave, onCancel, onDelete }: { profile: Appea
           ))}
         </select>
       </label>
+      {p.growthIn === 'custom' && p.action !== 'remove' && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }} title="Direction the object grows along, in project axes: X east, Y north, Z up. It is normalised, so only the proportions matter.">
+          <span style={{ fontSize: 12, color: 'var(--text-dim)', flex: 1 }}>Direction vector (X, Y, Z)</span>
+          {(['x', 'y', 'z'] as const).map((axis) => (
+            <input
+              key={axis}
+              type="number"
+              step={0.1}
+              aria-label={`Direction ${axis.toUpperCase()}`}
+              value={(p.growthVector ?? DEFAULT_GROWTH_VECTOR)[axis]}
+              onChange={(e) => setP({ ...p, growthVector: { ...(p.growthVector ?? DEFAULT_GROWTH_VECTOR), [axis]: Number(e.target.value) || 0 } })}
+              style={{ width: 52 }}
+            />
+          ))}
+        </div>
+      )}
       <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }}>
         <span style={{ fontSize: 12, color: 'var(--text-dim)', flex: 1 }}>Distance (m) — drop / slide / lift</span>
         <input type="number" min={0.5} step={0.5} value={p.growthDistance ?? DEFAULT_GROWTH_DISTANCE} onChange={(e) => setP({ ...p, growthDistance: Math.max(0, Number(e.target.value) || 0) })} style={{ width: 70 }} />
@@ -231,6 +250,15 @@ function ProfileEditor({ profile, onSave, onCancel, onDelete }: { profile: Appea
           onChange={(e) => setP({ ...p, growthHours: e.target.value === '' ? null : Math.max(0.5, Number(e.target.value) || 0.5) })}
           style={{ width: 70 }}
         />
+      </label>
+
+      <label style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 6 }} title="Edge lines on the object while it grows or moves in. Once it is built it shows edges like the rest of the model. Off by default for a growth over the task, where they look messy on the cut. With it off the object is solid and hides the edges behind it.">
+        <input
+          type="checkbox"
+          checked={p.growthEdges ?? !GROWS_OVER_TASK.includes(p.growthIn ?? 'none')}
+          onChange={(e) => setP({ ...p, growthEdges: e.target.checked })}
+        />
+        <span style={{ fontSize: 12, color: 'var(--text-dim)' }}>Show edges while it grows / moves in</span>
       </label>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 12 }}>

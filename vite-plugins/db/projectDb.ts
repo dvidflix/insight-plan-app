@@ -897,6 +897,9 @@ export function projectDb(rawRoot: unknown): ProjectDb {
   return db;
 }
 
+/** The project databases opened since the dev server started (file paths). */
+export const openProjectFiles = () => [...open.keys()];
+
 export function closeAllDatabases() {
   for (const db of open.values()) db.close();
   open.clear();

@@ -9,7 +9,42 @@ export type Projection = 'Perspective' | 'Orthographic';
 
 /** How one 3D view looks — every 3D view (the main one, and the second one
     of a split) has its own copy. */
+/** Where a split view's custom label sits in its half of the screen. */
+export type CaptionPosition = 'top-left' | 'top-center' | 'top-right' | 'bottom-left' | 'bottom-center' | 'bottom-right';
+
+/** What a split view captions itself with (side-by-side split only). */
+export interface ViewCaption {
+  /** The models the view shows, along its bottom. Unset = on (as before). */
+  models?: boolean;
+  /** The programmes driving the view (those linked to objects of its models). */
+  programme?: boolean;
+  /** A custom label, placed and styled like the date label. */
+  custom?: boolean;
+  text?: string;
+  position?: CaptionPosition;
+  /** Font size in px. */
+  size?: number;
+  color?: string;
+  /** Background colour; null = none. */
+  background?: string | null;
+  bold?: boolean;
+}
+
+export const DEFAULT_CAPTION: Required<Omit<ViewCaption, 'background'>> & { background: string | null } = {
+  models: true,
+  programme: false,
+  custom: false,
+  text: '',
+  position: 'top-left',
+  size: 16,
+  color: '#ffffff',
+  background: '#18181b',
+  bold: true,
+};
+
 export interface ViewSettings {
+  /** The labels of a split view. */
+  caption?: ViewCaption;
   projection: Projection;
   style: ViewStyle;
   antiAliasing: boolean;

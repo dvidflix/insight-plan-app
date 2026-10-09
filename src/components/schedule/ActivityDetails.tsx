@@ -1,4 +1,6 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useSelectionStore } from '../../state/selectionStore';
+import { usePropertyQueueStore } from '../../state/propertyQueueStore';
 import type { Activity, ResourceAssignment, ScheduleModel } from '../../schedule/types';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
 import { IconClose, IconList } from '../icons';
@@ -15,9 +17,10 @@ import { useViewerEngine } from '../../viewer/ViewerEngineContext';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { activityStartMs } from '../../schedule/linking';
 import { alignDown } from '../../schedule/period';
+import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 
-type SectionId = 'details' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
-const DEFAULT_OPEN: SectionId[] = ['details', 'notes', 'suggested', 'codes', 'udf', 'resources'];
+type SectionId = 'details' | 'cpm' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
+const DEFAULT_OPEN: SectionId[] = ['details', 'cpm', 'notes', 'suggested', 'codes', 'udf', 'resources'];
 
 /** What a resource's quantity is counted in: a unit in its name ("Concrete (m3)", "Rebar (t)"), else hours for labour and equipment, nothing for other materials. */
 function unitOf(r: ResourceAssignment): string {
@@ -26,6 +29,8 @@ function unitOf(r: ResourceAssignment): string {
   return r.resourceType === 'material' || r.resourceType === 'other' ? '' : ' h';
 }
 const fmtQty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—');
 
 const days = (hours: number) => Math.round((hours / 8) * 10) / 10;
 
@@ -48,24 +53,70 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
   const contacts = useMemo(() => sharedContactIndex(clashResults), [clashResults]);
   const hasContacts = contacts.size > 0;
   const engine = useViewerEngine();
-  // The activity's linked objects (its own, or those it shares by Element ID), as the viewer takes them.
+  // The activities the buttons act on: the ones picked in the table / Gantt (Ctrl / Shift+click) when this one is among them, else just this one.
+  const picked = useActivitySelectionStore((s) => s.ids);
+  const targets = useMemo(
+    () => (picked.size > 1 && picked.has(activity.id) ? model.activities.filter((a) => picked.has(a.id)) : [activity]),
+    [picked, model, activity],
+  );
+  // Their linked objects (each one's own, or those it shares by Element ID), as the viewer takes them.
   const linkedIds = useMemo(() => {
+    const merged = new Map<string, Set<number>>();
+    for (const a of targets) {
+      for (const [modelId, ids] of objects.objectsOf.get(a.id) ?? []) {
+        const set = merged.get(modelId) ?? merged.set(modelId, new Set()).get(modelId)!;
+        for (const id of ids) set.add(id);
+      }
+    }
     const out: Record<string, number[]> = {};
-    for (const [modelId, ids] of objects.objectsOf.get(activity.id) ?? []) if (ids.size) out[modelId] = [...ids];
+    for (const [modelId, ids] of merged) if (ids.size) out[modelId] = [...ids];
     return out;
-  }, [objects, activity.id]);
+  }, [objects, targets]);
   const linkedCount = Object.values(linkedIds).reduce((n, l) => n + l.length, 0);
+  const many = targets.length > 1;
+  const ofThem = many ? `the ${targets.length} selected activities'` : 'its';
 
-  /** Takes you to 4D Sequencing with this activity's objects selected and the timeline on its start date. */
+  /** Takes you to 4D Sequencing with the objects selected and the timeline on the earliest start date. */
   const showIn4D = () => {
     const timeline = useSequenceTimelineStore.getState();
-    const start = activityStartMs(activity, timeline.basis);
-    if (start !== null) timeline.setDate(alignDown(start, timeline.stepUnit));
+    const starts = targets.map((a) => activityStartMs(a, timeline.basis)).filter((t): t is number => t !== null);
+    if (starts.length) timeline.setDate(alignDown(Math.min(...starts), timeline.stepUnit));
     window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'sequence' }));
     // Once the 4D page's viewer has its size back, select the objects and frame them.
     window.setTimeout(() => void engine.selectElements(linkedIds, true), 400);
   };
 
+  /** Takes you to the 3D models with only the objects shown (Show all in the viewer brings the rest back). */
+  const showIn3D = () => {
+    window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'model' }));
+    window.setTimeout(() => void engine.isolateElements(linkedIds, true), 400);
+  };
+
+
+  // The objects selected in the model viewer, by GlobalId.
+  const selectedByModel = useSelectionStore((s) => s.byModel);
+  const selectedGuids = useMemo(() => {
+    const out: Record<string, string[]> = {};
+    for (const [modelId, ids] of Object.entries(selectedByModel)) {
+      const index = engine.getIndexes().get(modelId);
+      for (const id of ids) {
+        const guid = index?.elements.get(id)?.guid;
+        if (guid) (out[modelId] ??= []).push(guid);
+      }
+    }
+    return out;
+  }, [selectedByModel, engine]);
+  const selectedCount = Object.values(selectedGuids).reduce((n, g) => n + g.length, 0);
+  const [queued, setQueued] = useState(false);
+  useEffect(() => setQueued(false), [activity.id, selectedByModel]);
+
+  /** Stages Program / Activity ID and Activity Name on the selected objects (Properties › Edit properties); written to the IFC from there. */
+  const queueIdAndName = () => {
+    const add = usePropertyQueueStore.getState().add;
+    add({ pset: 'Program', name: 'Activity ID', value: activity.code, valueType: 'IfcLabel', targets: selectedGuids });
+    add({ pset: 'Program', name: 'Activity Name', value: activity.name, valueType: 'IfcLabel', targets: selectedGuids });
+    setQueued(true);
+  };
 
   // Links the model implies for this activity's element but the schedule lacks.
   const sequence = usePourSequence(objects);
@@ -137,10 +188,41 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           style={{ margin: '6px 6px 6px 0' }}
           onClick={showIn4D}
           disabled={linkedCount === 0}
-          title={linkedCount === 0 ? 'This activity has no linked objects (Link Groups), so there is nothing to select' : `Go to 4D Sequencing: select its ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'} and move the timeline to its start`}
+          title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to select` : `Go to 4D Sequencing: select ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'} and move the timeline to ${many ? 'the earliest start' : 'its start'}`}
         >
-          Show in 4D
+          {many ? `Show ${targets.length} in 4D` : 'Show in 4D'}
         </button>
+        <button
+          type="button"
+          className="btn btn--small"
+          style={{ margin: '6px 6px 6px 0' }}
+          onClick={showIn3D}
+          disabled={linkedCount === 0}
+          title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to show` : `Go to the 3D models and isolate ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'}: only the pours are shown`}
+        >
+          {many ? `Show ${targets.length} in 3D` : 'Show in 3D'}
+        </button>
+        <button
+          type="button"
+          className="btn btn--small"
+          style={{ margin: '6px 6px 6px 0' }}
+          onClick={queueIdAndName}
+          disabled={selectedCount === 0}
+          title={selectedCount === 0 ? 'Select objects in the 3D model first' : `Add this activity's ID and Name to the Edit properties queue (Program › Activity ID, Activity Name) for the ${selectedCount.toLocaleString()} selected object${selectedCount === 1 ? '' : 's'}`}
+        >
+          {queued ? '✓ Queued' : 'Queue ID & Name'}
+        </button>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="CPM dates" flush open={sections.isOpen('cpm')} onToggle={() => sections.toggle('cpm')}>
+        {grid([
+          ['Early Start', fmtDate(activity.earlyStart)],
+          ['Early Finish', fmtDate(activity.earlyFinish)],
+          ['Late Start', fmtDate(activity.lateStart)],
+          ['Late Finish', fmtDate(activity.lateFinish)],
+          ['Total Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours) : '—'],
+          ['Free Float (d)', activity.freeFloatHours !== null ? days(activity.freeFloatHours) : '—'],
+        ])}
       </CollapsibleSection>
 
       {missing.length > 0 && (

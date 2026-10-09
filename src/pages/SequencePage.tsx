@@ -12,7 +12,7 @@ import { useSelectionStore } from '../state/selectionStore';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { activityFinishMs, activityStartMs, progressAt, scheduleRange, statusInPeriod, type SequenceStatus } from '../schedule/linking';
 import type { GrowthSpec } from '../viewer/growthAnimator';
-import { DEFAULT_GROWTH_DISTANCE } from '../schedule/appearance';
+import { DEFAULT_GROWTH_DISTANCE, DEFAULT_GROWTH_VECTOR, GROWS_OVER_TASK, GROWTH_DIRECTIONS } from '../schedule/appearance';
 import { alignDown, nextBoundary } from '../schedule/period';
 import { computeGroupLinks, type LinkGroup } from '../schedule/linkGroups';
 import { isPerTask, renderTag, renderTagLines } from '../schedule/tagTemplate';
@@ -499,21 +499,31 @@ export function SequencePanel() {
         const finish = activityFinishMs(activity, basis);
         const distance = profile.growthDistance ?? DEFAULT_GROWTH_DISTANCE;
         let mode: GrowthSpec['mode'] | null = null;
-        if (profile.action !== 'remove' && profile.growthIn && profile.growthIn !== 'none') mode = profile.growthIn;
-        else if (profile.action === 'remove' && profile.growthOut && profile.growthOut !== 'none') mode = profile.growthOut;
+        let direction: GrowthSpec['direction'];
+        if (profile.action !== 'remove' && profile.growthIn && profile.growthIn !== 'none') {
+          if (GROWS_OVER_TASK.includes(profile.growthIn)) {
+            // Project axes (X east, Y north, Z up) to the viewer's (x, y up, -z).
+            const v = profile.growthIn === 'custom' ? profile.growthVector ?? DEFAULT_GROWTH_VECTOR : GROWTH_DIRECTIONS[profile.growthIn];
+            const len = Math.hypot(v.x, v.y, v.z);
+            if (len > 1e-9) direction = { x: v.x / len, y: v.z / len, z: -v.y / len };
+            mode = 'grow';
+          } else mode = profile.growthIn as GrowthSpec['mode'];
+        } else if (profile.action === 'remove' && profile.growthOut && profile.growthOut !== 'none') mode = profile.growthOut;
         if (!mode || start === null) continue;
         // Movement progress (0..1) at the step's start and end, on the task's
         // own clock: bottom-to-top over the whole task; drop / slide / lift
         // over the last `growthHours` before the finish (else the whole task).
         const end = finish ?? start;
-        const windowMs = mode !== 'bottomToTop' && profile.growthHours ? Math.min(end - start, profile.growthHours * 3_600_000) : end - start;
+        const windowMs = mode !== 'grow' && profile.growthHours ? Math.min(end - start, profile.growthHours * 3_600_000) : end - start;
         const from0 = end - windowMs;
         const at = (t: number) => (windowMs <= 0 ? (t >= end ? 1 : 0) : Math.max(0, Math.min(1, (t - from0) / windowMs)));
         const from = at(periodStart);
         const to = at(periodEnd);
         if (from >= 1) continue;
-        const key = `${m.modelId}:${activity.id}:${mode}`;
-        const spec = bySpec.get(key) ?? { key, modelId: m.modelId, localIds: [], mode, distance, color: colorOf.get(id) ?? null, opacity: opacityOf.get(id) ?? null, from, to };
+        const key = `${m.modelId}:${activity.id}:${mode}:${profile.growthIn}`;
+        // Edges while it moves in: off by default for a growth over the task (they look messy on the cut).
+        const edges = profile.growthEdges ?? mode !== 'grow';
+        const spec = bySpec.get(key) ?? { key, modelId: m.modelId, localIds: [], mode, distance, color: colorOf.get(id) ?? null, opacity: opacityOf.get(id) ?? null, from, to, direction, edges };
         spec.localIds.push(id);
         bySpec.set(key, spec);
         animated.add(id);

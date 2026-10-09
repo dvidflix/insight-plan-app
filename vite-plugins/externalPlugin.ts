@@ -1,6 +1,10 @@
+import { spawn } from 'node:child_process';
 import fs from 'node:fs';
+import path from 'node:path';
 import type { Plugin } from 'vite';
-import { HttpError, send, sendError } from './http';
+import { HttpError, readBody, send, sendError } from './http';
+import { Superset, SupersetError } from './supersetApi';
+import { buildCompareDashboard } from './supersetDashboard';
 
 /** External data (SeaTable) and Dashboards (Superset): the app's two tabs that show those
     programs in a frame. This bridge signs in for the user, so the frame opens already logged in.
@@ -125,6 +129,31 @@ async function probe(target: Target, appOrigin: string) {
   }
 }
 
+/** The stack's script that rebuilds Superset's analysis datasets (the weekly concrete / rebar skyline, level cycles, weekly loads...)
+    from the programmes loaded in the app and the Project A extract (C:\insight-stack	oolsuild_analysis.py). */
+const ANALYSIS_SCRIPT = process.env.INSIGHT_ANALYSIS_SCRIPT ?? 'C:\\insight-stack\\tools\\build_analysis.py';
+let analysisRun: Promise<{ ok: boolean; log: string; seconds: number }> | null = null;
+
+function refreshAnalysis(projectRoot: string | null): Promise<{ ok: boolean; log: string; seconds: number }> {
+  if (analysisRun) return analysisRun; // one at a time: a second click joins the run in progress
+  const started = Date.now();
+  analysisRun = new Promise((resolve) => {
+    if (!fs.existsSync(ANALYSIS_SCRIPT)) {
+      resolve({ ok: false, log: `Not found: ${ANALYSIS_SCRIPT}. Set INSIGHT_ANALYSIS_SCRIPT to the stack's build_analysis.py.`, seconds: 0 });
+      return;
+    }
+    const child = spawn(process.env.SCENARIO_PYTHON || 'python', [ANALYSIS_SCRIPT], { cwd: path.dirname(ANALYSIS_SCRIPT), env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', ...(projectRoot && fs.existsSync(path.join(projectRoot, 'insight-plan.db')) ? { INSIGHT_PLAN_DB: path.join(projectRoot, 'insight-plan.db') } : {}) }, windowsHide: true });
+    let log = '';
+    const keep = (d: Buffer) => { log = (log + d.toString('utf8')).slice(-6000); };
+    child.stdout.on('data', keep);
+    child.stderr.on('data', keep);
+    const timer = setTimeout(() => child.kill(), 15 * 60 * 1000);
+    child.on('error', (e) => { clearTimeout(timer); resolve({ ok: false, log: `Could not start Python: ${e.message}`, seconds: (Date.now() - started) / 1000 }); });
+    child.on('exit', (code) => { clearTimeout(timer); resolve({ ok: code === 0, log: log.trim(), seconds: Math.round((Date.now() - started) / 100) / 10 }); });
+  }).finally(() => { analysisRun = null; }) as Promise<{ ok: boolean; log: string; seconds: number }>;
+  return analysisRun;
+}
+
 export function externalPlugin(): Plugin {
   return {
     name: 'insight-plan-external',
@@ -137,6 +166,27 @@ export function externalPlugin(): Plugin {
           if (route === 'status') {
             const [seatable, superset] = await Promise.all([probe('seatable', origin), probe('superset', origin)]);
             return send(res, 200, { seatable, superset });
+          }
+          if (route === 'refresh-analysis' && req.method === 'POST') {
+            // The open project's folder: its insight-plan.db holds the programmes loaded in the app.
+            const body = (await readBody(req).catch(() => ({}))) as { root?: string };
+            return send(res, 200, await refreshAnalysis(typeof body.root === 'string' && body.root ? body.root : null));
+          }
+          if (route === 'superset-info') {
+            try {
+              return send(res, 200, await (await new Superset(config('superset')).connect()).overview());
+            } catch (e) {
+              if (e instanceof SupersetError) throw new HttpError(e.status, e.message);
+              throw e;
+            }
+          }
+          if (route === 'build-dashboard' && req.method === 'POST') {
+            try {
+              return send(res, 200, await buildCompareDashboard(await new Superset(config('superset')).connect()));
+            } catch (e) {
+              if (e instanceof SupersetError) throw new HttpError(e.status, e.message);
+              throw e;
+            }
           }
           if (route === 'open') {
             const target = url.searchParams.get('target');

@@ -42,11 +42,14 @@ def test_a_column_precedes_the_slab_on_top_of_it(run):
 
 def test_a_pour_with_no_slab_above_stays_open(run):
     slab = pour("S1", "SLAB", 0, 0, 10, 10, 0.0, 0.3)          # below it
-    column = pour("C7", "COLUMN", 4, 4, 4.4, 4.4, 3.0, 6.0)
-    far = pour("C8", "COLUMN", 40, 40, 40.4, 40.4, 0.0, 3.0)   # a slab exists above the building, but not near
+    roof_column = pour("C9", "COLUMN", 4, 4, 4.4, 4.4, 3.0, 6.0)  # nothing above
+    assert run([slab, roof_column], ["C9-C"]) == {}
+
+
+def test_a_column_far_from_every_slab_edge_still_precedes_the_nearest_slab_above(run):
     roof = pour("S8", "SLAB", 0, 0, 10, 10, 6.0, 6.3)
-    result = run([slab, column, far, roof], ["C7-C", "C8-C"])
-    assert result == {"C7-C": ["S8-DK"]}
+    far = pour("C8", "COLUMN", 40, 40, 40.4, 40.4, 0.0, 3.0)
+    assert run([roof, far], ["C8-C"]) == {"C8-C": ["S8-DK"]}
 
 
 def test_slabs_and_other_buildings_are_left_alone(run):
@@ -54,3 +57,13 @@ def test_slabs_and_other_buildings_are_left_alone(run):
     upper = pour("S5", "SLAB", 0, 0, 10, 10, 6.0, 6.3)
     other = pour("C1", "COLUMN", 4, 4, 4.4, 4.4, 0.0, 3.0, building="B2")
     assert run([slab, upper, other], ["S4-C", "C1-C"]) == {}
+
+
+def test_a_pour_short_of_every_slab_precedes_the_nearest_one_above(run, monkeypatch):
+    slab4 = pour("S4", "SLAB", 0, 0, 10, 10, 3.0, 3.3)
+    slab5 = pour("S5", "SLAB", 0, 0, 10, 10, 6.0, 6.3)
+    wall = pour("W3", "WALL", 14, 4, 14.2, 8, 0.0, 2.5)    # beside the slab's edge, top below the soffit
+    assert run([slab4, slab5, wall], ["W3-C"]) == {"W3-C": ["S4-DK"]}
+    monkeypatch.setattr(xml_builder, "OPEN_END_NEAREST_SLAB_FALLBACK", False)
+    acts = [{"rec": r, "phase": "Concrete", "task_id": f"{r['element'].GlobalId}-C"} for r, _ in [wall]]
+    assert xml_builder._build_open_end_successors(acts, {"W3-C"}) == {}

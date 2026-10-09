@@ -10,6 +10,9 @@ import { ModelColorSync } from '../components/ModelColorPanel';
 import { ColourLegend } from '../components/ColourLegend';
 import { ViewerToolbar } from '../components/ViewerToolbar';
 import { useClashRunner } from './useClashRunner';
+import { useDataTableStore } from '../state/dataTableStore';
+import { useModelEdgesStore } from '../state/modelEdgesStore';
+import { useModelsStore } from '../state/modelsStore';
 
 /** Combines the persistent 3D viewer shell with an optional side panel (the
     4D sequencing panel) and an optional overlay floated on top of the
@@ -21,9 +24,16 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
   const engine = useViewerEngine();
   // Clashes & contacts stay up to date in the background (3D & Related shows them).
   useClashRunner();
+  // Models switched off in the Models list (Edges) are drawn without edge lines.
+  const edgesOff = useModelEdgesStore((s) => s.off);
+  const loaded = useModelsStore((s) => s.models);
+  useEffect(() => {
+    for (const m of loaded) engine.setModelEdges(m.modelId, !edgesOff[m.name]);
+  }, [engine, edgesOff, loaded]);
   const split = useViewSettingsStore((s) => s.pages[layout === 'model' ? 'model' : 'sequence'].split);
   const compare = useViewSettingsStore((s) => s.pages[layout === 'model' ? 'model' : 'sequence'].compare ?? 'side');
   const inSequence = layout !== 'model';
+  const tablePos = useDataTableStore((s) => s.position);
   // 4D image / video export in progress (Export tab): stoppable from here
   // while the Configuration pane is hidden for the capture.
   const recPhase = useRecordingStore((s) => s.phase);
@@ -62,13 +72,16 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
             )}
           </div>
         </div>
-        <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
-          <ViewerCanvas layout={effectiveLayout} />
-          {overlay}
-          {/* Models > Colour: what each colour stands for. */}
-          {!inSequence && paneActive && <ColourLegend />}
+        <div style={{ display: 'flex', flexDirection: tablePos === 'bottom' ? 'column' : 'row', flex: 1, minWidth: 0, minHeight: 0 }}>
+          {tablePos === 'left' && <ModelDataTable />}
+          <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
+            <ViewerCanvas layout={effectiveLayout} />
+            {overlay}
+            {/* Models > Colour: what each colour stands for. */}
+            {!inSequence && paneActive && <ColourLegend />}
+          </div>
+          {tablePos !== 'left' && <ModelDataTable />}
         </div>
-        <ModelDataTable />
       </div>
       {panel}
       {!inSequence && paneActive && <ModelConfigPanel />}

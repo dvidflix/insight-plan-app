@@ -23,6 +23,9 @@ export interface TimelineSettings {
   showPlayhead: boolean;
   /** Ctrl + mouse wheel over the bar zooms it. */
   wheelZoom: boolean;
+  /** The timeline starts / finishes on these dates ("YYYY-MM-DD") instead of the programme's own; null = the programme's. */
+  limitStart: string | null;
+  limitEnd: string | null;
 }
 
 export const DEFAULT_TIMELINE: TimelineSettings = {
@@ -36,6 +39,8 @@ export const DEFAULT_TIMELINE: TimelineSettings = {
   showProgress: true,
   showPlayhead: true,
   wheelZoom: true,
+  limitStart: null,
+  limitEnd: null,
 };
 
 export const MAX_TIMELINE_ZOOM = 30;
@@ -63,7 +68,7 @@ const save = (s: TimelineSettings) => {
 };
 const pick = (s: State): TimelineSettings => ({
   zoom: s.zoom, followPlayhead: s.followPlayhead, stepIntervalMs: s.stepIntervalMs, showMonths: s.showMonths, monthLabels: s.monthLabels,
-  showYears: s.showYears, showWeekTicks: s.showWeekTicks, showProgress: s.showProgress, showPlayhead: s.showPlayhead, wheelZoom: s.wheelZoom,
+  showYears: s.showYears, showWeekTicks: s.showWeekTicks, showProgress: s.showProgress, showPlayhead: s.showPlayhead, wheelZoom: s.wheelZoom, limitStart: s.limitStart, limitEnd: s.limitEnd,
 });
 
 export const useTimelineSettingsStore = create<State>((set, get) => ({

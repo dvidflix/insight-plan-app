@@ -57,6 +57,7 @@ import cubeSvg from '../icons/modus-icon-cube.svg?raw';
 import checkboxCheckedSvg from '../icons/checkbox-checked.svg?raw';
 import checkboxUncheckedSvg from '../icons/checkbox-unchecked.svg?raw';
 import downloadFileSvg from '../icons/download.svg?raw';
+import folderOpenSvg from '../icons/folder-open (1).svg?raw';
 import expandMoreSvg from '../icons/expand-more.svg?raw';
 import rerouteSvg from '../icons/reroute.svg?raw';
 import driverSvg from '../icons/driver.svg?raw';
@@ -109,6 +110,7 @@ function svgIcon(raw: string) {
   return (p: SVGProps<SVGSVGElement>) => <svg viewBox={viewBox} width="16" height="16" fill={fill} {...p} dangerouslySetInnerHTML={{ __html: inner }} />;
 }
 
+export const IconFolderOpen = svgIcon(folderOpenSvg);
 export const IconFilter = svgIcon(filterSvg);
 /** Move up / down one step, and to the first / last step. */
 export const IconArrowUp = svgIcon(arrowUpSvg);

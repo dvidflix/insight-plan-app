@@ -1079,6 +1079,7 @@ tbody tr {
 }
 
 .app-body {
+  position: relative;
   flex: 1;
   min-height: 0;
   width: 100%;
@@ -1231,22 +1232,41 @@ tbody tr {
 }
 
 /* Side-by-side split: each view's models along its bottom (ViewerCanvas > ViewModelsStrip). */
+.view-captions {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 50%;
+  z-index: 5;
+  pointer-events: none;
+}
+.view-captions--left { left: 0; }
+.view-captions--right { left: 50%; }
 .view-models {
   position: absolute;
   bottom: 12px;
-  z-index: 5;
+  left: 12px;
   display: flex;
   flex-wrap: wrap;
   gap: 4px;
-  max-width: calc(50% - 24px);
-  pointer-events: none;
+  max-width: calc(100% - 24px);
 }
-.view-models--left {
-  left: 12px;
+.view-models__chip--programme { background: rgba(190, 36, 90, 0.85); }
+/* A split view's custom label (View settings > Labels in this view). */
+.view-captions__custom {
+  position: absolute;
+  max-width: calc(100% - 24px);
+  padding: 4px 10px;
+  border-radius: 3px;
+  white-space: pre-line;
+  line-height: 1.3;
 }
-.view-models--right {
-  left: calc(50% + 12px);
-}
+.view-captions__custom--top-left { top: 12px; left: 12px; }
+.view-captions__custom--top-center { top: 12px; left: 50%; transform: translateX(-50%); text-align: center; }
+.view-captions__custom--top-right { top: 12px; right: 12px; text-align: right; }
+.view-captions__custom--bottom-left { bottom: 48px; left: 12px; }
+.view-captions__custom--bottom-center { bottom: 48px; left: 50%; transform: translateX(-50%); text-align: center; }
+.view-captions__custom--bottom-right { bottom: 48px; right: 12px; text-align: right; }
 .view-models__chip {
   max-width: 220px;
   padding: 3px 8px;
@@ -1471,6 +1491,27 @@ tbody tr {
   max-width: 60%;
 }
 
+/* Key of the Appearance profiles in use (components/sequence/AppearanceKey.tsx); placed with the date label's position classes. */
+.appearance-key {
+  position: absolute;
+  z-index: 15;
+  margin: 16px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.12);
+  color: var(--text);
+  font-size: 12px;
+  display: flex;
+  gap: 6px 14px;
+  pointer-events: none;
+  max-width: 60%;
+}
+.appearance-key--vertical { flex-direction: column; }
+.appearance-key--horizontal { flex-direction: row; flex-wrap: wrap; }
+.appearance-key__item { display: flex; align-items: center; gap: 6px; white-space: nowrap; }
+.appearance-key__swatch { width: 16px; height: 16px; border-radius: 3px; border: 1px solid rgba(0, 0, 0, 0.25); flex: none; }
 .sequence-label-overlay--top-left { top: 0; left: 0; }
 .sequence-label-overlay--top-center { top: 0; left: 50%; transform: translateX(-50%); text-align: center; }
 .sequence-label-overlay--top-right { top: 0; right: 0; }
@@ -5524,6 +5565,15 @@ body.is-col-resizing * {
   min-height: 0;
 }
 
+/* Beside the 3D view instead of under it (Data table tab > Position). */
+.mdt--left, .mdt--right { height: auto; align-self: stretch; border-top: 0; }
+.mdt--left { border-right: 1px solid var(--border); }
+.mdt--right { border-left: 1px solid var(--border); }
+.mdt .mdt__grip--side { top: 0; bottom: 0; left: auto; right: auto; width: 8px; height: auto; cursor: col-resize; z-index: 6; }
+.mdt .mdt__grip--left { right: -4px; }
+.mdt .mdt__grip--right { left: -4px; }
+.mdt .mdt__grip--side:hover { background: rgb(var(--accent-rgb) / 0.25); }
+
 .mdt--closed {
   flex-direction: row;
   align-items: center;
@@ -7707,6 +7757,38 @@ body.is-col-resizing * {
   justify-content: flex-start;
 }
 
+.agg-cell__btn {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 4px;
+  max-width: 100%;
+  padding: 0 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+}
+.agg-cell__btn:hover { background: rgb(var(--accent-rgb) / 0.12); }
+.agg-cell__kind { color: var(--text-dim); font-size: 10px; }
+.agg-cell__add { color: var(--text-dim); opacity: 0; }
+.mdt__totals:hover .agg-cell__add, .agg-cell__btn:focus-visible .agg-cell__add { opacity: 0.7; }
+.mdt__aggmenu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  min-width: 120px;
+  padding: 4px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.18);
+}
+.mdt__aggmenu button { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border: 0; border-radius: 4px; background: transparent; color: var(--text); font-size: 12px; text-align: left; cursor: pointer; }
+.mdt__aggmenu button:hover { background: rgb(var(--accent-rgb) / 0.12); }
+.mdt__aggmenu-tick { width: 12px; color: var(--accent); }
 .mdt__totals-label {
   margin-right: auto;
   color: var(--text-dim);
@@ -10566,6 +10648,10 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .scene-card__open:hover { filter: brightness(1.08); }
 .scene-card__meta { font-size: 11px; color: var(--text-dim); }
 .scene-card__actions { display: flex; gap: 4px; margin-top: 2px; }
+/* A scene in the list: one line, with the open button as an icon (its contents and age are in the tooltip). */
+.scene-card--row { flex-direction: row; align-items: center; gap: 6px; padding: 5px 8px; }
+.scene-card--row .scene-card__actions { margin-top: 0; flex: none; }
+.scene-card__open-icon { color: var(--accent); flex: none; }
 .scenes__new { display: flex; gap: 6px; margin: 6px 0; }
 .scenes__new input { flex: 1; min-width: 0; }
 .scenes__empty { font-size: 12px; margin-bottom: 14px; }
@@ -10577,6 +10663,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .scene-here__name { font-size: 16px; font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 .scene-here__saved { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
 .scene-here__dot { width: 8px; height: 8px; border-radius: 50%; background: #2e9e5b; flex: none; }
+.scene-here .scene-card__actions { justify-content: flex-end; }
 .scene-here__hint { font-size: 11px; color: var(--text-dim); line-height: 1.4; margin-top: 2px; }
 .scenes__create { display: flex; align-items: center; gap: 10px; width: 100%; margin: 10px 0 14px; padding: 9px 12px; border: 1px dashed var(--accent); border-radius: 8px; background: transparent; color: var(--accent-strong); cursor: pointer; text-align: left; }
 .scenes__create:hover { background: var(--accent-dim); }
@@ -10667,8 +10754,8 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .scn-panel__body .scn-card > .scn-list__head, .scn-panel__body .scn-card > .scn-list { margin-left: 0; margin-right: 0; }
 .scn-panel__body .scn-list__head { padding-left: 15px; }
 .scn-panel__body .scn-new { margin-top: 6px; }
-.scn-panel__body .btn, .scn-panel__body input, .scn-panel__body textarea { border-radius: 0 !important; }
-.scn-panel__body select:not([multiple]) { border-radius: 0 !important; }
+/* Buttons and fields keep the app's rounded corners here too (they were squared off in these panels). */
+
 .scn-panel__body .scn-chip { border-radius: 2px; }
 
 /* A field with its label on the left and its value on the same line (Current scenario > Building). */
@@ -10798,3 +10885,84 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .sg__members { padding: 0 12px 6px 46px; font-size: 12px; }
 .sg__member { display: grid; grid-template-columns: 1fr 44px 90px 80px; gap: 6px; padding: 3px 0; border-top: 1px solid #edefee; }
 .sg__member .sg__rate { text-align: right; }
+
+/* Layouts dock: white background, the list and its folders the full width of the pane. */
+.layouts-dock,
+.layouts-dock .scn-dock__body,
+.layouts-dock .scn-card,
+.layouts-dock .ld-folder { background: #fff; }
+.layouts-dock .ld-folder--into { background: var(--accent-dim); }
+.layouts-dock .scn-card--grow { align-items: stretch; }
+.layouts-dock__list,
+.layouts-dock .ld-section { width: 100%; box-sizing: border-box; align-self: stretch; }
+.layouts-dock__item,
+.layouts-dock .ld-folder { width: 100%; box-sizing: border-box; }
+/* The section titles (Save the current view, Layouts) run edge to edge; only their text is indented. */
+.layouts-dock .scn-card > .scn-card__title { margin: 0 0 6px; padding: 5px 12px; }
+.layouts-dock .scn-card--grow > .scn-card__title { margin-bottom: 0; }
+.layouts-dock .scn-card--grow { padding-bottom: 0; }
+/* The list itself has no side margin (the scenario panels' rule for card children put 12px on it). */
+.layouts-dock .scn-card > .layouts-dock__list { margin: 0; }
+/* The save form (name + Save, folder) is inset from the edges of the pane. */
+.layouts-dock .scn-card > form.scn-row, .layouts-dock .scn-card > .ld-savefolder { margin-left: 12px !important; margin-right: 12px !important; }
+.layouts-dock .scn-card > .ld-savefolder { width: calc(100% - 24px); }
+/* The icons on the right keep clear of the edge of the pane. */
+.layouts-dock .layouts-dock__item, .layouts-dock .ld-folder { padding-right: 12px; }
+/* The list runs edge to edge: the scenario panels' margin for card children (more specific than the rule above) must not reach it. */
+.layouts-dock .scn-card > .layouts-dock__list { margin-left: 0 !important; margin-right: 0 !important; width: auto; }
+/* Import of P6 layouts (.plf) in the Layouts dock. */
+.layouts-dock .ld-import { margin: 6px 12px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; }
+.layouts-dock .ld-import .btn { align-self: flex-start; }
+.layouts-dock .ld-import__notes { margin: 4px 0 0; padding-left: 16px; }
+.layouts-dock .ld-import summary { cursor: pointer; }
+/* Layouts inside a folder are indented one more step than the folder's own row. */
+.layouts-dock .layouts-dock__item--in { padding-left: 44px; }
+.layouts-dock .ld-empty { padding-left: 44px; }
+/* Rounded fields and buttons in the Layouts dock (the scenario panels' square-corner rule is overridden here). */
+.layouts-dock .scn-dock__body .btn,
+.layouts-dock .scn-dock__body input,
+.layouts-dock .scn-dock__body textarea,
+.layouts-dock .scn-dock__body select:not([multiple]),
+.layouts-dock .scn-row input,
+.layouts-dock .scn-row .btn { border-radius: 6px !important; }
+.layouts-dock .scn-card > .ld-import { margin: 0 12px 6px !important; padding-top: 8px; }
+/* The joined download button: rounded at its two outer ends, square where the halves meet. */
+.scn-panel__body .scn-compact-row .dl-split .dl-split__main { border-radius: 6px 0 0 6px; }
+.scn-panel__body .scn-compact-row .dl-split .dl-split__caret { border-radius: 0 6px 6px 0; }
+
+/* Programmes > Concrete Comparison */
+.cc { padding: 12px 16px; overflow: auto; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+.cc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.cc-bar h3 { margin: 0 8px 0 0; font-size: 15px; }
+.cc-bar label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.cc-bar select { min-height: 28px; }
+.cc-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; margin-right: 14px; }
+.cc-chart { position: relative; width: 100%; flex: none; }
+.cc-chart svg { display: block; }
+.cc-grid { stroke: var(--border); stroke-width: 1; }
+.cc-axis { fill: var(--text-dim); font-size: 11px; }
+.cc-axis-title { fill: var(--text-dim); font-size: 11px; font-weight: 600; }
+.cc-hover { fill: rgb(0 0 0 / 0.05); pointer-events: none; }
+.cc-tip { position: absolute; z-index: 2; min-width: 190px; padding: 6px 10px; font-size: 12px; background: var(--bg-elevated, #fff); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.12); pointer-events: none; }
+.cc-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin: 0 6px 0 4px; vertical-align: middle; }
+.cc-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.cc-table th { text-align: left; font-size: 11px; color: var(--text-dim); padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.cc-table td { padding: 4px 8px; border-bottom: 1px solid var(--border); }
+.cc-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+.cc-table tr.is-off { opacity: 0.5; }
+.cc-name, .cc-scope { width: 100%; min-width: 160px; box-sizing: border-box; font-size: 12px; }
+.cc-resources { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 0; }
+.cc-resources__title { width: 100%; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); margin-bottom: 4px; }
+.cc-filters td { padding: 0 !important; background: var(--bg-soft, #f6f6f6); }
+.cc-filters__box { max-height: 460px; overflow: auto; padding: 8px 12px; }
+.cc-table .btn--small { white-space: nowrap; }
+.cc-material { display: inline-flex; gap: 4px; }
+
+/* Compare models: the controls sit in from the pane's edges. */
+.model-compare .disp {
+  padding-left: 12px;
+  padding-right: 12px;
+}
+
+/* The timeline's Step and Speed selects are only as wide as the option showing. */
+.sequence-statusbar__step select { field-sizing: content; width: auto; min-width: 0; padding-right: 4px; }

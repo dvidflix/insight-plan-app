@@ -4,6 +4,7 @@ import { useFocusStore } from '../../state/focusStore';
 import { SidePaneDock } from '../SidePane';
 import { useViewerEngine } from '../../viewer/ViewerEngineContext';
 import { useModelsStore } from '../../state/modelsStore';
+import { baseStem } from '../../scenarios/fromProgramme';
 import { useSelectionStore } from '../../state/selectionStore';
 import { isTableCfgTab, setSelected, useScenarioStore } from '../../state/scenarioStore';
 import { useScenarioView } from '../../scenarios/useScenarioView';
@@ -16,7 +17,9 @@ function usePourElements() {
   const models = useModelsStore((s) => s.models);
   const { loaded } = useScenarioView();
   return useMemo(() => {
-    const model = loaded ? models.find((m) => m.name.replace(/\.(ifc|frag)$/i, '') === loaded.stem) : undefined;
+    // The loaded IFC may be the _FIXED copy of the building the scenario is for (same objects, same GlobalIds).
+    const stemOf = (m: { name: string }) => m.name.replace(/\.(ifc|frag)$/i, '');
+    const model = loaded ? models.find((m) => stemOf(m) === loaded.stem) ?? models.find((m) => baseStem(stemOf(m)).toLowerCase() === baseStem(loaded.stem).toLowerCase()) : undefined;
     const idByGuid = new Map<string, number>();
     const guidById = new Map<number, string>();
     if (model) {

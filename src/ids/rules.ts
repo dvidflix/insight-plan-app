@@ -1,5 +1,6 @@
 import type { ModelContext } from './evaluate';
 import type { SpecResult } from './runIds';
+import { levelsOf, type AvevaLevelSource } from './avevaLevels';
 
 /** Custom rules: model checks IDS can't express (it can't count, or compare
     one value with another), kept as JSON files in docs/ids/rules and shown
@@ -38,7 +39,15 @@ export interface PropertyDigitsRule {
   digits: number;
 }
 
-export type RuleCheck = SingleBuildingRule | NameMatchesPropertyRule | PropertyDigitsRule;
+/** In a model from AVEVA (Originating System contains this), the objects'
+    names give their levels: one IfcSite, one IfcBuilding, and one
+    IfcBuildingStorey per level, named by its code. Other models are not
+    checked. */
+export interface AvevaStoreysRule extends AvevaLevelSource {
+  type: 'aveva-storeys';
+}
+
+export type RuleCheck = SingleBuildingRule | NameMatchesPropertyRule | PropertyDigitsRule | AvevaStoreysRule;
 
 export type Rule = RuleCheck & {
   id: string;
@@ -154,13 +163,39 @@ function evaluateSingleBuilding(rule: SingleBuildingRule, ctx: ModelContext): Pi
   return { applicable, passed: applicable - failures.length, failures };
 }
 
+function evaluateAvevaStoreys(rule: AvevaStoreysRule, ctx: ModelContext): Pick<SpecResult, 'applicable' | 'passed' | 'failures'> {
+  if (!(ctx.originatingSystem ?? '').toUpperCase().includes(rule.originatingSystem.toUpperCase())) return { applicable: 0, passed: 0, failures: [] };
+  const of = (category: string) => ctx.candidates.filter((c) => c.category.toUpperCase() === category);
+  const levels = levelsOf(ctx.candidates, rule);
+  const storeys = of('IFCBUILDINGSTOREY');
+  const failures: SpecResult['failures'] = [];
+  const fail = (localId: number, reason: string) => failures.push({ modelId: ctx.modelId, localId, guid: '', reasons: [reason] });
+  // A storey for each level, named by its code; no other storeys.
+  const seen = new Set<string>();
+  for (const s of storeys) {
+    const name = s.name.trim();
+    if (!levels.has(name)) fail(s.localId, `Storey ${name || '(unnamed)'} is not a level the objects' names give`);
+    else if (seen.has(name)) fail(s.localId, `Storey ${name} is a duplicate`);
+    seen.add(name);
+  }
+  for (const [code, n] of [...levels].sort((a, b) => a[0].localeCompare(b[0]))) {
+    if (!seen.has(code)) fail(0, `No IfcBuildingStorey named ${code} (${n} object${n === 1 ? '' : 's'} named for it)`);
+  }
+  // One site, one building.
+  for (const [label, list] of [['IfcSite', of('IFCSITE')], ['IfcBuilding', of('IFCBUILDING')]] as const) {
+    for (const x of list.slice(1)) fail(x.localId, `One of ${list.length} ${label}s: the model should have one`);
+  }
+  const applicable = levels.size + storeys.length + of('IFCSITE').length + of('IFCBUILDING').length;
+  return { applicable, passed: applicable - failures.length, failures };
+}
+
 /** Runs the rules against the models, as Model checks results. */
 export function runRules(rules: Rule[], models: ModelContext[]): SpecResult[] {
   return rules.map((rule) => {
     const result: SpecResult = { key: `${RULES_FILE}#${rule.id}`, file: RULES_FILE, name: rule.name, identifier: rule.id, description: rule.description, instructions: rule.instructions, applicable: 0, passed: 0, failures: [] };
     try {
       for (const ctx of models) {
-        const r = rule.type === 'single-building' ? evaluateSingleBuilding(rule, ctx) : rule.type === 'name-matches-property' ? evaluateNameMatches(rule, ctx) : rule.type === 'property-digits' ? evaluateDigits(rule, ctx) : null;
+        const r = rule.type === 'single-building' ? evaluateSingleBuilding(rule, ctx) : rule.type === 'name-matches-property' ? evaluateNameMatches(rule, ctx) : rule.type === 'property-digits' ? evaluateDigits(rule, ctx) : rule.type === 'aveva-storeys' ? evaluateAvevaStoreys(rule, ctx) : null;
         if (!r) throw new Error(`Unknown rule type "${(rule as { type: string }).type}".`);
         result.applicable += r.applicable;
         result.passed += r.passed;

@@ -1,9 +1,12 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { useViewerEngine } from '../../viewer/ViewerEngineContext';
+import { useViewSettingsStore } from '../../state/viewSettingsStore';
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { useSequenceLabelStore } from '../../state/sequenceLabelStore';
 import { tagCss, useActiveTagsStore, useTagsStore } from '../../state/tagsStore';
 import { TagCallouts } from './TagCallouts';
+import { AppearanceKey } from './AppearanceKey';
 import { useRecordingStore } from '../../state/recordingStore';
 import { scheduleRange } from '../../schedule/linking';
 import { alignDown, nextBoundary } from '../../schedule/period';
@@ -31,6 +34,17 @@ export function SequenceLabelOverlay() {
     return renderLabelTemplate(template, { date: new Date(date), range, period: { start: alignDown(date, stepUnit), end: nextBoundary(date, stepUnit) } });
   }, [template, range, date, stepUnit]);
 
+  // The second view, while the 4D page is split side by side: its tags are drawn over it.
+  const engine = useViewerEngine();
+  const split = useViewSettingsStore((s) => s.pages.sequence.split && (s.pages.sequence.compare ?? 'side') === 'side');
+  const [hasSecond, setHasSecond] = useState(!!engine.secondary);
+  useEffect(() => {
+    const sync = () => setHasSecond(!!engine.secondary);
+    engine.onSecondaryChange.add(sync);
+    sync();
+    return () => engine.onSecondaryChange.remove(sync);
+  }, [engine]);
+  const sideBySide = split && hasSecond;
   const tagItems = useActiveTagsStore((s) => s.items);
   const placement = useTagsStore((s) => s.placement);
   const tagsShown = useTagsStore((s) => s.shown);
@@ -51,7 +65,9 @@ export function SequenceLabelOverlay() {
           {text}
         </div>
       )}
-      {tagsShown && placement === 'objects' && <TagCallouts />}
+      <AppearanceKey />
+      {tagsShown && placement === 'objects' && <TagCallouts view="main" />}
+      {tagsShown && placement === 'objects' && sideBySide && <TagCallouts view="second" />}
       {/* Not drawn into the export: frameCapture only redraws the label/tag overlays. */}
       {recPhase === 'countdown' && <div className="rec-countdown">{recCount}</div>}
       {tagsShown && placement === 'corner' && tagItems.length > 0 && (

@@ -49,7 +49,7 @@ interface SequenceTimelineState {
 export const useSequenceTimelineStore = create<SequenceTimelineState>((set) => ({
   date: null,
   playing: false,
-  stepUnit: 'week',
+  stepUnit: 'day',
   basis: 'planned',
   appliedDate: null,
   setDate: (d) => set((s) => ({ date: typeof d === 'function' ? d(s.date) : d })),

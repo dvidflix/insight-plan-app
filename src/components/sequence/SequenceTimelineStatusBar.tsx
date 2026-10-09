@@ -1,9 +1,10 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useSequenceTimelineStore, STEP_UNIT_LABELS, type StepUnit } from '../../state/sequenceTimelineStore';
-import { actualCoverage, scheduleRange, type DateRange } from '../../schedule/linking';
+import { actualCoverage, limitRange, scheduleRange, type DateRange } from '../../schedule/linking';
 import { addUnit, alignDown, nextBoundary, prevBoundary } from '../../schedule/period';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../../state/timelineSettingsStore';
+import { usePersistedState } from '../../utils/persistedState';
 import { IconFirstPage, IconLastPage, IconPauseCircle, IconPlayCircle, IconRewind, IconStopCircle } from '../icons';
 
 /** Widens the schedule range out to whole `unit` boundaries — start down to
@@ -103,6 +104,10 @@ const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Se
     floated over the viewport is the customizable date/week label
     (SequenceLabelOverlay), since a slim status bar has no room for a
     multi-line, user-positioned readout. */
+/** Playback speed multipliers on the Step interval (Settings › Playback speed). */
+const SPEEDS = [0.5, 1, 2, 4, 6, 10];
+const MIN_INTERVAL_MS = 40;
+
 export function SequenceTimelineStatusBar() {
   const model = useSequenceSchedule();
   const basis = useSequenceTimelineStore((s) => s.basis);
@@ -114,6 +119,8 @@ export function SequenceTimelineStatusBar() {
   const setPlaying = useSequenceTimelineStore((s) => s.setPlaying);
   const intervalRef = useRef<ReturnType<typeof setInterval>>();
   const tl = useTimelineSettingsStore();
+  const [speed, setSpeed] = usePersistedState('sequence.playSpeed', 6);
+  const intervalMs = Math.max(MIN_INTERVAL_MS, tl.stepIntervalMs / speed);
   const setBasis = useSequenceTimelineStore((s) => s.setBasis);
 
   // A programme with as-built dates for most of its activities (a finished project's XER) plays as built:
@@ -125,9 +132,9 @@ export function SequenceTimelineStatusBar() {
   }, [model?.id]);
 
   const range = useMemo(() => {
-    const raw = scheduleRange(model, basis);
+    const raw = limitRange(scheduleRange(model, basis), tl.limitStart, tl.limitEnd);
     return raw ? roundRangeToUnit(raw, stepUnit) : raw;
-  }, [model, basis, stepUnit]);
+  }, [model, basis, stepUnit, tl.limitStart, tl.limitEnd]);
 
   // Snap the cursor onto the (re-rounded) range when it's first set or when
   // the step unit changes, so it always sits on a period boundary.
@@ -154,9 +161,9 @@ export function SequenceTimelineStatusBar() {
         }
         return next;
       });
-    }, tl.stepIntervalMs);
+    }, intervalMs);
     return () => clearInterval(intervalRef.current);
-  }, [playing, range, stepUnit, setDate, setPlaying, tl.stepIntervalMs]);
+  }, [playing, range, stepUnit, setDate, setPlaying, intervalMs]);
 
   // Left/Right arrow keys, and Ctrl+. / Ctrl+, , step the cursor forward/back
   // by one stepUnit — same boundary math as the ⏪/⏩ buttons. Ignored while
@@ -167,6 +174,14 @@ export function SequenceTimelineStatusBar() {
     const handler = (e: KeyboardEvent) => {
       const tag = (e.target as HTMLElement | null)?.tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT') return;
+      // Space plays / pauses — except where it already means something (a focused button or link, an editable field, a list that uses it).
+      if (e.code === 'Space' && !e.ctrlKey && !e.altKey && !e.shiftKey && !e.metaKey) {
+        const el = e.target as HTMLElement | null;
+        if (el?.closest('button, a, [contenteditable="true"], [role="button"], [role="tab"], [role="slider"], [role="option"], [tabindex="0"]')) return;
+        e.preventDefault();
+        if (!e.repeat) setPlaying((p) => !p);
+        return;
+      }
       // Ctrl+Alt+3 plays / pauses, Ctrl+Alt+0 goes to the start, Ctrl+Alt+4 to the end (matched by key
       // position, as Alt changes what the key types).
       if (e.ctrlKey && e.altKey && !e.shiftKey && !e.metaKey) {
@@ -298,6 +313,23 @@ export function SequenceTimelineStatusBar() {
   return (
     <footer className="app-statusbar sequence-statusbar">
 
+      <label className="sequence-statusbar__step" title="Playback step (Ctrl+Alt+5 longer, Ctrl+Alt+6 shorter)">
+        <span>Step</span>
+        <select value={stepUnit} onChange={(e) => setStepUnit(e.target.value as StepUnit)}>
+          {STEP_UNIT_LABELS.map((u) => (
+            <option key={u.value} value={u.value}>{u.label}</option>
+          ))}
+        </select>
+      </label>
+      <label className="sequence-statusbar__step" title="Playback speed: a multiple of the speed set in Settings">
+        <span>Speed</span>
+        <select value={speed} onChange={(e) => setSpeed(Number(e.target.value))}>
+          {SPEEDS.map((v) => (
+            <option key={v} value={v}>{v}×</option>
+          ))}
+        </select>
+      </label>
+
       <div ref={trackRef} className={`sequence-statusbar__track${showMonthRow ? ' sequence-statusbar__track--months' : ''}${yearly ? ' sequence-statusbar__track--years' : ''}${quarterly ? ' sequence-statusbar__track--quarters' : ''}${tl.zoom > 1 ? ' is-zoomed' : ''}`}>
         <div ref={innerRef} className="sequence-statusbar__inner" style={{ width: `${tl.zoom * 100}%`, ...rowVars }}>
         {showWeekRow && trackWidth > 0 && weeks.length * 3 <= trackWidth && weeks.map((seg) => (
@@ -363,14 +395,6 @@ export function SequenceTimelineStatusBar() {
         </button>
       </div>
 
-      <label className="sequence-statusbar__step" title="Playback step (Ctrl+Alt+5 longer, Ctrl+Alt+6 shorter)">
-        <span>Step</span>
-        <select value={stepUnit} onChange={(e) => setStepUnit(e.target.value as StepUnit)}>
-          {STEP_UNIT_LABELS.map((u) => (
-            <option key={u.value} value={u.value}>{u.label}</option>
-          ))}
-        </select>
-      </label>
     </footer>
   );
 }

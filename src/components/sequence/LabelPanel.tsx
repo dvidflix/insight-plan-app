@@ -3,6 +3,7 @@ import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { useSequenceLabelStore, type LabelPosition } from '../../state/sequenceLabelStore';
 import { useTagsStore } from '../../state/tagsStore';
+import { useAppearanceKeyStore } from '../../state/appearanceKeyStore';
 import { TagEditor } from './TagEditor';
 import { IconPencil } from '../icons';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
@@ -35,6 +36,12 @@ export function LabelPanel() {
   const setEnabled = useSequenceLabelStore((s) => s.setEnabled);
   const position = useSequenceLabelStore((s) => s.position);
   const setPosition = useSequenceLabelStore((s) => s.setPosition);
+  const keyOn = useAppearanceKeyStore((s) => s.enabled);
+  const setKeyOn = useAppearanceKeyStore((s) => s.setEnabled);
+  const keyPosition = useAppearanceKeyStore((s) => s.position);
+  const setKeyPosition = useAppearanceKeyStore((s) => s.setPosition);
+  const keyOrientation = useAppearanceKeyStore((s) => s.orientation);
+  const setKeyOrientation = useAppearanceKeyStore((s) => s.setOrientation);
   const template = useSequenceLabelStore((s) => s.template);
   const setTemplate = useSequenceLabelStore((s) => s.setTemplate);
 
@@ -49,7 +56,7 @@ export function LabelPanel() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = tags.find((t) => t.id === editingId) ?? null;
 
-  const sections = useOpenSections<'tags' | 'date'>('sequence.labelSections', ['tags']);
+  const sections = useOpenSections<'tags' | 'date' | 'key'>('sequence.labelSections', ['tags']);
 
   const range = useMemo(() => scheduleRange(model, basis), [model, basis]);
   const preview = useMemo(() => {
@@ -121,6 +128,34 @@ export function LabelPanel() {
           )}
         </>
       )}
+      </div>
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Appearance key" open={sections.isOpen('key')} onToggle={() => sections.toggle('key')}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }} title="A key of the Appearance profiles used by the Link Groups: a swatch (active | complete) and the profile's name">
+          <span>Show key on viewer</span>
+          <button type="button" role="switch" aria-checked={keyOn} className={`switch${keyOn ? ' on' : ''}`} onClick={() => setKeyOn(!keyOn)}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+        <div>
+          <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 4 }}>Position</div>
+          <div className="label-position-grid">
+            {POSITIONS.map((p) => (
+              <button key={p.value} type="button" className={`label-position-grid__cell${keyPosition === p.value ? ' active' : ''}`} title={p.value} onClick={() => setKeyPosition(p.value)}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+        </div>
+        <label className="disp__row">
+          <span>Layout</span>
+          <select value={keyOrientation} onChange={(e) => setKeyOrientation(e.target.value as 'vertical' | 'horizontal')}>
+            <option value="vertical">Vertical list</option>
+            <option value="horizontal">Horizontal bar</option>
+          </select>
+        </label>
       </div>
       </CollapsibleSection>
 

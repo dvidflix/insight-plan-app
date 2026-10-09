@@ -9,9 +9,11 @@ import { CLOSED_STATUSES, STATUS_COLORS, useTopicsStore, type Topic } from '../s
 import { topicActiveAt, topicWindow } from '../topics/topicDates';
 import { sanitizeNote } from '../utils/richText';
 import type { Marker } from '../state/markersStore';
-import { useSequenceSchedule } from '../state/scheduleStore';
+import { useSequenceSchedule, useVisibleSchedules } from '../state/scheduleStore';
+import { useLinkGroupsStore } from '../state/linkGroupsStore';
+import { sharedActivityObjects } from '../schedule/activityObjects';
 import { useSequenceTimelineStore } from '../state/sequenceTimelineStore';
-import { isTwoViewLayout, pageOfLayout, useViewSettingsStore } from '../state/viewSettingsStore';
+import { DEFAULT_CAPTION, isTwoViewLayout, pageOfLayout, useViewSettingsStore } from '../state/viewSettingsStore';
 import { useViewerEngine } from './ViewerEngineContext';
 import { createViewerShell, type ViewerLayout, type ViewerShell } from './viewerUI';
 import { useModelsStore } from '../state/modelsStore';
@@ -336,10 +338,7 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
         />
       )}
       {ready && twoViews && !slider && models.length > 0 && (
-        <>
-          <ViewModelsStrip page={page} view="main" />
-          <ViewModelsStrip page={page} view="second" />
-        </>
+        <ViewCaptions page={page} />
       )}
       {ready && page === 'model' && <HoverTag />}
       {!ready && <div className="viewer-canvas__loading">Starting viewer…</div>}
@@ -402,23 +401,64 @@ function HoverTag() {
   return label ? <div className="hover-tag" style={{ ...tagCss(tag), left: label.x + 14, top: label.y + 14 }}>{label.text}</div> : null;
 }
 
-/** Side-by-side split: the models each view shows, along its bottom
-    (which ones: View settings > Models in this view). */
-function ViewModelsStrip({ page, view }: { page: 'model' | 'sequence'; view: 'main' | 'second' }) {
+/** Side-by-side split: what each view says about itself — the models it shows and the programmes driving it
+    (along its bottom), and a custom label placed and styled per view (View settings > Labels in this view). */
+function ViewCaptions({ page }: { page: 'model' | 'sequence' }) {
   const models = useModelsStore((s) => s.models);
   const hiddenIds = useModelsStore((s) => s.hiddenModelIds);
-  const hidden = useViewSettingsStore((s) => s.pages[page][view].hiddenModels);
-  const out = new Set(hidden ?? []);
-  const shown = models.filter((m) => !out.has(m.name) && !hiddenIds.has(m.modelId));
-  if (!shown.length) return null;
+  const schedules = useVisibleSchedules();
+  const groups = useLinkGroupsStore((s) => s.groups);
+  const main = useViewSettingsStore((s) => s.pages[page].main);
+  const second = useViewSettingsStore((s) => s.pages[page].second);
+  const wantsProgramme = !!main.caption?.programme || !!second.caption?.programme;
+
+  // Which models each programme's activities are linked to (Link Groups): a programme is "used" by a view when it reaches one of its models.
+  const reach = useMemo(() => {
+    if (!wantsProgramme) return [];
+    return schedules.map((m) => {
+      const used = new Set<string>();
+      for (const byModel of sharedActivityObjects(m, models, groups).objectsOf.values()) for (const [modelId, ids] of byModel) if (ids.size) used.add(modelId);
+      return { name: m.project?.name || m.sourceFileName, used };
+    });
+  }, [wantsProgramme, schedules, models, groups]);
+
+  const half = (view: 'main' | 'second') => {
+    const settings = view === 'main' ? main : second;
+    const c = { ...DEFAULT_CAPTION, ...(settings.caption ?? {}) };
+    const out = new Set(settings.hiddenModels ?? []);
+    const shown = models.filter((m) => !out.has(m.name) && !hiddenIds.has(m.modelId));
+    const shownIds = new Set(shown.map((m) => m.modelId));
+    // Programmes with no links at all still show: nothing says which view they belong to.
+    const programmes = reach.filter((r) => r.used.size === 0 || [...r.used].some((id) => shownIds.has(id))).map((r) => r.name);
+    const chips = [
+      ...(c.programme ? programmes.map((n) => ({ key: `p:${n}`, text: n, title: `Programme: ${n}`, programme: true })) : []),
+      ...(c.models ? shown.map((m) => ({ key: m.modelId, text: m.name.replace(/\.(ifc|frag)$/i, ''), title: m.name, programme: false })) : []),
+    ];
+    return (
+      <div className={`view-captions view-captions--${view === 'main' ? 'left' : 'right'}`}>
+        {c.custom && c.text.trim() && (
+          <div
+            className={`view-captions__custom view-captions__custom--${c.position}`}
+            style={{ fontSize: c.size, color: c.color, background: c.background ?? 'transparent', fontWeight: c.bold ? 700 : 400 }}
+          >
+            {c.text}
+          </div>
+        )}
+        {chips.length > 0 && (
+          <div className="view-models">
+            {chips.map((chip) => (
+              <span key={chip.key} className={`view-models__chip${chip.programme ? ' view-models__chip--programme' : ''}`} title={chip.title}>{chip.text}</span>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  };
   return (
-    <div className={`view-models view-models--${view === 'main' ? 'left' : 'right'}`}>
-      {shown.map((m) => (
-        <span key={m.modelId} className="view-models__chip" title={m.name}>
-          {m.name.replace(/\.(ifc|frag)$/i, '')}
-        </span>
-      ))}
-    </div>
+    <>
+      {half('main')}
+      {half('second')}
+    </>
   );
 }
 
