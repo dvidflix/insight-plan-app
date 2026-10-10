@@ -68,6 +68,17 @@ const escapeRegExp = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     measurements). All viewer *chrome* is built from @thatopen/ui in
     viewerUI.ts — this class only wires the engine side, plus the
     programmatic visibility/colour/opacity hooks the 4D timeline drives. */
+/** The camera saved with the scene, if any. */
+function readSavedCamera() {
+  try {
+    const c = JSON.parse(localStorage.getItem('viewer.camera') ?? 'null');
+    const ok = (v: unknown) => Array.isArray(v) && v.length === 3 && v.every((n) => Number.isFinite(n));
+    return c && ok(c.position) && ok(c.target) ? { position: c.position as number[], target: c.target as number[], ortho: !!c.ortho, zoom: Number(c.zoom) } : null;
+  } catch {
+    return null;
+  }
+}
+
 export class ViewerEngine {
   private _components: OBC.Components | null = null;
   private _world: World | null = null;
@@ -306,17 +317,9 @@ export class ViewerEngine {
       if (path) path.visible = pathVisible;
     };
 
-    // Fragments — same wiring as the official Views / ItemsFinder tutorials.
-    // getWorker() fetches the version-matched worker from unpkg; when that's
-    // unreachable (offline / locked-down network) fall back to the copy
-    // vite-plugin-static-copy puts under /wasm/.
-    const workerUrl = await Promise.race([
-      OBC.FragmentsManager.getWorker(),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('timed out after 5s')), 5000)),
-    ]).catch((e) => {
-      console.warn('ViewerEngine: FragmentsManager.getWorker() failed, using local worker', e);
-      return new URL('/wasm/worker.mjs', window.location.origin).toString();
-    });
+    // Fragments — same wiring as the official Views / ItemsFinder tutorials, but the app works offline: the worker is
+    // the version-matched copy vite-plugin-static-copy puts under /wasm/ (never fetched from unpkg).
+    const workerUrl = new URL('/wasm/worker.mjs', window.location.origin).toString();
     this.workerUrl = workerUrl;
     const fragments = components.get(OBC.FragmentsManager);
     this.fragments = fragments;
@@ -339,6 +342,7 @@ export class ViewerEngine {
     };
     world.camera.controls.addEventListener('update', () => fragments.core.update());
     world.camera.controls.addEventListener('update', () => this.updateNearFar());
+    this.rememberCamera(world);
     // Switching Perspective <-> Orthographic swaps world.camera.three (fired
     // by projection.onChanged; onCameraChanged only covers replacing the whole
     // camera component). The base and ambient-occlusion passes keep a
@@ -481,7 +485,7 @@ export class ViewerEngine {
       // default speed
     }
     // Starting a fly-through leaves the walkthrough.
-    fly.onPlayingChange.add((playing) => { if (playing) walk.disable(); });
+    fly.onPlayingChange.add((playing: boolean) => { if (playing) walk.disable(); });
     this._walkthrough = walk;
     for (const type of ['pointerdown', 'wheel']) container.addEventListener(type, () => fly.pause(), { capture: true, passive: true });
 
@@ -1809,6 +1813,44 @@ export class ViewerEngine {
     return box.isEmpty() || !finite ? null : box.getBoundingSphere(new THREE.Sphere());
   }
 
+  // ---- The camera is kept with the scene (the browser key "viewer.camera" is part of its layout) ----
+  private savedCamera: { position: number[]; target: number[]; ortho: boolean; zoom: number } | null = readSavedCamera();
+  private cameraTimer: number | undefined;
+
+  /** Writes the camera into the browser key a moment after it stops moving. Nothing is written until the saved one
+      has been brought back (the first whole-model fit), so the default view never overwrites it. */
+  private rememberCamera(world: World) {
+    const camera = world.camera;
+    const save = () => {
+      if (this.savedCamera) return;
+      const position = camera.controls.getPosition(new THREE.Vector3());
+      const target = camera.controls.getTarget(new THREE.Vector3());
+      const ortho = camera.projection.current !== 'Perspective';
+      try {
+        localStorage.setItem('viewer.camera', JSON.stringify({ position: position.toArray(), target: target.toArray(), ortho, zoom: camera.threeOrtho.zoom }));
+      } catch {
+        // storage full: the camera is simply not kept
+      }
+    };
+    camera.controls.addEventListener('update', () => {
+      window.clearTimeout(this.cameraTimer);
+      this.cameraTimer = window.setTimeout(save, 700);
+    });
+  }
+
+  /** Puts the saved camera back (once), after the models have been framed. */
+  private async applySavedCamera() {
+    const saved = this.savedCamera;
+    if (!saved || !this._world) return;
+    this.savedCamera = null;
+    const camera = this._world.camera;
+    if (saved.ortho !== (camera.projection.current !== 'Perspective')) camera.projection.set(saved.ortho ? 'Orthographic' : 'Perspective');
+    const [px, py, pz] = saved.position;
+    const [tx, ty, tz] = saved.target;
+    await camera.controls.setLookAt(px, py, pz, tx, ty, tz, false);
+    if (saved.ortho && Number.isFinite(saved.zoom)) await camera.controls.zoomTo(saved.zoom, false);
+  }
+
   /** Fit / focus via BoundingBoxer — the given selection, else every model.
       Perspective is framed from the bounding sphere (distance = radius /
       sin(fov/2)) and set with setLookAt, which is exact at any model size;
@@ -1853,6 +1895,8 @@ export class ViewerEngine {
       const c = sphere.center;
       await controls.setLookAt(c.x + dir.x * distance, c.y + dir.y * distance, c.z + dir.z * distance, c.x, c.y, c.z, wasOrtho ? false : transition);
       if (wasOrtho) camera.projection.set('Orthographic');
+      // The first fit of the whole model after a start (or a scene switch) brings back the camera saved with the scene.
+      if (!modelIdMap) await this.applySavedCamera();
     } catch (e) {
       console.warn('ViewerEngine: fit failed', e);
     }

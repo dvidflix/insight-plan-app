@@ -36,11 +36,41 @@ const startLabel = (series: ConcreteSeries[], period: Period, index: number) => 
 };
 
 const TICKS = 5;
-const PAD = { left: 56, right: 64, top: 12, bottom: 34 };
+const PAD = { left: 56, right: 64, top: 34, bottom: 34 };
+
+/** The chart is always drawn on white with fixed colours, so it reads the same in either theme and exports to PNG as shown. */
+const CHART_CSS = '.cc-grid{stroke:#e2e2e2;stroke-width:1}.cc-axis{fill:#555;font-size:11px}.cc-axis-sub{fill:#555;font-size:10px;font-weight:600;opacity:.8}.cc-axis-title{fill:#555;font-size:11px;font-weight:600}.cc-leg{fill:#222;font-size:12px}.cc-hover{fill:rgba(0,0,0,.05)}text{font-family:Segoe UI,Arial,sans-serif}';
+
+/** Draw the chart's SVG to a PNG (2x) and download it. */
+function exportPng(svg: SVGSVGElement, name: string) {
+  const w = svg.width.baseVal.value;
+  const h = svg.height.baseVal.value;
+  const xml = new XMLSerializer().serializeToString(svg);
+  const img = new Image();
+  img.onload = () => {
+    const canvas = document.createElement('canvas');
+    canvas.width = w * 2;
+    canvas.height = h * 2;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    ctx.fillStyle = '#fff';
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob((blob) => {
+      if (!blob) return;
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(blob);
+      a.download = name;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+    }, 'image/png');
+  };
+  img.src = `data:image/svg+xml;charset=utf-8,${encodeURIComponent(xml)}`;
+}
 const HEIGHT = 440;
 
 /** Weekly volume (bars, left axis) and running total (lines, right axis) of every series, week by week. */
-function DistributionChart({ series, bars, lines, pct, period, unit, xTitle }: { series: ConcreteSeries[]; bars: boolean; lines: boolean; pct: boolean; period: Period; unit: string; xTitle: string }) {
+function DistributionChart({ svgRef, series, bars, lines, pct, period, unit, xTitle }: { svgRef: React.RefObject<SVGSVGElement>; series: ConcreteSeries[]; bars: boolean; lines: boolean; pct: boolean; period: Period; unit: string; xTitle: string }) {
   const box = useRef<HTMLDivElement>(null);
   const [width, setWidth] = useState(900);
   const [hover, setHover] = useState<number | null>(null);
@@ -75,7 +105,22 @@ function DistributionChart({ series, bars, lines, pct, period, unit, xTitle }: {
 
   return (
     <div ref={box} className="cc-chart">
-      <svg width={width} height={HEIGHT} role="img" aria-label="Concrete distribution by week">
+      <svg ref={svgRef} xmlns="http://www.w3.org/2000/svg" width={width} height={HEIGHT} role="img" aria-label="Concrete distribution by week">
+        <style>{CHART_CSS}</style>
+        <rect width={width} height={HEIGHT} fill="#fff" />
+        {(() => {
+          let lx = PAD.left;
+          return series.map((s) => {
+            const x0 = lx;
+            lx += 30 + s.label.length * 6.5;
+            return (
+              <g key={s.key}>
+                <rect x={x0} y={10} width={12} height={12} rx={2} fill={s.color} />
+                <text x={x0 + 18} y={20} className="cc-leg">{s.label}</text>
+              </g>
+            );
+          });
+        })()}
         {Array.from({ length: TICKS + 1 }, (_, i) => {
           const y = PAD.top + (plotH * i) / TICKS;
           return (
@@ -132,6 +177,7 @@ function DistributionChart({ series, bars, lines, pct, period, unit, xTitle }: {
     calendar). Which resources count as concrete, and a scope per programme (a building code, say), are set below. */
 export function ConcreteComparison() {
   const schedules = useVisibleSchedules();
+  const chartSvg = useRef<SVGSVGElement>(null);
   const [align, setAlign] = usePersistedState<Align>('schedule.concrete.align', 'first');
   const [basis, setBasis] = usePersistedState<'current' | 'planned'>('schedule.concrete.basis', 'current');
   const [bars, setBars] = usePersistedState('schedule.concrete.bars', true);
@@ -141,6 +187,7 @@ export function ConcreteComparison() {
   const [scopes, setScopes] = usePersistedState<Record<string, string>>('schedule.concrete.scopes', {});
   const [off, setOff] = usePersistedState<string[]>('schedule.concrete.off', []);
   const [labels, setLabels] = usePersistedState<Record<string, string>>('schedule.concrete.labels', {});
+  const [colors, setColors] = usePersistedState<Record<string, string>>('schedule.concrete.colors', {});
   const [material, setMaterialRaw] = usePersistedState<Material>('schedule.concrete.material', 'concrete');
   const [chosen, setChosen] = usePersistedState<string[] | null>('schedule.concrete.resources', null);
   // Switching material goes back to the resources that look like it.
@@ -172,7 +219,7 @@ export function ConcreteComparison() {
 
   const entries = schedules.map((m, i) => {
     const key = programmeKey(m);
-    return { m, key, color: SERIES_COLORS[i % SERIES_COLORS.length], label: labels[key] ?? (m.project.name || m.sourceFileName) };
+    return { m, key, color: colors[key] ?? SERIES_COLORS[i % SERIES_COLORS.length], label: labels[key] ?? (m.project.name || m.sourceFileName) };
   });
   const active = entries.filter((e) => !off.includes(e.key));
 
@@ -235,12 +282,13 @@ export function ConcreteComparison() {
         <label className="cc-check"><input type="checkbox" checked={lines} onChange={(e) => setLines(e.target.checked)} /> Cumulative lines</label>
         <label className="cc-check" title="Draw each running total as a share of that programme's own total, to compare the shape of programmes of different size"><input type="checkbox" checked={pct} onChange={(e) => setPct(e.target.checked)} /> Cumulative as % of total</label>
         <button type="button" className="btn btn--small" onClick={exportCsv} disabled={weeks === 0}>Export CSV</button>
+        <button type="button" className="btn btn--small" onClick={() => chartSvg.current && exportPng(chartSvg.current, `${material}-distribution.png`)} disabled={weeks === 0}>Export PNG</button>
       </div>
 
       {weeks === 0 ? (
         <div className="scn-dim">No {MATERIAL_LABEL[material].toLowerCase()} found with the resources ticked below. Tick the resource that carries its quantity ({unit}).</div>
       ) : (
-        <DistributionChart series={series} bars={bars} lines={lines} pct={pct} period={period} unit={unit} xTitle={xTitle} />
+        <DistributionChart svgRef={chartSvg} series={series} bars={bars} lines={lines} pct={pct} period={period} unit={unit} xTitle={xTitle} />
       )}
 
       <table className="cc-table">
@@ -255,7 +303,7 @@ export function ConcreteComparison() {
               <tr className={off.includes(e.key) ? 'is-off' : ''}>
                 <td>
                   <input type="checkbox" checked={!off.includes(e.key)} onChange={() => setOff(off.includes(e.key) ? off.filter((k) => k !== e.key) : [...off, e.key])} title="Show on the chart" />
-                  <span className="cc-dot" style={{ background: e.color }} />
+                  <input type="color" className="cc-color" value={/^#[0-9a-f]{6}$/i.test(e.color) ? e.color : '#2563eb'} onChange={(ev) => setColors({ ...colors, [e.key]: ev.target.value })} onDoubleClick={() => { const { [e.key]: _, ...rest } = colors; setColors(rest); }} title="Line colour (double-click to reset)" />
                 </td>
                 <td>
                   <input className="cc-name" value={e.label} onChange={(ev) => setLabels({ ...labels, [e.key]: ev.target.value })} title={e.m.sourceFileName} />

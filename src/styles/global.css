@@ -10986,7 +10986,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .scn-panel__body .scn-compact-row .dl-split .dl-split__caret { border-radius: 0 6px 6px 0; }
 
 /* Programmes > Concrete Comparison */
-.cc { padding: 12px 16px; overflow: auto; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
+.cc { color-scheme: light; background: #fff; color: #222; --text: #222; --text-dim: #666; --border: #e2e2e2; --bg: #fff; --bg-elevated: #fff; --bg-soft: #f6f6f6; padding: 12px 16px; overflow: auto; height: 100%; box-sizing: border-box; display: flex; flex-direction: column; gap: 12px; }
 .cc-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
 .cc-bar h3 { margin: 0 8px 0 0; font-size: 15px; }
 .cc-bar label { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
@@ -11050,3 +11050,20 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .links-pane .ad-edit-bar .lp-edit { background: #ffffff; border-color: var(--border); }
 .links-pane .ad-edit-bar .lp-edit--lag, .links-pane .ad-edit-bar select.lp-edit { width: 52px; }
 .links-pane td .cols__icon { width: 18px; height: 18px; padding: 0; }
+
+.cc-color { width: 22px; height: 22px; padding: 0; border: 1px solid var(--border); border-radius: 50%; background: none; cursor: pointer; vertical-align: middle; }
+.cc-color::-webkit-color-swatch-wrapper { padding: 0; }
+.cc-color::-webkit-color-swatch { border: none; border-radius: 50%; }
+
+.cc input, .cc select, .cc .btn { background: #fff; color: #222; border-color: #d0d0d0; }
+.cc .btn.primary { background: #3b4658; color: #fff; }
+
+/* Models > Colour: the colour fills its whole cell. */
+.seq-grid td:has(> .model-colour__swatch) { padding: 0; width: 44px; position: relative; }
+.seq-grid td > .model-colour__swatch { display: block; width: 100%; height: 100%; min-height: 28px; position: absolute; inset: 0; }
+.seq-grid td > .model-colour__swatch::-webkit-color-swatch-wrapper { padding: 0; }
+.seq-grid td > .model-colour__swatch::-webkit-color-swatch { border: none; border-radius: 0; }
+.seq-grid td > .model-colour__swatch::-moz-color-swatch { border: none; }
+.seq-grid:has(.model-colour__swatch) td { padding-top: 2px; padding-bottom: 2px; line-height: 1.2; }
+.seq-grid:has(.model-colour__swatch) td > .model-colour__swatch { min-height: 22px; }
+.seq-grid:has(.model-colour__swatch) .ss__eye { height: 20px; }

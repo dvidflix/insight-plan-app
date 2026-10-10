@@ -11,6 +11,8 @@ import { MODEL_PALETTES, paletteColors } from '../viewer/colorPalettes';
 import { FieldPicker } from './schedule/FieldRules';
 import { CollapsibleSection, useOpenSections } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
+import { IconEye, IconEyeOff } from './icons';
+import { orderValues, useColourOrderStore, type ColourSort } from '../state/colourOrderStore';
 
 const MAX_VALUES = 150;
 
@@ -31,7 +33,7 @@ export function ModelColorPanel() {
   // A property's values, or a set folder's (the names of its sets), most objects first.
   const values = useColourValues(field);
   const folders = useMemo(() => [...new Set(sets.map((x) => x.group ?? ''))].sort((a, b) => a.localeCompare(b)), [sets]);
-  const sections = useOpenSections<'values' | 'field'>('models.colourSections', ['values', 'field']);
+  const sections = useOpenSections<'options' | 'values' | 'field'>('models.colourSections', ['options', 'values', 'field']);
   const fieldLabel = fields.find((f) => f.id === field);
   const pickField = (id: string) => {
     patch({ field: id });
@@ -59,23 +61,124 @@ export function ModelColorPanel() {
     const next = colors.some((c) => c.value === value) ? colors.map((c) => (c.value === value ? { ...c, color } : c)) : [...colors, { value, color }];
     patch({ colors: next });
   };
-  const selectValue = (value: string) => {
-    const valueOf = makeValueOf(field, engine.getIndexes(), sets);
-    const out: Record<string, number[]> = {};
-    for (const [modelId, index] of engine.getIndexes()) for (const [id, e] of index.elements) if (valueOf(e) === value) (out[modelId] ??= []).push(id);
-    void engine.selectElements(out, false);
+  // The order the values are listed in (the viewer's legend follows it).
+  const sort = useColourOrderStore((s) => s.sort);
+  const setSort = useColourOrderStore((s) => s.setSort);
+  const manual = useColourOrderStore((s) => s.manual);
+  const setManual = useColourOrderStore((s) => s.setManual);
+  const [dragged, setDragged] = useState<string | null>(null);
+  const shownValues = useMemo(() => orderValues(values.slice(0, MAX_VALUES), sort, manual[field]), [values, sort, manual, field]);
+  const dropOn = (target: string) => {
+    if (!dragged || dragged === target) return;
+    const names = shownValues.map((v) => v.value);
+    const order = names.filter((v) => v !== dragged);
+    order.splice(order.indexOf(target) + (names.indexOf(dragged) < names.indexOf(target) ? 1 : 0), 0, dragged);
+    setManual(field, order);
+    setDragged(null);
   };
-  const shownValues = values.slice(0, MAX_VALUES);
+
+  // Eyes, as in Search sets: a value's eye hides / shows its objects in 3D (the viewer's Hide, so Show all brings them back).
+  const hiddenModels = useModelsStore((s) => s.hiddenModelIds);
+  const tick = useIndexTick();
+  const [, setVisTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setVisTick((t) => t + 1);
+    engine.onVisibilityChange.add(bump);
+    engine.onExternalVisibilityChange.add(bump);
+    return () => {
+      engine.onVisibilityChange.remove(bump);
+      engine.onExternalVisibilityChange.remove(bump);
+    };
+  }, [engine]);
+  /** Each value's objects (of the models that are on). */
+  const idsByValue = useMemo(() => {
+    const valueOf = makeValueOf(field, engine.getIndexes(), sets);
+    const out = new Map<string, Record<string, number[]>>();
+    for (const [modelId, index] of engine.getIndexes()) {
+      if (hiddenModels.has(modelId)) continue;
+      for (const [id, e] of index.elements) {
+        const v = valueOf(e);
+        const byModel = out.get(v) ?? out.set(v, {}).get(v)!;
+        (byModel[modelId] ??= []).push(id);
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, field, sets, hiddenModels, tick, values]);
+  const idsOf = (list: string[]) => {
+    const out: Record<string, number[]> = {};
+    for (const v of list) for (const [m, ids] of Object.entries(idsByValue.get(v) ?? {})) (out[m] ??= []).push(...ids);
+    return out;
+  };
+  const hiddenOf = (list: string[]) => {
+    let hidden = 0;
+    let total = 0;
+    for (const [m, ids] of Object.entries(idsOf(list))) for (const id of ids) { total++; if (engine.isUserHidden(m, id)) hidden++; }
+    return { hidden, total };
+  };
+  /** Off if any of these values shows, otherwise all come back. */
+  const flipValues = async (list: string[]) => {
+    const { hidden, total } = hiddenOf(list);
+    if (total === 0) return;
+    const map = Object.fromEntries(Object.entries(idsOf(list)).map(([m, l]) => [m, new Set(l)]));
+    await engine.hider.set(hidden > 0, map);
+    engine.onExternalVisibilityChange.trigger();
+  };
+
+  // Click a value to select its objects, Shift+click to reach down to another, Ctrl+click to add or remove one;
+  // arrows step through, Space turns the selected on / off.
+  const [activeValue, setActiveValue] = useState<string | null>(null);
+  const [anchor, setAnchor] = useState<string | null>(null);
+  const [picked2, setPicked2] = useState<Set<string>>(new Set());
+  const pickValues = (next: Set<string>) => {
+    setPicked2(next);
+    void engine.selectElements(idsOf([...next]), false);
+  };
+  const pickValue = (value: string, mod: { shift?: boolean; ctrl?: boolean } = {}) => {
+    setActiveValue(value);
+    const names = shownValues.map((v) => v.value);
+    const from = names.indexOf(anchor ?? '');
+    const to = names.indexOf(value);
+    if (mod.shift && from >= 0 && to >= 0) {
+      const range = names.slice(Math.min(from, to), Math.max(from, to) + 1);
+      pickValues(new Set(mod.ctrl ? [...picked2, ...range] : range));
+      return;
+    }
+    setAnchor(value);
+    if (mod.ctrl) {
+      const next = new Set(picked2);
+      if (!next.delete(value)) next.add(value);
+      pickValues(next);
+    } else pickValues(new Set([value]));
+  };
+  const onValuesKey = (e: React.KeyboardEvent) => {
+    if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== ' ') || e.altKey || e.ctrlKey || e.metaKey) return;
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
+    e.preventDefault();
+    if (e.key === ' ') {
+      void flipValues(picked2.size ? [...picked2] : activeValue ? [activeValue] : []);
+      return;
+    }
+    const names = shownValues.map((v) => v.value);
+    if (!names.length) return;
+    const i = names.indexOf(activeValue ?? '');
+    const next = i < 0 ? (e.key === 'ArrowDown' ? 0 : names.length - 1) : i + (e.key === 'ArrowDown' ? 1 : -1);
+    if (next < 0 || next >= names.length) return;
+    pickValue(names[next], { shift: e.shiftKey });
+  };
 
   return (
     <div>
-      <div className="disp model-colour__top">
-        {split && (
+      {split && (
+        <div className="disp model-colour__top" style={{ paddingBottom: 0 }}>
           <div className="cols__views" role="tablist" style={{ margin: '4px 0 6px' }}>
             <button type="button" role="tab" aria-selected={view === 'main'} className={view === 'main' ? 'active' : ''} onClick={() => setPicked('main')}>Left view</button>
             <button type="button" role="tab" aria-selected={view === 'second'} className={view === 'second' ? 'active' : ''} onClick={() => setPicked('second')}>Right view</button>
           </div>
-        )}
+        </div>
+      )}
+      <CollapsibleSection title="Options" open={sections.isOpen('options')} onToggle={() => sections.toggle('options')} flush>
+      <div className="disp model-colour__top">
         <div className="disp__row">
           <span>Colour the models</span>
           <button type="button" role="switch" aria-checked={enabled} className={`switch${enabled ? ' on' : ''}`} onClick={() => (enabled ? patch({ enabled: false }) : colors.length ? patch({ enabled: true }) : recolour(field, palette, seed))}>
@@ -131,37 +234,81 @@ export function ModelColorPanel() {
           </span>
         </div>
       </div>
+      </CollapsibleSection>
 
       <CollapsibleSection
         title={`Values (${values.length})`}
         open={sections.isOpen('values')}
         onToggle={() => sections.toggle('values')}
         flush
-        tip="Each value's colour: click the swatch to change it. Click a value to select its objects (Isolate / Ghost follow)."
+        tip="Each value's colour: click the swatch to change it. Click a value to select its objects (Isolate / Ghost follow); Shift / Ctrl+click for several. The eye (or Space, on the selected values) hides them in 3D."
       >
         {values.length === 0 ? (
           <div className="disp"><div className="flt__hint">Load a model to colour it.</div></div>
         ) : (
+          <>
+          <div className="disp model-colour__top">
+          <div className="disp__row">
+            <span>Order</span>
+            <select value={sort} onChange={(e) => setSort(e.target.value as ColourSort)} title="Drag a row to put it where you want it (switches to Manual)">
+              <option value="count">Most objects</option>
+              <option value="az">A → Z</option>
+              <option value="za">Z → A</option>
+              <option value="manual">Manual (drag rows)</option>
+            </select>
+          </div>
+          </div>
+          {/* (A button would also "click" on Space's release: kept from doing so.) */}
+          <div tabIndex={0} style={{ outline: 'none' }} onKeyDown={onValuesKey} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }} aria-label="Values: arrow keys move, Shift or Ctrl select several, Space hides or shows the selected">
           <table className="seq-grid">
             <thead>
               <tr>
                 <th className="seq-grid__swatch" />
                 <th>Value</th>
                 <th className="seq-grid__num">Objects</th>
+                <th className="seq-grid__swatch" />
               </tr>
             </thead>
             <tbody>
-              {shownValues.map((v) => (
-                <tr key={v.value}>
-                  <td className="seq-grid__swatch">
-                    <input type="color" className="model-colour__swatch" value={colorOf.get(v.value) ?? others ?? '#ffffff'} onChange={(e) => setColor(v.value, e.target.value)} title="Change colour" />
-                  </td>
-                  <td className="seq-grid__name" title={`${v.value}: select these objects`} onClick={() => selectValue(v.value)}>{v.value}</td>
-                  <td className="seq-grid__num">{v.count}</td>
-                </tr>
-              ))}
+              {shownValues.map((v) => {
+                const { hidden, total } = hiddenOf([v.value]);
+                const shut = total > 0 && hidden === total;
+                const part = hidden > 0 && !shut;
+                return (
+                  <tr
+                    key={v.value}
+                    draggable
+                    className={`${picked2.has(v.value) ? 'is-active' : ''}${activeValue === v.value ? ' is-current' : ''}`}
+                    onDragStart={() => setDragged(v.value)}
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={() => dropOn(v.value)}
+                    onDragEnd={() => setDragged(null)}
+                    style={dragged === v.value ? { opacity: 0.4 } : shut ? { opacity: 0.5 } : undefined}
+                  >
+                    <td className="seq-grid__swatch">
+                      <input type="color" className="model-colour__swatch" value={colorOf.get(v.value) ?? others ?? '#ffffff'} onChange={(e) => setColor(v.value, e.target.value)} title="Change colour" />
+                    </td>
+                    <td className="seq-grid__name" title={`${v.value}: select these objects`} onClick={(e) => pickValue(v.value, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey })}>{v.value}</td>
+                    <td className="seq-grid__num">{v.count}</td>
+                    <td className="seq-grid__swatch">
+                      <button
+                        type="button"
+                        className={`ss__eye${shut ? ' is-off' : ''}${part ? ' is-part' : ''}`}
+                        disabled={total === 0}
+                        onClick={() => void flipValues([v.value])}
+                        title={shut ? 'Show these objects' : part ? 'Some are hidden: click to show them all' : 'Hide these objects'}
+                        aria-label={shut ? `Show ${v.value}` : `Hide ${v.value}`}
+                      >
+                        {shut ? <IconEyeOff width={16} height={16} /> : <IconEye width={16} height={16} />}
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
+          </div>
+          </>
         )}
       </CollapsibleSection>
 

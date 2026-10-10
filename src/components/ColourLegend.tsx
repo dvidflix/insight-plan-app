@@ -7,6 +7,8 @@ import { useModelFields } from './modelFields';
 import { useColourValues } from './useColourValues';
 import { isSetFolderField, makeValueOf, setFolderOf } from '../viewer/setFolderValues';
 import { legendRows, valuesOfRow, type LegendRow } from '../viewer/colourLegend';
+import { useModelsStore } from '../state/modelsStore';
+import { orderValues, useColourOrderStore } from '../state/colourOrderStore';
 import { usePersistedState } from '../utils/persistedState';
 
 const MAX_ROWS = 40;
@@ -33,7 +35,11 @@ function LegendBlock({ view, title }: { view: ViewKey; title: string | null }) {
   const patch = useModelColorStore((s) => s.patch);
   const sets = useSearchSetsStore((s) => s.sets);
   const fields = useModelFields();
-  const values = useColourValues(field);
+  const counted = useColourValues(field);
+  const hiddenModels = useModelsStore((s) => s.hiddenModelIds);
+  const sort = useColourOrderStore((s) => s.sort);
+  const manual = useColourOrderStore((s) => s.manual[field]);
+  const values = useMemo(() => orderValues(counted, sort, manual), [counted, sort, manual]);
   const [open, setOpen] = usePersistedState('colourLegend.open', true);
   const rows = useMemo(() => legendRows(values, colors, others), [values, colors, others]);
   const label = isSetFolderField(field)
@@ -46,7 +52,7 @@ function LegendBlock({ view, title }: { view: ViewKey; title: string | null }) {
     const wanted = new Set(valuesOfRow(row, values, colors));
     const valueOf = makeValueOf(field, engine.getIndexes(), sets);
     const out: Record<string, number[]> = {};
-    for (const [modelId, index] of engine.getIndexes()) for (const [id, e] of index.elements) if (wanted.has(valueOf(e))) (out[modelId] ??= []).push(id);
+    for (const [modelId, index] of engine.getIndexes()) for (const [id, e] of hiddenModels.has(modelId) ? [] : index.elements) if (wanted.has(valueOf(e))) (out[modelId] ??= []).push(id);
     void engine.selectElements(out, false, add);
   };
 

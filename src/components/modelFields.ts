@@ -36,17 +36,18 @@ export function useModelFields(): PickField[] {
 }
 
 /** Distinct values of `field` over the loaded models, most common first. */
-export function useFieldValues(field: string) {
+export function useFieldValues(field: string, skipHidden = false) {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
+  const hiddenModels = useModelsStore((s) => s.hiddenModelIds);
   const tick = useIndexTick();
   return useMemo(() => {
     const counts = new Map<string, number>();
-    if (field) for (const index of engine.getIndexes().values()) for (const e of index.elements.values()) {
+    if (field) for (const [modelId, index] of engine.getIndexes()) for (const e of skipHidden && hiddenModels.has(modelId) ? [] : index.elements.values()) {
       const v = elementValue(e, field);
       counts.set(v, (counts.get(v) ?? 0) + 1);
     }
     return [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count || a.value.localeCompare(b.value));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, field, models, tick]);
+  }, [engine, field, models, tick, skipHidden, hiddenModels]);
 }

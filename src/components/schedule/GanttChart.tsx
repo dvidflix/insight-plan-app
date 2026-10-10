@@ -28,6 +28,7 @@ import type { GanttExport, GanttExportRow } from '../../schedule/exportGanttXlsx
 import { aggregate, aggType, defaultAgg, type AggKind } from '../../schedule/aggregates';
 import { AggCell } from './AggCell';
 import { IconExpander } from '../icons';
+import { getCalendar } from '../../schedule/calendar';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 
 export type Zoom = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
@@ -601,10 +602,19 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
 
   // ---- row rendering ------------------------------------------------------
 
+  /** A finish is the end of the last working day (the day it falls on, at its start), so a one-day task that starts on a Friday
+      "finishes" on Monday. The bar stops at the end of its last working day instead of running over the weekend. */
+  const barEndMs = (startMs: number, finishMs: number, calendarId: string | null) => {
+    const cal = getCalendar(calendarId, columnCtx?.calendarsById ?? new Map());
+    let end = finishMs;
+    for (let n = 0; n < 14 && end - DAY_MS > startMs && !cal.isWorkingDay(new Date(end - DAY_MS)); n++) end -= DAY_MS;
+    return end;
+  };
+
   const renderRow = (r: GanttRow, index: number) => {
     const a = r.activity;
     const barLeft = xFor(r.s);
-    const barWidth = Math.max(xFor(r.f) - barLeft, 4);
+    const barWidth = Math.max(xFor(barEndMs(r.s, r.f, a.calendarId)) - barLeft, 4);
     const isMilestone = a.type === 'milestone-start' || a.type === 'milestone-finish';
     const isLoe = a.type === 'loe';
     const selected = a.id === selectedId || (multi.size > 1 && multi.has(a.id));
