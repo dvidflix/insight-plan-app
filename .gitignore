@@ -25,3 +25,4 @@ models/
 docs/wiki/standards/coordinates.md
 release/
 server-dist/
+dist-web/

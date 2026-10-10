@@ -35,7 +35,5 @@ export default defineConfig(({ mode }) => {
     exclude: ['web-ifc', '@sqlite.org/sqlite-wasm'],
   },
   worker: { format: 'es' as const },
-  // The viewer's worker threads need a cross-origin isolated page; a host serving the web edition must send the same two headers.
-  server: mode === 'web' ? { headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } } : undefined,
   };
 });

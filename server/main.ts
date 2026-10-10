@@ -51,9 +51,6 @@ function serveStatic(req: IncomingMessage, res: ServerResponse) {
   res.setHeader('Content-Type', MIME[ext] ?? 'application/octet-stream');
   // Built assets carry a hash in their name; everything else is checked again each time.
   res.setHeader('Cache-Control', rel.startsWith('/assets/') ? 'public, max-age=31536000, immutable' : 'no-cache');
-  // The viewer's worker threads need these (SharedArrayBuffer).
-  res.setHeader('Cross-Origin-Opener-Policy', 'same-origin');
-  res.setHeader('Cross-Origin-Embedder-Policy', 'require-corp');
   fs.createReadStream(file).on('error', () => { res.statusCode = 500; res.end(); }).pipe(res);
 }
 

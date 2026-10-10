@@ -1,5 +1,7 @@
 import { DB_FILE, HttpError } from '../db/core';
 import { BrowserProjectDb } from './browserDb';
+import { FolderModelStore } from './modelStore';
+import type { ModelsHost } from './modelsRouter';
 import type { DbHost } from './router';
 
 /** Opening and saving the project database in a folder the user chose (a FileSystemDirectoryHandle: their own disk or
@@ -18,10 +20,11 @@ interface Entry {
   writing: Promise<void>;
 }
 
-export class ProjectFolders implements DbHost {
+export class ProjectFolders implements DbHost, ModelsHost {
   private folders = new Map<string, FileSystemDirectoryHandle>();
   private open = new Map<string, Entry>();
   private opening = new Map<string, Promise<Entry>>();
+  private stores = new Map<string, FolderModelStore>();
 
   /** Makes a project folder available under `root` (the name the app uses for it). */
   setFolder(root: string, folder: FileSystemDirectoryHandle) {
@@ -58,6 +61,20 @@ export class ProjectFolders implements DbHost {
     // A new project gets its file straight away, so the folder shows it.
     if (!bytes?.length) this.changed(entry);
     return entry;
+  }
+
+  /** The model store of the project folder (its IFCs and converted copies, as files). */
+  async models(rawRoot: unknown): Promise<FolderModelStore> {
+    const root = String(rawRoot ?? '').trim();
+    if (!root) throw new HttpError(400, 'No project folder given.');
+    let store = this.stores.get(root);
+    if (!store) {
+      const folder = this.folders.get(root);
+      if (!folder) throw new HttpError(400, 'Choose the project folder first (Inputs > Project database).');
+      store = new FolderModelStore(folder);
+      this.stores.set(root, store);
+    }
+    return store;
   }
 
   async database(root: unknown): Promise<BrowserProjectDb> {

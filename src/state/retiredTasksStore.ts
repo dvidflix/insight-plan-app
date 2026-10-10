@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { FEATURES } from '../features';
 import type { Relationship, ScheduleModel } from '../schedule/types';
 
 /** The Task IDs retired in SeaTable (Retired table), as last pulled into the local copy the generator reads
@@ -14,6 +15,7 @@ interface RetiredState {
 export const useRetiredTasksStore = create<RetiredState>((set) => ({
   codes: new Set(),
   load: async () => {
+    if (!FEATURES.seatable) return;
     try {
       const res = await fetch('/api/seatable/adjustments/retired');
       if (!res.ok) return;

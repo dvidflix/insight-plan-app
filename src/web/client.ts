@@ -45,14 +45,16 @@ export function installLocalApi() {
     const url = new URL(href, location.href);
     if (url.origin !== location.origin || !url.pathname.startsWith('/api/')) return realFetch(input, init);
     const headers = { 'Content-Type': 'application/json' };
-    if (!/^\/api\/db(\/|$)/.test(url.pathname)) {
+    if (!/^\/api\/(db|models)(\/|$)/.test(url.pathname)) {
       return new Response(JSON.stringify({ error: 'This feature is not available in the browser edition.' }), { status: 404, headers });
     }
     const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase();
     const body = await toBody(init?.body ?? null);
-    const out = await send({ kind: 'request', method, url: url.pathname + url.search, body }, body instanceof ArrayBuffer ? [body] : []);
+    const sent: Record<string, string> = {};
+    new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined)).forEach((v, k) => (sent[k.toLowerCase()] = v));
+    const out = await send({ kind: 'request', method, url: url.pathname + url.search, headers: sent, body }, body instanceof ArrayBuffer ? [body] : []);
     if (!('status' in out)) return new Response('{}', { status: 500, headers });
-    return new Response(out.body, { status: out.status, headers });
+    return new Response(out.body, { status: out.status, headers: { ...out.headers, 'Content-Type': out.contentType, 'Access-Control-Expose-Headers': 'x-layers' } });
   };
   // Save the file when the page is hidden or closed.
   const flush = () => void flushProject();
