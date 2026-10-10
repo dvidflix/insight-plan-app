@@ -15,7 +15,9 @@
     "build:product": "tsc -b && vite build --mode product",
     "dev:product": "vite --mode product",
     "build:server": "esbuild server/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=server-dist/server.mjs --banner:js=\"import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --external:node:*",
-    "package": "node scripts/package.mjs"
+    "package": "node scripts/package.mjs",
+    "dev:web": "vite --mode web",
+    "build:web": "tsc -b && vite build --mode web --outDir dist-web"
   },
   "dependencies": {
     "@sqlite.org/sqlite-wasm": "^3.53.4-build2",

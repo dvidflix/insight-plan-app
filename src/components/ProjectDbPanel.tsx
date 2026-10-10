@@ -2,6 +2,8 @@ import { useEffect, useState } from 'react';
 import { hasExternalChanges, linkP6, openProject, reloadFromDb, useProjectDbStore } from '../state/projectDbStore';
 import { fetchLegacyFolders, fetchP6Projects, migrateFolderLayout, type DbProjectInfo } from '../db/api';
 import { ProjectPicker } from './schedule/ProjectPicker';
+import { FEATURES } from '../features';
+import { useWebFolderStore } from '../web/folderStore';
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
@@ -62,6 +64,8 @@ export function ProjectDbBar({ bare = false }: { bare?: boolean } = {}) {
         )}
       </div>
       <div className={bare ? "project-db__body" : "inputs-panel__body project-db__body"}>
+        {FEATURES.browserData && <WebFolderChooser busy={!!busy} />}
+        {!FEATURES.browserData && (
         <form
           className="project-db__row"
           onSubmit={(e) => {
@@ -77,6 +81,7 @@ export function ProjectDbBar({ bare = false }: { bare?: boolean } = {}) {
           <input id="project-db-root" value={draft} onChange={(e) => setDraft(e.target.value)} placeholder="C:\…\Project folder" title="The folder holding the project (and, for Scenarios, the buildings' models in the models folder). Its database is insight-plan.db in that folder, created on first open." />
           <button className="mini-btn" type="submit" disabled={!!busy}>Open</button>
         </form>
+        )}
         <FolderLayoutNotice root={db?.root ?? null} />
         {busy && <div className="inputs-panel__busy">{busy}</div>}
         {note && !busy && <div className="project-db__dim">{note}</div>}
@@ -85,7 +90,7 @@ export function ProjectDbBar({ bare = false }: { bare?: boolean } = {}) {
           <div className="project-db__status">
             <span className="project-db__file" title={db.file}>{db.file}</span>
             <span className="project-db__dim">
-              {programmes.length} programme{programmes.length === 1 ? '' : 's'} in P6 tables · open it in DBeaver or DB Browser for SQLite; edits made there come in with Reload.
+              {programmes.length} programme{programmes.length === 1 ? '' : 's'} in P6 tables · {FEATURES.browserData ? <SaveState root={db.root} /> : 'open it in DBeaver or DB Browser for SQLite; edits made there come in with Reload.'}
             </span>
           </div>
         ) : (
@@ -95,7 +100,7 @@ export function ProjectDbBar({ bare = false }: { bare?: boolean } = {}) {
             </div>
           )
         )}
-        {db && (
+        {db && !FEATURES.browserData && (
           <form
             className="project-db__row"
             onSubmit={(e) => {
@@ -134,6 +139,69 @@ export function DbStatusChip() {
       {busy ? 'Loading…' : changed ? 'Database changed — Reload' : baseName(db.file)}
     </button>
   );
+}
+
+/** Browser edition: pick the project folder (a folder on this computer or in OneDrive), or use the browser's own storage. */
+function WebFolderChooser({ busy }: { busy: boolean }) {
+  const remembered = useWebFolderStore((s) => s.remembered);
+  const root = useProjectDbStore((s) => s.root);
+  const [note, setNote] = useState<string | null>(null);
+  const use = (r: { root: string; name: string }) => {
+    useWebFolderStore.setState({ remembered: { ...r, ready: true } });
+    if (r.root === useProjectDbStore.getState().root) void openProject(r.root);
+    else useProjectDbStore.setState({ root: r.root });
+  };
+  const run = (job: () => Promise<{ root: string; name: string } | null>) => {
+    setNote(null);
+    void job()
+      .then((r) => r && use(r))
+      .catch((e) => setNote(e instanceof DOMException && e.name === 'AbortError' ? null : e instanceof Error ? e.message : String(e)));
+  };
+  const canPick = typeof window !== 'undefined' && 'showDirectoryPicker' in window;
+  return (
+    <div className="project-db__web">
+      <div className="project-db__row">
+        <span className="project-db__label">Project folder</span>
+        <b title={root}>{remembered?.ready ? remembered.name : 'None chosen'}</b>
+      </div>
+      <div className="project-db__row">
+        {canPick && (
+          <button className="mini-btn" type="button" disabled={busy} onClick={() => run(async () => (await import('../web/client')).chooseProjectFolder())} title="A folder on this computer or in your OneDrive. The project database (insight-plan.db) is kept in it; the browser asks permission once.">
+            Choose folder…
+          </button>
+        )}
+        <button className="mini-btn" type="button" disabled={busy} onClick={() => run(async () => (await import('../web/client')).useBrowserStorage())} title="Keep the project inside this browser (no folder to pick). Back it up by copying the database out, as the browser can clear it.">
+          Use browser storage
+        </button>
+        {remembered && !remembered.ready && (
+          <button className="mini-btn" type="button" disabled={busy} onClick={() => run(async () => (await import('../web/client')).grantRememberedFolder().then((r) => (r?.ready ? r : null)))} title="The browser asks again before using a folder in a new session.">
+            Allow {remembered.name} again
+          </button>
+        )}
+      </div>
+      {!canPick && <div className="project-db__dim">This browser cannot pick a folder. Use Chrome or Edge to keep the project in a folder, or use browser storage.</div>}
+      {note && <div className="inputs-panel__error">{note}</div>}
+    </div>
+  );
+}
+
+/** "Saved 14:02" / "Saving…" for the browser edition's project file. */
+function SaveState({ root }: { root: string }) {
+  const [state, setState] = useState<{ dirty: boolean; savedAt: number | null; error: string | null } | null>(null);
+  useEffect(() => {
+    let alive = true;
+    const poll = () => fetch(`/api/db/save-status?root=${encodeURIComponent(root)}`).then((r) => r.json()).then((s) => alive && setState(s)).catch(() => undefined);
+    void poll();
+    const t = setInterval(poll, 1500);
+    return () => {
+      alive = false;
+      clearInterval(t);
+    };
+  }, [root]);
+  if (!state) return null;
+  if (state.error) return <span className="project-db__error">Could not save: {state.error}</span>;
+  if (state.dirty) return <span>Saving…</span>;
+  return <span>Saved{state.savedAt ? ` ${new Date(state.savedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : ''} in the project folder as a SQLite file.</span>;
 }
 
 const LAYOUT_NAMES: Record<string, string> = { '1-input-ifc': 'models', 'fixed-models': 'models/edited', '7-scenarios': 'scenarios' };

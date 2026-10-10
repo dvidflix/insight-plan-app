@@ -1,3 +1,4 @@
+import { FEATURES } from '../features';
 /** Client for the project database (vite-plugins/projectDbPlugin.ts). */
 
 export interface DbProgramme {
@@ -76,6 +77,14 @@ export interface ImportOptions {
     project database's P6 tables. XMLHttpRequest for the upload progress. */
 export function importProgramme(body: Blob, o: ImportOptions, onProgress?: (fraction: number) => void): Promise<DbProgramme> {
   const url = `/api/db/programmes/import?${qs({ root: o.root, name: o.name, file: o.file, format: o.format, kind: o.kind ?? 'import', scenario: o.scenario, stem: o.stem, projects: o.projectIds?.join(',') })}`;
+  if (FEATURES.browserData) {
+    return fetch(url, { method: 'POST', body }).then(async (res) => {
+      const data = (await res.json().catch(() => null)) as { programme?: DbProgramme; error?: string } | null;
+      if (!res.ok || !data?.programme) throw new Error(data?.error ?? `Import failed (${res.status}).`);
+      onProgress?.(1);
+      return data.programme;
+    });
+  }
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', url);

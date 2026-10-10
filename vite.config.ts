@@ -12,7 +12,7 @@ import { externalPlugin } from './vite-plugins/externalPlugin';
 
 // The product edition (--mode product) never contacts GitHub, SeaTable or Superset: their server parts are not loaded.
 export default defineConfig(({ mode }) => {
-  const internal = mode !== 'product';
+  const internal = mode !== 'product' && mode !== 'web';
   return {
   plugins: [
     react(),
@@ -32,7 +32,10 @@ export default defineConfig(({ mode }) => {
     }),
   ],
   optimizeDeps: {
-    exclude: ['web-ifc'],
+    exclude: ['web-ifc', '@sqlite.org/sqlite-wasm'],
   },
+  worker: { format: 'es' as const },
+  // The viewer's worker threads need a cross-origin isolated page; a host serving the web edition must send the same two headers.
+  server: mode === 'web' ? { headers: { 'Cross-Origin-Opener-Policy': 'same-origin', 'Cross-Origin-Embedder-Policy': 'require-corp' } } : undefined,
   };
 });

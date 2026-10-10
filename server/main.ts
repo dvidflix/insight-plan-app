@@ -92,7 +92,7 @@ const server = http.createServer((req, res) => {
       });
       return;
     }
-    if (url.startsWith('/api/')) { res.statusCode = 404; res.setHeader('Content-Type', 'application/json'); return res.end('{"error":"Not available in this edition."}'); }
+    if (url.startsWith('/api/')) { res.statusCode = 404; res.setHeader('Content-Type', 'application/json'); res.end('{"error":"Not available in this edition."}'); return; }
     serveStatic(req, res);
   };
   next();

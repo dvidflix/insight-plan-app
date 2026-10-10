@@ -10,7 +10,7 @@ import type { XerTables } from './parsers/xer';
 export type XerWorkerRequest =
   | { op: 'index'; file: File }
   | { op: 'build'; file: File; index: XerIndex; projectIds: string[] | null }
-  | { op: 'db'; url: string; fileName: string; projectIds: string[] };
+  | { op: 'db'; url: string; fileName: string; projectIds: string[]; /** The reply, when the page already fetched it (browser edition). */ data?: ArrayBuffer; status?: number };
 
 export type XerWorkerMessage =
   | { type: 'progress'; phase: 'index' | 'read' | 'build'; done: number; total: number }
@@ -29,7 +29,8 @@ self.onmessage = async (e: MessageEvent<XerWorkerRequest>) => {
     }
     if (req.op === 'db') {
       post({ type: 'progress', phase: 'read', done: 0, total: 1 });
-      const res = await fetch(req.url);
+      const fetched = req.data !== undefined ? { ok: (req.status ?? 200) < 400, status: req.status ?? 200, json: async () => JSON.parse(new TextDecoder().decode(req.data)) } : await fetch(req.url);
+      const res = fetched;
       const body = await res.json().catch(() => null);
       if (!res.ok || !body) throw new Error(body?.error ?? `Reading the programme from the project database failed (${res.status}).`);
       const tables: XerTables = {};

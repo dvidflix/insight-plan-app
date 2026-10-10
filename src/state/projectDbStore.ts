@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { FEATURES } from '../features';
 import { useScheduleStore } from './scheduleStore';
 import { buildDbSchedule } from '../schedule/importSchedule';
 import type { ScheduleModel } from '../schedule/types';
@@ -41,6 +42,7 @@ interface ProjectDbState {
 
 const ROOT_KEY = 'scenarios.root';
 function loadRoot(): string {
+  if (FEATURES.browserData) return '';
   try {
     return JSON.parse(localStorage.getItem(ROOT_KEY) ?? '""') as string;
   } catch {

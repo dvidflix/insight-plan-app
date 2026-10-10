@@ -1,12 +1,9 @@
 import type { IncomingMessage, ServerResponse } from 'node:http';
+import { HttpError } from '../src/db/core';
 
 /** Shared by the dev-server bridges (scenarios.ts, projectDb.ts). */
 
-export class HttpError extends Error {
-  constructor(public status: number, message: string) {
-    super(message);
-  }
-}
+export { HttpError };
 
 export function send(res: ServerResponse, status: number, body: unknown) {
   res.statusCode = status;

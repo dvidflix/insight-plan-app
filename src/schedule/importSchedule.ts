@@ -1,3 +1,4 @@
+import { FEATURES } from '../features';
 import { buildScheduleModel, parseScheduleFile } from './loadSchedule';
 import type { XerIndex } from './parsers/xerStream';
 import type { ScheduleModel } from './types';
@@ -11,7 +12,7 @@ const PHASE_LABEL = { index: 'Scanning', read: 'Reading', build: 'Building' } as
 
 /** One worker per call, terminated when done, so its memory (the raw rows)
     is released straight away. */
-function runWorker<T>(req: XerWorkerRequest, onProgress?: ImportProgress): Promise<T> {
+function runWorker<T>(req: XerWorkerRequest, onProgress?: ImportProgress, transfer: Transferable[] = []): Promise<T> {
   const worker = new Worker(new URL('./xerWorker.ts', import.meta.url), { type: 'module' });
   return new Promise<T>((resolve, reject) => {
     worker.onmessage = (e: MessageEvent<XerWorkerMessage>) => {
@@ -28,7 +29,7 @@ function runWorker<T>(req: XerWorkerRequest, onProgress?: ImportProgress): Promi
       worker.terminate();
       reject(new Error(e.message || 'XER worker failed'));
     };
-    worker.postMessage(req);
+    worker.postMessage(req, transfer);
   });
 }
 
@@ -41,8 +42,16 @@ export const buildXerSchedule = (file: File, index: XerIndex, projectIds: string
   runWorker<ScheduleModel>({ op: 'build', file, index, projectIds }, onProgress);
 
 /** A programme from the project database (its P6 tables, see db/api.ts). */
-export const buildDbSchedule = (url: string, fileName: string, projectIds: string[], onProgress?: ImportProgress) =>
-  runWorker<ScheduleModel>({ op: 'db', url, fileName, projectIds }, onProgress);
+export async function buildDbSchedule(url: string, fileName: string, projectIds: string[], onProgress?: ImportProgress): Promise<ScheduleModel> {
+  if (FEATURES.browserData) {
+    // The project database answers on this page, not to a worker: read the tables here, parse them in the worker.
+    onProgress?.('Reading', 0);
+    const res = await fetch(url);
+    const data = await res.arrayBuffer();
+    return runWorker<ScheduleModel>({ op: 'db', url, data, status: res.status, fileName, projectIds }, onProgress, [data]);
+  }
+  return runWorker<ScheduleModel>({ op: 'db', url, fileName, projectIds }, onProgress);
+}
 
 export const isXer = (file: File) => file.name.toLowerCase().endsWith('.xer');
 

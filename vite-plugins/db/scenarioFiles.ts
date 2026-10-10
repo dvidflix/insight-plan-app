@@ -1,16 +1,8 @@
 import fs from 'node:fs';
 import * as XLSX from 'xlsx';
 
-/** A scenario's content for one building, as the generator takes it
-    (scenario-engine/main.py --overrides-json, serve.py "generate"). */
-export interface SequenceItem { GUID: string; Index: number; Phase?: string }
-/** Manual link: activity IDs (P6 task_code), Lag in working hours. */
-export interface Relation { ActivityID1: string; ActivityID2: string; Relation: string; Lag: number }
-/** Replaces the default crews of a phase (or phase + pour type). */
-export interface Crew { Phase: string; PourType: string; Trade: string; Crew: string }
-/** A flag on a pour (its GUID) or a group of the Scenarios table (its key), for review: 'flag' = to fix, 'done' = fixed. */
-export interface Flag { Key: string; State: 'flag' | 'done' }
-export interface ScenarioContent { sequence: SequenceItem[]; relations: Relation[]; crews: Crew[]; flags?: Flag[]; /** The WBS order to write into the generated schedule (parent path -> children paths); not stored with the scenario. */ wbsOrder?: Record<string, string[]> }
+export type { Crew, Flag, Relation, ScenarioContent, SequenceItem } from '../../src/db/core';
+import type { ScenarioContent, SequenceItem, Relation, Crew } from '../../src/db/core';
 
 export const SEQUENCE_SHEET = 'SequenceOrder';
 
