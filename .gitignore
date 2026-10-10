@@ -23,3 +23,5 @@ models/
 *.nwf
 *.rvt
 docs/wiki/standards/coordinates.md
+release/
+server-dist/

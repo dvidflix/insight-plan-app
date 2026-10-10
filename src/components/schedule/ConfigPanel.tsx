@@ -9,6 +9,7 @@ import { SortPanel, type SortRule } from './SortPanel';
 import { GeneratedSchedulesPanel } from './GeneratedSchedulesPanel';
 import { FiltersPanel } from './FiltersPanel';
 import { SidePane } from '../SidePane';
+import { useExperimental } from '../../state/appPrefsStore';
 import { IconBookingsOpen, IconColumns, IconFilter, IconGroup, IconPalette, IconSort } from '../icons';
 
 type TabId = 'columns' | 'filters' | 'group' | 'sort' | 'color' | 'generated';
@@ -72,6 +73,7 @@ export function ConfigPanel({
     };
   }, [catalog, columnCtx, baseActivities]);
 
+  const scenariosOn = useExperimental('scenarios');
   const tabs: { id: TabId; label: string; icon: React.ReactNode; badge?: number; body: React.ReactNode }[] = [
     { id: 'columns', label: 'Columns', icon: <IconColumns />, body: <ColumnsPanel key={columnViews.map((v) => v.id).join()} catalog={catalog} views={columnViews} calculated /> },
     { id: 'filters', label: 'Filters', icon: <IconFilter />, badge: filterCount, body: (
@@ -86,7 +88,7 @@ export function ConfigPanel({
     { id: 'color', label: 'Color', icon: <IconPalette />, badge: colorRules.length, body: (
       <ColorPanel bare rules={colorRules} onChange={onColorRulesChange} onClose={onClose} wbsPalette={wbsPalette} onWbsPaletteChange={onWbsPaletteChange} fields={catalog} valuesOf={columnCtx ? valuesOf : undefined} />
     ) },
-    { id: 'generated', label: 'Generated schedules', icon: <IconBookingsOpen />, body: <GeneratedSchedulesPanel model={model} /> },
+    ...(scenariosOn ? [{ id: 'generated' as const, label: 'Generated schedules', icon: <IconBookingsOpen />, body: <GeneratedSchedulesPanel model={model} /> }] : []),
   ];
   const active = tabs.find((t) => t.id === tab) ?? tabs[0];
 

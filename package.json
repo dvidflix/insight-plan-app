@@ -10,9 +10,15 @@
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:engine": "python -m pytest scenario-engine/tests -q"
+    "test:engine": "python -m pytest scenario-engine/tests -q",
+    "licenses": "node scripts/licenses.mjs",
+    "build:product": "tsc -b && vite build --mode product",
+    "dev:product": "vite --mode product",
+    "build:server": "esbuild server/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=server-dist/server.mjs --banner:js=\"import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --external:node:*",
+    "package": "node scripts/package.mjs"
   },
   "dependencies": {
+    "@sqlite.org/sqlite-wasm": "^3.53.4-build2",
     "@thatopen/components": "^3.4.8",
     "@thatopen/components-front": "^3.4.4",
     "@thatopen/fragments": "^3.4.7",
@@ -36,6 +42,7 @@
     "@typescript-eslint/eslint-plugin": "^8.15.0",
     "@typescript-eslint/parser": "^8.15.0",
     "@vitejs/plugin-react": "^4.3.3",
+    "esbuild": "^0.21.5",
     "eslint": "^9.14.0",
     "typescript": "^5.6.3",
     "vite": "^5.4.11",

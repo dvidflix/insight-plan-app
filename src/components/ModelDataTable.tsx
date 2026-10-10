@@ -612,7 +612,6 @@ Now: ${summary}` : ''}`}>
               {columns.map((c, ci) => {
                 const kind = aggOf(c);
                 const value = aggregate(shown, c, kind);
-                const options = numeric.has(c) ? NUMBER_AGGS : TEXT_AGGS;
                 return (
                   <div key={c} className={`mdt__td${numeric.has(c) ? ' is-num' : ''}`} style={{ width: colW(c) }}>
                     <span className="agg-cell">

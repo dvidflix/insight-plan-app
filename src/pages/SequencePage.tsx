@@ -2,7 +2,7 @@ import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
 import { ScenarioDock, ScenarioTabContent } from '../components/scenarios/ScenarioDock';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSequenceSchedule, useVisibleSchedules } from '../state/scheduleStore';
+import { useSequenceSchedule } from '../state/scheduleStore';
 import { useModelsStore } from '../state/modelsStore';
 import { useLinkGroupsStore } from '../state/linkGroupsStore';
 import { useAppearanceStore } from '../state/appearanceStore';
@@ -194,8 +194,9 @@ export function SequencePanel() {
   // The Topics tab goes with the experimental BCF option.
   useEffect(() => {
     if (rightTab === 'topics' && !experimental.bcf) setRightTab('gantt');
+    if (rightTab === 'scenarios' && !experimental.scenarios) setRightTab('gantt');
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rightTab, experimental.bcf]);
+  }, [rightTab, experimental.bcf, experimental.scenarios]);
   useEffect(() => {
     if (topicOpenRequest === topicSeen.current) return;
     topicSeen.current = topicOpenRequest;
@@ -262,28 +263,6 @@ export function SequencePanel() {
   // model a given localId came from (see previewGroup/the driving effect
   // below, which both work per-model for anything that does).
   const allElements = useMemo(() => models.flatMap((m) => m.elements), [models]);
-
-  const linkedActivityIdSet = useMemo(() => {
-    const ids = new Set<string>();
-    for (const { links } of groupResultsByModel) for (const taskId of links.taskToElements.keys()) ids.add(taskId);
-    return ids;
-  }, [groupResultsByModel]);
-  const combinedLinkedActivityCount = linkedActivityIdSet.size;
-  // Linked activities per programme (the merged 4D model prefixes each
-  // programme's activity ids with its index, see mergeSchedules) — so a
-  // programme none of whose tasks link (e.g. a Link Group filter that only
-  // fits the first programme) is visible instead of silently not animating.
-  const visibleSchedules = useVisibleSchedules();
-  const linkedPerProgramme = useMemo(() => {
-    if (visibleSchedules.length < 2) return null;
-    const counts = visibleSchedules.map(() => 0);
-    for (const id of linkedActivityIdSet) {
-      const i = Number(id.slice(0, id.indexOf(':')));
-      if (Number.isInteger(i) && counts[i] !== undefined) counts[i]++;
-    }
-    return visibleSchedules.map((s, i) => ({ name: s.project.name || s.sourceFileName, linked: counts[i], total: s.activities.length }));
-  }, [visibleSchedules, linkedActivityIdSet]);
-  const unlinkedProgrammes = (linkedPerProgramme ?? []).filter((p) => p.linked === 0);
 
   // Reverse mapping for the Gantt panel: which activities does the current
   // 3D selection touch, on whichever model the selection belongs to (the
@@ -759,7 +738,7 @@ export function SequencePanel() {
 
   const rightTabs = (
     <div className="config-tabs seq-righttabs" role="tablist">
-      {([['gantt', 'Gantt'], ['tasks', 'Tasks'], ['scenarios', 'Scenarios'], ...(experimental.bcf ? [['topics', `Topics${topicCount ? ` (${topicCount})` : ''}`] as const] : [])] as const).map(([id, label]) => (
+      {([['gantt', 'Gantt'], ['tasks', 'Tasks'], ...(experimental.scenarios ? [['scenarios', 'Scenarios'] as const] : []), ...(experimental.bcf ? [['topics', `Topics${topicCount ? ` (${topicCount})` : ''}`] as const] : [])] as const).map(([id, label]) => (
         <button key={id} type="button" role="tab" aria-selected={rightTab === id} className={`config-tab${rightTab === id ? ' active' : ''}`} onClick={() => setRightTab(id)}>{label}</button>
       ))}
     </div>

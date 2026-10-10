@@ -10,6 +10,7 @@ import { ACCENT_PALETTES, useAccentPaletteStore } from '../state/accentPaletteSt
 import { DEFAULT_SELECTION_COLOR, SELECTION_COLOR_KEY } from '../viewer/selectionColor';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../state/timelineSettingsStore';
 import { FileDetailsSync } from './InputDetails';
+import { FEATURES } from '../features';
 import { ProjectDbBar } from './ProjectDbPanel';
 import { ExportFieldsPanel } from './ExportFieldsPanel';
 import { SeaTablePanel } from './SeaTablePanel';
@@ -123,6 +124,7 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
   const accent = useAccentPaletteStore((s) => s.id);
   const setAccent = useAccentPaletteStore((s) => s.setId);
   const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
+  const experimentalScenarios = useAppPrefsStore((s) => s.experimental.scenarios);
   const setShowScenariosTab = useAppPrefsStore((s) => s.setShowScenariosTab);
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const setShowTimelinesTab = useAppPrefsStore((s) => s.setShowTimelinesTab);
@@ -165,18 +167,18 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
 
       {inputs && (
         <>
-          <Section title="File details (SeaTable)" defaultOpen tip="The details of each file (discipline, building, status…) are filled in on SeaTable's Insight Plan Files table. Push sends the files of the Inputs page (name, type, format, size…): new ones are added, the others updated, and the details you filled in are not touched. Read brings the details back, to show as columns and to group and filter by.">
+          {FEATURES.seatable && <Section title="File details (SeaTable)" defaultOpen tip="The details of each file (discipline, building, status…) are filled in on SeaTable's Insight Plan Files table. Push sends the files of the Inputs page (name, type, format, size…): new ones are added, the others updated, and the details you filled in are not touched. Read brings the details back, to show as columns and to group and filter by.">
             <FileDetailsSync />
-          </Section>
+          </Section>}
           <Section title="Project database" defaultOpen tip="The project folder and its database (insight-plan.db): programmes in P6 tables, scenarios and settings. Open it in DBeaver or DB Browser for SQLite; edits made there come in with Reload.">
             <ProjectDbBar bare />
           </Section>
           <Section title="Exports (XML / XER)" defaultOpen={false} tip="Tick what goes into the XML and XER files you download (scenario programmes, and programmes from the Inputs list). Untick the user fields, resources and activity codes that are for your own use: they stay in the app but are left out of the files, with their values and assignments. The app-only Precast (m3) resource is left out unless you tick it.">
             <ExportFieldsPanel bare />
           </Section>
-          <Section title="SeaTable (model data)" defaultOpen={false} tip="Push sends the elements of the IFC classes you tick, with the properties the Properties table shows, to the Elements table of the SeaTable base, one row per element, by its GlobalId. Pull brings back every column you add to that table yourself (names without a dot) as Custom properties of the elements.">
+          {FEATURES.seatable && <Section title="SeaTable (model data)" defaultOpen={false} tip="Push sends the elements of the IFC classes you tick, with the properties the Properties table shows, to the Elements table of the SeaTable base, one row per element, by its GlobalId. Pull brings back every column you add to that table yourself (names without a dot) as Custom properties of the elements.">
             <SeaTablePanel bare />
-          </Section>
+          </Section>}
         </>
       )}
 
@@ -196,6 +198,7 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
             <span className="switch__thumb" />
           </button>
         </div>
+        {experimentalScenarios && (
         <div className="disp__row">
           <span>
             Show Scenarios tab{' '}
@@ -205,6 +208,7 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
             <span className="switch__thumb" />
           </button>
         </div>
+        )}
         <div className="disp__row">
           <span>Show Timelines tab</span>
           <button type="button" role="switch" aria-checked={showTimelinesTab} className={`switch${showTimelinesTab ? ' on' : ''}`} onClick={() => setShowTimelinesTab(!showTimelinesTab)}>
@@ -217,18 +221,22 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
             <span className="switch__thumb" />
           </button>
         </div>
+        {FEATURES.externalPages && (
         <div className="disp__row">
           <span>Show External data tab <InfoTip>SeaTable in a frame, signed in for you.</InfoTip></span>
           <button type="button" role="switch" aria-checked={showExternalTab} className={`switch${showExternalTab ? ' on' : ''}`} onClick={() => setShowExternalTab(!showExternalTab)}>
             <span className="switch__thumb" />
           </button>
         </div>
+        )}
+        {FEATURES.externalPages && (
         <div className="disp__row">
           <span>Show Dashboards tab <InfoTip>Apache Superset in a frame, signed in for you.</InfoTip></span>
           <button type="button" role="switch" aria-checked={showDashboardsTab} className={`switch${showDashboardsTab ? ' on' : ''}`} onClick={() => setShowDashboardsTab(!showDashboardsTab)}>
             <span className="switch__thumb" />
           </button>
         </div>
+        )}
       </Section>
 
       <Section title="Experimental features" defaultOpen tip="Features still being tried out. They are hidden until switched on here, and may change or be removed.">

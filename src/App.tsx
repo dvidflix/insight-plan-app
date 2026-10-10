@@ -25,7 +25,7 @@ import { hasMadeChoice, useProgrammeChoiceStore } from './state/programmeChoiceS
 import { programmeKey } from './state/unloadedWbsStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
-import { IconBook, IconCheckboxChecked, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
+import { IconBook, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
 import { FileDrop } from './components/FileDrop';
 import { SCHEDULE_ACCEPT, buildScheduleModel, parseScheduleFile, xmlScheduleTables } from './schedule/loadSchedule';
 import { buildXerSchedule, indexXerFile, isXer, type ImportProgress, type XerIndex } from './schedule/importSchedule';
@@ -34,6 +34,7 @@ import { useAppPrefsStore } from './state/appPrefsStore';
 import { useRecordingStore } from './state/recordingStore';
 import { DbStatusChip } from './components/ProjectDbPanel';
 import { UpdateChip } from './components/UpdateChip';
+import { FEATURES } from './features';
 import { fileSizeOf, rememberFileSize, rememberModelFile, uploadOf } from './state/modelFiles';
 import { useModelPlacementStore } from './state/modelPlacementStore';
 import modelIcon from './icons/BuildingSMART_RGB_Icon_colour_v3.jpg';
@@ -173,17 +174,18 @@ export default function App() {
   // Settings › Window › Show Scenarios tab (off by default — Scenarios is
   // also in 4D Sequencing).
   const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
+  const scenariosOn = useAppPrefsStore((s) => s.experimental.scenarios);
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => (p.id !== 'scenarios' || showScenariosTab) && (p.id !== 'timelines' || showTimelinesTab) && (p.id !== 'wiki' || showWikiTab) && (p.id !== 'external' || showExternalTab) && (p.id !== 'dashboards' || showDashboardsTab)),
-    [showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab],
+    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || showTimelinesTab) && (p.id !== 'wiki' || showWikiTab) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
-    if ((!showScenariosTab && page === 'scenarios') || (!showTimelinesTab && page === 'timelines') || (!showWikiTab && page === 'wiki') || (!showExternalTab && page === 'external') || (!showDashboardsTab && page === 'dashboards')) setPage('sequence');
-  }, [showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab, page]);
+    if (((!showScenariosTab || !scenariosOn) && page === 'scenarios') || (!showTimelinesTab && page === 'timelines') || (!showWikiTab && page === 'wiki') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
+  }, [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab, page]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab step through the top tabs (wrapping round).
   // Alt+PageDown / Alt+PageUp do the same: a normal browser tab keeps Ctrl+Tab
@@ -252,7 +254,7 @@ export default function App() {
             </nav>
           </div>
           <div className="app-topbar__right">
-            <UpdateChip />
+            {FEATURES.selfUpdate && <UpdateChip />}
             <DuplicateTabButton />
           </div>
         </header>
@@ -564,7 +566,7 @@ function InputsPage() {
     // Wait for the rest of a multi-file upload to arrive; each new file restarts the wait.
     const timer = window.setTimeout(() => {
       uploaded.current.clear();
-      if (useInputDetailsStore.getState().autoPush) void pushToSeaTable(filesToPush, true);
+      if (FEATURES.seatable && useInputDetailsStore.getState().autoPush) void pushToSeaTable(filesToPush, true);
     }, 2500);
     return () => window.clearTimeout(timer);
   }, [filesToPush]);

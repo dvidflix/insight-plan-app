@@ -39,8 +39,8 @@ import { BASE_COL, rowColor, SHIFT_COL, STEP_COL } from '../../scenarios/tableVi
 import { useScenarioView } from '../../scenarios/useScenarioView';
 import { ScenarioTableConfig, scnTabBadges } from './ScenarioTableConfig';
 import { ScenarioCrewsEditor, ScenarioLinksEditor } from './ScenarioLinksCrews';
-import { IconArrowDown, IconArrowUp, IconClose, IconColumns, IconFilter, IconGroup, IconLink, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconDownload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash } from '../icons';
-import { openProject, useProjectDbStore } from '../../state/projectDbStore';
+import { IconArrowDown, IconArrowUp, IconClose, IconColumns, IconFilter, IconGroup, IconLink, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash } from '../icons';
+import { useProjectDbStore } from '../../state/projectDbStore';
 import type { SidePaneTab } from '../SidePane';
 import { AddModelToProject, ModelCheckCard } from './ScenarioModelCheck';
 import { fetchDefaultRoot } from '../../scenarios/api';
@@ -611,8 +611,6 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
   const { ready, project, scenario, stem, scenarioNames, modelInfo, generatedAt, loaded, view, tableCfg, fields, allColumnIds } = v;
   // Saved scenarios of this building: what a new scenario can copy.
   const savedForStem = (project?.scenarios ?? []).filter((sc) => sc.models.some((m) => m.stem === stem)).map((sc) => sc.name);
-  const root = useProjectDbStore((s) => s.root);
-  const dbFile = useProjectDbStore((s) => s.db?.file ?? null);
   const startDate = useScenarioStore((s) => s.startDate);
   const projectError = useScenarioStore((s) => s.projectError);
   const busy = useScenarioStore((s) => s.busy);
@@ -620,12 +618,10 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
   const autoUpdate = useScenarioStore((s) => s.autoUpdate);
   const inputModels = useModelsStore((s) => s.models);
   const inputStems = stemsInInputs(inputModels);
-  const [rootDraft, setRootDraft] = useState(root);
   const [newName, setNewName] = useState('');
   const [newFrom, setNewFrom] = useState<StartFrom>('base');
   const loadedSchedules = useScheduleStore((s) => s.schedules);
   const [createError, setCreateError] = useState<string | null>(null);
-  useEffect(() => setRootDraft(root), [root]);
 
   if (ready && tab === 'links') return <ScenarioLinksEditor />;
   if (ready && tab === 'crews') return <ScenarioCrewsEditor />;

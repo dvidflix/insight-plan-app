@@ -23,7 +23,7 @@ import { fromSheet, indexColumn, stepNumbers, toSheet, type PourRow } from '../s
 import { useScheduleStore } from './scheduleStore';
 import { elementIdField } from '../schedule/activityObjects';
 import { taskFieldValue } from '../schedule/linkGroups';
-import { finishOf, startOf } from '../schedule/columns';
+import { startOf } from '../schedule/columns';
 import { parseXml } from '../schedule/parsers/xml';
 import { xmlToXer } from '../schedule/xmlToXer';
 import { filterXmlText } from '../schedule/exportFilter';

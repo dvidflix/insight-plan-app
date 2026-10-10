@@ -238,7 +238,7 @@ function buildSidebar(engine: ViewerEngine): ModelPanels {
   // ---- Viewpoints: React now (components/ViewpointsList.tsx, viewer/savedViews.ts) ----
 
   // ---- Storeys (classifier.byIfcBuildingStorey) ----------------------
-  const [storeysTable, refreshStoreys] = nameListTable(
+  const [, refreshStoreys] = nameListTable(
     () => [...(classifier.list.get(STOREYS_CLASSIFICATION)?.keys() ?? [])],
     (name) => {
       const storeyMap = async () => (await classifier.list.get(STOREYS_CLASSIFICATION)?.get(name)?.get()) ?? {};

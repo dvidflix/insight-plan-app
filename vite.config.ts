@@ -10,14 +10,16 @@ import { idsPlugin } from './vite-plugins/ids';
 import { seatablePlugin } from './vite-plugins/seatablePlugin';
 import { externalPlugin } from './vite-plugins/externalPlugin';
 
-export default defineConfig({
+// The product edition (--mode product) never contacts GitHub, SeaTable or Superset: their server parts are not loaded.
+export default defineConfig(({ mode }) => {
+  const internal = mode !== 'product';
+  return {
   plugins: [
     react(),
-    appUpdatePlugin(),
+    ...(internal ? [appUpdatePlugin()] : []),
     wikiPlugin(),
     idsPlugin(),
-    seatablePlugin(),
-    externalPlugin(),
+    ...(internal ? [seatablePlugin(), externalPlugin()] : []),
     projectDbPlugin(),
     modelsPlugin(),
     scenariosPlugin(),
@@ -32,4 +34,5 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['web-ifc'],
   },
+  };
 });

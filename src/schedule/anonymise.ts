@@ -47,7 +47,6 @@ export function anonymise(model: ScheduleModel, options: AnonymiseOptions): Anon
   const shift = (d: Date | null | undefined) => (d && options.shiftDays ? new Date(d.getTime() + options.shiftDays * DAY) : d);
   const shiftReq = (d: Date | null) => (d && options.shiftDays ? new Date(d.getTime() + options.shiftDays * DAY) : d);
 
-  const codeOf = labeller('A', 4);
   const nameOf = labeller('Activity ', 4);
   const wbsNameOf = labeller('WBS ', 3);
   const wbsCodeOf = labeller('W', 3);
