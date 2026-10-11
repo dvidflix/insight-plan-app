@@ -1,3 +1,4 @@
+import { FEATURES } from '../features';
 import { ResizeHandle, useResizableWidth } from './ResizeHandle';
 import { PropertiesGrid } from './PropertiesGrid';
 import { BottomDock } from './BottomDock';
@@ -232,7 +233,7 @@ export function PropertiesTab() {
     <BottomDock title="Show / hide properties" storageKey="properties" flush dock={<PropertyVisibilityPanel />}>
       <PropertiesGrid />
       <LitPanel element={panels.properties} />
-      <LitSection panel={panels.properties} label="Edit properties"><PropertyEditorPanel /></LitSection>
+      {FEATURES.serverFiles && <LitSection panel={panels.properties} label="Edit properties"><PropertyEditorPanel /></LitSection>}
     </BottomDock>
   );
 }

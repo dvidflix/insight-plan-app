@@ -209,18 +209,22 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
           </button>
         </div>
         )}
+        {FEATURES.teamPages && (
         <div className="disp__row">
           <span>Show Timelines tab</span>
           <button type="button" role="switch" aria-checked={showTimelinesTab} className={`switch${showTimelinesTab ? ' on' : ''}`} onClick={() => setShowTimelinesTab(!showTimelinesTab)}>
             <span className="switch__thumb" />
           </button>
         </div>
+        )}
+        {FEATURES.teamPages && (
         <div className="disp__row">
           <span>Show Wiki tab</span>
           <button type="button" role="switch" aria-checked={showWikiTab} className={`switch${showWikiTab ? ' on' : ''}`} onClick={() => setShowWikiTab(!showWikiTab)}>
             <span className="switch__thumb" />
           </button>
         </div>
+        )}
         {FEATURES.externalPages && (
         <div className="disp__row">
           <span>Show External data tab <InfoTip>SeaTable in a frame, signed in for you.</InfoTip></span>
@@ -240,7 +244,7 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
       </Section>
 
       <Section title="Experimental features" defaultOpen tip="Features still being tried out. They are hidden until switched on here, and may change or be removed.">
-        {EXPERIMENTAL_FEATURES.map((f) => (
+        {EXPERIMENTAL_FEATURES.filter((f) => f.id !== 'scenarios' || FEATURES.scenarios).map((f) => (
           <div key={f.id} className="disp__row">
             <span>
               {f.label}{' '}

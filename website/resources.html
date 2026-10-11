@@ -5,25 +5,28 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Resources | Insight Plan</title>
 <meta name="description" content="Documentation, getting started, system requirements and data-handling notes for Insight Plan.">
-<link rel="icon" href="favicon.svg" type="image/svg+xml">
+<link rel="icon" href="favicon.png" type="image/png">
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="logo" href="index.html"><svg viewBox="0 0 64 64" aria-hidden="true"><defs>
-<linearGradient id="lga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f8cff"/><stop offset="1" stop-color="#0a57d6"/></linearGradient>
-<linearGradient id="lgb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fc0ff"/><stop offset="1" stop-color="#3b97ff"/></linearGradient></defs>
-<path d="M13 44L32 55L32 61L13 50Z" fill="#0846a8"/><path d="M51 44L32 55L32 61L51 50Z" fill="#0a57d6"/><path d="M32 33L51 44L32 55L13 44Z" fill="url(#lga)"/>
-<path d="M13 32L32 43L32 49L13 38Z" fill="#1b6fe0"/><path d="M51 32L32 43L32 49L51 38Z" fill="#3b97ff"/><path d="M32 21L51 32L32 43L13 32Z" fill="url(#lgb)"/>
-<path d="M32 9L51 20L32 31L13 20Z" fill="#fff4e8" stroke="#ff8a00" stroke-width="2.2" stroke-dasharray="3.4 3" stroke-linejoin="round"/>
-</svg><span><b>Insight</b> <i>Plan</i></span></a>
+    <a class="logo" href="index.html" aria-label="Insight Plan home"><img class="logo__mark" src="logo-mark.png" alt="" width="374" height="363"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="700" height="147"></a>
     <nav>
+      <div class="menu"><button type="button" class="menu__btn" aria-expanded="false" aria-haspopup="true" aria-controls="menu-panel">Products<svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.500l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="menu__panel" id="menu-panel"><p class="menu__title">Licences</p>
+      <div class="menu__grid"><a class="menu__item" href="pricing.html#programmes"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="12" height="4" rx="1"/><rect x="3" y="16" width="16" height="4" rx="1"/></svg></div><span><b>Programmes</b><span>Check, compare and analyse your programmes.</span></span></a><a class="menu__item" href="pricing.html#models"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 3 7v10l9 5 9-5V7z"/><path d="M3 7l9 5 9-5M12 12v10"/></svg></div><span><b>Models</b><span>Check, clash-test and review your IFC models, with BCF topics.</span></span></a><a class="menu__item" href="pricing.html#complete"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7 0l3-3a5 5 0 0 0-7-7l-1 1"/><path d="M14 11a5 5 0 0 0-7 0l-3 3a5 5 0 0 0 7 7l1-1"/></svg></div><span><b>Programmes + Models</b><span>Link them for 4D and two-way selection.</span></span></a>
+      <a class="menu__help" href="pricing.html#licences"><div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M9.500 9.500a2.500 2.500 0 1 1 3.500 2.300c-.7.4-1 .9-1 1.700M12 17h.01"/></svg></div><span><b>Which licence do I need?</b><span>Compare what each includes <i aria-hidden="true">&rarr;</i></span></span></a></div>
+    </div></div>
       <a href="features.html">Features</a>
+      <a href="examples.html">Examples</a>
       <a href="solutions.html">Solutions</a>
+      <a href="alternatives.html">Compare</a>
       <a href="pricing.html">Pricing</a>
-      <a href="resources.html" aria-current="page">Resources</a>
-      <a class="btn" href="contact.html">Request a pilot</a>
+      <div class="menu menu--list"><button type="button" class="menu__btn" aria-expanded="false" aria-haspopup="true">Resources<svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+    <div class="menu__panel menu__panel--list"><p class="menu__title">Learn</p><div class="menu__links"><a href="docs.html">Documentation</a><a href="resources.html">Questions and answers</a><a href="resources.html#requirements">System requirements</a><a href="resources.html#data">Data handling</a><a href="alternatives.html">Compare with other tools</a></div><p class="menu__title">Insight Plan</p><div class="menu__links"><a href="about.html">About us</a><a href="contact.html">Contact</a></div></div></div>
+      <a href="contact.html">Contact</a>
+      <a class="btn" href="contact.html">Free trial</a>
     </nav>
   </div>
 </header>
@@ -31,6 +34,7 @@
 <div class="wrap pagehead"><span class="tag">Resources</span><h1>Documentation and answers</h1><p class="lead">The guide ships inside the app (the Wiki tab). These are the topics it covers, and what you need to run it.</p></div>
 <section class="alt"><div class="wrap">
   <h2>In the app guide</h2>
+  <p class="sub">The full text is in the <a href="docs.html">documentation</a>.</p>
   <div class="grid">
     <div class="card"><h3>Inputs</h3><p>Loading IFC models and programmes, and what the file list tells you.</p></div>
     <div class="card"><h3>Models</h3><p>Viewing, colouring, filtering and isolating, search sets and saved views.</p></div>
@@ -42,46 +46,44 @@
 </div></section>
 <section><div class="wrap split">
   <div>
-    <h2>System requirements</h2>
+    <h2 id="requirements">System requirements</h2>
     <ul class="ticks">
-      <li>Windows 10 or 11</li>
-      <li>Chrome or Edge</li>
+      <li>Chrome or Edge, a recent version</li>
+      <li>A secure (HTTPS) address for the app: ours, or your own intranet</li>
       <li>16 GB of memory recommended for large models</li>
-      <li>Python 3.12 only if you use the experimental programme generator</li>
       <li>No internet connection needed to run</li>
     </ul>
   </div>
   <div>
-    <h2>Data handling</h2>
+    <h2 id="data">Data handling</h2>
     <p class="sub" style="margin-bottom:0">Programmes, models and results are read and saved in the project folder you choose, on your computer. The app does not send them anywhere and has no account or telemetry. A third-party software list ships with each release.</p>
   </div>
 </div></section>
 <section class="alt"><div class="wrap">
   <h2>Frequently asked</h2>
   <div class="faq">
-    <details><summary>Which programme formats can it read?</summary><p>Primavera P6 XER and XML, and spreadsheet and CSV exports. It also writes XER and XML.</p></details>
-    <details><summary>Which model formats?</summary><p>IFC. Models are converted and drawn in the app on your own machine.</p></details>
+    <details><summary>Which programme formats can it read?</summary><p>Primavera P6 XER and XML, MS Project XML (File &gt; Save As &gt; XML), and Excel and CSV. It writes P6 XER and XML, and Excel. MS Project .mpp files are not read directly: save them as XML first.</p></details>
+    <details><summary>Which model formats?</summary><p>IFC, and FRAG (an already converted model). glTF can be added as site context. Models are converted and drawn in your browser, on your own machine.</p></details>
     <details><summary>Can it be used for safety-related decisions?</summary><p>No. It is a planning and review tool. It does not replace your safety case or approved engineering processes.</p></details>
-    <details><summary>How do updates work?</summary><p>You receive a new version as a folder or installer and install it when you choose. The app does not update itself over the internet.</p></details>
+    <details><summary>How do updates work?</summary><p>A new version is picked up the next time the app is opened, from wherever it is hosted. If your organisation hosts it on its own intranet, your IT team decides when a new version goes live.</p></details>
     <details><summary>Will there be a multi-user, cloud version?</summary><p>The weekly planning module for site teams is in development and is designed for tablets and several users at once. The planning workbench stays offline.</p></details>
   </div>
 </div></section>
-<section class="contact"><div class="wrap"><h2>Run a pilot on a real project</h2><p class="sub">Bring a live programme and its model. We will set up a short, fixed-price pilot and show what it finds.</p><a class="btn" href="contact.html">Request a pilot</a></div></section>
+<section class="contact"><div class="wrap"><h2>Try it free on a real project</h2><p class="sub">Bring a live programme and its model. We will send you a trial key, help you set up if you like, and show what it finds.</p><a class="btn" href="contact.html">Start a free trial</a></div></section>
 </main>
-<footer>
-  <div class="wrap foot">
-    <div><a class="logo" href="index.html"><svg viewBox="0 0 64 64" aria-hidden="true"><defs>
-<linearGradient id="lga" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f8cff"/><stop offset="1" stop-color="#0a57d6"/></linearGradient>
-<linearGradient id="lgb" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#7fc0ff"/><stop offset="1" stop-color="#3b97ff"/></linearGradient></defs>
-<path d="M13 44L32 55L32 61L13 50Z" fill="#0846a8"/><path d="M51 44L32 55L32 61L51 50Z" fill="#0a57d6"/><path d="M32 33L51 44L32 55L13 44Z" fill="url(#lga)"/>
-<path d="M13 32L32 43L32 49L13 38Z" fill="#1b6fe0"/><path d="M51 32L32 43L32 49L51 38Z" fill="#3b97ff"/><path d="M32 21L51 32L32 43L13 32Z" fill="url(#lgb)"/>
-<path d="M32 9L51 20L32 31L13 20Z" fill="#fff4e8" stroke="#ff8a00" stroke-width="2.2" stroke-dasharray="3.4 3" stroke-linejoin="round"/>
-</svg><span><b>Insight</b> <i>Plan</i></span></a><p class="note">4D planning for complex construction. Works offline.</p></div>
-    <div><strong>Product</strong><a href="features.html">Features</a><a href="solutions.html">Solutions</a><a href="pricing.html">Pricing</a></div>
-    <div><strong>Company</strong><a href="resources.html">Resources</a><a href="contact.html">Contact</a></div>
-    <div class="legal">&copy; <span id="y">2026</span> Insight Plan. Primavera and P6 are trademarks of Oracle; Insight Plan is not affiliated with Oracle.</div>
+<footer class="sitefoot">
+  <div class="wrap sitefoot__top">
+    <div class="sitefoot__brand"><a class="logo" href="index.html" aria-label="Insight Plan home"><img class="logo__mark" src="logo-mark.png" alt="" width="374" height="363"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="700" height="147"></a><p>4D planning for complex construction.<br>Works offline, and keeps your data on your machine.</p><div class="social" aria-label="Find us online"><a href="mailto:support@insight-plan.com" aria-label="Email us" title="Email us"><svg viewBox="0 0 24 24" class="social__line" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.500"/><path d="M3.500 7.500l8.500 6 8.500-6"/></svg></a></div></div>
+    <nav class="sitefoot__cols" aria-label="Footer">
+      <div><strong>Product</strong><a href="features.html">Features</a><a href="examples.html">Examples</a><a href="solutions.html">Solutions</a><a href="alternatives.html">Compare</a><a href="pricing.html">Pricing</a></div>
+      <div><strong>Resources</strong><a href="docs.html">Documentation</a><a href="resources.html">Questions and answers</a><a href="resources.html#requirements">System requirements</a><a href="resources.html#data">Data handling</a></div>
+      <div><strong>Company</strong><a href="about.html">About us</a><a href="contact.html">Contact</a><a href="contact.html">Start a free trial</a></div>
+    </nav>
   </div>
+  <div class="wrap sitefoot__bottom"><span>&copy; <span id="y">2026</span> Insight Plan</span><span>Primavera and P6 are trademarks of Oracle; Insight Plan is not affiliated with Oracle.</span></div>
 </footer>
+<script>(() => { const menus = [...document.querySelectorAll('.menu')]; const set = (m, o) => { m.classList.toggle('open', o); m.querySelector('.menu__btn').setAttribute('aria-expanded', String(o)); }; menus.forEach((m) => m.querySelector('.menu__btn').addEventListener('click', () => { const open = !m.classList.contains('open'); menus.forEach((x) => set(x, false)); set(m, open); })); document.addEventListener('click', (e) => menus.forEach((m) => { if (!m.contains(e.target)) set(m, false); })); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menus.forEach((m) => set(m, false)); }); })();</script>
 <script>document.getElementById('y').textContent = new Date().getFullYear();</script>
+
 </body>
 </html>

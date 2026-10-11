@@ -11,6 +11,8 @@ const DASHBOARDS_TAB_KEY = 'viewer.showDashboardsTab';
 
 /** Features still being tried out: hidden until switched on in
     Settings › Experimental features. */
+import { FEATURES } from '../features';
+
 export const EXPERIMENTAL_FEATURES = [
   { id: 'scenarios', label: 'Scenarios (pour-by-pour programme generator)', tip: 'The Scenarios generator: the Scenarios tab, the Scenarios panel in 4D Sequencing and the Generated schedules tab in Programmes. For planners who generate programmes from the model; needs the Python generator.' },
   { id: 'whyShown', label: 'Why is it shown?', tip: '4D tab: lists the tasks that link to the selected object and which one controls it.' },
@@ -97,7 +99,7 @@ export const useAppPrefsStore = create<AppPrefs>((set) => ({
     writeFlag(WIKI_TAB_KEY, v);
     set({ showWikiTab: v });
   },
-  experimental: Object.fromEntries(EXPERIMENTAL_FEATURES.map((f) => [f.id, readFlag(experimentalKey(f.id))])) as Record<ExperimentalId, boolean>,
+  experimental: Object.fromEntries(EXPERIMENTAL_FEATURES.map((f) => [f.id, readFlag(experimentalKey(f.id)) && (f.id !== 'scenarios' || FEATURES.scenarios)])) as Record<ExperimentalId, boolean>,
   setExperimental: (id, v) => {
     writeFlag(experimentalKey(id), v);
     set((s) => ({ experimental: { ...s.experimental, [id]: v } }));

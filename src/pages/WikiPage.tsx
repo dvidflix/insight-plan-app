@@ -1,3 +1,4 @@
+import { FEATURES } from '../features';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { usePersistedState, usePersistedStringSet } from '../utils/persistedState';
 import { anchorOf, renderPage, wikiSections, type WikiPage as Page } from '../wiki/content';
@@ -185,7 +186,7 @@ export function WikiPage() {
                   <span className="wiki__chevron"><IconExpander open={sectionOpen} /></span>
                   {s.title}
                 </button>
-                <button type="button" className="wiki__new" onClick={() => void newPage(s.id)} title={`New page in ${s.title}`}>+ New page</button>
+                {FEATURES.serverFiles && <button type="button" className="wiki__new" onClick={() => void newPage(s.id)} title={`New page in ${s.title}`}>+ New page</button>}
               </div>
               {sectionOpen &&
                 groups.map((g) => {
@@ -239,7 +240,7 @@ export function WikiPage() {
                   >
                     Export PDF
                   </button>
-                  {(page.section === 'assumptions' || page.section === 'calculations') && (
+                  {FEATURES.seatable && (page.section === 'assumptions' || page.section === 'calculations') && (
                     <button
                       type="button"
                       className="btn"
@@ -262,8 +263,8 @@ export function WikiPage() {
                       Sync to SeaTable
                     </button>
                   )}
-                  {page.page !== 'index' && <button type="button" className="btn" onClick={() => void remove()}>Delete</button>}
-                  <button type="button" className="btn primary" onClick={() => { setDraft(page.markdown); setMessage(null); }}>Edit</button>
+                  {FEATURES.serverFiles && page.page !== 'index' && <button type="button" className="btn" onClick={() => void remove()}>Delete</button>}
+                  {FEATURES.serverFiles && <button type="button" className="btn primary" onClick={() => { setDraft(page.markdown); setMessage(null); }}>Edit</button>}
                 </>
               )
             )}

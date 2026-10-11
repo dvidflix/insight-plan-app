@@ -1,3 +1,4 @@
+import { FEATURES } from '../features';
 import { useMemo, useRef, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
@@ -193,9 +194,11 @@ export function ModelChecksPanel() {
         <button type="button" className="btn primary" disabled={running || shown.length === 0} onClick={() => void run()}>
           {running ? 'Checking…' : results ? 'Run again' : 'Run checks'}
         </button>
-        <button type="button" className="btn" onClick={() => upload.current?.click()} title="Add an .ids file to docs/ids">
-          <IconUpload /> Import IDS
-        </button>
+        {FEATURES.serverFiles && (
+          <button type="button" className="btn" onClick={() => upload.current?.click()} title="Add an .ids file to docs/ids">
+            <IconUpload /> Import IDS
+          </button>
+        )}
         {results && (
           <button type="button" className="btn" onClick={exportCsv} title="Every specification and failing element">
             <IconDownload /> CSV
@@ -392,7 +395,7 @@ function SpecRow({ result: r, patches, busy, onApply }: { result: SpecResult; pa
               </div>
             </>
           )}
-          {patches.length > 0 && r.failures.length > 0 && (
+          {FEATURES.serverFiles && patches.length > 0 && r.failures.length > 0 && (
             <div className="model-checks__patches">
               <div className="check-item__callout-label check-item__callout-label--action">Fixes</div>
               {patches.map((p) => (

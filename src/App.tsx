@@ -1,6 +1,8 @@
+import { useLicenceModules } from './licence/modulesStore';
+import { pageLicensed } from './licence/licence';
 import { DuplicateTabButton, DuplicateTabSync } from './components/DuplicateTab';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useSidePaneStore } from './state/sidePaneStore';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
@@ -13,8 +15,8 @@ import { SchedulePage, type TabId as ScheduleTabId } from './pages/SchedulePage'
 import { takePendingTab, useScheduleLayoutsStore } from './state/scheduleLayoutsStore';
 import { SequencePanel } from './pages/SequencePage';
 import { ScenariosPage } from './pages/ScenariosPage';
-import { TimelinesPage } from './pages/TimelinesPage';
-import { WikiPage } from './pages/WikiPage';
+import { HelpPage } from './pages/HelpPage';
+
 import { ExternalPage } from './pages/ExternalPage';
 import { SequenceLabelOverlay } from './components/sequence/SequenceLabelOverlay';
 import { SequenceTimelineStatusBar } from './components/sequence/SequenceTimelineStatusBar';
@@ -25,7 +27,7 @@ import { hasMadeChoice, useProgrammeChoiceStore } from './state/programmeChoiceS
 import { programmeKey } from './state/unloadedWbsStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
-import { IconBook, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
+import { IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
 import { FileDrop } from './components/FileDrop';
 import { SCHEDULE_ACCEPT, buildScheduleModel, parseScheduleFile, xmlScheduleTables } from './schedule/loadSchedule';
 import { buildXerSchedule, indexXerFile, isXer, type ImportProgress, type XerIndex } from './schedule/importSchedule';
@@ -44,6 +46,7 @@ import { pushToSeaTable, DetailValue, GroupHeaderRow, ColumnResizer, InputsColgr
 import { InputsSidePane } from './components/InputsSidePane';
 import type { PushFile } from './seatable/filesClient';
 import { StoredModelsNotes, useStoredModels } from './components/StoredModelsPanel';
+import { ModelsRestoreSync } from './components/ModelsRestoreSync';
 import type { StoredModel } from './db/modelsApi';
 import { filterXerTables, filterXmlText } from './schedule/exportFilter';
 import { ProgrammeDownload, type DownloadFormat } from './components/ProgrammeDownload';
@@ -59,7 +62,12 @@ import { downloadBlob } from './utils/download';
 import type { ScheduleModel } from './schedule/types';
 import { xmlToXer } from './schedule/xmlToXer';
 
-type PageId = 'inputs' | 'model' | 'schedule' | 'scenarios' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki';
+// The team's Wiki and Timelines are left out of the shipped editions altogether (the constant check lets the build drop them).
+const shipped = import.meta.env.VITE_EDITION === 'web' || import.meta.env.VITE_EDITION === 'product';
+const TimelinesPage = shipped ? () => null : lazy(() => import('./pages/TimelinesPage').then((m) => ({ default: m.TimelinesPage })));
+const WikiPage = shipped ? () => null : lazy(() => import('./pages/WikiPage').then((m) => ({ default: m.WikiPage })));
+
+type PageId = 'inputs' | 'model' | 'schedule' | 'scenarios' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki' | 'help';
 
 /** Ctrl+Alt + key (KeyboardEvent.code) -> the page it opens. */
 const PAGE_SHORTCUTS: Record<string, PageId> = { KeyP: 'inputs', KeyQ: 'model', KeyU: 'schedule', KeyW: 'sequence' };
@@ -74,6 +82,7 @@ const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
   { id: 'external', label: 'External data', icon: <IconExternalData /> },
   { id: 'dashboards', label: 'Dashboards', icon: <IconDashboard /> },
   { id: 'wiki', label: 'Wiki', icon: <IconBook /> },
+  { id: 'help', label: 'Help', icon: <IconInfoOutlined /> },
 ];
 
 /** Applies the current theme to the document and to the 3D viewport
@@ -180,11 +189,11 @@ export default function App() {
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || showTimelinesTab) && (p.id !== 'wiki' || showWikiTab) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || FEATURES.help) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
     [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
-    if (((!showScenariosTab || !scenariosOn) && page === 'scenarios') || (!showTimelinesTab && page === 'timelines') || (!showWikiTab && page === 'wiki') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
+    if (((!showScenariosTab || !scenariosOn) && page === 'scenarios') || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || (!FEATURES.help && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
   }, [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab, page]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab step through the top tabs (wrapping round).
@@ -233,6 +242,7 @@ export default function App() {
   return (
     <ViewerEngineProvider>
       <ThemeSync />
+      {FEATURES.browserData && <ModelsRestoreSync />}
       <ProgrammeChoiceSync />
       <FitOnModelsTab page={page} />
       <SettingsSync />
@@ -287,12 +297,13 @@ export default function App() {
             </div>
           )}
           {page === 'scenarios' && <ScenariosPage />}
-          {page === 'timelines' && <TimelinesPage />}
-          {page === 'wiki' && <WikiPage />}
+          {page === 'timelines' && <Suspense fallback={null}><TimelinesPage /></Suspense>}
+          {page === 'wiki' && <Suspense fallback={null}><WikiPage /></Suspense>}
+          {page === 'help' && <HelpPage />}
           {visited.has('external') && <ExternalPage target="seatable" active={page === 'external'} />}
           {visited.has('dashboards') && <ExternalPage target="superset" active={page === 'dashboards'} />}
         </div>
-        {page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'external' || page === 'dashboards' ? null : <StatusBar page={page} />}
+        {page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? null : <StatusBar page={page} />}
       </div>
       <SidePaneHost />
       <AutoLinkGenerator />

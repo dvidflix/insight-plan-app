@@ -9,6 +9,7 @@ import { wikiPlugin } from './vite-plugins/wiki';
 import { idsPlugin } from './vite-plugins/ids';
 import { seatablePlugin } from './vite-plugins/seatablePlugin';
 import { externalPlugin } from './vite-plugins/externalPlugin';
+import { offlineAppPlugin } from './vite-plugins/offlineApp';
 
 // The product edition (--mode product) never contacts GitHub, SeaTable or Superset: their server parts are not loaded.
 export default defineConfig(({ mode }) => {
@@ -20,6 +21,7 @@ export default defineConfig(({ mode }) => {
     wikiPlugin(),
     idsPlugin(),
     ...(internal ? [seatablePlugin(), externalPlugin()] : []),
+    ...(mode === 'web' ? [offlineAppPlugin()] : []),
     projectDbPlugin(),
     modelsPlugin(),
     scenariosPlugin(),

@@ -142,7 +142,7 @@ export function DbStatusChip() {
 }
 
 /** Browser edition: pick the project folder (a folder on this computer or in OneDrive), or use the browser's own storage. */
-function WebFolderChooser({ busy }: { busy: boolean }) {
+export function WebFolderChooser({ busy }: { busy: boolean }) {
   const remembered = useWebFolderStore((s) => s.remembered);
   const root = useProjectDbStore((s) => s.root);
   const [note, setNote] = useState<string | null>(null);
@@ -170,16 +170,13 @@ function WebFolderChooser({ busy }: { busy: boolean }) {
             Choose folder…
           </button>
         )}
-        <button className="mini-btn" type="button" disabled={busy} onClick={() => run(async () => (await import('../web/client')).useBrowserStorage())} title="Keep the project inside this browser (no folder to pick). Back it up by copying the database out, as the browser can clear it.">
-          Use browser storage
-        </button>
         {remembered && !remembered.ready && (
           <button className="mini-btn" type="button" disabled={busy} onClick={() => run(async () => (await import('../web/client')).grantRememberedFolder().then((r) => (r?.ready ? r : null)))} title="The browser asks again before using a folder in a new session.">
             Allow {remembered.name} again
           </button>
         )}
       </div>
-      {!canPick && <div className="project-db__dim">This browser cannot pick a folder. Use Chrome or Edge to keep the project in a folder, or use browser storage.</div>}
+      {!canPick && <div className="project-db__dim">This browser cannot pick a folder, so a project cannot be kept. Open the app in Chrome or Edge.</div>}
       {note && <div className="inputs-panel__error">{note}</div>}
     </div>
   );

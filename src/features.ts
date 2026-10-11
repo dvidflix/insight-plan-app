@@ -14,4 +14,15 @@ export const FEATURES = {
   externalPages: internal,
   /** The project database and files live in this browser and the chosen folder (the web edition has no server). */
   browserData: EDITION === 'web',
+  /** The Scenarios generator (needs the Python engine on a server). */
+  scenarios: EDITION !== 'web',
+  /** Editing and deleting Wiki pages, and writing model fixes back to IDS files (they write files in the app's own folder). */
+  serverFiles: EDITION !== 'web',
+  /** Reading projects from a P6 Professional database by its path on disk. */
+  p6Database: EDITION !== 'web',
+  /** The Help tab for customers. The team's Timelines and Wiki tabs are not part of the shipped editions. */
+  help: EDITION !== 'internal',
+  teamPages: internal,
+  /** The licence check at start-up: the browser edition is only for licensed customers. */
+  licence: EDITION === 'web',
 } as const;
