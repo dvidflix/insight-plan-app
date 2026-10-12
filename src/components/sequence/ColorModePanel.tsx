@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { HexColorInput } from '../HexColorInput';
 import type { ElementSummary } from '../../viewer/types';
 import { samplePropKeys } from '../../viewer/query';
 import { objectFieldValue, parseObjectFieldKey, newId } from '../../schedule/linkGroups';
@@ -84,7 +85,7 @@ export function ViewColorSettings({ view, elements }: { view: ViewId; elements: 
             {rules.length === 0 && <div className="cols__empty">No rules — every element keeps its {fallback ? 'other-values' : 'original'} colour.</div>}
             {rules.map((r) => (
               <div className="cm__rule" key={r.id}>
-                <input type="color" value={r.color} onChange={(e) => update(r.id, { color: e.target.value })} aria-label={`Colour for ${r.value}`} />
+                <HexColorInput value={r.color} onChange={(hex) => update(r.id, { color: hex })} />
                 <input className="cm__value" value={r.value} onChange={(e) => update(r.id, { value: e.target.value })} placeholder="value" />
                 <span className="flt__n" title="Elements with this value">{counts.get(r.value.trim().toLowerCase()) ?? 0}</span>
                 <button type="button" className="cols__icon cols__icon--remove" onClick={() => patch({ rules: rules.filter((x) => x.id !== r.id) })} aria-label={`Remove rule ${r.value}`} title="Remove rule">✕</button>
@@ -102,7 +103,7 @@ export function ViewColorSettings({ view, elements }: { view: ViewId; elements: 
           </div>
           {fallback !== null && (
             <div className="cm__rule">
-              <input type="color" value={fallback} onChange={(e) => patch({ fallback: e.target.value })} aria-label="Colour for other values" />
+              <HexColorInput value={fallback} onChange={(hex) => patch({ fallback: hex })} />
               <span className="cm__other">Every value without a rule</span>
             </div>
           )}

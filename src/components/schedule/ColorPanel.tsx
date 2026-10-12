@@ -77,7 +77,7 @@ interface ColorPanelProps {
   rules: ColorRule[];
   onChange: (rules: ColorRule[]) => void;
   onClose: () => void;
-  /** The Gantt's WBS palette; omit both to leave that row out. */
+  /** The Gantt's grouping palette; omit both to leave that row out. */
   wbsPalette?: string;
   onWbsPaletteChange?: (id: string) => void;
   /** Fields a rule can test (the schedule's column catalog). */
@@ -107,7 +107,7 @@ export function ColorPanel({ rules, onChange, onClose, wbsPalette, onWbsPaletteC
   const body = (
     <div className="cols">
       {wbsPalette && onWbsPaletteChange && <div className="color-panel__palette">
-        <span className="groupby-panel__title">WBS Palette:</span>
+        <span className="groupby-panel__title">Grouping palette:</span>
         <select value={wbsPalette} onChange={(e) => onWbsPaletteChange(e.target.value)}>
           {Object.entries(WBS_PALETTES).map(([id, p]) => (
             <option key={id} value={id}>{p.label}</option>
@@ -152,6 +152,7 @@ export function ColorPanel({ rules, onChange, onClose, wbsPalette, onWbsPaletteC
                 </select>
               </div>
               <div className="color-rule2__line">
+                {op === 'empty' && <span />}
                 {op !== 'empty' && (
                   <>
                     <input className="color-rule2__value" placeholder="value" list={listId} value={r.value} onChange={(e) => update(r.id, { value: e.target.value })} />
@@ -160,12 +161,7 @@ export function ColorPanel({ rules, onChange, onClose, wbsPalette, onWbsPaletteC
                     </datalist>
                   </>
                 )}
-                <div className="color-rule2__swatches">
-                  {SWATCHES.map((c) => (
-                    <button key={c} type="button" className={`color-swatch${r.color === c ? ' active' : ''}`} style={{ background: c }} onClick={() => update(r.id, { color: c })} aria-label={`Colour ${c}`} />
-                  ))}
-                  <input type="color" className="color-rule2__custom" value={r.color ?? '#ffffff'} onChange={(e) => update(r.id, { color: e.target.value })} title="Any colour" />
-                </div>
+                <input type="color" className="color-rule2__custom" value={r.color ?? '#ffffff'} onChange={(e) => update(r.id, { color: e.target.value })} title="Colour" aria-label="Colour" />
               </div>
             </div>
           );

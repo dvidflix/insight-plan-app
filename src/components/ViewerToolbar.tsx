@@ -1,5 +1,4 @@
 import { useMarkersStore } from '../state/markersStore';
-import { useDataTableStore } from '../state/dataTableStore';
 import { useFocusStore } from '../state/focusStore';
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -20,7 +19,7 @@ import { useIndexTick } from './modelFields';
 import { WALK_SPEEDS } from '../viewer/walkthrough';
 import {
   IconBoxSelect, IconCategory, IconLocationPoint, IconNavigationArrow, IconWalk, IconShortText, IconTagOutline, IconViewCube, IconChevronDown, IconChevronRight, IconFullscreen, IconCube, IconCursor, IconDeleteAll, IconFilter, IconGhost, IconGrid, IconIfcGrid, IconPaintBucket, IconPalette, IconMeasureArea, IconMeasureLength,
-  IconMeasurePerimeter, IconMeasureSlope, IconMeasureVertical, IconModelOrtho, IconViewTable, IconPerspective, IconPin, IconSection, IconSelectionSet, IconSelectOff, IconSinglePane, IconTransparency, IconTwoPane, IconViewAxon, IconViewBack,
+  IconMeasurePerimeter, IconMeasureSlope, IconMeasureVertical, IconModelOrtho, IconPerspective, IconPin, IconSection, IconSelectionSet, IconSelectOff, IconSinglePane, IconTransparency, IconTwoPane, IconViewAxon, IconViewBack,
   IconViewBottom, IconViewFront, IconViewLeft, IconViewRight, IconViewShowAll, IconViewTop, IconVisibility, IconVisibilityOff, IconZoomToSelected,
 } from './icons';
 
@@ -271,8 +270,6 @@ export function ViewerToolbar() {
   const setHoverTagId = useTagsStore((s) => s.setHoverTagId);
   const dateLabel = useSequenceLabelStore((s) => s.enabled);
   const ignoreTimeliner = useIgnoreTimelinerStore((s) => s.ignore);
-  const dataTableOpen = useDataTableStore((s) => s.open);
-  const setDataTableOpen = useDataTableStore((s) => s.setOpen);
   const focus = useFocusStore((s) => s.focus);
   const setDateLabel = useSequenceLabelStore((s) => s.setEnabled);
 
@@ -671,7 +668,6 @@ export function ViewerToolbar() {
         active={split}
         onClick={() => patchPage(page, { split: !split })}
       />
-      <Btn icon={IconViewTable} tip={dataTableOpen ? 'Hide the data table' : 'Show the data table'} active={dataTableOpen} onClick={() => setDataTableOpen(!dataTableOpen)} />
       {document.fullscreenEnabled && (
         <>
           <Sep />

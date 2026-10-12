@@ -41,6 +41,10 @@ export interface GanttHandle {
   zoomOut: () => void;
   fit: () => void;
   scrollToToday: () => void;
+  /** Scrolls so the date (epoch ms) sits a third of the way in. */
+  scrollToDate: (ms: number) => void;
+  /** Scrolls the rows (not the dates) so the activity sits mid-panel. */
+  scrollToRow: (id: string) => void;
   /** The label grid as shown (columns, groups, subtotals, folded state) for the Excel export. */
   getExport: () => GanttExport;
 }
@@ -88,6 +92,8 @@ interface GanttChartProps {
   showLabels?: boolean;
   /** Vertical marker for the schedule's data (status) date. */
   dataDate?: Date | null;
+  /** The 4D timeline's date (epoch ms): a line across the chart, moving with the timeline. */
+  cursorMs?: number | null;
   zoom?: Zoom;
   /** Label-grid columns to show, in display order. */
   columns: ColumnDef[];
@@ -147,6 +153,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     showBaseline = false,
     showLabels = false,
     dataDate = null,
+    cursorMs = null,
     zoom = 'week',
     columns,
     columnCtx,
@@ -368,8 +375,19 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     if (el) el.scrollTo({ left: Math.max(0, xFor(now) - (el.clientWidth - LABEL_W) / 3), behavior: 'smooth' });
   };
 
-  const controls = useRef({ zoomBy, fit, scrollToToday });
-  controls.current = { zoomBy, fit, scrollToToday };
+  const scrollToDate = (ms: number) => {
+    const el = containerRef.current;
+    if (el) el.scrollTo({ left: Math.max(0, xFor(ms) - (el.clientWidth - LABEL_W) / 3), behavior: 'smooth' });
+  };
+
+  const scrollToRow = (id: string) => {
+    const el = containerRef.current;
+    const index = layout.indexById.get(id);
+    if (el && index !== undefined) el.scrollTo({ top: Math.max(0, index * ROW_H - bodyH / 2), behavior: 'smooth' });
+  };
+
+  const controls = useRef({ zoomBy, fit, scrollToToday, scrollToDate, scrollToRow });
+  controls.current = { zoomBy, fit, scrollToToday, scrollToDate, scrollToRow };
   // The label grid as it is on screen, for the Excel export. Every row is included; those under a collapsed group are marked hidden.
   const exportData = () => {
     const out: GanttExportRow[] = [];
@@ -402,6 +420,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
       zoomOut: () => controls.current.zoomBy(1 / 1.5),
       fit: () => controls.current.fit(),
       scrollToToday: () => controls.current.scrollToToday(),
+      scrollToDate: (ms: number) => controls.current.scrollToDate(ms),
+      scrollToRow: (id: string) => controls.current.scrollToRow(id),
     }),
     [],
   );
@@ -731,6 +751,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
 
   const todayX = now >= rangeStartMs && rows.length > 0 ? xFor(now) : null;
   const dataDateX = dataDateMs !== null && rows.length > 0 ? xFor(dataDateMs) : null;
+  const cursorX = cursorMs !== null && rows.length > 0 && cursorMs >= rangeStartMs ? xFor(cursorMs) : null;
 
   const tipActivity = tip?.activity;
   const tipLeft = tip ? (tip.x > window.innerWidth - 320 ? tip.x - 300 : tip.x + 14) : 0;
@@ -799,6 +820,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
                   );
                 })}
                 {todayX !== null && <div className="gantt-header-marker gantt-header-marker--today" style={{ left: todayX }} />}
+                {cursorX !== null && <div className="gantt-header-marker gantt-header-marker--cursor" style={{ left: cursorX }} />}
               </div>
             </div>
 
@@ -829,6 +851,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
               {visibleRows}
 
               {todayX !== null && todayX >= scroll.left && <div className="gantt-today-line" style={{ left: LABEL_W + todayX, height: contentHeight }} title="Today" />}
+              {cursorX !== null && <div className="gantt-cursor-line" style={{ left: LABEL_W + cursorX, height: contentHeight }} title="4D timeline date" />}
               {dataDateX !== null && dataDateX >= scroll.left && (
                 <div className="gantt-datadate-line" style={{ left: LABEL_W + dataDateX, height: contentHeight }} title="Data date" />
               )}

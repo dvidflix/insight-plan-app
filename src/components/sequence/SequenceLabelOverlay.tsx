@@ -46,7 +46,6 @@ export function SequenceLabelOverlay() {
   }, [engine]);
   const sideBySide = split && hasSecond;
   const tagItems = useActiveTagsStore((s) => s.items);
-  const placement = useTagsStore((s) => s.placement);
   const tagsShown = useTagsStore((s) => s.shown);
   const recPhase = useRecordingStore((s) => s.phase);
   const recCount = useRecordingStore((s) => s.count);
@@ -66,11 +65,11 @@ export function SequenceLabelOverlay() {
         </div>
       )}
       <AppearanceKey />
-      {tagsShown && placement === 'objects' && <TagCallouts view="main" />}
-      {tagsShown && placement === 'objects' && sideBySide && <TagCallouts view="second" />}
+      {tagsShown && <TagCallouts view="main" />}
+      {tagsShown && sideBySide && <TagCallouts view="second" />}
       {/* Not drawn into the export: frameCapture only redraws the label/tag overlays. */}
       {recPhase === 'countdown' && <div className="rec-countdown">{recCount}</div>}
-      {tagsShown && placement === 'corner' && tagItems.length > 0 && (
+      {tagsShown && tagItems.length > 0 && (
         <div className="tag-overlay">
           {tagItems.map((t) => (
             <div key={t.key} className="tag-overlay__chip" style={{ ...tagCss(t.style), borderLeftColor: t.color }}>

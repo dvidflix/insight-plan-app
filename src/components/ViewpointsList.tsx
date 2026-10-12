@@ -45,7 +45,7 @@ export function ViewpointsHeaderActions() {
     (click either to open it) with update, rename and delete icons on the right.
     Viewpoints can be filed in folders (drag a row onto a folder, or use its
     folder list). */
-export function ViewpointsList() {
+export function ViewpointsList({ layout = 'list', actions = false }: { /** cards: square cards in a row, with the options and folders in a pane at the left (the bottom dock). */ layout?: 'list' | 'cards'; /** Show the new viewpoint / folder buttons on the options row (when the panel has no header of its own). */ actions?: boolean }) {
   const engine = useViewerEngine();
   const list = useViewpoints(engine);
   const page = useViewSettingsStore((s) => s.activePage);
@@ -60,6 +60,21 @@ export function ViewpointsList() {
   const [closed, setClosed] = usePersistedState<string[]>('viewpoints.closedFolders', []);
   const [renamingFolder, setRenamingFolder] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState<string | null>(null);
+  // Cards: which folder shows (null = all).
+  const [cardFolder, setCardFolder] = useState<string | null>(null);
+  // The cards row scrolls sideways with the mouse wheel (and with the arrow keys of the scrollbar).
+  const cardsRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = cardsRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (e.ctrlKey || Math.abs(e.deltaX) > Math.abs(e.deltaY) || el.scrollWidth <= el.clientWidth) return;
+      e.preventDefault();
+      el.scrollLeft += e.deltaY;
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
+  }, [layout]);
 
   const folderOf = (vp: OBC.Viewpoint) => dataOf(vp).folder ?? '';
   const folders = [...new Set([...savedFolders, ...list.map(folderOf).filter(Boolean)])].sort((a, b) => a.localeCompare(b));
@@ -180,6 +195,46 @@ export function ViewpointsList() {
     );
   };
 
+  if (layout === 'cards') {
+    const shownCards = cardFolder === null ? list : list.filter((vp) => folderOf(vp) === cardFolder);
+    const nav = (key: string | null, label: string, count: number) => (
+      <div key={key ?? 'all'} className={`vp__nav${cardFolder === key ? ' is-on' : ''}${key !== null && dragOver === key ? ' is-over' : ''}`} {...(key === null ? {} : dropProps(key))}>
+        <button type="button" className="vp__nav-name" onClick={() => setCardFolder(key)}>{renamingFolder === key && key ? (
+          <input className="vp__rename" autoFocus defaultValue={key} onClick={(e) => e.stopPropagation()} onBlur={(e) => renameFolder(key, e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenamingFolder(null); }} />
+        ) : <span className="vp__folder-name">{label}</span>}<span className="vp__folder-count">{count}</span></button>
+        {key && <span className="vp__actions">
+          <button type="button" className="vp__icon" title="Rename the folder" aria-label="Rename the folder" onClick={() => setRenamingFolder(key)}><IconPencil /></button>
+          <button type="button" className="vp__icon vp__icon--danger" title="Delete the folder (its viewpoints are kept)" aria-label="Delete the folder" onClick={() => { deleteFolder(key); if (cardFolder === key) setCardFolder(null); }}><IconTrash /></button>
+        </span>}
+      </div>
+    );
+    return (
+      <div className="vp vp--cards" ref={root}>
+        <div className="vp__side">
+          <div className="vp__side-actions"><InfoTip>
+          Saves the camera plus what is ticked in Viewpoint attributes (hidden objects, selection, sections, style, display, placement{page === 'sequence' ? ', timeline position' : ''}). Click a viewpoint to open it; the icons update it from the view as it is now, rename it or delete it. Drag a viewpoint onto a folder to file it.
+        </InfoTip><ViewpointsHeaderActions /></div>
+          <div className="vp__bar">
+        {page === 'sequence' && (
+          <label className="vp__opt" title="Remember the date the timeline is at, and jump to it when the viewpoint is opened">
+            <input type="checkbox" checked={withTimeline} onChange={() => toggleAttr('timeline')} />
+            Remember timeline date
+          </label>
+        )}
+          </div>
+          {nav(null, 'All', list.length)}
+          {folders.map((f) => nav(f, f, list.filter((vp) => folderOf(vp) === f).length))}
+          {folders.length > 0 && nav('', 'No folder', unfiled.length)}
+        </div>
+        <div className="vp__cards" ref={cardsRef}>
+          {error && <div className="flt__hint" style={{ color: 'var(--danger)' }}>{error}</div>}
+          <div className="vp__cards-grid">{shownCards.map(renderRow)}</div>
+          {shownCards.length === 0 && <div className="flt__hint">{list.length === 0 ? 'No viewpoints yet. Set the view up, then press New viewpoint.' : 'Nothing in this folder: drag a viewpoint onto it.'}</div>}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="vp" ref={root}>
       <div className="vp__bar">
@@ -192,6 +247,7 @@ export function ViewpointsList() {
         <InfoTip>
           Saves the camera plus what is ticked in Viewpoint attributes (hidden objects, selection, sections, style, display, placement{page === 'sequence' ? ', timeline position' : ''}). Click a viewpoint to open it; the icons update it from the view as it is now, rename it or delete it. Drag a viewpoint onto a folder to file it.
         </InfoTip>
+        {actions && <><span className="vp__spacer" /><ViewpointsHeaderActions /></>}
       </div>
       {error && <div className="flt__hint" style={{ color: 'var(--danger)' }}>{error}</div>}
       {list.length === 0 && folders.length === 0 ? (

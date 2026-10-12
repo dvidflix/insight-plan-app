@@ -26,7 +26,6 @@ export const EXPERIMENTAL_FEATURES = [
   { id: 'anonymise', label: 'Programmes: Anonymise', tip: 'Programmes › Views: replace names and codes so a programme can be shared.' },
   { id: 'whatIf', label: 'Programmes: What-If Scenarios', tip: 'Programmes › Views: try changes to the programme and see their effect.' },
   { id: 'bcf', label: 'BCF topics', tip: 'Models page: the Topics tab, to create BCF topics and comments and to import / export BCF files.' },
-  { id: 'realisticMaterials', label: 'Realistic materials', tip: 'Views tab: brick, glass, timber, metal… drawn with their own surface, matched from the model\'s material names.' },
 ] as const;
 export type ExperimentalId = (typeof EXPERIMENTAL_FEATURES)[number]['id'];
 

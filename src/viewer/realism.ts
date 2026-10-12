@@ -1,4 +1,4 @@
-import { classNumber, classNumberForColour, type ClassChoice } from './materialClasses';
+import { classNumberForPainted } from './materialClasses';
 import * as THREE from 'three';
 
 /** "Realistic" look for a 3D view: a fixed sun (bearing + height)
@@ -6,9 +6,6 @@ import * as THREE from 'three';
     surface. The sun does not follow the 4D timeline, so shadows stay put. */
 
 export interface RealismSettings {
-  /** Realistic materials: the class chosen for a colour group of the models
-      (#rrggbb -> class, or 'original'), over what its names suggest. */
-  mapping: Record<string, ClassChoice>;
   /** Compass bearing the sun shines FROM, degrees clockwise from project
       north (−Z in the viewer): 180 = from the south. */
   sunAzimuth: number;
@@ -21,7 +18,7 @@ export interface RealismSettings {
   concreteColor: number;
 }
 
-export const DEFAULT_REALISM: RealismSettings = { sunAzimuth: 210, sunElevation: 40, concrete: 0.8, concreteColor: 1, mapping: {} };
+export const DEFAULT_REALISM: RealismSettings = { sunAzimuth: 210, sunElevation: 40, concrete: 0.8, concreteColor: 1 };
 
 const RAD = Math.PI / 180;
 
@@ -72,8 +69,6 @@ export function skyParamsFor(azimuth: number, elevation: number): SkyParams {
 export interface ConcreteUniforms {
   strength: { value: number };
   tint: { value: number };
-  /** 1 when this view shows the material classes (brick, glass, ...). */
-  mats: { value: number };
   /** 1 when shiny classes reflect the sky. */
   reflect: { value: number };
   zenith: { value: THREE.Color };
@@ -86,7 +81,7 @@ export interface ConcreteUniforms {
 export const newConcreteUniforms = (): ConcreteUniforms => {
   const sky = skyParamsFor(DEFAULT_REALISM.sunAzimuth, DEFAULT_REALISM.sunElevation);
   return {
-    strength: { value: 0 }, tint: { value: 0 }, mats: { value: 0 }, reflect: { value: 0 },
+    strength: { value: 0 }, tint: { value: 0 }, reflect: { value: 1 },
     zenith: { value: sky.zenith }, horizon: { value: sky.horizon }, ground: { value: sky.ground },
     sunColor: { value: sky.sunColor }, sunDir: { value: sky.sunDir },
   };
@@ -100,7 +95,6 @@ varying vec3 vConcreteNrm;
 uniform float uConcrete;
 uniform float uConcreteTint;
 uniform float uClass;
-uniform float uMats;
 uniform float uReflect;
 uniform vec3 uSkyZenith;
 uniform vec3 uSkyHorizon;
@@ -168,6 +162,16 @@ vec3 classLook(int c, vec3 base, vec3 p, vec3 n) {
   }
   if (c == 12) return base * (0.96 + 0.06 * cFbm(p * 3.0));
   if (c == 13) return base * (0.95 + 0.08 * cNoise(p * 30.0));
+  if (c == 14) {
+    // Rebar cage: a grid of bars (20 cm centres, 16 mm) cut out of the surface; what is
+    // between them is see-through. Bars widen to a pixel when far away so they don't vanish.
+    vec2 d = abs(fract(uv / 0.2 + 0.5) - 0.5) * 0.2;
+    float r = max(0.008, max(fwidth(uv.x), fwidth(uv.y)) * 0.75);
+    vec2 q = d / r;
+    if (min(q.x, q.y) > 1.0) discard;
+    float shade = 1.0 - 0.45 * pow(min(q.x, q.y), 2.0);
+    return base * shade * (0.85 + 0.3 * cNoise(p * 14.0));
+  }
   return base;
 }
 // How mirror-like each class is.
@@ -196,7 +200,6 @@ function patchConcrete(material: THREE.Material, u: ConcreteUniforms) {
     shader.uniforms.uConcrete = u.strength;
     shader.uniforms.uConcreteTint = u.tint;
     shader.uniforms.uClass = classU;
-    shader.uniforms.uMats = u.mats;
     shader.uniforms.uReflect = u.reflect;
     shader.uniforms.uSkyZenith = u.zenith;
     shader.uniforms.uSkyHorizon = u.horizon;
@@ -222,7 +225,7 @@ function patchConcrete(material: THREE.Material, u: ConcreteUniforms) {
       .replace(
         '#include <color_fragment>',
         `#include <color_fragment>
-        float cls = floor(uClass + 0.5) * step(0.5, uMats);
+        float cls = floor(uClass + 0.5);
         float rfl = 0.0;
         float concreteOn = uConcrete;
         float concreteTint = uConcreteTint;
@@ -270,12 +273,6 @@ export function setConcreteStrength(strength: number, tint: number, u: ConcreteU
   u.tint.value = tint;
 }
 
-/** Shows (or hides) the material classes in a view: brick, glass, timber... */
-export function setMaterialsEnabled(on: boolean, u: ConcreteUniforms = shared) {
-  u.mats.value = on ? 1 : 0;
-  u.reflect.value = on ? 1 : 0;
-}
-
 /** Points a view's sky colours and sun at a sun position. */
 export function setSkyUniforms(sky: SkyParams, u: ConcreteUniforms = shared) {
   u.zenith.value.copy(sky.zenith);
@@ -297,32 +294,11 @@ export function patchAllConcrete(materials: Iterable<THREE.Material>, u: Concret
 
 const GLASS_OPACITY = 0.4;
 
-/** Gives each of the model's own materials the class its colour group maps to
-    (or none, when the classes are off in this view). Glass becomes see-through
-    and is drawn after the opaque surfaces; a material that stops being glass
-    gets its own opacity back. */
-export function refreshMaterialClasses(materials: Iterable<THREE.Material>, u: ConcreteUniforms = shared) {
-  const on = u.mats.value > 0.5;
+/** Gives each painted material (a 4D stage's colour) the surface class its colour carries. */
+export function refreshMaterialClasses(materials: Iterable<THREE.Material>) {
   for (const m of materials) {
     const classU = m.userData.classU as { value: number } | undefined;
-    if (!classU || !m.userData.concreteBase) continue;
-    const cls = on ? classNumberForColour((m as THREE.MeshLambertMaterial).color) : 0;
-    classU.value = cls;
-    const glass = cls === classNumber('glass');
-    const saved = m.userData.glassOriginal as { transparent: boolean; opacity: number; depthWrite: boolean } | undefined;
-    if (glass && !saved) {
-      m.userData.glassOriginal = { transparent: m.transparent, opacity: m.opacity, depthWrite: m.depthWrite };
-      m.transparent = true;
-      m.opacity = Math.min(m.opacity, GLASS_OPACITY);
-      m.depthWrite = false;
-      m.needsUpdate = true;
-    } else if (!glass && saved) {
-      m.transparent = saved.transparent;
-      m.opacity = saved.opacity;
-      m.depthWrite = saved.depthWrite;
-      delete m.userData.glassOriginal;
-      m.needsUpdate = true;
-    }
+    if (classU && !m.userData.concreteBase) classU.value = classNumberForPainted((m as THREE.MeshLambertMaterial).color);
   }
 }
 

@@ -69,8 +69,6 @@ export interface ViewSettings {
   quality?: Partial<RenderQuality>;
   /** A real-time sky behind the models, from the sun's bearing and height (needs Sun & shadows). */
   sky?: boolean;
-  /** Material classes (brick, glass, timber...) matched from the models' names. */
-  materials?: boolean;
   /** Model names this view leaves out, e.g. one project per side of the
       compare slider. Unset shows every model. */
   hiddenModels?: string[];

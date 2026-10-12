@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { useColumnLabelsStore } from '../state/columnLabelsStore';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { buildColumnContext, buildColumns, type ColumnCtx, type ColumnDef } from './columns';
@@ -294,12 +295,14 @@ export function useColumnCatalog(model: ScheduleModel | null): ColumnDef[] {
   const calc = useCalcColumnsStore((s) => s.columns);
   const loadedModels = useModelsStore((s) => s.models);
   const groups = useLinkGroupsStore((s) => s.groups);
+  const labels = useColumnLabelsStore((s) => s.labels);
   return useMemo(() => {
     if (!model) return [];
     // Columns from the linked 3D objects join the catalog, so calculated columns can use them too.
     const base = [...buildColumns(model), ...buildObjectColumns(sharedActivityObjects(model, loadedModels, groups), loadedModels)];
-    return [...base, ...calcColumnDefs(calc, base)];
-  }, [model, calc, loadedModels, groups]);
+    // The user's own names for columns replace the headings (baseLabel keeps the original, to reset to).
+    return [...base, ...calcColumnDefs(calc, base)].map((c) => (labels[c.id] ? { ...c, label: labels[c.id], baseLabel: c.label } : c));
+  }, [model, calc, loadedModels, groups, labels]);
 }
 
 /** The calculated columns as number fields for the Filters panel (group "Calculated"). */

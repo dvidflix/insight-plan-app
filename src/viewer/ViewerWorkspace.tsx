@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from 'react';
+import { useEffect, useRef, type ReactNode } from 'react';
 import { useViewerEngine } from './ViewerEngineContext';
 import { ViewerCanvas } from './ViewerCanvas';
 import type { ViewerLayout } from './viewerUI';
@@ -11,6 +11,10 @@ import { ColourLegend } from '../components/ColourLegend';
 import { ViewerToolbar } from '../components/ViewerToolbar';
 import { useClashRunner } from './useClashRunner';
 import { useDataTableStore } from '../state/dataTableStore';
+import { DockMenu, DockPanel, DockSideView } from '../components/Dock';
+import { DOCK_DEFAULTS, useDockStore } from '../state/dockStore';
+import { ClashPanel } from '../components/ClashPanel';
+import { ViewpointsList } from '../components/ViewpointsList';
 import { useModelEdgesStore } from '../state/modelEdgesStore';
 import { useModelsStore } from '../state/modelsStore';
 
@@ -22,6 +26,23 @@ import { useModelsStore } from '../state/modelsStore';
     page is showing, so its tabs go in the side pane. */
 export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean }) {
   const engine = useViewerEngine();
+  // The toolbar row grows when its tools wrap onto a second row: the docks' headers and the side pane's tab bar follow
+  // it (--toolbar-row-h), so the bars along the top stay level. Hidden (another page showing): the default applies.
+  const toolbarRow = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = toolbarRow.current;
+    if (!el) return;
+    const root = document.documentElement;
+    const sync = () => {
+      const h = Math.round(el.getBoundingClientRect().height);
+      if (h > 0) root.style.setProperty('--toolbar-row-h', `${h}px`);
+      else root.style.removeProperty('--toolbar-row-h');
+    };
+    const ro = new ResizeObserver(sync);
+    ro.observe(el);
+    sync();
+    return () => { ro.disconnect(); root.style.removeProperty('--toolbar-row-h'); };
+  }, []);
   // Clashes & contacts stay up to date in the background (3D & Related shows them).
   useClashRunner();
   // Models switched off in the Models list (Edges) are drawn without edge lines.
@@ -33,7 +54,9 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
   const split = useViewSettingsStore((s) => s.pages[layout === 'model' ? 'model' : 'sequence'].split);
   const compare = useViewSettingsStore((s) => s.pages[layout === 'model' ? 'model' : 'sequence'].compare ?? 'side');
   const inSequence = layout !== 'model';
-  const tablePos = useDataTableStore((s) => s.position);
+  const vpSide = useDockStore((d) => d.placement.viewpoints ?? DOCK_DEFAULTS.viewpoints);
+  const tableOpen = useDataTableStore((s) => s.open);
+  const setTableOpen = useDataTableStore((s) => s.setOpen);
   // 4D image / video export in progress (Export tab): stoppable from here
   // while the Configuration pane is hidden for the capture.
   const recPhase = useRecordingStore((s) => s.phase);
@@ -52,13 +75,21 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
     return () => { void engine.resetOverrides(); };
   }, [inSequence, engine]);
 
-  // The toolbar belongs to the viewer column only: side panels (4D's Gantt /
-  // Tasks / Scenarios and the Scenario panel) run from the page header down,
-  // and the tools wrap onto a second row when the viewer is narrow.
+  // The toolbar belongs to the viewer column only: the docks (left, bottom, right: data table, Gantt, Tasks, ...) hold
+  // the panels, the side panels (4D's configuration) run from the page header down, and the tools wrap onto a second row
+  // when the viewer is narrow.
   return (
     <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
+      <DockPanel id="datatable" label="Data table" shown={tableOpen} setShown={setTableOpen}><ModelDataTable /></DockPanel>
+      <DockPanel id="clash" label="Clash"><ClashPanel /></DockPanel>
+      <DockPanel id="viewpoints" label="Viewpoints">
+        <div className="dock-viewpoints">
+                    <div className="dock-viewpoints__list"><ViewpointsList layout={vpSide === 'bottom' ? 'cards' : 'list'} actions /></div>
+        </div>
+      </DockPanel>
+      <DockSideView side="left" />
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-        <div className="filterbar schedule-toolbar viewer-toolbar-row">
+        <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>
           <div className="schedule-toolbar__left">
             <ViewerToolbar />
           </div>
@@ -70,19 +101,20 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
                 <b>Stop export</b>
               </button>
             )}
+            <DockMenu />
           </div>
         </div>
-        <div style={{ display: 'flex', flexDirection: tablePos === 'bottom' ? 'column' : 'row', flex: 1, minWidth: 0, minHeight: 0 }}>
-          {tablePos === 'left' && <ModelDataTable />}
+        <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
             <ViewerCanvas layout={effectiveLayout} />
             {overlay}
             {/* Models > Colour: what each colour stands for. */}
             {!inSequence && paneActive && <ColourLegend />}
           </div>
-          {tablePos !== 'left' && <ModelDataTable />}
+          <DockSideView side="bottom" />
         </div>
       </div>
+      <DockSideView side="right" />
       {panel}
       {!inSequence && paneActive && <ModelConfigPanel />}
       {/* Models > Colour applies while the Models page shows (4D colours its own way). */}

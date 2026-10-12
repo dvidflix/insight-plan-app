@@ -1,5 +1,4 @@
 import { FEATURES } from '../features';
-import { ResizeHandle, useResizableWidth } from './ResizeHandle';
 import { PropertiesGrid } from './PropertiesGrid';
 import { BottomDock } from './BottomDock';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
@@ -7,7 +6,6 @@ import { createPortal } from 'react-dom';
 import { usePersistedState } from '../utils/persistedState';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
 import { rerenderTables, type ModelPanelId } from '../viewer/viewerUI';
-import { ViewpointsHeaderActions, ViewpointsList } from './ViewpointsList';
 import { MarkersPanel } from './MarkersPanel';
 import { ConstructionPlanesPanel } from './ConstructionPlanesPanel';
 import { SectionCutsPanel } from './SectionCutsPanel';
@@ -19,7 +17,7 @@ import { IfcTree } from './IfcTree';
 import { ModelsList } from './ModelsList';
 import { ClashResultsList } from './ContactsSection';
 import { SidePane, type SidePaneTab } from './SidePane';
-import { IconChevronLeft, IconCamera, IconClose, IconCube, IconList, IconPalette, IconSearch, IconTree, IconViewTable } from './icons';
+import { IconCamera, IconCube, IconList, IconPalette, IconSearch, IconTree, IconViewTable } from './icons';
 import { TopicsPanel } from './TopicsPanel';
 import { useTopicsStore } from '../state/topicsStore';
 import { ModelChecksPanel } from './ModelChecksPanel';
@@ -33,6 +31,8 @@ import { ModelColorPanel } from './ModelColorPanel';
 import { SearchSetsPanel } from './SearchSetsPanel';
 import { DataTablePanel } from './DataTablePanel';
 import { useDataTableStore } from '../state/dataTableStore';
+import { DockPanel } from './Dock';
+import { useDockStore } from '../state/dockStore';
 import { useOnSplit, useSidePaneStore, useViewpointsToggle } from '../state/sidePaneStore';
 import { useAppPrefsStore, useExperimental } from '../state/appPrefsStore';
 import { useViewSettingsStore } from '../state/viewSettingsStore';
@@ -49,59 +49,26 @@ const TABS: SidePaneTab<TabId>[] = [
   { id: 'colour', label: 'Colour', icon: <IconPalette /> },
 ];
 
-type ToolId = 'checks' | 'compare' | 'topics';
-const TOOLS: { id: ToolId; label: string }[] = [
-  { id: 'checks', label: 'Model checks' },
-  { id: 'compare', label: 'Compare models' },
-  { id: 'topics', label: 'Topics' },
-];
-
-/** The Models page's tools (Model checks, Compare models, Topics): a wide panel beside the 3D view with its own
-    tabs, like 4D Sequencing's Gantt / Tasks / Scenarios; drag its edge to resize, › folds it away. */
+/** The Models page's tools (Model checks, Compare models, Topics): dock panels beside / under the 3D view, like 4D
+    Sequencing's Gantt, Tasks and Scenarios — each can sit left, bottom or right (the Panels menu), and panels on the
+    same side are tabs. */
 export function ModelToolsPanel() {
   const panels = useSequenceUiStore((s) => s.modelPanels);
-  const [saved, setTool] = usePersistedState<ToolId>('models.toolsTab', 'checks');
-  const [collapsed, setCollapsed] = usePersistedState('models.toolsCollapsed', false);
-  const width = useResizableWidth('models.toolsWidth', 560, 300, 900);
   // The Topics tool (BCF) is an experimental feature.
   const bcf = useAppPrefsStore((s) => s.experimental.bcf);
-  const tools = useMemo(() => TOOLS.filter((t) => t.id !== 'topics' || bcf), [bcf]);
-  const tool: ToolId = tools.some((t) => t.id === saved) ? saved : 'checks';
   // A topic marker clicked in 3D brings the Topics tool up.
   const openRequest = useTopicsStore((st) => st.openRequest);
   const seen = useRef(openRequest);
   useEffect(() => {
     if (openRequest === seen.current) return;
     seen.current = openRequest;
-    if (bcf) {
-      setTool('topics');
-      setCollapsed(false);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [openRequest]);
-  if (collapsed) {
-    return (
-      <button type="button" className="pane-reveal" onClick={() => setCollapsed(false)} title="Show the tools panel" aria-label="Show the tools panel">
-        <IconChevronLeft />
-      </button>
-    );
-  }
+    if (bcf) useDockStore.getState().reveal('topics');
+  }, [openRequest, bcf]);
   return (
     <>
-      <ResizeHandle onMouseDown={width.startDrag(true)} />
-      <aside className="config-panel seq-panel" style={{ width: width.width, minWidth: 0 }}>
-        <div className="filter-sidebar-header seq-righthead">
-          <div className="config-tabs seq-righttabs" role="tablist">
-            {tools.map((t) => (
-              <button key={t.id} type="button" role="tab" aria-selected={tool === t.id} className={`config-tab${tool === t.id ? ' active' : ''}`} onClick={() => setTool(t.id)}>{t.label}</button>
-            ))}
-          </div>
-          <button className="icon-btn pane-hide" type="button" onClick={() => setCollapsed(true)} title="Hide panel" aria-label="Hide panel" style={{ marginLeft: 'auto' }}><IconClose /></button>
-        </div>
-        <div className="config-panel__body model-config__body" style={{ flex: 1, minHeight: 0 }}>
-          {tool === 'checks' ? <ModelChecksPanel /> : tool === 'compare' ? <ModelComparePanel /> : panels ? <div className="tpc-pad"><TopicsPanel /></div> : <div className="flt__hint">Starting viewer…</div>}
-        </div>
-      </aside>
+      <DockPanel id="checks" label="Model checks"><ModelChecksPanel /></DockPanel>
+      <DockPanel id="compare" label="Compare models"><ModelComparePanel /></DockPanel>
+      {bcf && <DockPanel id="topics" label="Topics">{panels ? <div className="tpc-pad"><TopicsPanel /></div> : <div className="flt__hint">Starting viewer…</div>}</DockPanel>}
     </>
   );
 }
@@ -201,8 +168,7 @@ export function ViewpointsPanel({ element, settings, extra = [] }: { element: HT
   return (
     <BottomDock title="Viewpoint attributes" storageKey="savedViewAttrs" dock={<SavedViewAttrsPanel />}>
       <LitPanel element={element} />
-      <LitSection panel={element} label="Viewpoints" leading defaultOpen headerAction={<ViewpointsHeaderActions />}><ViewpointsList /></LitSection>
-      <LitSection panel={element} label="Fly-through"><FlythroughPanel /></LitSection>
+      <LitSection panel={element} label="Fly-through" leading defaultOpen><FlythroughPanel /></LitSection>
       <LitSection panel={element} label="Decorators"><div className="disp vsp"><MarkersPanel /><ConstructionPlanesPanel /></div></LitSection>
       {cutsOn && <LitSection panel={element} label="Section cuts"><SectionCutsPanel /></LitSection>}
       {extra.map((x) => (

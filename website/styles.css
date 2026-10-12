@@ -802,3 +802,25 @@ nav.sitefoot__cols a { font-size: var(--fs-body); font-weight: 400; opacity: 1; 
 .cmp--calc thead th { font-size: var(--fs-body); }
 .cmp--calc tbody th { font-size: var(--fs-body); }
 .cmp--calc .cmp-group th { font-size: var(--fs-body); }
+
+/* Phone and tablet: the menu folds into a three-line button that opens the list below the header */
+.navtoggle { display: none; }
+@media (max-width: 860px) {
+  header.top .wrap { flex-wrap: nowrap; justify-content: space-between; align-items: center; height: 72px; min-height: 0; padding: 0 16px; row-gap: 0; }
+  .navtoggle { display: inline-grid; place-items: center; width: 46px; height: 46px; border: 1px solid var(--hair); border-radius: 12px; background: #fff; color: var(--ink); cursor: pointer; padding: 0; }
+  .navtoggle svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
+  .navtoggle__x { display: none; }
+  header.top.nav-open .navtoggle__x { display: inline; }
+  header.top.nav-open .navtoggle__bars { display: none; }
+  header.top nav { display: none; position: absolute; top: 100%; left: 0; right: 0; width: auto; flex-direction: column; align-items: stretch; justify-content: flex-start; flex-wrap: nowrap; gap: 0; padding: 4px 16px 20px; background: #fff; border-bottom: 1px solid var(--hair); box-shadow: 0 24px 40px -24px rgba(11, 19, 48, .3); max-height: calc(100vh - 72px); overflow: auto; }
+  header.top.nav-open nav { display: flex; }
+  header.top nav > a, header.top nav .menu__btn { display: flex; width: 100%; justify-content: space-between; align-items: center; padding: 14px 4px; font-size: var(--fs-sub); border-bottom: 1px solid var(--hair); }
+  header.top nav > a.btn { display: block; width: auto; margin-top: 16px; text-align: center; padding: 12px 22px; border-bottom: 0; }
+  header.top nav .menu { width: 100%; }
+  header.top nav .menu .menu__panel, header.top nav .menu .menu__panel:not(.menu__panel--list) { position: static; width: auto; max-height: none; overflow: visible; padding: 0; }
+  header.top nav .menu__panel::before { display: none; }
+  header.top nav .menu__title { padding: 14px 4px 4px; }
+  header.top nav .menu__grid { padding: 4px 0 8px; }
+  header.top nav .menu__links { padding: 0 0 8px; }
+  header.top nav .menu__panel--list .menu__title + .menu__links + .menu__title { margin-inline: 0; padding-inline: 4px; }
+}

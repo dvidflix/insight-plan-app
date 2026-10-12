@@ -313,6 +313,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
                       <span className="th-label">{c.label}{sortCol === c.id ? (sortAsc ? ' ▲' : ' ▼') : ''}</span>
                       <span
+                        className="col-resizer"
                         aria-label={`Resize ${c.label}`}
                         onMouseDown={(e) => {
                           const startX = e.clientX;
@@ -326,10 +327,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
                           window.addEventListener('mouseup', onUp);
                           e.preventDefault();
                         }}
-                        style={{ display: 'inline-block', width: 8, height: 16, cursor: 'col-resize', borderLeft: '1px solid rgba(60,64,68,0.12)', paddingLeft: 4, color: 'var(--text-dim)' }}
-                      >
-                        │
-                      </span>
+                      />
                     </div>
                   </th>
                 ))}

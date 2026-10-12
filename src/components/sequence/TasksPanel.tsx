@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { resolveColumns, type ColumnCtx, type ColumnDef } from '../../schedule/columns';
 import { activityFinishMs, activityStartMs, statusInPeriod } from '../../schedule/linking';
@@ -6,7 +6,11 @@ import { alignDown, nextBoundary } from '../../schedule/period';
 import { useSequenceTimelineStore, type StepUnit } from '../../state/sequenceTimelineStore';
 import { usePersistedState } from '../../utils/persistedState';
 import { ActivityTable } from '../schedule/ActivityTable';
-import { ColumnsPanel } from '../schedule/ColumnsPanel';
+import { resolveRuleColor } from '../schedule/ColorPanel';
+import { applyFieldFilters, buildFilterFields } from '../../schedule/filterFields';
+import { useCalcFilterFields } from '../../schedule/calculatedColumns';
+import { spreadColumns } from '../../schedule/periodShare';
+import { useTasksSettingsStore } from '../../state/tasksSettingsStore';
 
 export type TasksMode = 'active' | 'starting' | 'finishing';
 type Mode = TasksMode;
@@ -89,16 +93,20 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
   const stepUnit = useSequenceTimelineStore((s) => s.stepUnit);
   const basis = useSequenceTimelineStore((s) => s.basis);
   const [mode, setMode] = usePersistedState<Mode>('sequence.tasksMode', 'active');
-  const [groupByWbs, setGroupByWbs] = usePersistedState('sequence.tasksGroupByWbs', true);
-  const [columnIds, setColumnIds] = usePersistedState<string[]>('sequence.taskColumns', defaultColumnIds(catalog));
-  const [pickerOpen, setPickerOpen] = useState(false);
+  // Columns, filters, grouping, sorting and colours are set in the Tasks settings pane (TasksDock).
+  const settings = useTasksSettingsStore();
+  const calcFields = useCalcFilterFields(model);
+  const filterFields = useMemo(() => buildFilterFields(model, calcFields), [model, calcFields]);
 
   const period = useMemo(() => (date === null ? null : { start: alignDown(date, stepUnit), end: nextBoundary(date, stepUnit) }), [date, stepUnit]);
 
-  const tasks = useMemo(() => (period ? tasksInPeriod(model, period, basis, mode) : []), [model, period, basis, mode]);
+  const inPeriod = useMemo(() => (period ? tasksInPeriod(model, period, basis, mode) : []), [model, period, basis, mode]);
+  const tasks = useMemo(() => applyFieldFilters(inPeriod, filterFields, settings.filters), [inPeriod, filterFields, settings.filters]);
 
-  const columns = useMemo(() => resolveColumns(catalog, columnIds), [catalog, columnIds]);
-  const defaults = useMemo(() => defaultColumnIds(catalog), [catalog]);
+  // Units and costs are the period's share of each task (spread over its working days), not its total every week.
+  const columns = useMemo(() => spreadColumns(resolveColumns(catalog, settings.columnIds ?? defaultColumnIds(catalog)), period, basis), [catalog, settings.columnIds, period, basis]);
+  const catalogById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
+  const ruleColour = (a: Activity) => resolveRuleColor(settings.colorRules, a, (field, act) => catalogById.get(field)?.text(act, columnCtx));
 
   return (
     <div className="tasks">
@@ -114,18 +122,6 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
               <button key={m.id} type="button" role="tab" aria-selected={mode === m.id} title={m.title} className={mode === m.id ? 'active' : ''} onClick={() => setMode(m.id)}>{m.label}</button>
             ))}
           </div>
-          <button type="button" className={`btn btn--small${groupByWbs ? ' primary' : ''}`} aria-pressed={groupByWbs} onClick={() => setGroupByWbs((v) => !v)} title="Group the list by WBS, like the Table View">By WBS</button>
-          <div className="tasks__cols">
-            <button type="button" className="btn btn--small" aria-expanded={pickerOpen} onClick={() => setPickerOpen((v) => !v)}>Columns</button>
-            {pickerOpen && (
-              <>
-                <div className="check-pop-backdrop" onClick={() => setPickerOpen(false)} />
-                <div className="tasks__pop">
-                  <ColumnsPanel catalog={catalog} views={[{ id: 'tasks', label: 'Tasks', selected: columnIds, defaults, onChange: setColumnIds }]} calculated />
-                </div>
-              </>
-            )}
-          </div>
         </div>
       </div>
       <div className="tasks__table">
@@ -135,12 +131,18 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
           <ActivityTable
             activities={tasks}
             selectedId={selectedId}
-            groupBy={groupByWbs ? 'wbs' : ''}
+            groupBy={settings.groupByWbs && settings.groupRules.length === 0 ? 'wbs' : ''}
+            groupRules={settings.groupRules}
+            sortField={settings.sortRules[0]?.field}
+            sortDirection={settings.sortRules[0]?.direction}
+            collapseAllSignal={settings.collapseAll}
+            expandAllSignal={settings.expandAll}
+            wbsPalette={settings.wbsPalette}
             columns={columns}
             catalog={catalog}
             columnCtx={columnCtx}
             persistKey="sequence.tasks"
-            getColor={getColor ? (a) => tint(getColor(a)) : undefined}
+            getColor={(a) => tint(getColor?.(a) ?? null) ?? ruleColour(a)}
             showTotals
             onSelect={onSelect}
             onOpen={onOpen}

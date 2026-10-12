@@ -105,10 +105,9 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   const secondSettings = useViewSettingsStore((s) => s.pages[page].second);
   // Experimental features that are switched off have no effect, whatever a view saved.
   const cutsExperiment = useExperimental('sectionCuts');
-  const materialsExperiment = useExperimental('realisticMaterials');
   const mainSettings = useMemo(
-    () => ({ ...savedMain, sectionStyle: cutsExperiment ? savedMain.sectionStyle : undefined, materials: materialsExperiment ? savedMain.materials : false }),
-    [savedMain, cutsExperiment, materialsExperiment],
+    () => ({ ...savedMain, sectionStyle: cutsExperiment ? savedMain.sectionStyle : undefined }),
+    [savedMain, cutsExperiment],
   );
   useEffect(() => {
     if (ready) void engine.applyViewSettings(mainSettings);
@@ -148,18 +147,11 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
     if (ready) engine.setConcrete(concrete ? realism : null);
   }, [engine, ready, concrete, realism]);
 
-  // Real-time sky (needs the sun) and the material classes, per view.
+  // Real-time sky (needs the sun), per view.
   const skyOn = realistic && !!mainSettings.sky;
-  const materialsOn = !!mainSettings.materials;
   useEffect(() => {
     if (ready) engine.setSky(skyOn, realism);
   }, [engine, ready, skyOn, realism]);
-  useEffect(() => {
-    if (ready) engine.setMaterials(materialsOn);
-  }, [engine, ready, materialsOn]);
-  useEffect(() => {
-    if (ready) engine.setClassChoices(realism.mapping ?? {});
-  }, [engine, ready, realism.mapping]);
 
   // Bumped when the split's right view is created, so it gets its settings.
   const [secondaryTick, setSecondaryTick] = useState(0);
@@ -181,15 +173,9 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   }, [engine, ready, secondConcrete, realism, secondaryTick]);
 
   const secondSky = secondRealistic && !!secondSettings.sky;
-  const secondMaterials = materialsExperiment && !!secondSettings.materials;
   useEffect(() => {
     if (ready) engine.secondary?.setSky(secondSky, realism);
   }, [engine, ready, secondSky, realism, secondaryTick]);
-  useEffect(() => {
-    if (!ready) return;
-    engine.secondary?.setMaterials(secondMaterials);
-    if (secondMaterials) void engine.ensureMaterialEntries();
-  }, [engine, ready, secondMaterials, secondaryTick]);
 
   // Storey slide per model — a setting of each view (3D tab), so the
   // left and right views, and the Models / 4D pages, can each differ.

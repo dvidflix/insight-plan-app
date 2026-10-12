@@ -329,14 +329,7 @@ export const ResourceWbsTable = forwardRef<WbsTableHandle, ResourceWbsTableProps
                 >
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: c.numeric ? 'flex-end' : 'space-between', gap: 6 }}>
                     <span className="th-label">{c.label}{arrow(c.id)}</span>
-                    <span
-                      aria-label={`Resize ${c.label}`}
-                      onMouseDown={startResize(c)}
-                      onClick={(e) => e.stopPropagation()}
-                      style={{ display: 'inline-block', width: 8, height: 16, cursor: 'col-resize', borderLeft: '1px solid rgba(60,64,68,0.12)', paddingLeft: 4, color: 'var(--text-dim)', flexShrink: 0 }}
-                    >
-                      │
-                    </span>
+                    <span className="col-resizer" aria-label={`Resize ${c.label}`} onMouseDown={startResize(c)} onClick={(e) => e.stopPropagation()} />
                   </div>
                 </th>
               ))}

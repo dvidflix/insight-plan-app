@@ -1,7 +1,7 @@
 // Makes the folder that goes to Cloudflare:  node website/publish.mjs
 // It builds the pages, then copies only what the public site needs into website-dist/ (no build scripts, no README),
-// with a _headers file for the security headers. The contact-form worker is not in that folder: wrangler deploys it
-// alongside (see website/wrangler.jsonc and "Publish on Cloudflare" in website/README.md).
+// with a _headers file for the security headers. The contact-form worker is not in that folder
+// (see "Publish on Cloudflare" in website/README.md).
 import { execFileSync } from 'node:child_process';
 import { cpSync, existsSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
@@ -35,4 +35,4 @@ writeFileSync(path.join(OUT, '_headers'), [
   '',
 ].join('\n'));
 
-console.log(`\n${count} files, the fonts folder and _headers are in ${OUT}\nNow deploy it:  npx wrangler deploy --config website/wrangler.jsonc   (first-time set-up is in website/README.md)`);
+console.log(`\n${count} files, the fonts folder and _headers are in ${OUT}\nNow upload that folder in the Cloudflare dashboard (see website/README.md)`);

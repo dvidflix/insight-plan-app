@@ -19,6 +19,8 @@ export interface ColumnCtx {
 export interface ColumnDef {
   id: string;
   label: string;
+  /** The column's own name, when `label` is a name the user gave it. */
+  baseLabel?: string;
   /** Section it is listed under in the column picker. */
   group: string;
   /** Default pixel width. */

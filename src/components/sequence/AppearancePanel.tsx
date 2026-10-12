@@ -1,3 +1,4 @@
+import { MATERIAL_CLASSES, MATERIAL_CLASS_LABELS, type MaterialClass } from '../../viewer/materialClasses';
 import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 import { HexColorInput } from '../HexColorInput';
@@ -150,31 +151,38 @@ export function AppearancePanel() {
   );
 }
 
-function StageEditor({ label, stage, onChange }: { label: string; stage: AppearanceStage; onChange: (s: AppearanceStage) => void }) {
+/** One row of the stages table: colour (unchecked = the object's own), opacity in % (blank = its own), surface. */
+function StageRow({ label, stage, onChange }: { label: string; stage: AppearanceStage; onChange: (s: AppearanceStage) => void }) {
   return (
-    <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
-      <span style={{ width: 90, fontSize: 12, color: 'var(--text-dim)' }}>{label}</span>
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-        <input type="checkbox" checked={stage.color !== null} onChange={(e) => onChange({ ...stage, color: e.target.checked ? '#7c5cff' : null })} />
-        color
-      </label>
-      <HexColorInput value={stage.color ?? '#7c5cff'} disabled={stage.color === null} onChange={(hex) => onChange({ ...stage, color: hex })} />
-      <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 11 }}>
-        <input type="checkbox" checked={stage.opacity !== null} onChange={(e) => onChange({ ...stage, opacity: e.target.checked ? 1 : null })} />
-        opacity
-      </label>
-      <input
-        type="range"
-        min={0}
-        max={1}
-        step={0.05}
-        value={stage.opacity ?? 1}
-        disabled={stage.opacity === null}
-        onChange={(e) => onChange({ ...stage, opacity: Number(e.target.value) })}
-        style={{ width: 80 }}
-      />
-      <span style={{ fontSize: 11, color: 'var(--text-dim)', width: 28 }}>{stage.opacity === null ? '—' : `${Math.round(stage.opacity * 100)}%`}</span>
-    </div>
+    <tr>
+      <td style={{ fontSize: 12, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>{label}</td>
+      <td>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+          <input type="checkbox" aria-label={`${label} colour`} checked={stage.color !== null} onChange={(e) => onChange({ ...stage, color: e.target.checked ? '#7c5cff' : null })} />
+          <HexColorInput value={stage.color ?? '#7c5cff'} disabled={stage.color === null} onChange={(hex) => onChange({ ...stage, color: hex })} />
+        </div>
+      </td>
+      <td>
+        <input
+          type="number"
+          min={0}
+          max={100}
+          step={5}
+          placeholder="own"
+          aria-label={`${label} opacity, percent`}
+          title="Opacity 0 to 100 %; blank = the object's own"
+          value={stage.opacity === null ? '' : Math.round(stage.opacity * 100)}
+          onChange={(e) => onChange({ ...stage, opacity: e.target.value === '' ? null : Math.min(100, Math.max(0, Number(e.target.value) || 0)) / 100 })}
+          style={{ width: 60 }}
+        />
+      </td>
+      <td>
+        <select value={stage.surface ?? ''} onChange={(e) => onChange({ ...stage, surface: (e.target.value || undefined) as MaterialClass | undefined })} title="Surface: draw the object as brick, rebar mesh, glass... instead of a flat colour" aria-label={`${label} surface`} style={{ width: '100%' }}>
+          <option value="">Flat colour</option>
+          {MATERIAL_CLASSES.map((c) => <option key={c} value={c}>{MATERIAL_CLASS_LABELS[c]}</option>)}
+        </select>
+      </td>
+    </tr>
   );
 }
 
@@ -198,11 +206,23 @@ function ProfileEditor({ profile, onSave, onCancel, onDelete }: { profile: Appea
       </label>
 
       <h3 style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Appearance</h3>
-      <div style={{ color: 'var(--text-dim)', fontSize: 11, marginBottom: 6 }}>Unchecked = use the object's original color/opacity. Active start/finish interpolate across the activity's duration.</div>
-      <StageEditor label="Start" stage={p.startColor} onChange={(s) => setP({ ...p, startColor: s })} />
-      <StageEditor label="Active start" stage={p.activeStart} onChange={(s) => setP({ ...p, activeStart: s })} />
-      <StageEditor label="Active finish" stage={p.activeFinish} onChange={(s) => setP({ ...p, activeFinish: s })} />
-      <StageEditor label="End" stage={p.endColor} onChange={(s) => setP({ ...p, endColor: s })} />
+      <div style={{ color: 'var(--text-dim)', fontSize: 11, marginBottom: 6 }}>Unchecked colour / blank opacity = the object's own. Active start/finish interpolate across the activity's duration.</div>
+      <table style={{ width: '100%', borderCollapse: 'separate', borderSpacing: '0 4px' }}>
+        <thead>
+          <tr style={{ fontSize: 11, color: 'var(--text-dim)', textAlign: 'left' }}>
+            <th style={{ fontWeight: 500 }}>Stage</th>
+            <th style={{ fontWeight: 500 }}>Colour</th>
+            <th style={{ fontWeight: 500 }}>Opacity %</th>
+            <th style={{ fontWeight: 500 }}>Surface</th>
+          </tr>
+        </thead>
+        <tbody>
+          <StageRow label="Start" stage={p.startColor} onChange={(s) => setP({ ...p, startColor: s })} />
+          <StageRow label="Active start" stage={p.activeStart} onChange={(s) => setP({ ...p, activeStart: s })} />
+          <StageRow label="Active finish" stage={p.activeFinish} onChange={(s) => setP({ ...p, activeFinish: s })} />
+          <StageRow label="End" stage={p.endColor} onChange={(s) => setP({ ...p, endColor: s })} />
+        </tbody>
+      </table>
 
       <h3 style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginTop: 12 }}>Growth simulation</h3>
       <div style={{ color: 'var(--text-dim)', fontSize: 11, marginBottom: 6 }}>

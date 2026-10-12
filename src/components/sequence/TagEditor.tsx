@@ -2,7 +2,7 @@ import { useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useModelsStore } from '../../state/modelsStore';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
-import { DEFAULT_TAG_FONT_SIZE, tagCss, type Tag } from '../../state/tagsStore';
+import { DEFAULT_TAG_FONT_SIZE, placementOf, tagCss, useTagsStore, type Tag } from '../../state/tagsStore';
 import { HexColorInput } from '../HexColorInput';
 import { taskFieldOptions } from '../../schedule/linkGroups';
 import { TASK_TOKENS, renderTag } from '../../schedule/tagTemplate';
@@ -22,6 +22,7 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
   const schedule = useSequenceSchedule();
   const models = useModelsStore((s) => s.models);
   const basis = useSequenceTimelineStore((s) => s.basis);
+  const placement = placementOf(tag, useTagsStore((s) => s.placement));
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [propQuery, setPropQuery] = useState('');
 
@@ -66,6 +67,10 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
       <div className="tags__row">
         <input value={tag.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Tag name" style={{ flex: 1 }} />
         {onDelete && <button type="button" className="btn btn--small" onClick={onDelete} title="Delete tag">{'✕'}</button>}
+      </div>
+      <div className="segmented-choice" title="Where this tag shows in the 3D view">
+        <button type="button" className={placement === 'corner' ? 'active' : ''} onClick={() => onChange({ placement: 'corner' })}>Bottom corner</button>
+        <button type="button" className={placement === 'objects' ? 'active' : ''} onClick={() => onChange({ placement: 'objects' })}>Next to objects</button>
       </div>
 
       <textarea

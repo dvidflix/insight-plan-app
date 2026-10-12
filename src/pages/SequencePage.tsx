@@ -14,18 +14,23 @@ import { activityFinishMs, activityStartMs, progressAt, scheduleRange, statusInP
 import type { GrowthSpec } from '../viewer/growthAnimator';
 import { DEFAULT_GROWTH_DISTANCE, DEFAULT_GROWTH_VECTOR, GROWS_OVER_TASK, GROWTH_DIRECTIONS } from '../schedule/appearance';
 import { alignDown, nextBoundary } from '../schedule/period';
-import { computeGroupLinks, type LinkGroup } from '../schedule/linkGroups';
+import { computeGroupLinks, type GroupLinkResult, type LinkGroup } from '../schedule/linkGroups';
+import { expandWork } from '../schedule/subSequence';
 import { isPerTask, renderTag, renderTagLines } from '../schedule/tagTemplate';
-import { tagStyleOf, useActiveTagsStore, useTagsStore, type ActiveTagLabel, type TagCallout } from '../state/tagsStore';
+import { placementOf, tagStyleOf, useActiveTagsStore, useTagsStore, type ActiveTagLabel, type TagCallout } from '../state/tagsStore';
 import { lerpStage, type AppearanceProfile, type AppearanceStage } from '../schedule/appearance';
-import { ResizeHandle, useResizableWidth } from '../components/ResizeHandle';
+import { DockPanel } from '../components/Dock';
+import { MATERIAL_CLASS_COLOURS, encodeSurfaceInColour } from '../viewer/materialClasses';
+import { DOCK_DEFAULTS, activeOn, useDockStore } from '../state/dockStore';
+import { DockGantt } from '../components/sequence/DockGantt';
+import { TasksDock } from '../components/sequence/TasksDock';
+import { SequenceResources } from '../components/sequence/SequenceResources';
 import { LinkGroupsPanel, exportLinkGroupMatches, useLinkGroupsUiStore } from '../components/sequence/LinkGroupsPanel';
 import { AppearancePanel, useAppearanceUiStore } from '../components/sequence/AppearancePanel';
 import { TaskFieldFromSets } from '../components/sequence/TaskFieldFromSets';
 import { LabelPanel } from '../components/sequence/LabelPanel';
-import { GanttChart } from '../components/schedule/GanttChart';
 import { usePersistedState } from '../utils/persistedState';
-import { DEFAULT_GANTT_COLUMNS, buildColumnContext, resolveColumns } from '../schedule/columns';
+import { buildColumnContext } from '../schedule/columns';
 import { useColumnCatalog } from '../schedule/calculatedColumns';
 import { TasksPanel } from '../components/sequence/TasksPanel';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
@@ -34,7 +39,7 @@ import { View3DPanel } from '../components/View3DPanel';
 import { NavisworksExport } from '../components/sequence/ExportPanel';
 import { MediaExport } from '../components/sequence/MediaExport';
 import { SidePane, type SidePaneTab } from '../components/SidePane';
-import { IconAddCircleOutline, IconChevronLeft, IconDownload, IconSync, IconCamera, IconClose, IconCube, IconList, IconSchema, IconSearch, IconTree, IconViewTable } from '../components/icons';
+import { IconAddCircleOutline, IconDownload, IconSync, IconCamera, IconCube, IconList, IconSchema, IconSearch, IconTree, IconViewTable } from '../components/icons';
 import { DataTablePanel } from '../components/DataTablePanel';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { useDataTableStore } from '../state/dataTableStore';
@@ -124,9 +129,7 @@ function shouldClaim(candidateStatus: SequenceStatus, candidateStart: number, ow
 export function SequencePanel() {
   const engine = useViewerEngine();
   const model = useSequenceSchedule();
-  const [ganttColumnIds] = usePersistedState<string[]>('gantt.columns', DEFAULT_GANTT_COLUMNS);
   const ganttCatalog = useColumnCatalog(model);
-  const ganttColumns = useMemo(() => resolveColumns(ganttCatalog, ganttColumnIds), [ganttCatalog, ganttColumnIds]);
   const ganttColumnCtx = useMemo(() => (model ? buildColumnContext(model) : null), [model]);
   // Every loaded (non-hidden) model is "active" at once — no picking one
   // model out of several to drive the 4D sequence off of.
@@ -174,7 +177,6 @@ export function SequencePanel() {
   const topicSeen = useRef(topicOpenRequest);
   const fourD = useOpenSections<'options' | 'groups' | 'appearance' | 'taskField' | 'why'>('sequence.4dSections2', ['options', 'groups', 'appearance']);
   const basis = useSequenceTimelineStore((s) => s.basis);
-  const setBasis = useSequenceTimelineStore((s) => s.setBasis);
   const stepUnit = useSequenceTimelineStore((s) => s.stepUnit);
   const date = useSequenceTimelineStore((s) => s.date);
   // Defaults match pre-toggle behavior (unmatched elements just show with
@@ -189,20 +191,21 @@ export function SequencePanel() {
   const ignoreAppearance = useIgnoreTimelinerStore((s) => s.ignoreAppearance);
   const setIgnoreAppearance = useIgnoreTimelinerStore((s) => s.setIgnoreAppearance);
   const [unassignedMode, setUnassignedMode] = usePersistedState<'original' | 'red'>('sequence.unassignedMode', 'original');
-  const [rightTab, setRightTab] = usePersistedState<'gantt' | 'tasks' | 'scenarios' | 'topics'>('sequence.rightTab', 'gantt');
-  const [ganttCollapsed, setGanttCollapsed] = usePersistedState('sequence.ganttCollapsed', false);
-  // The Topics tab goes with the experimental BCF option.
-  useEffect(() => {
-    if (rightTab === 'topics' && !experimental.bcf) setRightTab('gantt');
-    if (rightTab === 'scenarios' && !experimental.scenarios) setRightTab('gantt');
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rightTab, experimental.bcf, experimental.scenarios]);
+  // Gantt, Tasks, Resources, Scenarios, Clash and Topics are dock panels (components/Dock.tsx): the user puts each on the
+  // left, at the bottom or on the right. Scenarios has a second part (its dock) that goes with it while it shows.
+  const tasksShowing = useDockStore((d) => {
+    const side = d.placement.tasks ?? DOCK_DEFAULTS.tasks;
+    return side !== 'closed' && !d.folded[side] && activeOn(d, side) === 'tasks';
+  });
+  const scenariosShowing = useDockStore((d) => {
+    const side = d.placement.scenarios ?? DOCK_DEFAULTS.scenarios;
+    return side !== 'closed' && !d.folded[side] && activeOn(d, side) === 'scenarios';
+  });
   useEffect(() => {
     if (topicOpenRequest === topicSeen.current) return;
     topicSeen.current = topicOpenRequest;
     if (!experimental.bcf) return;
-    setGanttCollapsed(false);
-    setRightTab('topics');
+    useDockStore.getState().reveal('topics');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [topicOpenRequest]);
   // Bumped by the "Refresh graphics" buttons to force the driving effect to
@@ -245,7 +248,6 @@ export function SequencePanel() {
   type Applied = { visible: Map<number, boolean>; color: Map<number, string | null>; opacity: Map<number, number | null> };
   const appliedRef = useRef(new Map<string, Applied>());
   const needsFullApplyRef = useRef(false);
-  const ganttWidth = useResizableWidth('sequence.ganttWidth', 560, 300, 900);
 
   // Each (model, group) pair keeps its own task->element map (so a group's
   // attached Appearance Profile, if any, can be applied per-group).
@@ -408,10 +410,9 @@ export function SequencePanel() {
       // Who owns each element, for the growth simulation below.
       const ownerOf = new Map<number, { activity: Activity; profile: AppearanceProfile | null; status: SequenceStatus }>();
 
-      const applySource = (taskToElements: Map<string, number[]>, profile: AppearanceProfile | null) => {
-        for (const [activityId, localIds] of taskToElements) {
-          const activity = activityById.get(activityId);
-          if (!activity) continue;
+      const applySource = (links: GroupLinkResult, overlapPct: number, profile: AppearanceProfile | null) => {
+        // A group with a sub-sequence drives each part of an activity over its own slot of the activity's time.
+        for (const { activity, ids: localIds } of expandWork(links.taskToElements, links.sub, activityById, basis, overlapPct)) {
           const status = statusInPeriod(activity, periodStart, periodEnd, basis);
           // How far along the activity is by the END of the period.
           const progress = progressAt(activity, new Date(periodEnd), basis);
@@ -437,7 +438,7 @@ export function SequencePanel() {
             if (isVisible) {
               visible.add(id);
               hidden.delete(id);
-              colorOf.set(id, stage.color);
+              colorOf.set(id, stage.surface ? encodeSurfaceInColour(stage.color ?? MATERIAL_CLASS_COLOURS[stage.surface], stage.surface) : stage.color);
               opacityOf.set(id, stage.opacity);
             } else {
               hidden.add(id);
@@ -451,7 +452,7 @@ export function SequencePanel() {
 
       for (const { modelId, group, links } of groupResultsByModel) {
         if (modelId !== m.modelId || group.hidden) continue;
-        applySource(links.taskToElements, group.appearanceProfileId ? appearanceById.get(group.appearanceProfileId) ?? null : null);
+        applySource(links, group.subSequence?.enabled ? group.subSequence.overlapPct : 0, group.appearanceProfileId ? appearanceById.get(group.appearanceProfileId) ?? null : null);
       }
       // Hidden groups (the eye in the Link Groups table): their objects stay
       // hidden, except those another group shows.
@@ -666,6 +667,7 @@ export function SequencePanel() {
   // the current step contributes its tag's text (once per active task when
   // the template uses a {Task…} token).
   const tags = useTagsStore((s) => s.tags);
+  const legacyPlacement = useTagsStore((s) => s.placement);
   const setActiveTags = useActiveTagsStore((s) => s.set);
   useEffect(() => {
     if (!model || date === null || tags.length === 0) {
@@ -704,9 +706,11 @@ export function SequencePanel() {
       if (!active || active.size === 0 || !tag) continue;
       const entries = [...active.values()];
       const lines = renderTagLines(tag.template, entries, basis);
-      if (lines.length > 0) items.push({ key: `${group.id}:${tag.id}`, color: group.color, lines, style: tagStyleOf(tag) });
+      const nextToObjects = placementOf(tag, legacyPlacement) === 'objects';
+      if (lines.length > 0 && !nextToObjects) items.push({ key: `${group.id}:${tag.id}`, color: group.color, lines, style: tagStyleOf(tag) });
       // Next-to-object callouts: one per task for a per-task template, else
       // one for the whole group at the middle of all its active objects.
+      if (!nextToObjects) continue;
       if (isPerTask(tag.template)) {
         for (const e of entries) {
           const text = renderTag(tag.template, { activeCount: entries.length, task: e.task, elements: e.elements, basis }).trim();
@@ -719,7 +723,7 @@ export function SequencePanel() {
       }
     }
     setActiveTags(items, callouts);
-  }, [model, models, date, stepUnit, basis, groups, tags, groupResultsByModel, setActiveTags]);
+  }, [model, models, date, stepUnit, basis, groups, tags, legacyPlacement, groupResultsByModel, setActiveTags]);
   useEffect(() => () => useActiveTagsStore.getState().set([]), []);
 
   const previewGroup = async (group: LinkGroup) => {
@@ -736,26 +740,40 @@ export function SequencePanel() {
     await engine.fitToModelIds(idsByModel);
   };
 
-  const rightTabs = (
-    <div className="config-tabs seq-righttabs" role="tablist">
-      {([['gantt', 'Gantt'], ['tasks', 'Tasks'], ...(experimental.scenarios ? [['scenarios', 'Scenarios'] as const] : []), ...(experimental.bcf ? [['topics', `Topics${topicCount ? ` (${topicCount})` : ''}`] as const] : [])] as const).map(([id, label]) => (
-        <button key={id} type="button" role="tab" aria-selected={rightTab === id} className={`config-tab${rightTab === id ? ' active' : ''}`} onClick={() => setRightTab(id)}>{label}</button>
-      ))}
-    </div>
-  );
-
   // No programme (or model) yet: Scenarios still works — it is how a
   // building's first programme gets generated.
-  const collapsedStrip = (
-    <button type="button" className="pane-reveal" onClick={() => setGanttCollapsed(false)} title="Show Gantt panel" aria-label="Show Gantt panel">
-      <IconChevronLeft />
-    </button>
-  );
-  const collapseButton = (
-    <button className="icon-btn pane-hide" type="button" onClick={() => setGanttCollapsed(true)} title="Hide panel" aria-label="Hide panel" style={{ marginLeft: 'auto' }}><IconClose /></button>
+  const needProgramme = <div style={{ padding: 12, color: 'var(--text-dim)' }}>Load both an IFC model and a P6 programme in Inputs to start 4D sequencing — or generate one from the Scenarios tab.</div>;
+  const ready = !!model && models.length > 0;
+  const dockPanels = (
+    <>
+      <DockPanel id="gantt" label="Gantt">
+        {ready && model ? (
+          <>
+            {linkedActivityIds.size > 0 && (
+              <div className="seq-linked" style={{ padding: '3px 10px', borderBottom: '1px solid var(--border)' }}>
+                {linkedActivityIds.size} activit{linkedActivityIds.size === 1 ? 'y' : 'ies'} linked to selection
+              </div>
+            )}
+            <DockGantt model={model} getColor={taskColorOf ?? undefined} selectedId={ganttSelectedId} highlightedIds={linkedActivityIds} scrollToId={focusActivityId} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
+          </>
+        ) : needProgramme}
+      </DockPanel>
+      <DockPanel id="tasks" label="Tasks">
+        {ready && model && ganttColumnCtx ? (
+          <TasksPanel model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} selectedId={ganttSelectedId} getColor={taskColorOf ?? undefined} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
+        ) : needProgramme}
+      </DockPanel>
+      <DockPanel id="resources" label="Resources">
+        {ready && model ? <SequenceResources model={model} /> : needProgramme}
+      </DockPanel>
+      {experimental.scenarios && <DockPanel id="scenarios" label="Scenarios"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
+      {experimental.bcf && <DockPanel id="topics" label={`Topics${topicCount ? ` (${topicCount})` : ''}`}><div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div></DockPanel>}
+      {experimental.scenarios && scenariosShowing && <ScenarioDock />}
+      {tasksShowing && ready && model && ganttColumnCtx && <TasksDock model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} />}
+    </>
   );
 
-  if (!model || models.length === 0) {
+  if (!ready) {
     // The side pane's tabs that need no programme still show (a model alone, or nothing loaded).
     const emptyTabs = [
       { id: 'models', label: '3D & Related', icon: <IconCube /> },
@@ -765,82 +783,23 @@ export function SequencePanel() {
       { id: 'datatable', label: 'Data table', icon: <IconViewTable /> },
     ] satisfies SidePaneTab<LinkTab>[];
     const emptyActive = emptyTabs.some((t) => t.id === linkTab) ? linkTab : 'models';
-    const emptyPane = (
-      <SidePane timelineSettings tabs={emptyTabs} active={emptyActive} onSelect={setLinkTab} bodyClassName="config-panel__body model-config__body">
-        {emptyActive === 'models' && <RelatedTab page="sequence" />}
-        {emptyActive === 'tree' && <SelectionTreeTab />}
-        {emptyActive === 'search' && <SearchSetsPanel />}
-        {emptyActive === 'datatable' && <DataTablePanel />}
-        {emptyActive === 'properties' && <PropertiesTab />}
-      </SidePane>
-    );
-    if (ganttCollapsed) return <>{collapsedStrip}{emptyPane}</>;
     return (
       <>
-        {emptyPane}
-        <ResizeHandle onMouseDown={ganttWidth.startDrag(true)} />
-        <aside className="config-panel seq-panel" style={{ width: ganttWidth.width, minWidth: 0 }}>
-          <div className="filter-sidebar-header seq-righthead">
-            {rightTabs}
-            {collapseButton}
-          </div>
-          <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-            {rightTab === 'scenarios' ? (
-              <ScenarioTabContent onOpen={jumpToPourStart} />
-            ) : rightTab === 'topics' && experimental.bcf ? (
-              <div className="tpc-pad" style={{ overflow: 'auto' }}><TopicsPanel /></div>
-            ) : (
-              <div style={{ padding: 12, color: 'var(--text-dim)' }}>
-                Load both an IFC model and a P6 programme in Inputs to start 4D sequencing — or generate one from the Scenarios tab.
-              </div>
-            )}
-          </div>
-        </aside>
-        {rightTab === 'scenarios' && <ScenarioDock />}
+        {dockPanels}
+        <SidePane timelineSettings tabs={emptyTabs} active={emptyActive} onSelect={setLinkTab} bodyClassName="config-panel__body model-config__body">
+          {emptyActive === 'models' && <RelatedTab page="sequence" />}
+          {emptyActive === 'tree' && <SelectionTreeTab />}
+          {emptyActive === 'search' && <SearchSetsPanel />}
+          {emptyActive === 'datatable' && <DataTablePanel />}
+          {emptyActive === 'properties' && <PropertiesTab />}
+        </SidePane>
       </>
     );
   }
 
   return (
     <>
-      {ganttCollapsed ? (
-        collapsedStrip
-      ) : (
-        <>
-          <ResizeHandle onMouseDown={ganttWidth.startDrag(true)} />
-          <aside className="config-panel seq-panel" style={{ width: ganttWidth.width, minWidth: 0 }}>
-            <div className="filter-sidebar-header seq-righthead">
-              {rightTabs}
-              {rightTab === 'gantt' && linkedActivityIds.size > 0 && (
-                <span className="seq-linked">
-                  {linkedActivityIds.size} activit{linkedActivityIds.size === 1 ? 'y' : 'ies'} linked to selection
-                </span>
-              )}
-              {collapseButton}
-            </div>
-            <div style={{ flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-              {rightTab === 'scenarios' && <ScenarioTabContent onOpen={jumpToPourStart} />}
-              {rightTab === 'topics' && experimental.bcf && <div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div>}
-              {rightTab === 'tasks' && ganttColumnCtx && (
-                <TasksPanel model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} selectedId={ganttSelectedId} getColor={taskColorOf ?? undefined} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
-              )}
-              {rightTab === 'gantt' && <GanttChart
-                getColor={taskColorOf ?? undefined}
-                columns={ganttColumns}
-                columnCtx={ganttColumnCtx!}
-                activities={model.activities}
-                relationships={model.relationships}
-                selectedId={ganttSelectedId}
-                highlightedIds={linkedActivityIds}
-                scrollToId={focusActivityId}
-                onSelect={(a) => setGanttSelectedId(a.id)}
-                onOpen={(a) => void openActivity(a)}
-              />}
-            </div>
-          </aside>
-          {rightTab === 'scenarios' && <ScenarioDock />}
-        </>
-      )}
+      {dockPanels}
 
       <SidePane
         timelineSettings
@@ -964,30 +923,6 @@ export function SequencePanel() {
                   <View3DPanel
                     page="sequence"
                     colorSection={(view) => <ViewColorSettings view={view} elements={allElements} />}
-                    extra={
-                      <>
-                        <div className="disp__row">
-                          <span>Gantt panel</span>
-                          <button type="button" role="switch" aria-checked={!ganttCollapsed} className={`switch${!ganttCollapsed ? ' on' : ''}`} onClick={() => setGanttCollapsed((v) => !v)}>
-                            <span className="switch__thumb" />
-                          </button>
-                        </div>
-
-                        <div className="cols__heading">
-                          <span>
-                            Playback{' '}
-                            <InfoTip>The playback Step and the timeline scrubber live in the status bar; the date/week label on the viewer is set in the Label tab.</InfoTip>
-                          </span>
-                        </div>
-                        <label className="disp__row">
-                          <span>Date basis</span>
-                          <select value={basis} onChange={(e) => setBasis(e.target.value as 'planned' | 'actual')} title="Date basis">
-                            <option value="planned">Planned</option>
-                            <option value="actual">Actual</option>
-                          </select>
-                        </label>
-                      </>
-                    }
                   />
                 );
                 const extra = [

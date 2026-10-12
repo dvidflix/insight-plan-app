@@ -4,6 +4,7 @@ import { IconSectionChevron } from '../icons';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { CalcColumnsEditor } from './CalcColumnsEditor';
 import { queryMatcher } from '../../schedule/search';
+import { useColumnLabelsStore } from '../../state/columnLabelsStore';
 
 export interface ColumnView {
   id: string;
@@ -16,7 +17,7 @@ export interface ColumnView {
 
 /** What the picker needs of a column (the schedule's ColumnDef, or the
     Models data table's properties). */
-type PickColumn = Pick<ColumnDef, 'id' | 'label' | 'group'>;
+type PickColumn = Pick<ColumnDef, 'id' | 'label' | 'group'> & { baseLabel?: string };
 
 interface ColumnsPanelProps {
   catalog: PickColumn[];
@@ -56,6 +57,10 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
   const [search, setSearch] = useState('');
   const [closed, setClosed] = useState<Set<string>>(() => new Set(closedGroups));
   const [dragId, setDragId] = useState<string | null>(null);
+  // The programme's columns can be given short names of your own (and reset to their own).
+  const [renaming, setRenaming] = useState<string | null>(null);
+  const rename = useColumnLabelsStore((s) => s.rename);
+  const resetLabel = useColumnLabelsStore((s) => s.reset);
 
   const byId = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
   const shown = useMemo(() => (view ? view.selected.filter((id) => byId.has(id)) : []), [view, byId]);
@@ -164,7 +169,21 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
             onDragEnd={() => setDragId(null)}
           >
             <span className="cols__grip" aria-hidden="true">⋮⋮</span>
-            <span className="cols__label" title={byId.get(id)!.label}>{byId.get(id)!.label}</span>
+            {calculated && renaming === id ? (
+              <input
+                className="cols__rename"
+                autoFocus
+                defaultValue={byId.get(id)!.label}
+                onFocus={(e) => e.target.select()}
+                onBlur={(e) => { rename(id, e.target.value, byId.get(id)!.baseLabel ?? byId.get(id)!.label); setRenaming(null); }}
+                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenaming(null); }}
+                aria-label="Column name"
+              />
+            ) : (
+              <span className={`cols__label${byId.get(id)!.baseLabel ? ' is-renamed' : ''}`} title={byId.get(id)!.baseLabel ? `${byId.get(id)!.label} (was “${byId.get(id)!.baseLabel}”)` : byId.get(id)!.label} onDoubleClick={() => calculated && setRenaming(id)}>{byId.get(id)!.label}</span>
+            )}
+            {calculated && byId.get(id)!.baseLabel && <button type="button" className="cols__icon" onClick={() => resetLabel(id)} aria-label={`Reset the name to “${byId.get(id)!.baseLabel}”`} title={`Reset the name to “${byId.get(id)!.baseLabel}”`}>↺</button>}
+            {calculated && renaming !== id && <button type="button" className="cols__icon" onClick={() => setRenaming(id)} aria-label={`Rename ${byId.get(id)!.label}`} title="Give the column a short name of your own (double-click the name too)">✎</button>}
             <button type="button" className="cols__icon" disabled={i === 0} onClick={() => move(id, -1)} aria-label={`Move ${byId.get(id)!.label} up`} title="Move up">↑</button>
             <button type="button" className="cols__icon" disabled={i === shown.length - 1} onClick={() => move(id, 1)} aria-label={`Move ${byId.get(id)!.label} down`} title="Move down">↓</button>
             <button type="button" className="cols__icon cols__icon--remove" onClick={() => toggle(id)} aria-label={`Hide ${byId.get(id)!.label}`} title="Hide column">✕</button>

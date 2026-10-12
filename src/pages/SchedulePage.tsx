@@ -26,7 +26,7 @@ import { type SortRule } from '../components/schedule/SortPanel';
 import { ConfigPanel } from '../components/schedule/ConfigPanel';
 import { ResizeHandle, ResizeHandleH, useResizableHeight, useResizableWidth } from '../components/ResizeHandle';
 import { useSidePaneStore } from '../state/sidePaneStore';
-import { matchesSearchTokens, searchTokens } from '../schedule/search';
+import { activitySearchText, matchesSearchTokens, searchTokens } from '../schedule/search';
 import { exportGanttXlsx } from '../schedule/exportGanttXlsx';
 import { applyFieldFilters, buildFilterFields, emptyFilterState, type FieldFilterState } from '../schedule/filterFields';
 import { useScheduleStore, useVisibleSchedules } from '../state/scheduleStore';
@@ -162,7 +162,7 @@ type SchedulePageProps = {
 
 /** The two activity views, each with its own filters, grouping, sorting,
     colours and WBS options (Explorer shows both). */
-type ListView = 'table' | 'gantt';
+export type ListView = 'table' | 'gantt';
 
 /** Earlier versions shared one set of these between Table and Gantt: each
     view starts from it. */
@@ -175,7 +175,7 @@ function legacy<T>(key: string, fallback: T): T {
   }
 }
 
-function useViewSettings(view: ListView) {
+export function useViewSettings(view: ListView) {
   const [groupRules, setGroupRules] = usePersistedState<GroupRule[]>(`${view}.groupRules`, legacy('schedule.groupRules', []));
   const [sortRules, setSortRules] = usePersistedState<SortRule[]>(`${view}.sortRules`, legacy('schedule.sortRules', []));
   const [colorRules, setColorRules] = usePersistedState<ColorRule[]>(`${view}.colorRules`, legacy('schedule.colorRules', []));
@@ -255,7 +255,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
     // Only where the search box shows, so a leftover search never hides activities elsewhere.
     const tokens = listTools ? searchTokens(search) : [];
     if (tokens.length > 0) {
-      list = list.filter((a) => matchesSearchTokens(a.code, tokens) || matchesSearchTokens(a.name, tokens));
+      list = list.filter((a) => matchesSearchTokens(activitySearchText(a), tokens));
     }
     return list;
   }, [model, search, listTools]);
@@ -435,7 +435,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
             <input
               className="filterbar__search"
               type="search"
-              placeholder="Search name/code…"
+              placeholder="Search anything: ID, name, codes, UDFs, resources…"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />

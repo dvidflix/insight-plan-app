@@ -3,7 +3,7 @@ import { pageLicensed } from './licence/licence';
 import { DuplicateTabButton, DuplicateTabSync } from './components/DuplicateTab';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { useSidePaneStore } from './state/sidePaneStore';
+import { useDockStore } from './state/dockStore';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
 import { SettingsSync } from './components/SettingsMenu';
@@ -206,7 +206,12 @@ export default function App() {
         // Ctrl+Alt+9: show / hide Viewpoints on the Models and 4D Sequencing pages.
         if (e.code === 'Digit9' && (pageRef.current === 'model' || pageRef.current === 'sequence')) {
           e.preventDefault();
-          if (!e.repeat) useSidePaneStore.getState().requestViewpoints(pageRef.current);
+          // Viewpoints is a dock panel now: the shortcut shows or closes it.
+          if (!e.repeat) {
+            const dock = useDockStore.getState();
+            if (dock.sideOf('viewpoints') === 'closed') dock.reveal('viewpoints');
+            else dock.close('viewpoints');
+          }
           return;
         }
         const target = PAGE_SHORTCUTS[e.code];

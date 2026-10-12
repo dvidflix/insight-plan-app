@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
-import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataTablePosition, type DataTableTab } from '../state/dataTableStore';
+import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataTableTab } from '../state/dataTableStore';
+import { DOCK_DEFAULTS, useDockStore, type DockSide } from '../state/dockStore';
 import { useTwin } from './useTwin';
 import { SEVERAL } from '../viewer/twinMatch';
 import { useSearchSetsStore } from '../state/searchSetsStore';
@@ -35,6 +36,7 @@ export function DataTablePanel() {
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
   const store = useDataTableStore();
+  const dockSide = useDockStore((d) => d.placement.datatable ?? DOCK_DEFAULTS.datatable);
   const { columns, setColumns, filters, filterMatch, groupRules, sortRules, colorRules, tab, patch, totals } = store;
   const baseFields = useModelFields();
   const twin = useTwin();
@@ -99,8 +101,8 @@ export function DataTablePanel() {
     <div className="dtp">
       <div className="disp dtp__top">
         <label className="disp__row">
-          <span>Position <InfoTip>Under the 3D view, or beside it on the left or right.</InfoTip></span>
-          <select value={store.position} onChange={(e) => patch({ position: e.target.value as DataTablePosition })}>
+          <span>Position <InfoTip>Under the 3D view, or beside it on the left or right. Panels on the same side share it as tabs (the Panels menu in the toolbar moves any panel).</InfoTip></span>
+          <select value={dockSide === 'closed' ? 'bottom' : dockSide} onChange={(e) => useDockStore.getState().move('datatable', e.target.value as DockSide)}>
             <option value="bottom">Bottom</option>
             <option value="left">Left</option>
             <option value="right">Right</option>

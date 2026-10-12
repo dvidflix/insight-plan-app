@@ -1,8 +1,11 @@
+import type { MaterialClass } from '../viewer/materialClasses';
 /** One stage of an appearance profile: `color` null means "use the object's
     original color", `opacity` null means "use the object's original opacity". */
 export interface AppearanceStage {
   color: string | null;
   opacity: number | null;
+  /** Drawn with this surface (brick, rebar mesh, glass...) in the colour, instead of a flat colour. */
+  surface?: MaterialClass;
 }
 
 export type AppearanceAction = 'install' | 'remove' | 'maintain';
@@ -125,5 +128,5 @@ export function lerpStage(a: AppearanceStage, b: AppearanceStage, t: number): Ap
   let opacity = a.opacity ?? b.opacity;
   if (a.opacity !== null && b.opacity !== null) opacity = a.opacity + (b.opacity - a.opacity) * t;
   else if (t >= 1) opacity = b.opacity ?? a.opacity;
-  return { color, opacity };
+  return { color, opacity, surface: t < 1 ? a.surface : b.surface };
 }

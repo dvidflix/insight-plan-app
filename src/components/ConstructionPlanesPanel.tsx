@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { HexColorInput } from './HexColorInput';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useConstructionPlanesStore, type ConstructionPlane } from '../state/constructionPlanesStore';
 import { usePersistedState } from '../utils/persistedState';
@@ -124,7 +125,7 @@ export function ConstructionPlanesPanel() {
                   <div className="cpl__edit">
                     <CornerInput label="Min corner" value={[p.minX, p.minY, p.minZ]} onChange={([minX, minY, minZ]) => update(p.id, { minX, minY, minZ })} />
                     <CornerInput label="Max corner" value={[p.maxX, p.maxY, p.maxZ]} onChange={([maxX, maxY, maxZ]) => update(p.id, { maxX, maxY, maxZ })} />
-                    <input type="color" value={p.color} onChange={(e) => update(p.id, { color: e.target.value })} title="Colour" aria-label="Colour" />
+                    <HexColorInput value={p.color} onChange={(hex) => update(p.id, { color: hex })} />
                     <button type="button" className="mkt__del" title={p.visible ? 'Hide this plane' : 'Show this plane'} aria-label={p.visible ? 'Hide this plane' : 'Show this plane'} onClick={() => update(p.id, { visible: !p.visible })}>{p.visible ? <IconEye width={14} height={14} /> : <IconEyeOff width={14} height={14} />}</button>
                     <button type="button" className="mkt__del" title="Duplicate this plane" aria-label="Duplicate this plane" onClick={() => duplicate(p.id)}><IconCopy /></button>
                     <button type="button" className="mkt__del" title="Delete this plane" aria-label="Delete this plane" onClick={() => remove(p.id)}><IconTrash /></button>

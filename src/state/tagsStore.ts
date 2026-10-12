@@ -9,6 +9,8 @@ export interface Tag extends TagStyle {
   id: string;
   name: string;
   template: string;
+  /** Where this tag shows: stacked in the bottom corner, or next to its objects. Absent (older tags): the app-wide choice made before tags had their own. */
+  placement?: TagPlacement;
 }
 
 /** How a tag's text looks on the viewer; every field is optional (the default look). */
@@ -44,6 +46,9 @@ export function tagCss(s: TagStyle | undefined): CSSProperties {
 /** Where active tags show on the 4D viewer: stacked in the bottom corner,
     or as callouts next to the objects they belong to. */
 export type TagPlacement = 'corner' | 'objects';
+
+/** A tag's own placement, else the older app-wide one. */
+export const placementOf = (tag: Pick<Tag, 'placement'>, fallback: TagPlacement): TagPlacement => tag.placement ?? fallback;
 
 interface TagsState {
   tags: Tag[];

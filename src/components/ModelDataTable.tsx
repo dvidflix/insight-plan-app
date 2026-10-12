@@ -14,7 +14,7 @@ import { downloadCsv } from '../utils/csv';
 import { useTwin } from './useTwin';
 import { withUnit } from '../viewer/units';
 import { ExpandCollapseToggle } from './ExpandCollapseToggle';
-import { IconCheckboxChecked, IconChevronRight, IconDownloadFile, IconExpandMore, IconPin } from './icons';
+import { IconCheckboxChecked, IconChevronRight, IconDownloadFile, IconExpandMore, IconPin, IconTune } from './icons';
 
 const ROW_H = 24;
 const OVERSCAN = 10;
@@ -110,7 +110,7 @@ export function ModelDataTable() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
-  const { open, height, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setOpen, setHeight, setWidth, patch, configure, position, width: tableWidth, setWidth_: setTableWidth } = useDataTableStore();
+  const { open, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setWidth, patch, configure, presets, applyPreset } = useDataTableStore();
 
   const [search, setSearch] = useState('');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
@@ -422,28 +422,6 @@ export function ModelDataTable() {
     window.addEventListener('mouseup', up);
   };
 
-  /** Beside the view: drag the edge facing it to change the width. */
-  const startResizeWidth = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startX = e.clientX;
-    const startW = tableWidth;
-    const dir = position === 'left' ? 1 : -1;
-    const move = (m: MouseEvent) => setTableWidth(Math.min(window.innerWidth * 0.7, Math.max(260, startW + dir * (m.clientX - startX))));
-    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
-  const startResizeHeight = (e: React.MouseEvent) => {
-    e.preventDefault();
-    const startY = e.clientY;
-    const startH = height;
-    const move = (m: MouseEvent) => setHeight(Math.min(window.innerHeight * 0.8, Math.max(140, startH + startY - m.clientY)));
-    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
-    window.addEventListener('mousemove', move);
-    window.addEventListener('mouseup', up);
-  };
-
   const activeFilters = conditions.filter((c) => conditionTest(c)).length;
   const summary = [
     activeFilters && `${activeFilters} filter${activeFilters === 1 ? '' : 's'}`,
@@ -462,12 +440,8 @@ export function ModelDataTable() {
   const selectedShown = shown.reduce((n, r) => n + (selected.has(r.key) ? 1 : 0), 0);
 
   return (
-    <div className={`mdt${position === 'bottom' ? '' : ` mdt--${position}`}`} style={position === 'bottom' ? { height } : { width: tableWidth }}>
-      {position === 'bottom'
-        ? <div className="mdt__grip" onMouseDown={startResizeHeight} role="separator" aria-label="Resize data table" />
-        : <div className={`mdt__grip mdt__grip--side mdt__grip--${position}`} onMouseDown={startResizeWidth} role="separator" aria-orientation="vertical" aria-label="Resize data table" />}
+    <div className="mdt mdt--docked">
       <div className="mdt__bar">
-        <button type="button" className="mdt__toggle" onClick={() => setOpen(false)} title="Hide the data table (the side pane's Data table tab shows it again)">{'▼'} Data table</button>
         <span className="mdt__count">
           {shown.length === scoped.length ? `${scoped.length.toLocaleString()} elements` : `${shown.length.toLocaleString()} of ${scoped.length.toLocaleString()}`}
           {selectedShown > 0 && ` · ${selectedShown.toLocaleString()} selected`}
@@ -488,6 +462,12 @@ export function ModelDataTable() {
         >
           <IconPin width={18} height={18} />
         </button>
+        {presets.length > 0 && (
+          <select className="mdt__scope" value="" onChange={(e) => { if (e.target.value) applyPreset(e.target.value); }} title="Switch the table to a saved list (columns, filters, grouping, sorting, colours); Save as… in Configure keeps the current one" aria-label="Saved lists">
+            <option value="">List…</option>
+            {presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        )}
         <input className="mdt__search" type="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {groupRules.length > 0 && (
           <span className="mdt__group-actions">
@@ -503,10 +483,8 @@ export function ModelDataTable() {
           <button className="btn btn--small" type="button" onClick={selectShown} disabled={shown.length === 0} title="Select every row currently shown" aria-label="Select all"><IconCheckboxChecked width={16} height={16} /></button>
           <button className="btn btn--small" type="button" onClick={exportCsv} disabled={shown.length === 0 || columns.length === 0} title={`Export the ${shown.length.toLocaleString()} rows shown, with the shown columns, to a CSV file (search and filters applied)`} aria-label="Export CSV"><IconDownloadFile width={16} height={16} /></button>
           <span className="mdt__sep" />
-          <button className="btn btn--small mdt__configure" type="button" onClick={() => configure()} title={`Columns, filters, grouping, sorting and row colours: the side pane's Data table tab${summary ? `
-Now: ${summary}` : ''}`}>
-            Configure
-          </button>
+          <button className="btn btn--small mdt__configure" aria-label="Configure" type="button" onClick={() => configure()} title={`Columns, filters, grouping, sorting and row colours: the side pane's Data table tab${summary ? `
+Now: ${summary}` : ''}`}><IconTune width={16} height={16} /></button>
         </div>
       </div>
 

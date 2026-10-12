@@ -15,7 +15,9 @@ import { applyPatch, planPatch, type Patch, type PatchPlan, type SpatialNode } f
 import { originatingSystem } from '../ids/step';
 import { ensureModelFile } from '../state/modelFiles';
 import { dbRoot } from '../state/projectDbStore';
-import { IconDownload, IconUpload } from './icons';
+import { IconDownload, IconInfoOutlined, IconPencil, IconUpload } from './icons';
+import { IdsEditor } from './IdsEditor';
+import { RulesViewer } from './RulesViewer';
 import { IconExpander } from './icons';
 
 /** Models page › Model checks: the IDS files in docs/ids run against the
@@ -42,6 +44,8 @@ async function originatingSystemOf(modelName: string): Promise<string> {
 }
 
 export function ModelChecksPanel() {
+  // The IDS editor (an existing file, or a new one) and the custom rules replace the list while open.
+  const [view, setView] = useState<{ kind: 'edit'; name: string; xml: string } | { kind: 'new' } | { kind: 'rules' } | null>(null);
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const hidden = useModelsStore((s) => s.hiddenModelIds);
@@ -130,6 +134,11 @@ export function ModelChecksPanel() {
     }
   };
 
+  const saveIds = async (fileName: string, xml: string) => {
+    if (FEATURES.serverFiles) await postIds(`ids?name=${encodeURIComponent(fileName)}`, xml, false);
+    else downloadBlob(fileName, new Blob([xml], { type: 'application/xml' }));
+  };
+
   const summary = useMemo(() => {
     const list = results ?? [];
     const scored = list.filter((r) => bandOf(r) !== 'info');
@@ -188,6 +197,11 @@ export function ModelChecksPanel() {
     return m;
   }, [results]);
 
+  if (view?.kind === 'rules') return <RulesViewer onClose={() => setView(null)} />;
+  if (view?.kind === 'edit' || view?.kind === 'new') {
+    return <IdsEditor key={view.kind === 'edit' ? view.name : 'new'} name={view.kind === 'edit' ? view.name : null} xml={view.kind === 'edit' ? view.xml : null} canSave={FEATURES.serverFiles} onSave={saveIds} onClose={() => setView(null)} />;
+  }
+
   return (
     <div className="model-checks">
       <div className="model-checks__bar">
@@ -199,6 +213,9 @@ export function ModelChecksPanel() {
             <IconUpload /> Import IDS
           </button>
         )}
+        <button type="button" className="btn" onClick={() => setView({ kind: 'new' })} title="Write a new IDS file: what must be in the models">
+          + New IDS
+        </button>
         {results && (
           <button type="button" className="btn" onClick={exportCsv} title="Every specification and failing element">
             <IconDownload /> CSV
@@ -236,6 +253,18 @@ export function ModelChecksPanel() {
             <button
               type="button"
               className="icon-btn model-checks__export"
+              title={`Edit ${f.name}`}
+              aria-label={`Edit ${f.name}`}
+              onClick={(e) => {
+                e.preventDefault();
+                setView({ kind: 'edit', name: f.name, xml: f.xml });
+              }}
+            >
+              <IconPencil />
+            </button>
+            <button
+              type="button"
+              className="icon-btn model-checks__export"
               title={`Export ${f.name}`}
               aria-label={`Export ${f.name}`}
               onClick={(e) => {
@@ -261,6 +290,9 @@ export function ModelChecksPanel() {
               }
             />
             {RULES_FILE} ({rules.length})
+            <button type="button" className="icon-btn model-checks__export" title="See the custom rules: what each checks and its settings" aria-label="See the custom rules" onClick={(e) => { e.preventDefault(); setView({ kind: 'rules' }); }}>
+              <IconInfoOutlined />
+            </button>
           </label>
         )}
       </div>

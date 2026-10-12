@@ -1,8 +1,8 @@
 import { useEffect, useState, type ReactNode } from 'react';
+import { HexColorInput } from './HexColorInput';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type RenderQuality } from '../viewer/renderQuality';
 import { DEFAULT_OUTLINE, DEFAULT_SECTION_STYLE, SECTION_CATEGORY_DEFS, type OutlineSettings, type SectionStyle } from '../viewer/visualAids';
-import { MATERIAL_CLASSES, MATERIAL_CLASS_LABELS, type ClassChoice, type MaterialEntry } from '../viewer/materialClasses';
 import { useModelsStore } from '../state/modelsStore';
 import type { ViewId } from '../state/colorModeStore';
 import { DEFAULT_CAPTION, useViewSettingsStore, type CaptionPosition, type CompareMode, type Projection, type ViewKey, type ViewPage, type ViewStyle } from '../state/viewSettingsStore';
@@ -172,11 +172,11 @@ function ViewLabels({ page, view }: { page: ViewPage; view: ViewKey }) {
             </select>
           </label>
           <label className="disp__row"><span>Size (px)</span><input type="number" min={8} max={96} value={c.size} onChange={(e) => set({ size: Math.max(8, Math.min(96, Number(e.target.value) || 16)) })} style={{ width: 70 }} /></label>
-          <label className="disp__row"><span>Text colour</span><input type="color" value={c.color} onChange={(e) => set({ color: e.target.value })} /></label>
+          <label className="disp__row"><span>Text colour</span><HexColorInput value={c.color} onChange={(hex) => set({ color: hex })} /></label>
           <label className="disp__row">
             <span>Background</span>
             <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-              <input type="color" value={c.background ?? '#18181b'} disabled={c.background === null} onChange={(e) => set({ background: e.target.value })} />
+              <HexColorInput value={c.background ?? '#18181b'} disabled={c.background === null} onChange={(hex) => set({ background: hex })} />
               <label style={{ display: 'flex', alignItems: 'center', gap: 4 }}><input type="checkbox" checked={c.background === null} onChange={(e) => set({ background: e.target.checked ? null : '#18181b' })} />None</label>
             </span>
           </label>
@@ -225,13 +225,13 @@ function DisplaySettings({ page, view, sections }: { page: ViewPage; view: ViewK
             </label>
             <label className="disp__row">
               <span>Edge colour</span>
-              <input type="color" value={s.quality?.edgeColor || '#2a2a2a'} onChange={(e) => set('quality', { ...s.quality, edgeColor: e.target.value })} />
+              <HexColorInput value={s.quality?.edgeColor || '#2a2a2a'} onChange={(hex) => set('quality', { ...s.quality, edgeColor: hex })} />
             </label>
           </>
         )}
         <label className="disp__row">
           <span>Background</span>
-          <input type="color" value={s.background} onChange={(e) => set('background', e.target.value)} />
+          <HexColorInput value={s.background} onChange={(hex) => set('background', hex)} />
         </label>
       </Group>
       <Group id="quality" title="Render quality" tip="Occlusion, resolution and edges of this view. Lower values are faster on big models; Presentation is for stills and recording." sections={sections}>
@@ -256,8 +256,6 @@ function DisplaySettings({ page, view, sections }: { page: ViewPage; view: ViewK
           onConcrete={(v) => set('concrete', v)}
           sky={!!s.sky}
           onSky={(v) => set('sky', v)}
-          materials={!!s.materials}
-          onMaterials={(v) => set('materials', v)}
         />
       </Group>
     </>
@@ -292,7 +290,7 @@ function SelectionColour() {
         {SELECTION_COLORS.map((c) => (
           <button key={c.hex} type="button" className={`sel-colors__swatch${color.toLowerCase() === c.hex ? ' active' : ''}`} style={{ background: c.hex }} title={c.label} aria-label={c.label} onClick={() => choose(c.hex)} />
         ))}
-        <input type="color" value={color} onChange={(e) => choose(e.target.value)} title="Custom colour" />
+        <HexColorInput value={color} onChange={(hex) => choose(hex)} />
       </div>
     </div>
   );
@@ -307,7 +305,7 @@ function OutlineControls({ outline, onChange }: { outline: Partial<OutlineSettin
       <Switch label="Outline the selection" on={o.enabled} onChange={(v) => patch({ enabled: v })} />
       {o.enabled && (
         <>
-          <label className="disp__row"><span>Line colour</span><input type="color" value={o.color} onChange={(e) => patch({ color: e.target.value })} /></label>
+          <label className="disp__row"><span>Line colour</span><HexColorInput value={o.color} onChange={(hex) => patch({ color: hex })} /></label>
           <label className="disp__row">
             <span>Line width ({o.thickness})</span>
             <input type="range" min={1} max={5} step={0.5} value={o.thickness} onChange={(e) => patch({ thickness: Number(e.target.value) })} />
@@ -329,8 +327,8 @@ function SectionStyleControls({ style, onChange }: { style: Partial<SectionStyle
       {c.enabled && (
         <>
           <Switch label="Colour per kind of element" on={c.byCategory} onChange={(v) => patch({ byCategory: v })} />
-          {!c.byCategory && <label className="disp__row"><span>Fill colour</span><input type="color" value={c.fill} onChange={(e) => patch({ fill: e.target.value })} /></label>}
-          <label className="disp__row"><span>Outline colour</span><input type="color" value={c.lineColor} onChange={(e) => patch({ lineColor: e.target.value })} /></label>
+          {!c.byCategory && <label className="disp__row"><span>Fill colour</span><HexColorInput value={c.fill} onChange={(hex) => patch({ fill: hex })} /></label>}
+          <label className="disp__row"><span>Outline colour</span><HexColorInput value={c.lineColor} onChange={(hex) => patch({ lineColor: hex })} /></label>
           <label className="disp__row">
             <span>Outline width ({c.lineWidth})</span>
             <input type="range" min={0.5} max={6} step={0.5} value={c.lineWidth} onChange={(e) => patch({ lineWidth: Number(e.target.value) })} />
@@ -343,7 +341,7 @@ function SectionStyleControls({ style, onChange }: { style: Partial<SectionStyle
           {SECTION_CATEGORY_DEFS.map((d) => (
             <label key={d.id} className="disp__row">
               <span>{d.label}</span>
-              <input type="color" value={c.categories[d.id] ?? d.color} onChange={(e) => patch({ categories: { ...c.categories, [d.id]: e.target.value } })} />
+              <HexColorInput value={c.categories[d.id] ?? d.color} onChange={(hex) => patch({ categories: { ...c.categories, [d.id]: hex } })} />
             </label>
           ))}
         </details>
@@ -400,19 +398,16 @@ function RenderQualitySettings({ quality, onChange }: { quality: Partial<RenderQ
 
 /** Realistic look (main / left view): a fixed sun with soft shadows, and a
     concrete colour and texture — each switched on its own. */
-function RealisticSettings({ sun, onSun, concrete, onConcrete, sky, onSky, materials, onMaterials }: {
+function RealisticSettings({ sun, onSun, concrete, onConcrete, sky, onSky }: {
   sun: boolean;
   onSun: (v: boolean) => void;
   concrete: boolean;
   onConcrete: (v: boolean) => void;
   sky: boolean;
   onSky: (v: boolean) => void;
-  materials: boolean;
-  onMaterials: (v: boolean) => void;
 }) {
   const r = useViewSettingsStore((st) => st.realism);
   const setR = useViewSettingsStore((st) => st.setRealism);
-  const materialsOn = useExperimental('realisticMaterials');
   return (
     <>
       <Switch label="Sun & shadows" on={sun} onChange={onSun} tip="A fixed sun: shadows stay put through the 4D playback. Left / main view only." />
@@ -429,8 +424,6 @@ function RealisticSettings({ sun, onSun, concrete, onConcrete, sky, onSky, mater
           <Switch label="Real-time sky" on={sky} onChange={onSky} tip="A sky behind the models that follows the sun: the horizon turns warm as the sun gets low, and the shaded sides and shiny surfaces pick up its colours." />
         </>
       )}
-      {materialsOn && <Switch label="Realistic materials" on={materials} onChange={onMaterials} tip="Brick, glass, timber, metal, stone, grass, asphalt... drawn with their own surface, matched from the names in the model (its IFC materials, element names and classes). Glass is see-through and, like metal, reflects the sky. Change a match below." />}
-      {materialsOn && materials && <MaterialMapping />}
       <Switch label="Concrete" on={concrete} onChange={onConcrete} />
       {concrete && (
         <>
@@ -445,47 +438,6 @@ function RealisticSettings({ sun, onSun, concrete, onConcrete, sky, onSky, mater
         </>
       )}
     </>
-  );
-}
-
-/** Realistic materials: each colour group of the loaded models, the class its
-    names point to, and a choice to change it. */
-function MaterialMapping() {
-  const engine = useViewerEngine();
-  const mapping = useViewSettingsStore((st) => st.realism.mapping ?? {});
-  const setR = useViewSettingsStore((st) => st.setRealism);
-  const [entries, setEntries] = useState<MaterialEntry[] | null>(engine.materialEntries);
-  useEffect(() => {
-    setEntries(engine.materialEntries);
-    engine.materialEntryListeners.add(setEntries);
-    void engine.ensureMaterialEntries();
-    return () => { engine.materialEntryListeners.delete(setEntries); };
-  }, [engine]);
-  if (!entries) return <div className="flt__hint">Reading the models' materials…</div>;
-  if (entries.length === 0) return <div className="flt__hint">Load a model to match its materials.</div>;
-  const choose = (key: string, value: string) => {
-    const next = { ...mapping };
-    if (value === 'auto') delete next[key];
-    else next[key] = value as ClassChoice;
-    setR({ mapping: next });
-  };
-  return (
-    <div className="matmap">
-      {entries.map((e) => {
-        const auto = e.auto ? MATERIAL_CLASS_LABELS[e.auto] : e.ambiguous ? 'unsure, kept as is' : 'none, kept as is';
-        return (
-          <label key={e.key} className="matmap__row" title={[e.label, e.detail && `Used by: ${e.detail}`, `${e.count} element${e.count === 1 ? '' : 's'}`].filter(Boolean).join('\n')}>
-            <span className="matmap__swatch" style={{ background: e.key }} />
-            <span className="matmap__label">{e.label}<small>{e.count}</small></span>
-            <select value={mapping[e.key] ?? 'auto'} onChange={(ev) => choose(e.key, ev.target.value)}>
-              <option value="auto">Automatic: {auto}</option>
-              <option value="original">Keep the model's colour</option>
-              {MATERIAL_CLASSES.map((c) => <option key={c} value={c}>{MATERIAL_CLASS_LABELS[c]}</option>)}
-            </select>
-          </label>
-        );
-      })}
-    </div>
   );
 }
 

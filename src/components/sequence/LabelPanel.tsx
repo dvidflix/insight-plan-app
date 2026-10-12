@@ -49,8 +49,6 @@ export function LabelPanel() {
   const addTag = useTagsStore((s) => s.add);
   const updateTag = useTagsStore((s) => s.update);
   const removeTag = useTagsStore((s) => s.remove);
-  const placement = useTagsStore((s) => s.placement);
-  const setPlacement = useTagsStore((s) => s.setPlacement);
 
   // The tag being edited (the list shows when none is).
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -85,16 +83,12 @@ export function LabelPanel() {
         tip={
           <>
             <p>A tag is a label shown while a Link Group that uses it has an active task. Build it from task fields, properties of the linked objects and your own text; pick the tag in the group's editor (you can also create one there).</p>
-            <p><b>Bottom corner:</b> active tags stack at the bottom-left of the viewer.</p>
+            <p>Each tag has its own placement (in its editor). <b>Bottom corner:</b> active tags stack at the bottom-left of the viewer.</p>
             <p><b>Next to objects:</b> each active tag sits by the middle of its objects with a leader line, moved apart so tags never overlap. A per-task tag gets one callout per task.</p>
           </>
         }
       >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '10px 0 0' }}>
-      <div className="segmented-choice" style={{ margin: '0 12px' }}>
-        <button type="button" className={placement === 'corner' ? 'active' : ''} onClick={() => setPlacement('corner')}>Bottom corner</button>
-        <button type="button" className={placement === 'objects' ? 'active' : ''} onClick={() => setPlacement('objects')}>Next to objects</button>
-      </div>
+      <div style={{ display: 'flex', flexDirection: 'column' }}>
       {editing ? (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: '0 12px 10px' }}>
           <TagEditor
@@ -148,7 +142,7 @@ export function LabelPanel() {
           </button>
         }
       >
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
         <div>
           <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 4 }}>Position</div>
           <div className="label-position-grid">
@@ -159,8 +153,8 @@ export function LabelPanel() {
             ))}
           </div>
         </div>
-        <label className="disp__row">
-          <span>Layout</span>
+        <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+          <span style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Layout</span>
           <select value={keyOrientation} onChange={(e) => setKeyOrientation(e.target.value as 'vertical' | 'horizontal')}>
             <option value="vertical">Vertical list</option>
             <option value="horizontal">Horizontal bar</option>
@@ -180,6 +174,7 @@ export function LabelPanel() {
         }
       >
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'auto minmax(0, 1fr)', gap: 16, alignItems: 'start' }}>
       <div>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 4 }}>Position</div>
         <div className="label-position-grid">
@@ -197,12 +192,11 @@ export function LabelPanel() {
         </div>
       </div>
 
-      <label className="disp__row">
-        <span>Preset</span>
+      <label style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+        <span style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Preset</span>
         <select
           value={[...LABEL_PRESETS, { template: DEFAULT_LABEL_TEMPLATE }].find((p) => p.template === template)?.template ?? ''}
           onChange={(e) => e.target.value && setTemplate(e.target.value)}
-          style={{ maxWidth: 220 }}
         >
           <option value="">Custom</option>
           <option value={DEFAULT_LABEL_TEMPLATE}>Default (week + week commencing)</option>
@@ -211,6 +205,7 @@ export function LabelPanel() {
           ))}
         </select>
       </label>
+      </div>
 
       <label style={{ display: 'block' }}>
         <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 4 }}>Template</div>

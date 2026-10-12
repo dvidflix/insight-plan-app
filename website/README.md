@@ -18,28 +18,21 @@ Preview: open `index.html`, or run `npx serve website`. (The contact form's "sen
 - Check each claim is one you stand behind (offline, no telemetry, planning tool only, what is experimental or in development).
 
 ## Publish on Cloudflare (free)
-The site is a Cloudflare *Worker with static assets*: the pages are uploaded as files, and a small worker answers the contact form. (A project made by dragging a folder into the dashboard has no worker, so the form cannot send email from it. That is why this uses the command line.)
+Upload by hand, no command-line tools.
 
-**First time only**
-1. `npx wrangler login` opens a browser to sign in to Cloudflare.
-2. Create a free Resend account (resend.com), add your domain, and add the DNS records it shows (see the next section). Create an API key.
-3. `npx wrangler secret put RESEND_API_KEY --config website/wrangler.jsonc`, then paste the key when asked.
-4. Check `website/wrangler.jsonc`: `name` is the existing Cloudflare project (keep it to update that site), and `CONTACT_TO` / `CONTACT_FROM` are your addresses. `CONTACT_FROM` must be on the domain verified in Resend.
-
-**Every time you change the site**
 1. `node website/publish.mjs` builds the pages and puts exactly what the public site needs into `website-dist/`.
-2. `npx wrangler deploy --config website/wrangler.jsonc` uploads it. The site updates within seconds.
+2. In the Cloudflare dashboard, open the project (*Workers & Pages*) > *Create new deployment* (or *Upload assets*), and drag in the `website-dist` folder.
 
 Add your own domain in the dashboard: the project > *Settings* (or *Domains*) > *Custom domains*. HTTPS is automatic.
 
-On a company network that inspects HTTPS, wrangler fails with `SELF_SIGNED_CERT_IN_CHAIN`. The fix that keeps certificate checking on is to let Node use the Windows certificate store, which already trusts your company's certificate. In PowerShell, before running wrangler: `$env:NODE_USE_SYSTEM_CA = 1` (in Git Bash: `export NODE_USE_SYSTEM_CA=1`). Do not switch certificate checks off.
+A drag-and-drop upload has no worker, so the contact form cannot send email from it: it falls back to opening the visitor's email program with the message filled in. To get the form emailing you, `cloudflare/worker.js` has to be deployed as a Worker with the `website-dist` folder as its static assets (bind them as `ASSETS`, run the worker first only for `/api/*`) and the settings `CONTACT_TO`, `CONTACT_FROM` and the secret `RESEND_API_KEY`.
 
 ## The contact form
 The form posts to `/api/contact`, which `cloudflare/worker.js` answers by emailing the message to you through Resend (free plan: 3,000 emails a month). If sending is not set up or fails, the form opens the visitor's email program with the message filled in, so no message is lost.
 
 Resend set-up: add your domain in Resend, add the DNS records it shows in the Cloudflare DNS page for that domain, then press *Verify*. Create an API key with permission to send. After the first deploy, send a test message from the Contact page and check it arrives; replying goes to the visitor, as the worker sets *reply-to*.
 
-Optional, to keep out bots: create a free **Turnstile** widget in Cloudflare, put its *site key* in `TURNSTILE_SITEKEY` in `build.mjs`, store its *secret key* with `npx wrangler secret put TURNSTILE_SECRET --config website/wrangler.jsonc`, then publish and deploy again. Without it, the form still has a hidden trap field that catches simple bots.
+Optional, to keep out bots: create a free **Turnstile** widget in Cloudflare, put its *site key* in `TURNSTILE_SITEKEY` in `build.mjs`, store its *secret key* as the worker secret `TURNSTILE_SECRET`, then publish and upload again. Without it, the form still has a hidden trap field that catches simple bots.
 
 Receiving mail at your support address needs a mailbox. In Cloudflare, *Email Routing* can forward it to an inbox you already have, for free.
 

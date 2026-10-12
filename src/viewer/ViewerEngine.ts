@@ -12,7 +12,7 @@ import { Walkthrough } from './walkthrough';
 import { ElementRelations } from './relations';
 import { attachBoxSelect } from './boxSelect';
 import { PointMarks, copyText, formatCoords, projectCoords } from './pointMarks';
-import { configureSun, markBaseMaterials, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setMaterialsEnabled, setSkyUniforms, skyParamsFor, type RealismSettings } from './realism';
+import { configureSun, markBaseMaterials, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setSkyUniforms, skyParamsFor, type RealismSettings } from './realism';
 import { SkyBackdrop } from './skyBackdrop';
 import { extractGrids, extractStoreys, type IfcGridData, type IfcStoreyData } from './ifcGrids';
 import { gridDimensions, spacingText } from './gridDimensions';
@@ -25,7 +25,7 @@ import type { Marker } from '../state/markersStore';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 import { DEFAULT_OUTLINE, DEFAULT_SECTION_STYLE, SECTION_CATEGORY_DEFS, type OutlineSettings, type SectionStyle } from './visualAids';
 import { DEFAULT_QUALITY, applyRenderQuality, type AdaptiveResolution, type RenderQuality } from './renderQuality';
-import { buildMaterialEntries, collectMaterialNames, setClassOverrides, setMaterialEntries, type ClassChoice, type ElementMaterialInfo, type MaterialEntry } from './materialClasses';
+import { classNumberForPainted } from './materialClasses';
 import { applyXray } from './xray';
 import { hideFadedFromEdges } from './ghostEdges';
 import type { ViewSettings } from '../state/viewSettingsStore';
@@ -362,7 +362,8 @@ export class ViewerEngine {
       model.useCamera(world.camera.three);
       world.scene.three.add(model.object);
       fragments.core.update(true);
-      void this.handleModelSet(model);
+      this.settling++;
+      void this.handleModelSet(model).finally(() => { this.settling--; });
     });
     fragments.list.onItemDeleted.add((key) => {
       this.models.delete(key);
@@ -373,7 +374,12 @@ export class ViewerEngine {
     });
     fragments.core.models.materials.list.onItemSet.add(({ value: material }) => {
       if (!('isLodMaterial' in material && material.isLodMaterial)) {
-        if (this.concrete || this.matsOn) patchAllConcrete([material]);
+        // Made while a model loads = the model's own: mark it before patching.
+        if (this.loadingIfc || this.loadingFrag || this.settling > 0) markBaseMaterials([material]);
+        // A painted colour (4D stage) may carry a surface class in the colour itself.
+        const painted = 'color' in material && classNumberForPainted(material.color as THREE.Color) > 0;
+        if (this.concrete || painted) patchAllConcrete([material]);
+        if (painted) refreshMaterialClasses([material]);
         material.polygonOffset = true;
         material.polygonOffsetUnits = 1;
         material.polygonOffsetFactor = Math.random();
@@ -698,6 +704,9 @@ export class ViewerEngine {
   /** A model that didn't come through loadIfc or loadFrag (e.g. dropped
       straight onto the official Views/ItemsFinder demo UI, if that's ever
       wired in alongside this one). */
+  /** Models whose registration (handleModelSet) is still running. */
+  private settling = 0;
+
   private async handleModelSet(model: FRAGS.FragmentsModel) {
     if (this.loadingIfc || this.loadingFrag || this.models.has(model.modelId)) return;
     this.models.set(model.modelId, model);
@@ -1020,9 +1029,7 @@ export class ViewerEngine {
     if (this.fragments) {
       const mats = [...this.fragments.core.models.materials.list.values()];
       markBaseMaterials(mats);
-      if (this.concrete || this.matsOn) patchAllConcrete(mats);
-      refreshMaterialClasses(mats);
-      if (this.matsOn) void this.ensureMaterialEntries(true);
+      if (this.concrete) patchAllConcrete(mats);
       if (this.xray) applyXray(mats, true);
     }
     const only = [new RegExp(`^${escapeRegExp(modelId)}$`)];
@@ -1614,15 +1621,6 @@ export class ViewerEngine {
   // ---- Real-time sky and material classes -----------------------------------
   private sky: SkyBackdrop | null = null;
   private skyActive = false;
-  private matsOn = false;
-  private entries: MaterialEntry[] | null = null;
-  private entriesRun: Promise<void> | null = null;
-  /** Called with the colour groups of the loaded models once they are read. */
-  readonly materialEntryListeners = new Set<(entries: MaterialEntry[]) => void>();
-  get materialEntries(): MaterialEntry[] | null {
-    return this.entries;
-  }
-
   /** The sky as backdrop (from the sun's bearing and height) and as what the
       shiny classes reflect — all moving with the sun controls. */
   setSky(on: boolean, settings: RealismSettings) {
@@ -1640,70 +1638,6 @@ export class ViewerEngine {
       scene.background = new THREE.Color(this.bgColor);
     }
     void this.forceUpdate();
-  }
-
-  /** Shows the material classes (brick, glass, timber...) matched from the
-      models' names, or the models' own colours. */
-  setMaterials(on: boolean) {
-    this.matsOn = on;
-    setMaterialsEnabled(on);
-    if (!this.fragments) return;
-    const mats = this.fragments.core.models.materials.list.values();
-    if (on) patchAllConcrete(mats);
-    refreshMaterialClasses(this.fragments.core.models.materials.list.values());
-    if (on) void this.ensureMaterialEntries();
-    void this.forceUpdate();
-  }
-
-  /** The class chosen by hand per colour group, over the automatic match. */
-  setClassChoices(choices: Record<string, ClassChoice>) {
-    setClassOverrides(choices);
-    this.refreshClasses();
-  }
-
-  private refreshClasses() {
-    if (this.fragments) refreshMaterialClasses(this.fragments.core.models.materials.list.values());
-    this.secondary?.refreshClasses();
-    void this.forceUpdate();
-  }
-
-  /** Reads each element's colour group and the names that say what it is made
-      of, once per set of loaded models (again when `again`). */
-  async ensureMaterialEntries(again = false): Promise<void> {
-    if (again) this.entries = null;
-    if (this.entries) return;
-    this.entriesRun ??= (async () => {
-      const items: ElementMaterialInfo[] = [];
-      for (const [modelId, model] of this.models) {
-        const index = this.indexes.get(modelId);
-        if (!index) continue;
-        const ids = [...index.elements.keys()];
-        const hex = new Map<number, string>();
-        for (let i = 0; i < ids.length; i += 2000) for (const [id, h] of await this.getElementColors(modelId, ids.slice(i, i + 2000))) hex.set(id, h);
-        const CHUNK = 400;
-        for (let i = 0; i < ids.length; i += CHUNK) {
-          const chunk = ids.slice(i, i + CHUNK);
-          let data: unknown[] = [];
-          try {
-            data = await model.getItemsData(chunk, { attributesDefault: false, relations: { HasAssociations: { attributes: true, relations: true } } });
-          } catch (e) {
-            console.warn('ViewerEngine: material names unavailable', e);
-          }
-          chunk.forEach((id, k) => {
-            const colour = hex.get(id);
-            const el = index.elements.get(id);
-            if (!colour || !el) return;
-            const item = data[k] as Record<string, unknown> | undefined;
-            items.push({ hex: colour, materialNames: [...collectMaterialNames(item?.HasAssociations)], name: el.name, category: el.category });
-          });
-        }
-      }
-      this.entries = buildMaterialEntries(items);
-      setMaterialEntries(this.entries);
-      this.refreshClasses();
-      for (const listener of this.materialEntryListeners) listener(this.entries);
-    })().finally(() => { this.entriesRun = null; });
-    await this.entriesRun;
   }
 
   private savedPixelRatio: number | null = null;

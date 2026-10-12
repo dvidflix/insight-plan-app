@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { HexColorInput } from './HexColorInput';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
 import { useModelColorStore, type ColourConfig } from '../state/modelColorStore';
@@ -230,7 +231,7 @@ export function ModelColorPanel() {
               <input type="checkbox" checked={others === null} onChange={(e) => patch({ others: e.target.checked ? null : '#d4d4d8' })} />
               <span>Own colours</span>
             </label>
-            {others !== null && <input type="color" value={others} onChange={(e) => patch({ others: e.target.value })} />}
+            {others !== null && <HexColorInput value={others} onChange={(hex) => patch({ others: hex })} />}
           </span>
         </div>
       </div>

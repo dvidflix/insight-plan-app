@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { HexColorInput } from '../components/HexColorInput';
 import { ticksBetween, tiersForScale, type Tick, type TickKind } from '../schedule/ganttModel';
 import {
   DAY_MS,
@@ -769,7 +770,7 @@ function SummaryEditor({ timeline, patch }: { timeline: Timeline; patch: (fn: (t
       {list.map((b) => (
         <div key={b.id} className="tl-sumedit">
           <div className="tl-stagerow">
-            <input type="color" value={b.color} onChange={(e) => set(b.id, { color: e.target.value })} aria-label="Colour" />
+            <HexColorInput value={b.color} onChange={(hex) => set(b.id, { color: hex })} />
             <input value={b.name} onChange={(e) => set(b.id, { name: e.target.value })} placeholder="Name" />
             <button className="btn btn--small danger" type="button" title="Delete the summary bar" onClick={() => window.confirm(`Delete the summary bar "${b.name}"?`) && patch((t) => ({ ...t, summaries: (t.summaries ?? []).filter((x) => x.id !== b.id) }))}>✕</button>
           </div>
@@ -807,7 +808,7 @@ function StagesEditor({ timeline, patch, barLabels, setBarLabels }: { timeline: 
       <div className="scn-dim">The stages every row can have, in drawing order. Rename or recolour them here.</div>
       {timeline.stages.map((s, i) => (
         <div key={s.id} className="tl-stagerow">
-          <input type="color" value={s.color} onChange={(e) => set(s.id, { color: e.target.value })} aria-label="Colour" />
+          <HexColorInput value={s.color} onChange={(hex) => set(s.id, { color: hex })} />
           <input value={s.name} onChange={(e) => set(s.id, { name: e.target.value })} />
           <button className="btn btn--small" type="button" disabled={i === 0} onClick={() => patch((t) => { const a = [...t.stages]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return { ...t, stages: a }; })} title="Earlier">↑</button>
           <button
@@ -897,7 +898,7 @@ function PeopleEditor() {
             <input value={p.knownAs ?? ''} onChange={(e) => set(p.id, { knownAs: e.target.value })} placeholder="Known as (shown on the rows)" />
             <input value={p.role} onChange={(e) => set(p.id, { role: e.target.value })} placeholder="Role" />
           </div>
-          <input type="color" value={p.color} onChange={(e) => set(p.id, { color: e.target.value })} aria-label="Colour" />
+          <HexColorInput value={p.color} onChange={(hex) => set(p.id, { color: hex })} />
           <button
             className="btn btn--small danger"
             type="button"

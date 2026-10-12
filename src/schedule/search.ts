@@ -1,3 +1,22 @@
+import type { Activity } from './types';
+
+const haystacks = new WeakMap<Activity, string>();
+
+/** Everything searchable about an activity as one lowercase text: ID, name, WBS, status, every activity code and user
+    defined field value, and the names of its resources. A search box matches against this, so it finds any value. */
+export function activitySearchText(a: Activity): string {
+  let text = haystacks.get(a);
+  if (text === undefined) {
+    const parts: string[] = [a.code, a.name, a.wbsPath, a.type, a.status, a.constraintType ?? '', a.durationType ?? ''];
+    for (const v of Object.values(a.activityCodes ?? {})) parts.push(String(v));
+    for (const [k, v] of Object.entries(a.udf ?? {})) parts.push(k, v instanceof Date ? v.toISOString().slice(0, 10) : String(v));
+    for (const r of a.resources ?? []) parts.push(r.resourceName);
+    text = parts.join('\n').toLowerCase();
+    haystacks.set(a, text);
+  }
+  return text;
+}
+
 /** Splits a search query into lowercased tokens, OR'd against each other —
     supports pasting/typing a list (e.g. a column copied from Excel): split
     on newlines, commas, semicolons or a literal " || ". Ported verbatim from

@@ -8,7 +8,8 @@ import { renderTargets, slideStoreys, type BaseHeights, type Storey } from './st
 import { NavCube } from './navCube';
 import { NorthArrow } from './northArrow';
 import { attachBoxSelect, type ScreenPoint } from './boxSelect';
-import { configureSun, markBaseMaterials, newConcreteUniforms, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setMaterialsEnabled, setSkyUniforms, skyParamsFor, type RealismSettings, type SunLights } from './realism';
+import { classNumberForPainted } from './materialClasses';
+import { configureSun, markBaseMaterials, newConcreteUniforms, patchAllConcrete, refreshMaterialClasses, setConcreteStrength, setSkyUniforms, skyParamsFor, type RealismSettings, type SunLights } from './realism';
 import { SkyBackdrop } from './skyBackdrop';
 import { DEFAULT_QUALITY, applyRenderQuality, type AdaptiveResolution } from './renderQuality';
 import { applyXray } from './xray';
@@ -126,7 +127,9 @@ export class SecondaryView {
     view.catcher = catcher;
     core.models.materials.list.onItemSet.add(({ value: material }) => {
       if (!('isLodMaterial' in material && material.isLodMaterial)) {
-        if (view.concrete || view.matsOn) patchAllConcrete([material], view.concreteUniforms);
+        const painted = 'color' in material && classNumberForPainted(material.color as THREE.Color) > 0;
+        if (view.concrete || painted) patchAllConcrete([material], view.concreteUniforms);
+        if (painted) refreshMaterialClasses([material]);
         material.polygonOffset = true;
         material.polygonOffsetUnits = 1;
         material.polygonOffsetFactor = Math.random();
@@ -209,8 +212,7 @@ export class SecondaryView {
       copy.object.scale.copy(original.object.scale);
       // The model's own materials, before any 4D colour: the concrete look greys only these.
       markBaseMaterials(this.core.models.materials.list.values());
-      if (this.concrete || this.matsOn) patchAllConcrete(this.core.models.materials.list.values(), this.concreteUniforms);
-      refreshMaterialClasses(this.core.models.materials.list.values(), this.concreteUniforms);
+      if (this.concrete) patchAllConcrete(this.core.models.materials.list.values(), this.concreteUniforms);
       if (this.xray) applyXray(this.core.models.materials.list.values(), true);
       // Tiles stream in and out as the camera moves: flag each for shadows.
       for (const m of renderTargets(this.core, copy)) {
@@ -334,7 +336,6 @@ export class SecondaryView {
   private bgColor = '#f5f6f5';
   private sky: SkyBackdrop | null = null;
   private skyActive = false;
-  matsOn = false;
 
   /** This view's sky backdrop and the sky its shiny materials reflect. */
   setSky(on: boolean, settings: RealismSettings) {
@@ -352,22 +353,6 @@ export class SecondaryView {
     } else {
       scene.background = new THREE.Color(this.bgColor);
     }
-    void this.core.update(true);
-  }
-
-  /** Shows this view's material classes (brick, glass, ...), or the models' own colours. */
-  setMaterials(on: boolean) {
-    if (this.disposed) return;
-    this.matsOn = on;
-    setMaterialsEnabled(on, this.concreteUniforms);
-    if (on) patchAllConcrete(this.core.models.materials.list.values(), this.concreteUniforms);
-    this.refreshClasses();
-  }
-
-  /** Gives this view's materials the classes now in force. */
-  refreshClasses() {
-    if (this.disposed) return;
-    refreshMaterialClasses(this.core.models.materials.list.values(), this.concreteUniforms);
     void this.core.update(true);
   }
 

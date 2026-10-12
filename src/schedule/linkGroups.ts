@@ -1,5 +1,6 @@
 import type { Activity, ScheduleModel } from './types';
 import type { ElementSummary } from '../viewer/types';
+import { splitIndex, type SubSequence, type SubSlots } from './subSequence';
 
 export type CompareOp = 'equals' | 'notEquals' | 'contains' | 'notContains' | 'startsWith' | 'endsWith';
 export type Conjunction = 'and' | 'or';
@@ -61,6 +62,9 @@ export interface LinkGroup {
   /** Hidden from the 3D view (the eye in the Link Groups table): its objects
       stay hidden whatever the timeline says, unless another group shows them. */
   hidden?: boolean;
+  /** One activity for a parent ID, the model in parts ("P101-1", "P101-2"): the activity's time is shared between the
+      parts, one after the other (see subSequence.ts). */
+  subSequence?: SubSequence;
 }
 
 const OBJECT_BUILTIN_KEYS = new Set(['_category', '_name', '_guid', '_file']);
@@ -199,11 +203,28 @@ function clusterMatchRules(rules: MatchRule[]): MatchRule[][] {
   return clusters;
 }
 
+
+/** A group's sub-sequence settings, and how it reads an object's value for a matching rule (the parent part of the
+    sub-sequence field, else the value as it is). */
+function subSequenceOf(group: LinkGroup) {
+  const sub = group.subSequence;
+  const on = !!sub?.enabled && sub.separator !== '' && group.matchRules.length > 0;
+  const separator = sub?.separator ?? '';
+  const field = on ? sub!.field || objectFieldKey(group.matchRules[0].objectPropertySet, group.matchRules[0].objectAttribute) : '';
+  const valueOf = (el: ElementSummary, rule: MatchRule) => {
+    const raw = objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute);
+    return on && objectFieldKey(rule.objectPropertySet, rule.objectAttribute) === field ? splitIndex(raw, separator).parent : raw;
+  };
+  return { on, field, separator, valueOf };
+}
+
 export interface GroupLinkResult {
   groupId: string;
   taskIds: Set<string>;
   elementIds: Set<number>;
   taskToElements: Map<string, number[]>;
+  /** Sub-sequence on: per activity, the slot of each of its objects (only activities that split into 2 or more slots). */
+  sub?: Map<string, SubSlots>;
 }
 
 /** Evaluates one Group: filters tasks and objects independently, then pairs
@@ -226,10 +247,13 @@ export function computeGroupLinks(model: ScheduleModel, elements: ElementSummary
     return { groupId: group.id, taskIds, elementIds, taskToElements };
   }
 
+  // Sub-sequence: matching reads the parent part of the "parent + separator + index" field.
+  const { on: subOn, field: subField, separator: subSep, valueOf: objectValue } = subSequenceOf(group);
+
   for (const cluster of clusterMatchRules(group.matchRules)) {
     const index = new Map<string, number[]>();
     for (const el of candidateObjects) {
-      const parts = cluster.map((rule) => splitValues(objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute), rule.objectSeparators));
+      const parts = cluster.map((rule) => splitValues(objectValue(el, rule), rule.objectSeparators));
       for (const key of joinKeys(parts)) (index.get(key) ?? index.set(key, []).get(key)!).push(el.localId);
     }
     for (const task of candidateTasks) {
@@ -243,7 +267,30 @@ export function computeGroupLinks(model: ScheduleModel, elements: ElementSummary
     }
   }
 
+  if (subOn) return { groupId: group.id, taskIds, elementIds, taskToElements, sub: subSlotsOf(taskToElements, candidateObjects, subField, subSep) };
   return { groupId: group.id, taskIds, elementIds, taskToElements };
+}
+
+/** For each activity with several parts: the slot of each object, by the index at the end of its ID. Objects with the
+    same index share a slot; one without an index comes first. */
+function subSlotsOf(taskToElements: Map<string, number[]>, objects: ElementSummary[], field: string, separator: string): Map<string, SubSlots> {
+  const { propertySet, attribute } = parseObjectFieldKey(field);
+  const byId = new Map(objects.map((el) => [el.localId, el]));
+  const out = new Map<string, SubSlots>();
+  for (const [taskId, ids] of taskToElements) {
+    const indexOf = new Map<number, number>();
+    for (const id of ids) {
+      const el = byId.get(id);
+      if (el) indexOf.set(id, splitIndex(objectFieldValue(el, propertySet, attribute), separator).index ?? -1);
+    }
+    const distinct = [...new Set(indexOf.values())].sort((a, b) => a - b);
+    if (distinct.length < 2) continue;
+    const rank = new Map(distinct.map((v, i) => [v, i]));
+    const slots: SubSlots = new Map();
+    for (const [id, v] of indexOf) slots.set(id, { slot: rank.get(v)!, slots: distinct.length });
+    out.set(taskId, slots);
+  }
+  return out;
 }
 
 /** Merges every group's task->element links into one map, for driving the
@@ -284,6 +331,7 @@ export function buildMatchExportRows(model: ScheduleModel, elements: ElementSumm
   for (const group of groups) {
     if (group.matchRules.length === 0) continue;
     const { taskToElements } = computeGroupLinks(model, elements, group);
+    const { valueOf } = subSequenceOf(group);
     for (const [taskId, elementIds] of taskToElements) {
       const task = activityById.get(taskId);
       if (!task) continue;
@@ -293,7 +341,7 @@ export function buildMatchExportRows(model: ScheduleModel, elements: ElementSumm
         const clusters = clusterMatchRules(group.matchRules);
         const matchedClusters = clusters.filter((cluster) =>
           cluster.every((rule) => {
-            const objVals = new Set(splitValues(objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute), rule.objectSeparators));
+            const objVals = new Set(splitValues(valueOf(el, rule), rule.objectSeparators));
             return splitValues(taskFieldValue(task, rule.taskField), rule.taskSeparators).some((v) => objVals.has(v));
           }),
         );

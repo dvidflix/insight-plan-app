@@ -88,7 +88,7 @@ const RESOURCES_MENU = [
 ];
 const resourcesMenu = () => `<div class="menu menu--list"><button type="button" class="menu__btn" aria-expanded="false" aria-haspopup="true">Resources<svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <div class="menu__panel menu__panel--list">${RESOURCES_MENU.map(([t, links]) => `<p class="menu__title">${t}</p><div class="menu__links">${links.map(([h, l]) => `<a href="${h}">${l}</a>`).join('')}</div>`).join('')}</div></div>`;
-const MENU_SCRIPT = `<script>(() => { const menus = [...document.querySelectorAll('.menu')]; const set = (m, o) => { m.classList.toggle('open', o); m.querySelector('.menu__btn').setAttribute('aria-expanded', String(o)); }; menus.forEach((m) => m.querySelector('.menu__btn').addEventListener('click', () => { const open = !m.classList.contains('open'); menus.forEach((x) => set(x, false)); set(m, open); })); document.addEventListener('click', (e) => menus.forEach((m) => { if (!m.contains(e.target)) set(m, false); })); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menus.forEach((m) => set(m, false)); }); })();</script>`;
+const MENU_SCRIPT = `<script>(() => { const hdr = document.querySelector('header.top'), tg = hdr.querySelector('.navtoggle'); tg.addEventListener('click', () => { const o = !hdr.classList.contains('nav-open'); hdr.classList.toggle('nav-open', o); tg.setAttribute('aria-expanded', String(o)); }); const menus = [...document.querySelectorAll('.menu')]; const set = (m, o) => { m.classList.toggle('open', o); m.querySelector('.menu__btn').setAttribute('aria-expanded', String(o)); }; menus.forEach((m) => m.querySelector('.menu__btn').addEventListener('click', () => { const open = !m.classList.contains('open'); menus.forEach((x) => set(x, false)); set(m, open); })); document.addEventListener('click', (e) => menus.forEach((m) => { if (!m.contains(e.target)) set(m, false); })); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menus.forEach((m) => set(m, false)); }); })();</script>`;
 
 // Social icons, drawn here (no external files). Only the profiles with an address in SOCIAL are shown.
 const SOC = {
@@ -115,7 +115,8 @@ const page = ({ file, title, description, body }) => `<!doctype html>
 <header class="top">
   <div class="wrap">
     <a class="logo" href="index.html" aria-label="Insight Plan home">${LOGO}</a>
-    <nav>
+    <button type="button" class="navtoggle" aria-label="Menu" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="navtoggle__bars" d="M4 6.500h16M4 12h16M4 17.500h16"/><path class="navtoggle__x" d="M6 6l12 12M18 6L6 18"/></svg></button>
+    <nav id="site-nav">
       ${menu(file)}
       ${NAV.filter(([href]) => href !== 'resources.html').map(([href, label]) => `<a href="${href}"${href === file ? ' aria-current="page"' : ''}>${label}</a>`).join('\n      ')}
       ${resourcesMenu()}
