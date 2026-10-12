@@ -482,6 +482,53 @@ export function ViewerToolbar() {
     if (second && !linked) await second.fitTo(map, dir?.clone());
   };
 
+  // Blender's numpad views, on the numpad or the digit row: 1 front, 3 right, 7 top (Ctrl: back, left, bottom), 9 the
+  // opposite view, 5 perspective / orthographic, 4 6 8 2 turn the view by 15° (Ctrl: slide it), + / - zoom,
+  // . fit the selection, Home fit everything.
+  const keysRef = useRef({ fitViews, patchView, page, ortho, hasSelection, selection, linked, walking });
+  keysRef.current = { fitViews, patchView, page, ortho, hasSelection, selection, linked, walking };
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      const k = keysRef.current;
+      if (e.defaultPrevented || e.altKey || e.metaKey || e.shiftKey || k.walking || !engine.isInitialized || !engine.isOnScreen) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.isContentEditable)) return;
+      const numpad = e.code.startsWith('Numpad');
+      // Ctrl on the digit row belongs to the browser (tabs): only the numpad has the Ctrl views.
+      if (e.ctrlKey && !numpad) return;
+      const digit = /^(?:Numpad|Digit)(\d)$/.exec(e.code)?.[1];
+      const follow = () => { if (engine.secondary && k.linked) engine.secondary.followMain(); };
+      const turn = (az: number, pol: number) => { void engine.orbitBy(az, pol).then(follow); };
+      const slide = (right: number, up: number) => { void engine.panBy(right, up).then(follow); };
+      const standard = (id: string) => { const v = VIEWS.find((x) => x.id === id); if (v) void k.fitViews(undefined, v.dir); };
+      let handled = true;
+      switch (digit ?? e.code) {
+        case '1': standard(e.ctrlKey ? 'back' : 'front'); break;
+        case '3': standard(e.ctrlKey ? 'left' : 'right'); break;
+        case '7': standard(e.ctrlKey ? 'bottom' : 'top'); break;
+        case '9': void engine.flipView().then(follow); break;
+        case '5': {
+          const projection = k.ortho ? 'Perspective' : 'Orthographic';
+          k.patchView(k.page, 'main', { projection });
+          k.patchView(k.page, 'second', { projection });
+          break;
+        }
+        case '4': e.ctrlKey ? slide(-1, 0) : turn(-15, 0); break;
+        case '6': e.ctrlKey ? slide(1, 0) : turn(15, 0); break;
+        case '8': e.ctrlKey ? slide(0, 1) : turn(0, 15); break;
+        case '2': e.ctrlKey ? slide(0, -1) : turn(0, -15); break;
+        case 'NumpadAdd': void engine.zoomBy(1.25).then(follow); break;
+        case 'NumpadSubtract': void engine.zoomBy(0.8).then(follow); break;
+        case 'NumpadDecimal': void k.fitViews(k.hasSelection ? k.selection() : undefined); break;
+        case 'Home': void k.fitViews(undefined); break;
+        default: handled = false;
+      }
+      if (handled) e.preventDefault();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [engine]);
+
   const hasSections = engine.isInitialized && engine.hasSections();
 
   return (

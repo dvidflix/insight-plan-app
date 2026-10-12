@@ -17,6 +17,7 @@ import { IfcTree } from './IfcTree';
 import { ModelsList } from './ModelsList';
 import { ClashResultsList } from './ContactsSection';
 import { SidePane, type SidePaneTab } from './SidePane';
+import { ModelImageExport } from './ModelImageExport';
 import { IconCamera, IconCube, IconList, IconPalette, IconSearch, IconTree, IconViewTable } from './icons';
 import { TopicsPanel } from './TopicsPanel';
 import { useTopicsStore } from '../state/topicsStore';
@@ -261,7 +262,7 @@ export function ModelConfigPanel() {
       ) : tab === 'datatable' ? (
         <DataTablePanel />
       ) : panels && tab === 'views' ? (
-        <ViewpointsPanel key={tab} element={panels.views} settings={<View3DPanel page="model" />} />
+        <ViewpointsPanel key={tab} element={panels.views} settings={<View3DPanel page="model" />} extra={[{ label: 'Output', content: <ModelImageExport /> }]} />
       ) : (
         <div className="flt__hint">Starting viewer…</div>
       )}

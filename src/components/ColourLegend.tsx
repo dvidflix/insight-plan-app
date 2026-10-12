@@ -1,15 +1,16 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelColorStore } from '../state/modelColorStore';
 import { useViewSettingsStore, type ViewKey } from '../state/viewSettingsStore';
 import { useSearchSetsStore } from '../state/searchSetsStore';
-import { useModelFields } from './modelFields';
+import { useIndexTick, useModelFields } from './modelFields';
 import { useColourValues } from './useColourValues';
 import { isSetFolderField, makeValueOf, setFolderOf } from '../viewer/setFolderValues';
 import { legendRows, valuesOfRow, type LegendRow } from '../viewer/colourLegend';
 import { useModelsStore } from '../state/modelsStore';
 import { orderValues, useColourOrderStore } from '../state/colourOrderStore';
 import { usePersistedState } from '../utils/persistedState';
+
 
 const MAX_ROWS = 40;
 
@@ -41,7 +42,40 @@ function LegendBlock({ view, title }: { view: ViewKey; title: string | null }) {
   const manual = useColourOrderStore((s) => s.manual[field]);
   const values = useMemo(() => orderValues(counted, sort, manual), [counted, sort, manual]);
   const [open, setOpen] = usePersistedState('colourLegend.open', true);
-  const rows = useMemo(() => legendRows(values, colors, others), [values, colors, others]);
+  const allRows = useMemo(() => legendRows(values, colors, others), [values, colors, others]);
+
+  // A value hidden with its eye in Models > Colour (or by Hide in the viewer) leaves the legend, with its objects.
+  const tick = useIndexTick();
+  const [, setVisTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setVisTick((t) => t + 1);
+    engine.onVisibilityChange.add(bump);
+    engine.onExternalVisibilityChange.add(bump);
+    return () => {
+      engine.onVisibilityChange.remove(bump);
+      engine.onExternalVisibilityChange.remove(bump);
+    };
+  }, [engine]);
+  const idsByValue = useMemo(() => {
+    const valueOf = makeValueOf(field, engine.getIndexes(), sets);
+    const out = new Map<string, Record<string, number[]>>();
+    for (const [modelId, index] of engine.getIndexes()) {
+      if (hiddenModels.has(modelId)) continue;
+      for (const [id, e] of index.elements) {
+        const v = valueOf(e);
+        const byModel = out.get(v) ?? out.set(v, {}).get(v)!;
+        (byModel[modelId] ??= []).push(id);
+      }
+    }
+    return out;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, field, sets, hiddenModels, tick, values]);
+  const rows = allRows.filter((r) => {
+    let total = 0;
+    let hidden = 0;
+    for (const v of valuesOfRow(r, values, colors)) for (const [m, ids] of Object.entries(idsByValue.get(v) ?? {})) for (const id of ids) { total++; if (engine.isUserHidden(m, id)) hidden++; }
+    return !(total > 0 && hidden === total);
+  });
   const label = isSetFolderField(field)
     ? `Set folder › ${setFolderOf(field) || '(no folder)'}`
     : fields.find((f) => f.id === field)?.label ?? field;

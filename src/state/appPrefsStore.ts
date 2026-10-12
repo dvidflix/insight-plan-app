@@ -6,6 +6,7 @@ import { create } from 'zustand';
 const SCENARIOS_TAB_KEY = 'viewer.showScenariosTab';
 const TIMELINES_TAB_KEY = 'viewer.showTimelinesTab';
 const WIKI_TAB_KEY = 'viewer.showWikiTab';
+const HELP_TAB_KEY = 'viewer.showHelpTab';
 const EXTERNAL_TAB_KEY = 'viewer.showExternalTab';
 const DASHBOARDS_TAB_KEY = 'viewer.showDashboardsTab';
 
@@ -62,6 +63,8 @@ interface AppPrefs {
   showTimelinesTab: boolean;
   setShowTimelinesTab: (v: boolean) => void;
   showWikiTab: boolean;
+  showHelpTab: boolean;
+  setShowHelpTab: (v: boolean) => void;
   showExternalTab: boolean;
   setShowExternalTab: (v: boolean) => void;
   showDashboardsTab: boolean;
@@ -84,6 +87,11 @@ export const useAppPrefsStore = create<AppPrefs>((set) => ({
     set({ showTimelinesTab: v });
   },
   showWikiTab: readFlagOn(WIKI_TAB_KEY),
+  showHelpTab: readFlagOn(HELP_TAB_KEY),
+  setShowHelpTab: (v) => {
+    writeFlag(HELP_TAB_KEY, v);
+    set({ showHelpTab: v });
+  },
   showExternalTab: readFlagOn(EXTERNAL_TAB_KEY),
   setShowExternalTab: (v) => {
     writeFlag(EXTERNAL_TAB_KEY, v);

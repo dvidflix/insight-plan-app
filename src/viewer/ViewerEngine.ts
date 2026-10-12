@@ -1836,6 +1836,66 @@ export class ViewerEngine {
     }
   }
 
+  /** Whether the 3D view is on screen (not behind another page), so keys aimed at it should act. */
+  get isOnScreen(): boolean {
+    const el = this._world?.renderer?.three.domElement;
+    return !!el && el.offsetParent !== null;
+  }
+
+  /** Blender's numpad 4 / 6 / 8 / 2: turns the view about what it looks at (degrees; azimuth to the right, polar up). */
+  async orbitBy(azimuthDeg: number, polarDeg: number) {
+    const controls = this._world?.camera.controls;
+    if (!controls) return;
+    await controls.rotate(THREE.MathUtils.degToRad(-azimuthDeg), THREE.MathUtils.degToRad(-polarDeg), true);
+  }
+
+  /** Blender's Ctrl + numpad 4 / 6 / 8 / 2: slides the view sideways / up (a fraction of the view's height). */
+  async panBy(right: number, up: number) {
+    const camera = this._world?.camera;
+    if (!camera) return;
+    const controls = camera.controls;
+    const position = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    controls.getPosition(position);
+    controls.getTarget(target);
+    const ortho = camera.projection.current !== 'Perspective';
+    const height = ortho ? (camera.threeOrtho.top - camera.threeOrtho.bottom) / Math.max(camera.threeOrtho.zoom, 1e-6) : 2 * position.distanceTo(target) * Math.tan(THREE.MathUtils.degToRad(camera.threePersp.fov) / 2);
+    await controls.truck(right * height * 0.1, -up * height * 0.1, true);
+  }
+
+  /** Blender's numpad + / -: closer (factor > 1) or further. */
+  async zoomBy(factor: number) {
+    const camera = this._world?.camera;
+    if (!camera) return;
+    const controls = camera.controls;
+    if (camera.projection.current !== 'Perspective') {
+      await controls.zoomTo(camera.threeOrtho.zoom * factor, true);
+      return;
+    }
+    const position = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    controls.getPosition(position);
+    controls.getTarget(target);
+    await controls.dollyTo(position.distanceTo(target) / factor, true);
+  }
+
+  /** Blender's numpad 9, its rule: a standard view (front, back, left, right, top, bottom) goes to its opposite; any other
+      view goes round 180 degrees about the vertical, keeping its height and distance from what it looks at. */
+  async flipView() {
+    const controls = this._world?.camera.controls;
+    if (!controls) return;
+    const position = new THREE.Vector3();
+    const target = new THREE.Vector3();
+    controls.getPosition(position);
+    controls.getTarget(target);
+    const d = position.clone().sub(target);
+    const axisAligned = d.lengthSq() > 0 && Math.max(Math.abs(d.x), Math.abs(d.y), Math.abs(d.z)) / d.length() > 0.999;
+    // The viewer's up is Y: round the vertical swaps X and Z.
+    const flipped = axisAligned ? d.clone().negate() : new THREE.Vector3(-d.x, d.y, -d.z);
+    const p = target.clone().add(flipped);
+    await controls.setLookAt(p.x, p.y, p.z, target.x, target.y, target.z, true);
+  }
+
   /** Puts the whole building back together: everything visible (Hider) and
       the camera fitted to the full model (BoundingBoxer). */
   async restoreAssembled() {

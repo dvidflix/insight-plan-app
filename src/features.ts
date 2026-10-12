@@ -20,8 +20,8 @@ export const FEATURES = {
   serverFiles: EDITION !== 'web',
   /** Reading projects from a P6 Professional database by its path on disk. */
   p6Database: EDITION !== 'web',
-  /** The Help tab for customers. The team's Timelines and Wiki tabs are not part of the shipped editions. */
-  help: EDITION !== 'internal',
+  /** The Help tab, in every edition (Settings > Window switches it on and off, like the Wiki). The team's Timelines and Wiki tabs are not part of the shipped editions. */
+  help: true,
   teamPages: internal,
   /** The licence check at start-up: the browser edition is only for licensed customers. */
   licence: EDITION === 'web',

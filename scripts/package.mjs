@@ -10,9 +10,10 @@ const run = (cmd) => execSync(cmd, { cwd: root, stdio: 'inherit' });
 const version = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8')).version;
 const out = path.join(root, 'release', `InsightPlan-${version}`);
 
+// The notices first: the app build carries them (public/THIRD-PARTY-NOTICES.txt).
+run('npm run licenses');
 run('npm run build:product');
 run('npm run build:server');
-run('npm run licenses');
 
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
@@ -22,6 +23,7 @@ copy('server-dist');
 copy('docs');
 copy('scenario-engine', 'scenario-engine', (src) => !/__pycache__|[\/]tests([\/]|$)|_tmp_clash|\.pyc$/.test(src));
 copy('THIRD-PARTY-LICENSES.json');
+copy('public/THIRD-PARTY-NOTICES.txt', 'THIRD-PARTY-NOTICES.txt');
 // The runtime: the Node.js that built it (22.5 or later has the built-in SQLite the project database uses).
 mkdirSync(path.join(out, 'runtime'), { recursive: true });
 cpSync(process.execPath, path.join(out, 'runtime', 'node.exe'));
@@ -45,7 +47,7 @@ writeFileSync(path.join(out, 'README.txt'), [
   'Closing the black window stops it. Your data stays on this computer, in the project folder you choose in the app.',
   '',
   'The Scenarios generator (optional) needs Python 3.12 with the packages in scenario-engine\requirements.txt.',
-  'Third-party software notices: THIRD-PARTY-LICENSES.json',
+  'Third-party software notices: THIRD-PARTY-NOTICES.txt (licence texts) and THIRD-PARTY-LICENSES.json (the list)',
   '',
 ].join('\r\n'));
 

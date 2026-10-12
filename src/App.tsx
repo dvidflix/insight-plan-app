@@ -186,15 +186,16 @@ export default function App() {
   const scenariosOn = useAppPrefsStore((s) => s.experimental.scenarios);
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
+  const showHelpTab = useAppPrefsStore((s) => s.showHelpTab);
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || FEATURES.help) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
-    [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab],
+    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
-    if (((!showScenariosTab || !scenariosOn) && page === 'scenarios') || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || (!FEATURES.help && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
-  }, [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showExternalTab, showDashboardsTab, page]);
+    if (((!showScenariosTab || !scenariosOn) && page === 'scenarios') || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || ((!FEATURES.help || !showHelpTab) && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
+  }, [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab, page]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab step through the top tabs (wrapping round).
   // Alt+PageDown / Alt+PageUp do the same: a normal browser tab keeps Ctrl+Tab

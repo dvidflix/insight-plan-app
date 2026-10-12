@@ -292,7 +292,6 @@ export function patchAllConcrete(materials: Iterable<THREE.Material>, u: Concret
   for (const m of materials) patchConcrete(m, u);
 }
 
-const GLASS_OPACITY = 0.4;
 
 /** Gives each painted material (a 4D stage's colour) the surface class its colour carries. */
 export function refreshMaterialClasses(materials: Iterable<THREE.Material>) {

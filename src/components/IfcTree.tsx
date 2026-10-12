@@ -8,6 +8,7 @@ import { prettyClass } from '../viewer/bimTables';
 import type { ModelIndex } from '../viewer/ViewerEngine';
 import type { ModelTreeNode } from '../viewer/types';
 import { queryMatcher } from '../schedule/search';
+import { IconEye, IconEyeOff } from './icons';
 
 type Mode = 'structure' | 'types' | 'layers';
 type Kind = 'model' | 'spatial' | 'group' | 'element';
@@ -144,10 +145,24 @@ export function IfcTree() {
   // not re-open the tree down to its first object.
   const [pickedKey, setPickedKey] = useState<string | null>(null);
   const treePickAt = useRef(0);
+  // The rows picked here (click, Ctrl+click toggles, Shift+click / Shift+arrows a range): their objects are the selection in 3D,
+  // and Space or an eye hides / shows them together, as in Sets.
+  const [picks, setPicks] = useState<Set<string>>(new Set());
+  const anchor = useRef<string | null>(null);
+  const [, setVisTick] = useState(0);
+  useEffect(() => {
+    const bump = () => setVisTick((t) => t + 1);
+    engine.onVisibilityChange.add(bump);
+    engine.onExternalVisibilityChange.add(bump);
+    return () => {
+      engine.onVisibilityChange.remove(bump);
+      engine.onExternalVisibilityChange.remove(bump);
+    };
+  }, [engine]);
   const bodyRef = useRef<HTMLDivElement>(null);
   // Name / Description widths; Type takes the rest. Drag a header divider.
   const [cols, setCols] = usePersistedState<[number, number]>('ifcTree.cols', [64, 84]);
-  const gridCols = { gridTemplateColumns: `minmax(0, 1fr) ${cols[0]}px ${cols[1]}px` };
+  const gridCols = { gridTemplateColumns: `minmax(0, 1fr) ${cols[0]}px ${cols[1]}px 28px` };
   const startResize = (which: 0 | 1) => (e: React.PointerEvent) => {
     e.preventDefault();
     const x0 = e.clientX;
@@ -199,6 +214,7 @@ export function IfcTree() {
   // A pick in the 3D view: reveal the (first) picked element's row.
   useEffect(() => {
     if (performance.now() - treePickAt.current < 1000) return;
+    setPicks(new Set());
     const first = [...selected].find((k) => byKey.has(k));
     if (!first) return;
     setExpanded((prev) => {
@@ -248,14 +264,51 @@ export function IfcTree() {
       return next;
     });
 
-  const select = (n: TNode, additive: boolean) => {
+  /** Picks a row: alone, or (Ctrl) toggled in the picks, or (Shift) with every row between the last pick and it. */
+  const select = (n: TNode, additive: boolean, range = false) => {
     setFocusKey(n.key);
-    const map = toMap(n);
-    if (!Object.keys(map).length) return;
+    let next: Set<string>;
+    const from = anchor.current ? rows.findIndex((r) => r.n.key === anchor.current) : -1;
+    const to = rows.findIndex((r) => r.n.key === n.key);
+    if (range && from >= 0 && to >= 0) {
+      next = new Set(rows.slice(Math.min(from, to), Math.max(from, to) + 1).map((r) => r.n.key));
+    } else {
+      next = additive ? new Set(picks) : new Set<string>();
+      if (additive && next.has(n.key)) next.delete(n.key);
+      else next.add(n.key);
+      anchor.current = n.key;
+    }
+    setPicks(next);
     setPickedKey(n.key);
     treePickAt.current = performance.now();
-    void engine.highlighter.highlightByID('select', map, !additive, false);
+    const map: Record<string, Set<number>> = {};
+    for (const key of next) {
+      const node = byKey.get(key);
+      if (node) for (const id of node.ids) (map[node.modelId] ??= new Set()).add(id);
+    }
+    if (Object.keys(map).length) void engine.highlighter.highlightByID('select', map, true, false);
+    else void engine.highlighter.clear('select');
   };
+  const hiddenOf = (n: TNode) => {
+    let hidden = 0;
+    for (const id of n.ids) if (engine.isUserHidden(n.modelId, id)) hidden++;
+    return hidden;
+  };
+  /** Hides the objects of these rows, or shows them when any is hidden (as Sets and Colour do). */
+  const flip = async (nodes: TNode[]) => {
+    const map: Record<string, Set<number>> = {};
+    let hidden = 0;
+    let total = 0;
+    for (const node of nodes) for (const id of node.ids) {
+      (map[node.modelId] ??= new Set()).add(id);
+      total++;
+      if (engine.isUserHidden(node.modelId, id)) hidden++;
+    }
+    if (total === 0) return;
+    await engine.hider.set(hidden > 0, map);
+    engine.onExternalVisibilityChange.trigger();
+  };
+  const pickedNodes = () => [...picks].map((k) => byKey.get(k)).filter((n): n is TNode => !!n);
   /** Arrow keys, as in a file explorer: Up / Down move (and select),
       Right opens a row or steps into it, Left closes it or goes to its
       parent; Home / End jump to the first / last row. */
@@ -263,10 +316,15 @@ export function IfcTree() {
     if (!rows.length || e.altKey || e.ctrlKey || e.metaKey) return;
     const at = Math.max(0, rows.findIndex((r) => r.n.key === (focusKey ?? pickedKey)));
     const { n, open } = rows[at];
-    const go = (i: number) => select(rows[Math.min(rows.length - 1, Math.max(0, i))].n, false);
+    const go = (i: number) => select(rows[Math.min(rows.length - 1, Math.max(0, i))].n, false, e.shiftKey);
     switch (e.key) {
       case 'ArrowDown': go(focusKey || pickedKey ? at + 1 : 0); break;
       case 'ArrowUp': go(at - 1); break;
+      case ' ': {
+        const nodes = picks.size ? pickedNodes() : [n];
+        void flip(nodes);
+        break;
+      }
       case 'Home': go(0); break;
       case 'End': go(rows.length - 1); break;
       case 'ArrowRight':
@@ -293,11 +351,6 @@ export function IfcTree() {
     }
     e.preventDefault();
   };
-  /** A group row shows selected while all its objects are. */
-  const pickedSelected = useMemo(() => {
-    const n = pickedKey ? byKey.get(pickedKey) : undefined;
-    return !!n && n.kind !== 'element' && n.ids.length > 0 && n.ids.every((id) => selected.has(`${n.modelId}:${id}`));
-  }, [pickedKey, byKey, selected]);
   const zoom = (n: TNode) => {
     const map = toMap(n);
     if (Object.keys(map).length) void engine.fit(map);
@@ -325,19 +378,23 @@ export function IfcTree() {
           <i className="ifct__resize" onPointerDown={startResize(1)} />
           Description
         </span>
+        <span />
       </div>
-      <div className="ifct__body" ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown} aria-label="Selection tree: arrow keys move, Right / Left open and close">
+      <div className="ifct__body" ref={bodyRef} tabIndex={0} onKeyDown={onKeyDown} aria-label="Selection tree: arrow keys move, Right / Left open and close, Space hides or shows the picked rows">
         {rows.length === 0 && <div className="ifct__empty">{models.length === 0 ? 'No models loaded.' : mode === 'layers' ? 'This model has no layers.' : 'Nothing matches.'}</div>}
         {rows.map(({ n, guides, last, open }) => {
           const icon = iconFor(n);
-          const isSel = n.kind === 'element' ? selected.has(n.key) : pickedSelected && n.key === pickedKey;
+          const isSel = picks.has(n.key) || (n.kind === 'element' && selected.has(n.key));
+          const hiddenN = hiddenOf(n);
+          const shut = n.ids.length > 0 && hiddenN === n.ids.length;
+          const part = hiddenN > 0 && !shut;
           return (
             <div
               key={n.key}
               data-key={n.key}
               className={`ifct__row${isSel ? ' is-selected' : ''}${n.kind === 'group' ? ' is-group' : ''}`}
               style={gridCols}
-              onClick={(e) => select(n, e.ctrlKey || e.metaKey || e.shiftKey)}
+              onClick={(e) => select(n, e.ctrlKey || e.metaKey, e.shiftKey)}
               onDoubleClick={() => (n.children.length ? toggle(n.key) : zoom(n))}
               title={n.ids.length ? `${n.ids.length} object${n.ids.length === 1 ? '' : 's'} — click to select, double-click to ${n.children.length ? 'expand' : 'zoom'}` : undefined}
             >
@@ -369,6 +426,20 @@ export function IfcTree() {
               </span>
               <span className="ifct__cell">{n.name}</span>
               <span className="ifct__cell">{n.desc}</span>
+              <span className="ifct__eyecell">
+                {n.ids.length > 0 && (
+                  <button
+                    type="button"
+                    className={`ifct__eye${shut ? ' is-off' : part ? ' is-part' : ''}`}
+                    onClick={(e) => { e.stopPropagation(); void flip(picks.has(n.key) && picks.size > 1 ? pickedNodes() : [n]); }}
+                    onDoubleClick={(e) => e.stopPropagation()}
+                    title={shut ? 'Show these objects' : part ? 'Some are hidden: click to show them all' : picks.has(n.key) && picks.size > 1 ? 'Hide the picked rows' : 'Hide these objects'}
+                    aria-label={shut ? 'Show' : 'Hide'}
+                  >
+                    {shut ? <IconEyeOff width={15} height={15} /> : <IconEye width={15} height={15} />}
+                  </button>
+                )}
+              </span>
             </div>
           );
         })}

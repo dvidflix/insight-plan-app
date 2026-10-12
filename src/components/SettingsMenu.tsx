@@ -5,6 +5,7 @@ import { CollapsibleSection } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
 import { useTableStyleStore } from '../state/tableStyleStore';
 import { exportAppConfig, importAppConfig } from '../state/appConfig';
+import { ImportExportPanel } from './ImportExportPanel';
 import { FULL_SCREEN_KEY } from './FullScreenOnStart';
 import { ACCENT_PALETTES, useAccentPaletteStore } from '../state/accentPaletteStore';
 import { DEFAULT_SELECTION_COLOR, SELECTION_COLOR_KEY } from '../viewer/selectionColor';
@@ -129,6 +130,8 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const setShowTimelinesTab = useAppPrefsStore((s) => s.setShowTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
+  const showHelpTab = useAppPrefsStore((s) => s.showHelpTab);
+  const setShowHelpTab = useAppPrefsStore((s) => s.setShowHelpTab);
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const setShowExternalTab = useAppPrefsStore((s) => s.setShowExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
@@ -163,6 +166,10 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
 
   return (
     <div className="settings-panel">
+      <Section title="Import / Export" defaultOpen tip="Each kind of thing on its own, as a small file to keep or hand to a colleague. Importing adds what is new and replaces what has the same id; it never removes anything. For everything at once, including programmes, use Preferences > Export all.">
+        <ImportExportPanel />
+      </Section>
+
       {timeline && <TimelineSettings />}
 
       {inputs && (
@@ -221,6 +228,14 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
         <div className="disp__row">
           <span>Show Wiki tab</span>
           <button type="button" role="switch" aria-checked={showWikiTab} className={`switch${showWikiTab ? ' on' : ''}`} onClick={() => setShowWikiTab(!showWikiTab)}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+        )}
+        {FEATURES.help && (
+        <div className="disp__row">
+          <span>Show Help tab</span>
+          <button type="button" role="switch" aria-checked={showHelpTab} className={`switch${showHelpTab ? ' on' : ''}`} onClick={() => setShowHelpTab(!showHelpTab)}>
             <span className="switch__thumb" />
           </button>
         </div>

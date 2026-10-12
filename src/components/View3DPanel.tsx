@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { HexColorInput } from './HexColorInput';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { DEFAULT_QUALITY, QUALITY_PRESETS, type RenderQuality } from '../viewer/renderQuality';

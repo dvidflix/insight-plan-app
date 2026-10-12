@@ -26,6 +26,12 @@ export function renderMarkdown(markdown: string, section: string, mediaUrl: (src
       a.setAttribute('rel', 'noreferrer');
       continue;
     }
+    // A file the app itself serves (e.g. the licence notices).
+    if (href.startsWith('/') && !href.startsWith('//')) {
+      a.setAttribute('target', '_blank');
+      a.setAttribute('rel', 'noreferrer');
+      continue;
+    }
     if (href.startsWith('#')) {
       a.setAttribute('data-anchor', href.slice(1));
       continue;
