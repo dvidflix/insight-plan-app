@@ -33,6 +33,7 @@ import { usePersistedState } from '../utils/persistedState';
 import { buildColumnContext } from '../schedule/columns';
 import { useColumnCatalog } from '../schedule/calculatedColumns';
 import { TasksPanel } from '../components/sequence/TasksPanel';
+import { isSettingsOpen, useSettingsPaneStore } from '../state/settingsPaneStore';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
 import { ColorModeRow, ViewColorSettings, propertyColorer } from '../components/sequence/ColorModePanel';
 import { View3DPanel } from '../components/View3DPanel';
@@ -64,6 +65,7 @@ interface ViewTarget {
 import type { Activity, ScheduleModel } from '../schedule/types';
 import { InfoTip } from '../components/InfoTip';
 import { JumpToDate } from '../components/sequence/JumpToDate';
+import { SkipDays } from '../components/sequence/SkipDays';
 
 type LinkTab = 'groups' | 'tree' | 'properties' | 'search' | 'datatable' | 'view3d' | 'models';
 
@@ -193,6 +195,7 @@ export function SequencePanel() {
   const [unassignedMode, setUnassignedMode] = usePersistedState<'original' | 'red'>('sequence.unassignedMode', 'original');
   // Gantt, Tasks, Resources, Scenarios, Clash and Topics are dock panels (components/Dock.tsx): the user puts each on the
   // left, at the bottom or on the right. Scenarios has a second part (its dock) that goes with it while it shows.
+  const settingsTarget = useSettingsPaneStore((s) => s.target);
   const tasksShowing = useDockStore((d) => {
     const side = d.placement.tasks ?? DOCK_DEFAULTS.tasks;
     return side !== 'closed' && !d.folded[side] && activeOn(d, side) === 'tasks';
@@ -768,8 +771,8 @@ export function SequencePanel() {
       </DockPanel>
       {experimental.scenarios && <DockPanel id="scenarios" label="Scenarios"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
       {experimental.bcf && <DockPanel id="topics" label={`Topics${topicCount ? ` (${topicCount})` : ''}`}><div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div></DockPanel>}
-      {experimental.scenarios && scenariosShowing && <ScenarioDock />}
-      {tasksShowing && ready && model && ganttColumnCtx && <TasksDock model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} />}
+      {experimental.scenarios && scenariosShowing && isSettingsOpen(settingsTarget, 'scenarios') && <ScenarioDock />}
+      {tasksShowing && isSettingsOpen(settingsTarget, 'tasks') && ready && model && ganttColumnCtx && <TasksDock model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} />}
     </>
   );
 
@@ -822,6 +825,7 @@ export function SequencePanel() {
                   <CollapsibleSection title="Options" open={fourD.isOpen('options')} onToggle={() => fourD.toggle('options')}>
                     <div className="disp vsp seq-options">
                       <JumpToDate />
+                      <SkipDays />
                       <ColorModeRow view="a" elements={allElements} label={split ? 'Color mode (left)' : 'Color mode'} />
                       {split && <ColorModeRow view="b" elements={allElements} label="Color mode (right)" />}
                       <div className="disp__row">

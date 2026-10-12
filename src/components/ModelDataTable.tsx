@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as OBC from '@thatopen/components';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
+import { useSettingsPaneStore } from '../state/settingsPaneStore';
 import { COL_CLASS, COL_GUID, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataAgg, type DataTableScope } from '../state/dataTableStore';
 import type { ElementSummary } from '../viewer/types';
 import { NO_VALUE, elementValue } from '../viewer/bimTables';
@@ -110,6 +111,7 @@ export function ModelDataTable() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
+  const settingsOn = useSettingsPaneStore((s) => s.target === 'datatable');
   const { open, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setWidth, patch, configure, presets, applyPreset } = useDataTableStore();
 
   const [search, setSearch] = useState('');
@@ -483,7 +485,7 @@ export function ModelDataTable() {
           <button className="btn btn--small" type="button" onClick={selectShown} disabled={shown.length === 0} title="Select every row currently shown" aria-label="Select all"><IconCheckboxChecked width={16} height={16} /></button>
           <button className="btn btn--small" type="button" onClick={exportCsv} disabled={shown.length === 0 || columns.length === 0} title={`Export the ${shown.length.toLocaleString()} rows shown, with the shown columns, to a CSV file (search and filters applied)`} aria-label="Export CSV"><IconDownloadFile width={16} height={16} /></button>
           <span className="mdt__sep" />
-          <button className="btn btn--small mdt__configure" aria-label="Configure" type="button" onClick={() => configure()} title={`Columns, filters, grouping, sorting and row colours: the side pane's Data table tab${summary ? `
+          <button className={`btn btn--small mdt__configure${settingsOn ? ' primary' : ''}`} aria-label="Configure" aria-pressed={settingsOn} type="button" onClick={() => { if (settingsOn) useSettingsPaneStore.getState().setTarget('none'); else { useSettingsPaneStore.getState().setTarget('datatable'); configure(); } }} title={`Columns, filters, grouping, sorting and row colours: the side pane's Data table tab${summary ? `
 Now: ${summary}` : ''}`}><IconTune width={16} height={16} /></button>
         </div>
       </div>

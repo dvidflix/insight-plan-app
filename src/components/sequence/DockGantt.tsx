@@ -11,6 +11,20 @@ import { usePersistedState } from '../../utils/persistedState';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { activityFinishMs, activityStartMs } from '../../schedule/linking';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
+import { useSettingsPaneStore } from '../../state/settingsPaneStore';
+import { ColumnsPanel } from '../schedule/ColumnsPanel';
+import { GroupPanel } from '../schedule/GroupPanel';
+import { SortPanel } from '../schedule/SortPanel';
+import { ColorPanel } from '../schedule/ColorPanel';
+import { SidePaneDock } from '../SidePane';
+import { IconColumns, IconGroup, IconPalette, IconSort, IconTune } from '../icons';
+
+const SETTINGS_TABS = [
+  { id: 'columns', label: 'Columns', icon: <IconColumns /> },
+  { id: 'group', label: 'Group', icon: <IconGroup /> },
+  { id: 'sort', label: 'Sort', icon: <IconSort /> },
+  { id: 'color', label: 'Color', icon: <IconPalette /> },
+] as const;
 
 const ZOOM_LABEL: Record<Zoom, string> = { hour: 'Hours', day: 'Days', week: 'Weeks', month: 'Months', quarter: 'Quarters', year: 'Years' };
 
@@ -30,7 +44,7 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
   const ref = useRef<GanttHandle>(null);
   const catalog = useColumnCatalog(model);
   const columnCtx = useMemo(() => buildColumnContext(model), [model]);
-  const [columnIds] = usePersistedState<string[]>('gantt.columns', DEFAULT_GANTT_COLUMNS);
+  const [columnIds, setColumnIds] = usePersistedState<string[]>('gantt.columns', DEFAULT_GANTT_COLUMNS);
   const columns = useMemo(() => resolveColumns(catalog, columnIds), [catalog, columnIds]);
   const set = useViewSettings('gantt');
   const [zoom, setZoom] = usePersistedState<Zoom>('schedule.zoom', 'week');
@@ -38,12 +52,27 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
   const [critical, setCritical] = usePersistedState('schedule.showGanttCritical', true);
   const [baseline, setBaseline] = usePersistedState('schedule.showGanttBaseline', false);
   const [labels, setLabels] = usePersistedState('schedule.showGanttLabels', false);
-  const [palette] = usePersistedState('schedule.wbsPalette', DEFAULT_WBS_PALETTE);
+  const [palette, setPalette] = usePersistedState('schedule.wbsPalette', DEFAULT_WBS_PALETTE);
   const [follow, setFollow] = usePersistedState('sequence.ganttFollow', false);
   const [search, setSearch] = useState('');
   const [collapseAll, setCollapseAll] = useState(0);
   const [expandAll, setExpandAll] = useState(0);
   const date = useSequenceTimelineStore((s) => s.date);
+  const settingsOn = useSettingsPaneStore((s) => s.target === 'gantt');
+  const [settingsTab, setSettingsTab] = usePersistedState<(typeof SETTINGS_TABS)[number]['id']>('sequence.ganttSettingsTab', 'columns');
+  const valuesOf = useMemo(() => {
+    const cache = new Map<string, { value: string; count: number }[]>();
+    return (fieldId: string) => {
+      const hit = cache.get(fieldId);
+      if (hit) return hit;
+      const col = catalog.find((c) => c.id === fieldId);
+      const counts = new Map<string, number>();
+      if (col) for (const a of model.activities) counts.set(col.text(a, columnCtx), (counts.get(col.text(a, columnCtx)) ?? 0) + 1);
+      const list = [...counts].map(([value, count]) => ({ value, count })).sort((x, y) => y.count - x.count || x.value.localeCompare(y.value));
+      cache.set(fieldId, list);
+      return list;
+    };
+  }, [catalog, columnCtx, model]);
   const basis = useSequenceTimelineStore((s) => s.basis);
   const setBasis = useSequenceTimelineStore((s) => s.setBasis);
 
@@ -108,8 +137,26 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
         {options.map(([label, on, setter, tip]) => (
           <button key={label} type="button" className={`tags__chip${on ? ' active' : ''}`} aria-pressed={on} title={tip} onClick={() => setter(!on)}>{label}</button>
         ))}
+        <button type="button" className={`btn btn--small${settingsOn ? ' primary' : ''}`} aria-pressed={settingsOn} aria-label="Gantt settings" title={settingsOn ? 'Hide the Gantt settings (columns, group, sort, colour)' : 'Show the Gantt settings (columns, group, sort, colour)'} onClick={() => useSettingsPaneStore.getState().toggle('gantt')}><IconTune width={16} height={16} /></button>
         <ExpandCollapseToggle className="btn btn--small" onCollapse={() => setCollapseAll((n) => n + 1)} onExpand={() => setExpandAll((n) => n + 1)} />
       </div>
+      {settingsOn && (
+        <SidePaneDock>
+          <div className="scn-dock" aria-label="Gantt settings">
+            <div className="side-pane__bar scn-dock__bar" role="tablist">
+              {SETTINGS_TABS.map((t) => (
+                <button key={t.id} type="button" role="tab" aria-selected={settingsTab === t.id} className={`side-pane__tab${settingsTab === t.id ? ' active' : ''}`} title={`Gantt: ${t.label}`} aria-label={`Gantt: ${t.label}`} onClick={() => setSettingsTab(t.id)}>{t.icon}</button>
+              ))}
+            </div>
+            <div className="config-panel__body scn-panel scn-dock__body">
+              {settingsTab === 'columns' && <ColumnsPanel catalog={catalog} views={[{ id: 'gantt', label: 'Gantt', selected: columnIds, defaults: DEFAULT_GANTT_COLUMNS, onChange: setColumnIds }]} calculated />}
+              {settingsTab === 'group' && <GroupPanel bare fields={catalog} rules={set.groupRules} onChange={set.setGroupRules} onClose={() => {}} onCollapseAll={() => setCollapseAll((n) => n + 1)} onExpandAll={() => setExpandAll((n) => n + 1)} groupByWbs={set.groupByWbs} onToggleGroupByWbs={() => set.setGroupByWbs(!set.groupByWbs)} />}
+              {settingsTab === 'sort' && <SortPanel bare fields={catalog} rules={set.sortRules} onChange={set.setSortRules} onClose={() => {}} />}
+              {settingsTab === 'color' && <ColorPanel bare rules={set.colorRules} onChange={set.setColorRules} onClose={() => {}} wbsPalette={palette} onWbsPaletteChange={setPalette} fields={catalog} valuesOf={valuesOf} />}
+            </div>
+          </div>
+        </SidePaneDock>
+      )}
       <div className="dockgantt__chart">
         <GanttChart
           ref={ref}

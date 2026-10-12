@@ -23,6 +23,25 @@ export const STEP_UNIT_LABELS: { value: StepUnit; label: string }[] = [
   { value: 'year', label: 'Yearly' },
 ];
 
+/** Days the playback steps over. 'custom': the weekdays picked (JS getDay: 0 = Sunday); 'nonworking': the programme's
+    own calendar. Sunday by default. */
+export type SkipMode = 'none' | 'nonworking' | 'custom';
+export interface SkipSettings {
+  mode: SkipMode;
+  days: number[];
+}
+const SKIP_KEY = 'sequence.skipDays';
+const DEFAULT_SKIP: SkipSettings = { mode: 'custom', days: [0] };
+function loadSkip(): SkipSettings {
+  try {
+    const v = JSON.parse(localStorage.getItem(SKIP_KEY) ?? 'null') as Partial<SkipSettings> | null;
+    if (v && (v.mode === 'none' || v.mode === 'nonworking' || v.mode === 'custom') && Array.isArray(v.days)) return { mode: v.mode, days: v.days.filter((d) => d >= 0 && d <= 6) };
+  } catch {
+    // unreadable: the default
+  }
+  return DEFAULT_SKIP;
+}
+
 interface SequenceTimelineState {
   date: number | null;
   playing: boolean;
@@ -35,12 +54,15 @@ interface SequenceTimelineState {
       "group the activities" behavior at coarser granularities. */
   stepUnit: StepUnit;
   basis: 'planned' | 'actual';
+  /** Days stepped over by the playback and the step buttons. */
+  skip: SkipSettings;
   /** The date the 4D driver last finished applying to the views. */
   appliedDate: number | null;
   setDate: (d: number | ((prev: number | null) => number)) => void;
   setPlaying: (p: boolean | ((prev: boolean) => boolean)) => void;
   setStepUnit: (u: StepUnit) => void;
   setBasis: (b: 'planned' | 'actual') => void;
+  setSkip: (s: SkipSettings) => void;
 }
 
 /** 4D playback cursor — shared between the Sequencing side panel (which
@@ -51,9 +73,18 @@ export const useSequenceTimelineStore = create<SequenceTimelineState>((set) => (
   playing: false,
   stepUnit: 'day',
   basis: 'planned',
+  skip: loadSkip(),
   appliedDate: null,
   setDate: (d) => set((s) => ({ date: typeof d === 'function' ? d(s.date) : d })),
   setPlaying: (p) => set((s) => ({ playing: typeof p === 'function' ? p(s.playing) : p })),
   setStepUnit: (stepUnit) => set({ stepUnit }),
   setBasis: (basis) => set({ basis }),
+  setSkip: (skip) => {
+    try {
+      localStorage.setItem(SKIP_KEY, JSON.stringify(skip));
+    } catch {
+      // not saved: lasts until reload
+    }
+    set({ skip });
+  },
 }));

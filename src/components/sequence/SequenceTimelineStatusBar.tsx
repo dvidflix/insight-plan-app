@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useSequenceTimelineStore, STEP_UNIT_LABELS, type StepUnit } from '../../state/sequenceTimelineStore';
 import { actualCoverage, limitRange, scheduleRange, type DateRange } from '../../schedule/linking';
-import { addUnit, alignDown, nextBoundary, prevBoundary } from '../../schedule/period';
+import { addUnit, alignDown, nextBoundary } from '../../schedule/period';
+import { skipOver, skipPredicate, stepFrom } from '../../schedule/skipDays';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../../state/timelineSettingsStore';
 import { usePersistedState } from '../../utils/persistedState';
 import { IconFirstPage, IconLastPage, IconPauseCircle, IconPlayCircle, IconRewind, IconStopCircle } from '../icons';
@@ -121,6 +122,9 @@ export function SequenceTimelineStatusBar() {
   const tl = useTimelineSettingsStore();
   const [speed, setSpeed] = usePersistedState('sequence.playSpeed', 6);
   const intervalMs = Math.max(MIN_INTERVAL_MS, tl.stepIntervalMs / speed);
+  // Days the steps go over (Options > Skip days).
+  const skip = useSequenceTimelineStore((s) => s.skip);
+  const skipped = useMemo(() => skipPredicate(skip, model), [skip, model]);
   const setBasis = useSequenceTimelineStore((s) => s.setBasis);
 
   // A programme with as-built dates for most of its activities (a finished project's XER) plays as built:
@@ -154,7 +158,7 @@ export function SequenceTimelineStatusBar() {
       setDate((d) => {
         const current = d ?? range.min;
         const aligned = alignDown(current, stepUnit);
-        const next = aligned < current ? aligned : nextBoundary(current, stepUnit);
+        const next = skipOver(aligned < current ? aligned : nextBoundary(current, stepUnit), stepUnit, 1, skipped);
         if (next >= range.max) {
           setPlaying(false);
           return range.max;
@@ -163,7 +167,7 @@ export function SequenceTimelineStatusBar() {
       });
     }, intervalMs);
     return () => clearInterval(intervalRef.current);
-  }, [playing, range, stepUnit, setDate, setPlaying, intervalMs]);
+  }, [playing, range, stepUnit, setDate, setPlaying, intervalMs, skipped]);
 
   // Left/Right arrow keys, and Ctrl+. / Ctrl+, , step the cursor forward/back
   // by one stepUnit — same boundary math as the ⏪/⏩ buttons. Ignored while
@@ -214,15 +218,15 @@ export function SequenceTimelineStatusBar() {
       const back = e.key === 'ArrowLeft' || (ctrl && e.code === 'Comma');
       if (forward) {
         e.preventDefault();
-        setDate((d) => Math.min(range.max, nextBoundary(d ?? range.min, stepUnit)));
+        setDate((d) => Math.min(range.max, stepFrom(d ?? range.min, stepUnit, 1, skipped)));
       } else if (back) {
         e.preventDefault();
-        setDate((d) => Math.max(range.min, prevBoundary(d ?? range.min, stepUnit)));
+        setDate((d) => Math.max(range.min, stepFrom(d ?? range.min, stepUnit, -1, skipped)));
       }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [range, stepUnit, setDate, setStepUnit, setPlaying]);
+  }, [range, stepUnit, setDate, setStepUnit, setPlaying, skipped]);
 
   const segments = useMemo(() => (range ? yearSegments(range) : []), [range]);
   // Monthly stepping: the track splits into a month row over a smaller year row.
@@ -369,7 +373,7 @@ export function SequenceTimelineStatusBar() {
         <button className="transport-btn" type="button" title="Go to start (Ctrl+Alt+0)" aria-label="Go to start" onClick={() => setDate(range.min)}>
           <IconFirstPage />
         </button>
-        <button className="transport-btn" type="button" title={`Back 1 ${stepUnit} (Ctrl+,)`} aria-label={`Back 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(prevBoundary(d ?? range.min, stepUnit)))}>
+        <button className="transport-btn" type="button" title={`Back 1 ${stepUnit} (Ctrl+,)`} aria-label={`Back 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(stepFrom(d ?? range.min, stepUnit, -1, skipped)))}>
           <IconRewind />
         </button>
         <button className={`transport-btn transport-btn--play${playing ? ' is-playing' : ''}`} type="button" title={playing ? 'Pause (Ctrl+Alt+3)' : 'Play (Ctrl+Alt+3)'} aria-label={playing ? 'Pause' : 'Play'} onClick={() => setPlaying((p) => !p)}>
@@ -387,7 +391,7 @@ export function SequenceTimelineStatusBar() {
         >
           <IconStopCircle />
         </button>
-        <button className="transport-btn transport-btn--mirror" type="button" title={`Forward 1 ${stepUnit} (Ctrl+.)`} aria-label={`Forward 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(nextBoundary(d ?? range.min, stepUnit)))}>
+        <button className="transport-btn transport-btn--mirror" type="button" title={`Forward 1 ${stepUnit} (Ctrl+.)`} aria-label={`Forward 1 ${stepUnit}`} onClick={() => setDate((d) => clampToRange(stepFrom(d ?? range.min, stepUnit, 1, skipped)))}>
           <IconRewind />
         </button>
         <button className="transport-btn" type="button" title="Go to end (Ctrl+Alt+4)" aria-label="Go to end" onClick={() => setDate(range.max)}>

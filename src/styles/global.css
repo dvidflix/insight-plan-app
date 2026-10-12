@@ -11402,3 +11402,9 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .dock-viewpoints .vp:not(.vp--cards) .vp__folder { display: contents; }
 .dock-viewpoints .vp:not(.vp--cards) .vp__folder-head, .dock-viewpoints .vp:not(.vp--cards) .vp__list > .flt__hint, .dock-viewpoints .vp:not(.vp--cards) .vp__folder > .flt__hint { grid-column: 1 / -1; }
 .dock-viewpoints .vp:not(.vp--cards) .vp__row { border-top: 0 !important; border-bottom: 1px solid var(--border); border-right: 1px solid var(--border); }
+
+/* Tasks list: the gear that shows / hides the Tasks settings pane. */
+.tasks__tools .icon-btn { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; border-radius: 5px; color: var(--text-dim); }
+.tasks__tools .icon-btn svg { width: 16px; height: 16px; }
+.tasks__tools .icon-btn:hover { color: var(--accent-strong); background: rgba(0, 0, 0, 0.05); }
+.tasks__tools .icon-btn.is-on { color: var(--accent-strong); background: rgb(var(--accent-rgb) / 0.14); }
