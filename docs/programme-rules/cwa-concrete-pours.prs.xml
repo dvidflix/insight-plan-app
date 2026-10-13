@@ -1,0 +1,682 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Worked example of a Programme Rules Specification (PRS): the rules the Scenarios generator applies today to a
+  concrete-pour model (scenario-engine: config.py, main.py, core/activity_generator.py, core/xml_builder.py), written
+  as data. Read it with programme-rules/README.md beside it. Every number below is the one the code uses now.
+  Where a rule is only described ("rank", "gap") the engine's own table or constant is quoted in the comment.
+-->
+<prs xmlns="https://insightplan.app/prs/1.0" xmlns:xs="http://www.w3.org/2001/XMLSchema" version="1.0">
+
+  <!-- A scenario can carry a second file of the same kind (an overlay): only the sections it changes, and only the rows
+       it adds or replaces (by id). That is where a scenario's own links, extras and crews live. -->
+  <info>
+    <title>CWA concrete pours (parity with the Python generator)</title>
+    <description>Pours become activity chains; walls, slabs, rafts, precast and stairs; durations, crews, links and the WBS.</description>
+    <author>david.felixx@gmail.com</author>
+    <version>1</version>
+    <projectShort>PRJ</projectShort>
+  </info>
+
+  <!-- ===================================================================================================
+       1. CALENDARS  (core/xml_builder: calendar 1 and 2)
+       =================================================================================================== -->
+  <calendars>
+    <calendar id="cal-5d" name="CWA 6d Calendar" default="true" hoursPerDay="8">
+      <!-- Named "6d" in P6 but a 5-day week: Mon-Fri 09:00-17:00. -->
+      <week mon="09:00-17:00" tue="09:00-17:00" wed="09:00-17:00" thu="09:00-17:00" fri="09:00-17:00" sat="" sun=""/>
+      <holidays/>
+    </calendar>
+    <calendar id="cal-7d" name="7-day (curing)" hoursPerDay="8">
+      <week mon="09:00-17:00" tue="09:00-17:00" wed="09:00-17:00" thu="09:00-17:00" fri="09:00-17:00" sat="09:00-17:00" sun="09:00-17:00"/>
+    </calendar>
+  </calendars>
+
+  <!-- ===================================================================================================
+       2. DERIVED VALUES  (what each element "is": read once, used by every other section)
+          A derived value is read from the first source that gives one, then optionally cleaned.
+       =================================================================================================== -->
+  <derive>
+    <value id="pourId" type="string" description="The pour an element belongs to">
+      <first>
+        <source><override sheet="PlanningProposedPourID_Override" key="element.guid"/></source>
+        <source><property pset="CWA Pour" name="Pour ID Number"/><pad digits="4" onlyIfInteger="true"/></source>
+        <source><generated numbering="pour-numbering"/></source>
+      </first>
+    </value>
+
+    <value id="building" type="string" description="Final building code, e.g. 1HDAB">
+      <first>
+        <source><map table="building-names" input="ifc.IfcBuilding.Name" scope="ifc.fileName"/></source>
+        <source><concat><property pset="CWA Pour" name="Unit"/><property pset="CWA Pour" name="Building"/></concat></source>
+      </first>
+      <alias from="HNX" to="HN"/>
+    </value>
+
+    <value id="levelNumber" type="integer" description="Level as a number, read from the model property (no storey or elevation fallback for now)">
+      <first>
+        <source><property pset="CWA Pour" name="Level"/><extract pattern="(-?\d+)" group="1"/></source>
+      </first>
+    </value>
+    <value id="level" type="string" description="Level code: L1, L2, ... (zero, negative or missing: L0)">
+      <expr>if(levelNumber &gt; 0, 'L' + levelNumber, 'L0')</expr>
+    </value>
+
+    <value id="pourType" type="string" description="Pour type, upper case">
+      <first>
+        <source><property pset="CWA Pour" name="Pour Type"/><upper/></source>
+        <source><property pset="CWA Pour" name="General Pour Type"/><upper/></source>
+      </first>
+    </value>
+    <value id="generalPourType" type="string"><property pset="CWA Pour" name="General Pour Type"/><upper/></value>
+    <value id="stage" type="string" description="1, 2 or PRECAST"><property pset="CWA Pour" name="Concrete Stage"/><upper/></value>
+    <value id="isExternal" type="boolean">
+      <first>
+        <source><property pset="CWA Pour" name="Is External?"/></source>
+        <source><property pset="CWA Pour" name="IsExternal"/></source>
+      </first>
+      <true>Yes Y True 1 Ext External</true>
+    </value>
+    <value id="zone" type="string" description="DISCONNECTED, CONNECTED or none">
+      <first>
+        <source><property pset="CWA Pour" name="Building Zone"/></source>
+        <source><property pset="CWA Pour" name="Zone"/></source>
+      </first>
+      <classify>
+        <when pattern="DISCONNECTED" result="DISCONNECTED"/>
+        <when pattern="CONNECTED" result="CONNECTED"/>
+      </classify>
+    </value>
+    <value id="minElevation" type="number" unit="m"><property pset="CWA Pour" name="Min Elevation"/></value>
+    <value id="maxElevation" type="number" unit="m"><property pset="CWA Pour" name="Max Elevation"/></value>
+    <value id="isDoubleHeight" type="boolean" description="Walls taller than 6 m">
+      <expr>pourType == 'WALL' and (maxElevation - minElevation) &gt; 6</expr>
+    </value>
+    <value id="volume" type="number" unit="m3" description="Pour volume">
+      <first>
+        <source><property pset="CWA Pour" name="Pour Volume m3"/></source>
+        <source><quantity set="Qto_*" name="NetVolume"/></source>
+        <source><geometry measure="volume"/></source>
+      </first>
+    </value>
+  </derive>
+
+  <maps>
+    <!-- Original IfcBuilding names to the final building, per source file ("DEFAULT" for any other file). -->
+    <map id="building-names" key="file" subkey="upper(name)">
+      <file name="DEFAULT"/>
+    </map>
+  </maps>
+
+  <!-- ===================================================================================================
+       3. LEVELS  (what constitutes a level, and how levels relate)
+       =================================================================================================== -->
+  <levels>
+    <definition>
+      <!-- A level is the value of "level" above, per building. A pour is on ONE level (its own). -->
+      <identity by="building level"/>
+      <order by="levelNumber" direction="ascending"/>
+      <!-- "The next lower level that has pours": levels with no pours are skipped when looking below or above. -->
+      <adjacent skipEmpty="true"/>
+    </definition>
+    <!-- Levels are defined by the model property above for the time being. Later, a model with no level property could be read instead: uncomment and choose one.
+    <definition>
+      <fromStoreys>
+        <storey name="L0*" level="0"/> ... or by elevation bands:
+        <band from="-99" to="3.2" level="L0"/>
+        <band from="3.2" to="7.0" level="L1"/>
+      </fromStoreys>
+    </definition> -->
+  </levels>
+
+  <!-- ===================================================================================================
+       4. TYPES  (what constitutes a type; first match wins, in this order)
+          "durationKey" picks the duration rows in section 6; "code" is the type part of the activity ID.
+       =================================================================================================== -->
+  <types>
+    <type id="WALL-EXT-DH" name="External Double Height Wall" code="EW" durationKey="Double Height External Wall" family="wall" doubleHeight="true">
+      <applicability><derived name="pourType"><value><simpleValue>WALL</simpleValue></value></derived><derived name="isExternal"><value><simpleValue>true</simpleValue></value></derived><derived name="isDoubleHeight"><value><simpleValue>true</simpleValue></value></derived></applicability>
+    </type>
+    <type id="WALL-EXT" name="External Wall" code="EW" durationKey="Standard External Wall" family="wall">
+      <applicability><derived name="pourType"><value><simpleValue>WALL</simpleValue></value></derived><derived name="isExternal"><value><simpleValue>true</simpleValue></value></derived></applicability>
+    </type>
+    <type id="WALL-INT-DH" name="Internal Double Height Wall" code="IW" durationKey="Double Height Internal Wall" family="wall" doubleHeight="true">
+      <applicability><derived name="pourType"><value><simpleValue>WALL</simpleValue></value></derived><derived name="isDoubleHeight"><value><simpleValue>true</simpleValue></value></derived></applicability>
+    </type>
+    <type id="WALL-INT" name="Internal Wall" code="IW" durationKey="Standard Internal Wall" family="wall">
+      <applicability><derived name="pourType"><value><simpleValue>WALL</simpleValue></value></derived></applicability>
+    </type>
+    <type id="HEAVY_PRECAST" name="Heavy Precast" code="HP" durationKey="Other" family="heavyPrecast" precast="true">
+      <applicability><derived name="pourType"><value><simpleValue>HEAVY_PRECAST</simpleValue></value></derived></applicability>
+    </type>
+    <type id="STAIR" name="Stair" code="ST" durationKey="Other" family="precast" precast="true">
+      <applicability><derived name="pourType"><value><simpleValue>STAIR</simpleValue></value></derived></applicability>
+    </type>
+    <type id="REMOVABLE_ELEMENT" name="Removable Element" code="RE" durationKey="Other" family="precast" precast="true" removable="true">
+      <applicability><derived name="pourType"><value><simpleValue>REMOVABLE_ELEMENT</simpleValue></value></derived></applicability>
+    </type>
+    <type id="SLAB-PRECAST" name="Precast Slab" code="S" durationKey="Standard Internal Slab" family="precast" precast="true">
+      <applicability>
+        <derived name="pourType"><value><xs:restriction base="xs:string"><xs:enumeration value="SLAB"/><xs:enumeration value="MAIN_SLAB"/></xs:restriction></value></derived>
+        <derived name="stage"><value><simpleValue>PRECAST</simpleValue></value></derived>
+      </applicability>
+    </type>
+    <type id="RAFT" name="Raft" code="R" durationKey="Standard Internal Slab" family="raft">
+      <applicability><derived name="pourType"><value><simpleValue>RAFT</simpleValue></value></derived></applicability>
+    </type>
+    <type id="SLAB" name="Slab" code="S" durationKey="Standard Internal Slab" family="slab">
+      <!-- Any pour type containing SLAB, PIT or FLOOR, and the "Pits &amp; Raft" types. -->
+      <applicability><derived name="pourType"><value><xs:restriction base="xs:string"><xs:pattern value=".*(SLAB|PIT|FLOOR).*"/></xs:restriction></value></derived></applicability>
+    </type>
+    <type id="PEDESTAL" name="Pedestal" code="P" durationKey="Other" family="pedestal">
+      <applicability><derived name="pourType"><value><simpleValue>PEDESTAL</simpleValue></value></derived></applicability>
+    </type>
+    <type id="COLUMN" name="Column" code="C" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>COLUMN</simpleValue></value></derived></applicability></type>
+    <type id="BEAM" name="Beam" code="B" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>BEAM</simpleValue></value></derived></applicability></type>
+    <type id="LANDING" name="Landing" code="L" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>LANDING</simpleValue></value></derived></applicability></type>
+    <type id="PARAPET" name="Parapet" code="PA" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>PARAPET</simpleValue></value></derived></applicability></type>
+    <type id="CORBEL" name="Corbel" code="CO" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>CORBEL</simpleValue></value></derived></applicability></type>
+    <type id="GULLIES" name="Gullies" code="G" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>GULLIES</simpleValue></value></derived></applicability></type>
+    <type id="UPSTAND" name="Upstand" code="U" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>UPSTAND</simpleValue></value></derived></applicability></type>
+    <type id="AIRDUCT" name="Airduct" code="AD" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>AIRDUCT</simpleValue></value></derived></applicability></type>
+    <type id="PLINTH" name="Plinth" code="PL" durationKey="Other" family="insitu"><applicability><derived name="pourType"><value><simpleValue>PLINTH</simpleValue></value></derived></applicability></type>
+    <!-- Types outside the list are still processed, with a warning (what the engine does today). -->
+    <type id="OTHER" name="Other" code="X" durationKey="Other" family="insitu" warn="Unsupported pour type"><applicability/></type>
+  </types>
+
+  <!-- ===================================================================================================
+       5. SCOPE  (which pours get activities)
+       =================================================================================================== -->
+  <scope>
+    <exclude name="Too small" reason="Below the minimum pour volume">
+      <applicability><derived name="volume"><value><xs:restriction base="xs:double"><xs:maxExclusive value="0.25"/></xs:restriction></value></derived></applicability>
+    </exclude>
+    <exclude name="Not scheduled types" reason="Boss, Screed, Grout and Special are not sequenced">
+      <applicability><derived name="pourType"><value><xs:restriction base="xs:string"><xs:enumeration value="BOSS"/><xs:enumeration value="SCREED"/><xs:enumeration value="GROUT"/><xs:enumeration value="SPECIAL"/></xs:restriction></value></derived></applicability>
+    </exclude>
+    <exclude name="Raft stage 2" reason="Raft stage 2 has no activities">
+      <applicability><type ref="RAFT"/><derived name="stage"><value><simpleValue>2</simpleValue></value></derived></applicability>
+    </exclude>
+  </scope>
+
+  <!-- ===================================================================================================
+       6. QUANTITIES AND RATES  (per level and type)
+          A quantity is a named number for a pour. A rate row says how fast a crew gets through one; the first
+          row that matches, most specific first, is used. Rows may be limited by building, level and type.
+       =================================================================================================== -->
+  <quantities>
+    <quantity id="concreteVolume" unit="m3"><expr>volume</expr></quantity>
+    <!-- Rebar tonnes: pour volume x t per m3 (by type; "DEFAULT" otherwise). Parity with REBAR_TONNES_PER_M3. -->
+    <quantity id="rebarTonnes" unit="t"><expr>volume * rate('rebar-density','tPerM3')</expr></quantity>
+    <!-- Formwork area comes from the model when it has it; otherwise from the bounding box. -->
+    <quantity id="formworkArea" unit="m2">
+      <first>
+        <source><quantity set="Qto_*" name="NetSideArea"/></source>
+        <source><geometry measure="sideArea"/></source>
+      </first>
+    </quantity>
+  </quantities>
+
+  <rates>
+    <!-- Rebar content. -->
+    <table id="rebar-density">
+      <row><when><type family="wall"/></when><set name="tPerM3" value="0.25"/></row>
+      <row><when><type ref="SLAB"/></when><set name="tPerM3" value="0.25"/></row>
+      <row><when><type ref="RAFT"/></when><set name="tPerM3" value="0.25"/></row>
+      <row><set name="tPerM3" value="0.25"/></row>
+    </table>
+
+    <!-- Fixed durations, in working days per phase (the engine's DURATIONS table today). -->
+    <table id="durations" key="durationKey">
+      <row key="Standard External Wall"><days phase="Rebar" value="7"/><days phase="Embedments" value="2"/><days phase="Formwork" value="3"/><days phase="Concrete" value="1"/></row>
+      <row key="Double Height External Wall"><days phase="Rebar" value="12"/><days phase="Embedments" value="4"/><days phase="Formwork" value="5"/><days phase="Concrete" value="1"/></row>
+      <row key="Standard Internal Wall"><days phase="Rebar" value="4"/><days phase="Embedments" value="6"/><days phase="Formwork" value="3"/><days phase="Concrete" value="1"/></row>
+      <row key="Double Height Internal Wall"><days phase="Rebar" value="9"/><days phase="Embedments" value="8"/><days phase="Formwork" value="3"/><days phase="Concrete" value="1"/></row>
+      <row key="Standard Internal Slab"><days phase="Rebar" value="18"/><days phase="Embedments" value="18"/><days phase="Formwork" value="2"/><days phase="Concrete" value="1"/></row>
+      <!-- A duration row can also be chosen by rule group: <row ruleGroup="SLABS"> is used by every pour of that group instead of the
+           type's durationKey row, unless a row for a narrower group matches. -->
+      <row key="Other"><days phase="Rebar" value="5"/><days phase="Embedments" value="2"/><days phase="Formwork" value="4"/><days phase="Concrete" value="1"/></row>
+    </table>
+
+    <!-- The same rows written as productivity, for when a duration should come from the quantity instead (see
+         activity "Rebar" below: use <duration mode="computed"/> to switch). Rates may differ by level range:
+         here the first two levels of every building are slower. A source file of class rates (the SeaTable
+         "Insight Plan Rates" base) can feed the same table: <import source="rates.json" key="element.guid"/>. -->
+    <table id="productivity">
+      <row id="rebar-slow-low-levels">
+        <when><type family="wall"/><level from="L0" to="L2"/></when>
+        <set name="rebar.manhoursPerTonne" value="85"/>
+      </row>
+      <!-- Rates can be applied to a RULE GROUP (section 10c): the rule group is one more condition in "when", and may be narrowed by
+           building or level. Here the L1 slabs of building 1HDAB are the slowest, and the whole RAFTS group has its own rate. -->
+      <row id="rebar-1hdab-l1-slabs">
+        <when><ruleGroup ref="SLABS" building="1HDAB" level="L1"/></when>
+        <set name="rebar.manhoursPerTonne" value="95"/>
+      </row>
+      <row id="rebar-rafts"><when><ruleGroup ref="RAFTS"/></when><set name="rebar.manhoursPerTonne" value="60"/></row>
+      <row id="rebar-walls"><when><type family="wall"/></when><set name="rebar.manhoursPerTonne" value="75"/></row>
+      <row id="rebar-default"><set name="rebar.manhoursPerTonne" value="75"/></row>
+      <row id="formwork-default"><set name="formwork.manhoursPerM2" value="6"/></row>
+      <import source="rates.json" table="classes" key="element.guid" optional="true"/>
+    </table>
+
+    <!-- Working pattern behind the computed durations (SF-003: 12 men, 2 shifts, 9.17 h). -->
+    <table id="shifts">
+      <row><set name="shifts" value="2"/><set name="hoursPerShift" value="9.17"/></row>
+    </table>
+  </rates>
+
+  <!-- ===================================================================================================
+       7. LABOUR  (trades and crews: what each activity needs)
+       =================================================================================================== -->
+  <resources>
+    <resource id="PRJ-C" name="Concrete" type="material" unit="m3"/>
+    <resource id="PRJ-R" name="Rebar" type="material" unit="t"/>
+    <trade id="SF" name="Steel fixers" resource="PRJ-L-SF" capacity="24"/>
+    <trade id="CP" name="Carpenters / formwork" resource="PRJ-L-CP" capacity="24"/>
+    <trade id="CG" name="Concrete gang" resource="PRJ-L-CG" capacity="12"/>
+    <trade id="GO" name="General operatives" resource="PRJ-L-GO" capacity="12"/>
+    <trade id="EM" name="Embedments fixers" resource="PRJ-L-EM" capacity="8"/>
+    <trade id="PE" name="Precast erection crew" resource="PRJ-L-PE" capacity="8"/>
+
+    <!-- Crews by phase, with optional pour-type rows that win over the plain phase row. -->
+    <crews>
+      <crew phase="Rebar"><trade ref="SF" size="6"/></crew>
+      <crew phase="Rebar"><when><type ref="SLAB"/></when><trade ref="SF" size="8"/></crew>
+      <crew phase="Rebar"><when><derived name="pourType"><value><simpleValue>MAIN_SLAB</simpleValue></value></derived></when><trade ref="SF" size="8"/></crew>
+      <crew phase="Rebar"><when><type ref="RAFT"/></when><trade ref="SF" size="10"/></crew>
+      <crew phase="Formwork"><trade ref="CP" size="6"/></crew>
+      <crew phase="Works before slab"><trade ref="GO" size="4"/></crew>
+      <crew phase="Decking"><trade ref="CP" size="6"/></crew>
+      <crew phase="Under Slab"><trade ref="GO" size="4"/></crew>
+      <crew phase="EOP on Slab"><trade ref="EM" size="3"/></crew>
+      <crew phase="FWK"><trade ref="CP" size="4"/></crew>
+      <crew phase="Concrete"><trade ref="CG" size="6"/></crew>
+      <crew phase="Rebar, Formwork and Concrete"><trade ref="SF" size="3"/><trade ref="CP" size="3"/><trade ref="CG" size="3"/></crew>
+      <crew phase="Propping"><trade ref="PE" size="4"/></crew>
+      <crew phase="Installation"><trade ref="PE" size="6"/></crew>
+      <crew phase="Stitching"><trade ref="SF" size="2"/><trade ref="CG" size="3"/></crew>
+      <crew phase="Curing"/>
+      <crew phase="Propping Removal"><trade ref="PE" size="4"/></crew>
+    </crews>
+  </resources>
+
+  <!-- ===================================================================================================
+       8. ACTIVITIES  (the chain each pour becomes)
+          Each template says which pours it applies to, then lists its activities in order. Durations are in
+          working days; "fixed" reads the durations table by the type's durationKey, "computed" from a quantity.
+       =================================================================================================== -->
+  <activities>
+    <idPattern>{project}-{building}{levelPart}{zonePart}-{typeCode}-{pourId}{suffix}</idPattern>
+    <!-- levelPart is "-L2"; zonePart is "-D" or "-C" when the building has both zones. Unit 9 buildings drop the unit digit. -->
+    <namePattern>{building} - {LEVEL} - {zoneName}{logicGroup} {pourId} - {phase}</namePattern>
+    <templates>
+
+      <!-- Walls and other in-situ types: Rebar, Embedments + Formwork, Concrete. -->
+      <template id="insitu" name="In-situ pour">
+        <applicability><type family="wall insitu"/></applicability>
+        <activity phase="Rebar" suffix="-R" name="Rebar" calendar="cal-5d" wbs="Rebar">
+          <duration mode="fixed" table="durations" phase="Rebar"/>
+          <!-- Same activity as computed from the quantity (comment out the line above, use this): -->
+          <!-- <duration mode="computed" quantity="rebarTonnes" manhours="productivity:rebar.manhoursPerTonne"
+                         crew="phase" shifts="shifts" round="ceil" min="1"/> -->
+          <crew ref="Rebar"/>
+          <output resource="PRJ-R" quantity="rebarTonnes"/>
+          <udf name="CWA-Quantity" value="rebarTonnes"/>
+          <displayTime start="08:00" finish="12:00"/>
+        </activity>
+        <activity phase="Formwork" suffix="-F" name="EP+FWK" calendar="cal-5d" wbs="Formwork">
+          <duration mode="fixed" table="durations" phase="Embedments + Formwork"/>
+          <crew ref="Formwork"/>
+        </activity>
+        <activity phase="Concrete" suffix="-C" name="Concrete" calendar="cal-5d" wbs="Concrete">
+          <duration mode="fixed" table="durations" phase="Concrete"/>
+          <crew ref="Concrete"/>
+          <output resource="PRJ-C" quantity="concreteVolume"/>
+          <udf name="CWA-Quantity" value="concreteVolume"/>
+          <displayTime single="13:00-17:00"/>
+        </activity>
+      </template>
+
+      <!-- Slabs and main slabs: Decking, Under Slab, Rebar, EOP on Slab, FWK, Concrete (1 day unless stated). -->
+      <template id="slab" name="Slab">
+        <applicability><type ref="SLAB"/></applicability>
+        <activity phase="Decking" suffix="-DK" name="Decking" calendar="cal-5d" wbs="Slab"><duration mode="days" value="1"/><crew ref="Decking"/></activity>
+        <activity phase="Under Slab" suffix="-D" name="Under Slab" calendar="cal-5d" wbs="Slab"><duration mode="days" value="1"/><crew ref="Under Slab"/></activity>
+        <activity phase="Rebar" suffix="-R" name="Rebar" calendar="cal-5d" wbs="Slab"><duration mode="fixed" table="durations" phase="Rebar"/><crew ref="Rebar"/><output resource="PRJ-R" quantity="rebarTonnes"/><udf name="CWA-Quantity" value="rebarTonnes"/></activity>
+        <activity phase="EOP on Slab" suffix="-E2" name="EOP on Slab" calendar="cal-5d" wbs="Slab"><duration mode="days" value="1"/><crew ref="EOP on Slab"/></activity>
+        <activity phase="FWK" suffix="-F" name="FWK" calendar="cal-5d" wbs="Slab"><duration mode="days" value="1"/><crew ref="FWK"/></activity>
+        <activity phase="Concrete" suffix="-C" name="Concrete" calendar="cal-5d" wbs="Slab"><duration mode="fixed" table="durations" phase="Concrete"/><crew ref="Concrete"/><output resource="PRJ-C" quantity="concreteVolume"/><udf name="CWA-Quantity" value="concreteVolume"/></activity>
+      </template>
+
+      <!-- Raft stage 1: Rebar, EOP on Slab, FWK, Concrete. -->
+      <template id="raft" name="Raft stage 1">
+        <applicability><type ref="RAFT"/></applicability>
+        <activity phase="Rebar" suffix="-R" name="Rebar" calendar="cal-5d" wbs="Raft"><duration mode="fixed" table="durations" phase="Rebar"/><crew ref="Rebar"/><output resource="PRJ-R" quantity="rebarTonnes"/><udf name="CWA-Quantity" value="rebarTonnes"/></activity>
+        <activity phase="EOP on Slab" suffix="-E2" name="EOP on Slab" calendar="cal-5d" wbs="Raft"><duration mode="days" value="1"/><crew ref="EOP on Slab"/></activity>
+        <activity phase="FWK" suffix="-F" name="FWK" calendar="cal-5d" wbs="Raft"><duration mode="days" value="1"/><crew ref="FWK"/></activity>
+        <activity phase="Concrete" suffix="-C" name="Concrete" calendar="cal-5d" wbs="Raft"><duration mode="fixed" table="durations" phase="Concrete"/><crew ref="Concrete"/><output resource="PRJ-C" quantity="concreteVolume"/><udf name="CWA-Quantity" value="concreteVolume"/></activity>
+      </template>
+
+      <!-- Pedestal stage 2: one combined activity, as long as all four phases together (at least a day). -->
+      <template id="pedestal2" name="Pedestal stage 2">
+        <applicability><type ref="PEDESTAL"/><derived name="stage"><value><simpleValue>2</simpleValue></value></derived></applicability>
+        <activity phase="Rebar, Formwork and Concrete" suffix="-RFC" name="Rebar, Formwork and Concrete" calendar="cal-5d" wbs="Pedestal">
+          <duration mode="fixed" table="durations" phase="Rebar + Embedments + Formwork + Concrete" min="1"/>
+          <crew ref="Rebar, Formwork and Concrete"/>
+          <output resource="PRJ-R" quantity="rebarTonnes"/>
+        </activity>
+      </template>
+
+      <!-- Precast: removable element, stair, precast slab. -->
+      <template id="precast" name="Precast">
+        <applicability><type family="precast"/></applicability>
+        <activity phase="Installation" suffix="-I" name="Installation" calendar="cal-5d" wbs="Precast"><duration mode="days" value="1"/><crew ref="Installation"/></activity>
+        <activity phase="Stitching" suffix="-S" name="Stitching" calendar="cal-5d" wbs="Precast"><duration mode="days" value="2"/><crew ref="Stitching"/></activity>
+      </template>
+
+      <!-- Heavy precast: Propping, Installation, Stitching, Curing (28 calendar days), Propping Removal. -->
+      <template id="heavy-precast" name="Heavy precast">
+        <applicability><type family="heavyPrecast"/></applicability>
+        <activity phase="Propping" suffix="-PR" name="Propping" calendar="cal-5d" wbs="Heavy Precast"><duration mode="days" value="1"/><crew ref="Propping"/></activity>
+        <activity phase="Installation" suffix="-I" name="Installation" calendar="cal-5d" wbs="Heavy Precast"><duration mode="days" value="1"/><crew ref="Installation"/></activity>
+        <activity phase="Stitching" suffix="-S" name="Stitching" calendar="cal-5d" wbs="Heavy Precast"><duration mode="days" value="2"/><crew ref="Stitching"/></activity>
+        <activity phase="Curing" suffix="-CU" name="Curing (walls under)" calendar="cal-7d" wbs="Heavy Precast"><duration mode="days" value="28"/><crew ref="Curing"/></activity>
+        <activity phase="Propping Removal" suffix="-RP" name="Propping Removal" calendar="cal-5d" wbs="Heavy Precast"><duration mode="days" value="1"/><crew ref="Propping Removal"/></activity>
+      </template>
+    </templates>
+
+    <!-- Fields written onto every activity. -->
+    <codes>
+      <code name="CWA-Unit" value="unit"/>
+      <code name="CWA-Building" value="building"/>
+      <code name="CWA-Level" value="level"/>
+    </codes>
+    <udfs>
+      <udf name="FullPourID" value="concat(unit, building, '/', altPourId)"/>
+      <udf name="CWA-Element ID" value="pourId"/>
+    </udfs>
+  </activities>
+
+  <!-- ===================================================================================================
+       9. NUMBERING AND BUILD ORDER  (pour IDs for pours that have none; the order activities are listed in)
+       =================================================================================================== -->
+  <numbering id="pour-numbering">
+    <digits>4</digits>
+    <!-- Between logic groups (building + level + zone + type) leave a gap for pours added later. -->
+    <gap family="wall" percent="65"/>
+    <gap default="true" percent="45"/>
+    <keepExisting/>
+    <order>
+      <first><table ref="build-order"/></first>
+      <then>
+        <typeOrder>EXTERNAL_WALL INTERNAL_WALL SLAB LANDING COLUMN BEAM PARAPET PEDESTAL GULLIES SCREED UPSTAND AIRDUCT BOSS CORBEL GROUT PLINTH</typeOrder>
+        <within by="levelNumber"/>
+        <within by="zone" order="DISCONNECTED CONNECTED-HK CONNECTED-HL CONNECTED"/>
+        <within by="stage" order="1 2 PRECAST"/>
+      </then>
+      <tieBreak sheet="PourIDOrder"/>
+    </order>
+  </numbering>
+
+  <!-- ===================================================================================================
+       10. LOGIC  (relationships; written in priority order; any link that would close a loop is dropped)
+       =================================================================================================== -->
+  <logic>
+    <loopPolicy>drop-lower-priority</loopPolicy>
+    <anchors>
+      <!-- "start" and "finish" of a pour for the automatic rules below. -->
+      <finish of="pour"><first phase="Concrete"/><first phase="Rebar, Formwork and Concrete"/><first phase="Stitching"/><first phase="Installation"/></finish>
+      <start of="pour" family="precast heavyPrecast"><first phase="Propping"/><first phase="Installation"/><first phase="Stitching"/></start>
+      <start of="pour" family="slab raft"><first phase="Decking"/><first phase="Under Slab"/><first phase="Works before slab"/><first phase="Concrete"/></start>
+      <start of="pour"><first phase="Rebar"/><first phase="Formwork"/><first phase="Concrete"/></start>
+    </anchors>
+
+    <!-- 1 (highest): manual links, from the Links tab. Lag is in working hours. A successor named here loses every
+         generated link into it. -->
+    <source id="manual" priority="1" from="relations" replacesGenerated="true"/>
+
+    <!-- 2: the scenario's sequence order: rows sharing an index start together (SS); each new index waits for the
+         previous (FS between the first rows). Never checks levels, on purpose. -->
+    <source id="sequence" priority="2" from="sequence-order">
+      <within group="index" type="SS"/>
+      <between groups="index" type="FS" from="firstOfPrevious" to="firstOfNext"/>
+    </source>
+
+    <!-- 3: inside one pour: the chain, Finish-to-Start, closing over any missing activity. -->
+    <rule id="pour-chain" priority="3" name="Pour chain">
+      <chain over="pour" type="FS" skipMissing="true"/>
+    </rule>
+
+    <!-- 4: automatic rules from geometry. Only pours of the same building are ever linked. -->
+    <spatial id="touching">
+      <!-- Pour pairs that touch within the clearance, cached until the model file changes. -->
+      <pairs method="clash" mode="clearance" clearanceMm="5" cache="true" requires="pourId"/>
+    </spatial>
+
+    <rule id="removable-last" priority="4" name="Removable elements go last">
+      <for each="pair" in="touching" sameBuilding="true">
+        <when><one><type ref="REMOVABLE_ELEMENT"/></one></when>
+        <link from="finish(other)" to="start(removable)" type="FS"/>
+      </for>
+    </rule>
+
+    <rule id="lower-before-upper" priority="4" name="Lower before upper">
+      <for each="pair" in="touching" sameBuilding="true">
+        <unless><type family="heavyPrecast"/></unless>
+        <unless><type ref="PEDESTAL"/><derived name="stage"><value><simpleValue>2</simpleValue></value></derived></unless>
+        <!-- A is below B: top of A at least 5 cm under bottom of B; or, without elevations, centre 25 cm lower. -->
+        <when>
+          <below margin="0.05" fallbackCentre="0.25"/>
+          <levelStep from="same" to="next"/>
+          <verticalDistance maxCentres="7.5"/>
+        </when>
+        <link from="finish(lower)" to="start(upper)" type="FS"/>
+      </for>
+    </rule>
+
+    <rule id="slab-support" priority="4" name="Slabs wait for what holds them up">
+      <for each="pair" in="touching" sameBuilding="true">
+        <when><one><type ref="SLAB"/></one></when>
+        <unless><type family="heavyPrecast"/></unless>
+        <underneath any="true">
+          <centreLowerThan m="0.5"/>
+          <topBelowBottomBy m="0.10"/>
+          <supporting types="wall column beam pedestal raft landing heavyPrecast" gapBetween="-0.30 0.10"/>
+        </underneath>
+        <link from="finish(other)" to="start(slab)" type="FS"/>
+      </for>
+    </rule>
+
+    <rule id="level-gate" priority="4" name="Each level waits for the one below">
+      <for each="building">
+        <upper level="next with pours" only="slab"><anchor>first of Decking, Under Slab, Rebar</anchor></upper>
+        <lower level="previous with pours" only="Concrete" exclude="stage:2"/>
+        <link from="every(lower)" to="every(upper)" type="FS"/>
+      </for>
+    </rule>
+
+    <rule id="heavy-precast-walls" priority="4" name="Heavy precast and the walls under it">
+      <for each="pair" in="touching" sameBuilding="true">
+        <when><type family="heavyPrecast"/><other><type family="wall"/></other>
+          <position of="wall" is="definitelyBelow majorityBelow" sideOverlap="0.5"/></when>
+        <case stage="1">
+          <link from="wall.Rebar|Formwork" to="precast.Installation" type="FS"/>
+          <link from="precast.Stitching" to="wall.Concrete" type="FS"/>
+          <link from="wall.Concrete" to="precast.Curing" type="FS"/>
+        </case>
+        <case stage="2">
+          <link from="precast.Propping Removal" to="wall.Rebar" type="FS"/>
+        </case>
+      </for>
+    </rule>
+
+    <!-- Off by default today. -->
+    <milestones groups="false" buildingCompletion="false"/>
+  </logic>
+
+  <!-- ===================================================================================================
+       10b. EXTRA ACTIVITIES AND LINKS  (what a high-level programme adds to the generated one)
+          Extras are activities that are not made from a pour: milestones and summary-level work from a high-level
+          programme. Today they come from the SeaTable "Extra activities" table (core/adjustments.py); here they are
+          part of the file. Links name activities by ID, or by a selector that picks every matching generated one.
+       =================================================================================================== -->
+  <extras>
+    <baselines>
+      <baseline id="HLP-V3" name="High-level programme v3" source="High-level programme.xer"/>
+    </baselines>
+
+    <wbs name="Extra activities"/>
+
+    <activity id="PRJ-HLP-0100" name="Piling complete" duration="0" calendar="cal-5d" baseline="HLP-V3" baselineFinish="2029-06-29" wbs="Extra activities / Enabling">
+      <codes><code name="CWA-Building" value="1HDAB"/></codes>
+      <udf name="Source" value="High-level programme v3, line 12"/>
+    </activity>
+    <activity id="PRJ-HLP-0200" name="Podium slab ready for steel frame" building="1HDAB" level="L1" duration="0" calendar="cal-5d" baseline="HLP-V3" baselineFinish="2029-11-16" wbs="Extra activities / Structure"/>
+    <activity id="PRJ-HLP-0300" name="Crane erected" duration="5" calendar="cal-5d" baseline="HLP-V3" baselineStart="2029-03-05" baselineFinish="2029-03-09" wbs="Extra activities / Enabling"/>
+    <!-- A constraint pins an extra to a date; the engine dates it from its links unless one is set. -->
+    <activity id="PRJ-HLP-0400" name="Facade contractor mobilises" duration="0" calendar="cal-5d" wbs="Extra activities / Facade">
+      <constraint type="StartNoEarlierThan" date="2029-12-03"/>
+    </activity>
+  </extras>
+
+  <!-- Manual links. "from" / "to" are an activity ID, or a selector: every generated activity that matches. Types
+       FS SS FF SF; lag in working hours. Priority 1 (above every generated rule); a successor named here loses its
+       generated links, unless replaces="false". -->
+  <links>
+    <link id="L-01" from="PRJ-HLP-0300" to="select:{building=1HDAB; level=L0; type=SLAB; phase=Rebar; each}" type="FS" lag="0" note="Crane before the first slab steel"/>
+    <link id="L-02" from="select:{building=1HDAB; level=L1; type=SLAB; phase=Concrete; last}" to="PRJ-HLP-0200" type="FS" lag="0" note="Podium ready after the L1 slab"/>
+    <link id="L-03" from="PRJ-HLP-0200" to="PRJ-HLP-0400" type="FS" lag="40" replaces="false"/>
+    <link id="L-04" from="PRJ-HLP-0100" to="select:{building=1HDAB; type=RAFT; phase=Rebar; first}" type="FF" lag="0"/>
+  </links>
+
+  <!-- ===================================================================================================
+       10c. RULE GROUPS, LEVEL TASKS AND SEQUENCES
+          A rule group is a named selection of pours, written once and used by name. It is NOT a Link Group of the 4D / Link Groups
+          pages: those are saved in the app and hold the objects of activities; rule groups live only in this file, can be far more
+          granular (per building, level, type, zone...), and are never shared with or written to the 4D groups. "for-each"
+          makes one group per value of the listed derived values (here per building and level, read from the model's
+          level property), so nothing is written per level by hand. A group is picked in links and sequences as rulegroup:ID.
+       =================================================================================================== -->
+  <ruleGroups>
+    <ruleGroup id="WALLS" for-each="building level"><select family="wall"/></ruleGroup>
+    <ruleGroup id="SLABS" for-each="building level"><select family="slab"/></ruleGroup>
+    <ruleGroup id="RAFTS" for-each="building"><select family="raft"/></ruleGroup>
+    <!-- A group can be made of other groups or restricted by a level range. -->
+    <ruleGroup id="SUPERSTRUCTURE" for-each="building"><union><ruleGroup ref="WALLS" level="L1.."/><ruleGroup ref="SLABS" level="L1.."/></union></ruleGroup>
+  </ruleGroups>
+
+  <!-- Two tasks per building and level, "Walls" and "Slabs", each with a start and a finish. dates="rollup": the task starts
+       with its earliest member and finishes with its latest, so it moves with the detailed pours (a hammock). A fixed
+       start or finish can be set to draw the level against a planned date. -->
+  <levelTasks for-each="building level">
+    <task id="{building}-{level}-WALLS" name="{building} - {level} - Walls" ruleGroup="WALLS" dates="rollup" calendar="cal-6d" wbs="Level tasks / {building} / {level}"/>
+    <task id="{building}-{level}-SLABS" name="{building} - {level} - Slabs" ruleGroup="SLABS" dates="rollup" calendar="cal-6d" wbs="Level tasks / {building} / {level}"/>
+  </levelTasks>
+
+  <!-- A sequence puts groups (or level tasks) in order; the engine writes the links from the last of one to the first of
+       the next. "level" steps through the levels in order. -->
+  <sequences>
+    <sequence id="BUILD-UP" priority="2">
+      <step ruleGroup="RAFTS"/>
+      <repeat over="level" from="L0">
+        <step ruleGroup="WALLS"/>
+        <step ruleGroup="SLABS"/>
+      </repeat>
+    </sequence>
+  </sequences>
+
+  <!-- Open activities (extras) tied to the level tasks: each extra with a level links FF to the task of its own level. -->
+  <levelLinks>
+    <link from="extra:level" to="task:{building}-{level}-WALLS" type="FF" lag="0"/>
+    <link from="extra:level" to="task:{building}-{level}-SLABS" type="FF" lag="0"/>
+  </levelLinks>
+
+  <!-- ===================================================================================================
+       11. STRUCTURE  (WBS)
+       =================================================================================================== -->
+  <wbs>
+    <root name="{prefix} - Construction"/>
+    <level name="{prefix} - Connected Zone / Disconnected Zone" onlyWhen="building has both zones"/>
+    <level name="{prefix} - Level {n}"/>
+    <folder by="type" name="{prefix} - {typePlural}">
+      <folder by="phase" for="family:wall" name="{prefix} - {phase}"/>
+      <folder by="pour" for="family:slab" name="{prefix} - Slab {pourId}"/>
+    </folder>
+    <objectIdBlock building="DEFAULT" start="1"/>
+  </wbs>
+
+  <!-- ===================================================================================================
+       12. DATES  (the engine's own forward / backward pass)
+       =================================================================================================== -->
+  <schedule>
+    <dataDate from="CWA_START_DATE" default="today"/>
+    <links lag="0"/>
+    <criticalWhen floatHoursAtMost="0"/>
+    <resourceLevelling>false</resourceLevelling>
+  </schedule>
+
+  <!-- ===================================================================================================
+       13. CHECKS  (the model must carry what the rules read; reported before any generation)
+       =================================================================================================== -->
+  <checks>
+    <require value="pourType" severity="error" message="The element has no pour type."/>
+    <require value="level" severity="warning" message="No level: it is placed on L0."/>
+    <require value="volume" severity="error" message="No volume: the pour cannot be quantified."/>
+    <require value="building" severity="error" message="No building."/>
+  </checks>
+
+  <!-- Build order table of the engine (main.py OPTION3_ORDER_TABLE): the rank of a row is its position here. -->
+  <tables>
+    <table id="build-order" columns="stage generalType type zone external">
+      <row rank="1" stage="1" generalType="RAFT" type="RAFT" zone="RAFT" external="YES"/>
+      <row rank="2" stage="1" generalType="RAFT" type="RAFT" zone="1" external="YES"/>
+      <row rank="3" stage="1" generalType="RAFT" type="RAFT" zone="DISCONNECTED" external="YES"/>
+      <row rank="4" stage="2" generalType="RAFT" type="RAFT" zone="DISCONNECTED" external="NO"/>
+      <row rank="5" stage="2" generalType="RAFT" type="RAFT" zone="CONNECTED" external="NO"/>
+      <row rank="6" stage="PRECAST" generalType="HEAVY_PRECAST" type="HEAVY_PRECAST" zone="DISCONNECTED" external="YES"/>
+      <row rank="7" stage="PRECAST" generalType="HEAVY_PRECAST" type="HEAVY_PRECAST" zone="DISCONNECTED" external="NO"/>
+      <row rank="8" stage="PRECAST" generalType="STRUCTURES" type="SLAB" zone="DISCONNECTED" external="NO"/>
+      <row rank="9" stage="PRECAST" generalType="STRUCTURES" type="STAIR" zone="DISCONNECTED" external="NO"/>
+      <row rank="10" stage="1" generalType="STRUCTURES" type="STAIR" zone="DISCONNECTED" external="NO"/>
+      <row rank="11" stage="1" generalType="STRUCTURES" type="STAIR" zone="CONNECTED" external="NO"/>
+      <row rank="12" stage="2" generalType="STRUCTURES" type="STAIR" zone="DISCONNECTED" external="NO"/>
+      <row rank="13" stage="PRECAST" generalType="REMOVABLE_ELEMENT" type="REMOVABLE_ELEMENT" zone="DISCONNECTED" external="NO"/>
+      <row rank="14" stage="PRECAST" generalType="REMOVABLE_ELEMENT" type="REMOVABLE_ELEMENT" zone="CONNECTED" external="NO"/>
+      <row rank="15" stage="1" generalType="STRUCTURES" type="WALL" zone="DISCONNECTED" external="YES"/>
+      <row rank="16" stage="2" generalType="STRUCTURES" type="WALL" zone="DISCONNECTED" external="YES"/>
+      <row rank="17" stage="1" generalType="STRUCTURES" type="WALL" zone="CONNECTED" external="YES"/>
+      <row rank="18" stage="2" generalType="STRUCTURES" type="WALL" zone="CONNECTED" external="YES"/>
+      <row rank="19" stage="1" generalType="STRUCTURES" type="WALL" zone="DISCONNECTED" external="NO"/>
+      <row rank="20" stage="2" generalType="STRUCTURES" type="WALL" zone="DISCONNECTED" external="NO"/>
+      <row rank="21" stage="1" generalType="STRUCTURES" type="WALL" zone="CONNECTED" external="NO"/>
+      <row rank="22" stage="2" generalType="STRUCTURES" type="WALL" zone="CONNECTED" external="NO"/>
+      <row rank="23" stage="1" generalType="MAIN_SLAB" type="MAIN_SLAB" zone="DISCONNECTED" external="YES"/>
+      <row rank="24" stage="1" generalType="MAIN_SLAB" type="MAIN_SLAB" zone="DISCONNECTED" external="NO"/>
+      <row rank="25" stage="2" generalType="MAIN_SLAB" type="MAIN_SLAB" zone="DISCONNECTED" external="NO"/>
+      <row rank="26" stage="1" generalType="MAIN_SLAB" type="MAIN_SLAB" zone="CONNECTED" external="NO"/>
+      <row rank="27" stage="1" generalType="STRUCTURES" type="SLAB" zone="DISCONNECTED" external="YES"/>
+      <row rank="28" stage="1" generalType="STRUCTURES" type="SLAB" zone="DISCONNECTED" external="NO"/>
+      <row rank="29" stage="2" generalType="STRUCTURES" type="SLAB" zone="DISCONNECTED" external="NO"/>
+      <row rank="30" stage="1" generalType="STRUCTURES" type="SLAB" zone="CONNECTED" external="NO"/>
+      <row rank="31" stage="2" generalType="STRUCTURES" type="SLAB" zone="CONNECTED" external="NO"/>
+      <row rank="32" stage="1" generalType="STRUCTURES" type="SLAB" zone="CONNECTED" external="YES"/>
+      <row rank="33" stage="1" generalType="STRUCTURES" type="LANDING" zone="DISCONNECTED" external="NO"/>
+      <row rank="34" stage="1" generalType="STRUCTURES" type="COLUMN" zone="DISCONNECTED" external="NO"/>
+      <row rank="35" stage="1" generalType="STRUCTURES" type="BEAM" zone="DISCONNECTED" external="NO"/>
+      <row rank="36" stage="1" generalType="STRUCTURES" type="BEAM" zone="CONNECTED" external="NO"/>
+      <row rank="37" stage="1" generalType="MAIN_SLAB" type="PARAPET" zone="DISCONNECTED" external="YES"/>
+      <row rank="38" stage="1" generalType="MAIN_SLAB" type="PARAPET" zone="CONNECTED" external="YES"/>
+      <row rank="39" stage="2" generalType="STRUCTURES" type="PEDESTAL" zone="DISCONNECTED" external="NO"/>
+      <row rank="40" stage="2" generalType="STRUCTURES" type="PEDESTAL" zone="CONNECTED" external="NO"/>
+      <row rank="41" stage="2" generalType="MAIN_SLAB" type="GULLIES" zone="DISCONNECTED" external="NO"/>
+      <row rank="42" stage="2" generalType="MAIN_SLAB" type="GULLIES" zone="CONNECTED" external="NO"/>
+      <row rank="43" stage="2" generalType="MAIN_SLAB" type="SCREED" zone="DISCONNECTED" external="YES"/>
+      <row rank="44" stage="2" generalType="MAIN_SLAB" type="SCREED" zone="DISCONNECTED" external="NO"/>
+      <row rank="45" stage="2" generalType="MAIN_SLAB" type="SCREED" zone="CONNECTED" external="YES"/>
+      <row rank="46" stage="2" generalType="MAIN_SLAB" type="SCREED" zone="CONNECTED" external="NO"/>
+      <row rank="47" stage="2" generalType="MAIN_SLAB" type="UPSTAND" zone="DISCONNECTED" external="NO"/>
+      <row rank="48" stage="2" generalType="MAIN_SLAB" type="UPSTAND" zone="CONNECTED" external="NO"/>
+    </table>
+  </tables>
+
+</prs>

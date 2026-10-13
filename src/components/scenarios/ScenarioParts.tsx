@@ -19,12 +19,14 @@ import {
   loadOrder,
   needsUpdate,
   pickScenario,
+  orderOfScenario,
   pickStem,
   redoRows,
   refreshProject,
   saveOrder,
   scheduleAutoUpdate,
   setFlags,
+  setRules,
   setSelected,
   stemsInInputs,
   undoRows,
@@ -37,9 +39,12 @@ import {
 import { applySteps, moveDown, moveTo, moveToStep, moveUp, orderByPicks, reorderLike, separate, startTogether, unsequence } from '../../scenarios/pourOrder';
 import { BASE_COL, rowColor, SHIFT_COL, STEP_COL } from '../../scenarios/tableView';
 import { useScenarioView } from '../../scenarios/useScenarioView';
+import { unjoinObjects } from '../../prs/joins';
+import { totalRules } from '../../prs/rules';
+import { DEFAULT_PRESETS, normalizePresets, type RulePreset } from '../../prs/presets';
 import { ScenarioTableConfig, scnTabBadges } from './ScenarioTableConfig';
-import { ScenarioCrewsEditor, ScenarioLinksEditor } from './ScenarioLinksCrews';
-import { IconArrowDown, IconArrowUp, IconClose, IconColumns, IconFilter, IconGroup, IconLink, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash } from '../icons';
+import { ScenarioRulesEditor } from './ScenarioRules';
+import { IconArrowDown, IconArrowUp, IconClose, IconColumns, IconFilter, IconGroup, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash } from '../icons';
 import { useProjectDbStore } from '../../state/projectDbStore';
 import type { SidePaneTab } from '../SidePane';
 import { AddModelToProject, ModelCheckCard } from './ScenarioModelCheck';
@@ -50,12 +55,15 @@ import { STEPS_GROUP, stepGuids, stepSetsOf } from '../../viewer/importSteps';
 
 /** The Reorder source that is not a folder: the project's baseline order. */
 const BASELINE_SOURCE = '\u0001baseline';
+/** Reorder from another scenario of the same model: the value is this prefix and the scenario's name. */
+const SCENARIO_SOURCE = '\u0002scenario:';
 import { usePersistedState } from '../../utils/persistedState';
 
 /** Loads the project and the scenario's pour order from the store's
     choices. Mount it once wherever Scenarios is showing (the Scenarios tab,
-    or 4D's Scenarios panel) — an order already loaded is kept. */
-export function ScenarioSync() {
+    or 4D's Scenarios panel) — an order already loaded is kept. The app also mounts it once with `loadOnly` at start, so the scenario last
+    used (scenarios.current) opens with its saved rules without a panel being open: it loads, but starts no generator and no auto-update. */
+export function ScenarioSync({ loadOnly = false }: { loadOnly?: boolean }) {
   const root = useProjectDbStore((s) => s.root);
   const project = useScenarioStore((s) => s.project);
   const scenario = useScenarioStore((s) => s.scenario);
@@ -79,8 +87,8 @@ export function ScenarioSync() {
   // Load the model into the long-running generator while the order is being
   // edited, so the first Update 4D is quick too.
   useEffect(() => {
-    if (loaded) warmUp();
-  }, [loaded]);
+    if (loaded && !loadOnly) warmUp();
+  }, [loaded, loadOnly]);
   // Auto-update: regenerate a moment after each edit to the order.
   const stale = useScenarioStore((s) => isDirty(s) && needsUpdate(s));
   const autoUpdate = useScenarioStore((s) => s.autoUpdate);
@@ -88,8 +96,8 @@ export function ScenarioSync() {
   const relations = useScenarioStore((s) => s.relations);
   const crews = useScenarioStore((s) => s.crews);
   useEffect(() => {
-    if (autoUpdate && loaded && stale) scheduleAutoUpdate();
-  }, [autoUpdate, loaded, stale, rows, relations, crews]);
+    if (!loadOnly && autoUpdate && loaded && stale) scheduleAutoUpdate();
+  }, [loadOnly, autoUpdate, loaded, stale, rows, relations, crews]);
   return null;
 }
 
@@ -105,7 +113,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
   const dirty = useScenarioStore((s) => isDirty(s));
   const stale = useScenarioStore((s) => needsUpdate(s));
   const autoUpdate = useScenarioStore((s) => s.autoUpdate);
-  const { loaded, modelInfo, reordered, view } = useScenarioView();
+  const { loaded, modelInfo, reordered, view, scenario, scenarioNames } = useScenarioView();
   const collapsedGroups = useScenarioStore((s) => s.collapsedGroups);
   const flaggedOnly = useScenarioStore((s) => s.flaggedOnly);
   const groupKeys = view.flatMap((x) => (x.kind === 'group' ? [x.key] : []));
@@ -122,9 +130,11 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
   const setFocus = useFocusStore((s) => s.setFocus);
   // The folder of sets that gives the order: Steps (imported) unless another is chosen, e.g. a folder of recorded selection sets.
   const [stepsFolder, setStepsFolder] = usePersistedState('scenarios.stepsFolder', STEPS_GROUP);
-  const stepFolders = useMemo(() => [...new Set([STEPS_GROUP, ...(stepsFolder === BASELINE_SOURCE ? [] : [stepsFolder]), ...searchSets.map((s) => s.group).filter(Boolean)])].sort((a, b) => a.localeCompare(b)), [searchSets, stepsFolder]);
+  const stepFolders = useMemo(() => [...new Set([STEPS_GROUP, ...(stepsFolder === BASELINE_SOURCE || stepsFolder.startsWith(SCENARIO_SOURCE) ? [] : [stepsFolder]), ...searchSets.map((s) => s.group).filter(Boolean)])].sort((a, b) => a.localeCompare(b)), [searchSets, stepsFolder]);
   const byBaseline = stepsFolder === BASELINE_SOURCE;
-  const stepSets = useMemo(() => (byBaseline ? [] : stepSetsOf(searchSets, stepsFolder)), [searchSets, stepsFolder, byBaseline]);
+  const otherScenarios = scenarioNames.filter((n) => n !== scenario);
+  const fromScenario = stepsFolder.startsWith(SCENARIO_SOURCE) ? stepsFolder.slice(SCENARIO_SOURCE.length) : null;
+  const stepSets = useMemo(() => (byBaseline || stepsFolder.startsWith(SCENARIO_SOURCE) ? [] : stepSetsOf(searchSets, stepsFolder)), [searchSets, stepsFolder, byBaseline]);
   if (!loaded) return null;
   const updating = busy?.startsWith('Updating 4D') ?? false;
   return (
@@ -145,14 +155,31 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         <input className="scn-step-input" value={stepInput} onChange={(e) => setStepInput(e.target.value.replace(/\D/g, ''))} placeholder="Step" />
         <button className="btn scn-icon-btn" type="submit" disabled={!hasSelection || !stepInput} title="Move the selection to this step (Enter)" aria-label="Move to step"><IconReroute width={16} height={16} /></button>
       </form>
-      <select className="scn-step-folder" value={stepsFolder} onChange={(e) => setStepsFolder(e.target.value)} title="What Reorder follows: the project's baseline order, or a Search sets folder (its search or selection sets, numbered 1, 2, 3…, are the steps)" aria-label="Order source">
+      <select className="scn-step-folder" value={stepsFolder} onChange={(e) => setStepsFolder(e.target.value)} title="What Reorder follows: the project's baseline order, the order of another scenario of this model, or a Search sets folder (its search or selection sets, numbered 1, 2, 3…, are the steps)" aria-label="Order source">
         <option value={BASELINE_SOURCE}>Baseline</option>
-        {stepFolders.map((f) => <option key={f} value={f}>{f}</option>)}
+        {otherScenarios.length > 0 && (
+          <optgroup label="Another scenario">
+            {otherScenarios.map((n) => <option key={n} value={SCENARIO_SOURCE + n}>{n}</option>)}
+          </optgroup>
+        )}
+        <optgroup label="Search sets">
+          {stepFolders.map((f) => <option key={f} value={f}>{f}</option>)}
+        </optgroup>
       </select>
       <button
         className="btn"
-        disabled={!byBaseline && stepSets.length === 0}
+        disabled={!byBaseline && fromScenario === null && stepSets.length === 0}
         onClick={() => {
+          if (fromScenario !== null) {
+            void orderOfScenario(fromScenario).then((order) => {
+              if (typeof order === 'string') {
+                useScenarioStore.setState({ message: { kind: 'warn', text: order } });
+              } else if (window.confirm(`Put the items in the order of “${fromScenario}”? Its ${order.count} sequenced items keep its steps (items in a step start together); the others leave the sequence. Undo (Ctrl+Z) takes it back.`)) {
+                applyRows(reorderLike(useScenarioStore.getState().rows, order.steps));
+              }
+            });
+            return;
+          }
           if (byBaseline) {
             applyRows(reorderLike(rows, loaded.baseStep));
             return;
@@ -161,7 +188,9 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
             applyRows(applySteps(rows, stepSets.map((s) => stepGuids(engine.getIndexes(), s))));
           }
         }}
-        title={byBaseline
+        title={fromScenario !== null
+          ? `Follow the order of the scenario “${fromScenario}”: its steps, item by item`
+          : byBaseline
           ? 'Reset to baseline: put every item back in the project\'s baseline order'
           : stepSets.length
             ? `Follow the sets of “${stepsFolder}”: the items of each step start together, in step order (by the number each name starts with)`
@@ -170,12 +199,12 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         Reorder
       </button>
       </div>
-      <div className="scn-grp">
+      <div className="scn-grp scn-grp--icons">
       <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveUp(rows, selected))} title="Move up one step (Alt+↑)" aria-label="Move up one step"><IconArrowUp width={16} height={16} /></button>
       <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveDown(rows, selected))} title="Move down one step (Alt+↓)" aria-label="Move down one step"><IconArrowDown width={16} height={16} /></button>
-      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(unsequence(rows, selected))} title="Remove from sequence: blank the Index so the generator orders these items by its automatic rules" aria-label="Remove from sequence"><IconClose width={16} height={16} /></button>
       <button className="btn scn-icon-btn" disabled={!undo.length} onClick={undoRows} title="Undo (Ctrl+Z)" aria-label="Undo"><IconUndo width={16} height={16} /></button>
       <button className="btn scn-icon-btn" disabled={!redo.length} onClick={redoRows} title="Redo (Ctrl+Y)" aria-label="Redo"><IconRedo width={16} height={16} /></button>
+      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(unsequence(rows, selected))} title="Remove from sequence: blank the Index so the generator orders these items by its automatic rules" aria-label="Remove from sequence"><IconClose width={16} height={16} /></button>
       <button
         className={`btn scn-icon-btn${flaggedOnly ? ' primary' : ''}`}
         aria-pressed={flaggedOnly}
@@ -217,7 +246,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         }} title="Put the picked items first, one step each, in the order they were picked">Sort by picks</button>
       <button className="btn" disabled={pickOrder.length === 0} onClick={() => useScenarioStore.setState({ pickOrder: [] })} title="Forget the recorded picks">Clear picks</button>
       </div>
-      <div className="scn-grp">
+      <div className="scn-grp scn-grp--icons scn-grp--icons-2">
       <button
         className={`btn scn-icon-btn scn-ignore-btn${focus ? ' primary' : ''}`}
         aria-pressed={focus}
@@ -284,7 +313,7 @@ export function ScenarioTable({ onPick, onOpen }: { onPick?: (keys: Set<string>)
   const selected = useScenarioStore((s) => s.selected);
   const collapsedGroups = useScenarioStore((s) => s.collapsedGroups);
   const v = useScenarioView();
-  const { loaded, shownColumns, fields, view, viewKeys, reordered, moved, steps, shiftOf, valueOf, tableCfg, unsequencedCount, firstUnsequencedKey } = v;
+  const { loaded, shownColumns, fields, view, viewKeys, reordered, moved, steps, shiftOf, valueOf, tableCfg, unsequencedCount, firstUnsequencedKey, subRows } = v;
   const anchorRef = useRef<string | null>(null);
   /** The row the arrow keys moved to last (the end of a Shift range). */
   const cursorRef = useRef<string | null>(null);
@@ -524,6 +553,32 @@ export function ScenarioTable({ onPick, onOpen }: { onPick?: (keys: Set<string>)
                     return <td key={id}>{valueOf(it.item, id)}</td>;
                   })}
                 </tr>,
+                ...(subRows.get(r.key) ?? []).map((sub) => (
+                  <tr
+                    key={sub.r.key}
+                    data-key={sub.r.key}
+                    className={`scn-tr scn-subrow${selected.has(sub.r.key) ? ' is-selected' : ''}`}
+                    onClick={(e) => onRowClick(e, sub.r.key)}
+                    onDoubleClick={() => onOpen?.(sub.r.key)}
+                  >
+                    <td className="scn-flagcol">
+                      <button
+                        type="button"
+                        className="scn-subrow__split"
+                        title="Split this object from its main object (it gets its own activities again)"
+                        aria-label="Split from the main object"
+                        onClick={(e) => { e.stopPropagation(); setRules(unjoinObjects(useScenarioStore.getState().rules, [sub.r.key.split('#')[0]])); }}
+                      >
+                        ×
+                      </button>
+                    </td>
+                    {shownColumns.map((id, n) => {
+                      if (id === STEP_COL) return <td key={id} className="scn-num scn-step scn-subrow__tag" title="Joined: one activity with its main object above">↳ joined</td>;
+                      if (id === BASE_COL || id === SHIFT_COL) return <td key={id} className="scn-num" />;
+                      return <td key={id} className={n === 0 ? 'scn-subrow__first' : undefined}>{valueOf(sub, id)}</td>;
+                    })}
+                  </tr>
+                )),
               ];
             })}
           </tbody>
@@ -584,22 +639,23 @@ function NoProject({ stem }: { stem: string }) {
   );
 }
 
-export function useScenarioTabs(): SidePaneTab<ScenarioCfgTab>[] {
+/** The Scenario panel's tabs. `withRules` = false where Rules is a dock panel of its own (4D Sequencing). */
+export function useScenarioTabs(withRules = true): SidePaneTab<ScenarioCfgTab>[] {
   const { ready, tableCfg, fields } = useScenarioView();
   const relations = useScenarioStore((s) => s.relations);
   const crews = useScenarioStore((s) => s.crews);
+  const extras = useScenarioStore((s) => s.extras);
   const badges = scnTabBadges(tableCfg, fields);
   const all: SidePaneTab<ScenarioCfgTab>[] = [
     { id: 'scenario', label: 'Scenario', icon: <IconSplit /> },
-    { id: 'links', label: 'Manual links', icon: <IconLink />, badge: relations.length || undefined },
-    { id: 'crews', label: 'Crews', icon: <IconTune />, badge: crews.length || undefined },
+    { id: 'rules', label: 'Rules: extra activities, links and crews', icon: <IconTune />, badge: relations.length + crews.length + extras.length || undefined },
     { id: 'columns', label: 'Columns', icon: <IconColumns /> },
     { id: 'filters', label: 'Filters', icon: <IconFilter />, badge: badges.filters },
     { id: 'group', label: 'Group', icon: <IconGroup />, badge: badges.group },
     { id: 'sort', label: 'Sort', icon: <IconSort />, badge: badges.sort },
     { id: 'color', label: 'Color', icon: <IconPalette />, badge: badges.color },
   ];
-  return ready ? all : all.slice(0, 1);
+  return ready ? all.filter((t) => withRules || t.id !== 'rules') : all.slice(0, 1);
 }
 
 /** The side panel's content for a tab: the scenario card (project folder,
@@ -620,11 +676,15 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
   const inputStems = stemsInInputs(inputModels);
   const [newName, setNewName] = useState('');
   const [newFrom, setNewFrom] = useState<StartFrom>('base');
+  // The rules a new scenario starts with: those of the order it is made from, none, or a preset's (kept in the project, see the Rules tab).
+  const [newRules, setNewRules] = useState<string>('source');
+  const [presets] = usePersistedState<RulePreset[]>('sequence.rulePresets', DEFAULT_PRESETS, undefined, normalizePresets);
+  const liveRules = useScenarioStore((s) => s.rules);
+  const rulesSaved = useScenarioStore((s) => s.rules === s.savedRules);
   const loadedSchedules = useScheduleStore((s) => s.schedules);
   const [createError, setCreateError] = useState<string | null>(null);
 
-  if (ready && tab === 'links') return <ScenarioLinksEditor />;
-  if (ready && tab === 'crews') return <ScenarioCrewsEditor />;
+  if (ready && tab === 'rules') return <ScenarioRulesEditor />;
   if (ready && isTableCfgTab(tab)) {
     return (
       <ScenarioTableConfig
@@ -691,7 +751,7 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
 
       {project && (
         <section className="scn-card scn-card--grow">
-          <div className="scn-list__head" aria-hidden="true"><span>Scenario</span><span>Status</span><span /></div>
+          <div className="scn-list__head" aria-hidden="true"><span>Scenario</span><span>Rules</span><span>Status</span><span /></div>
           <div className="scn-list">
             {scenarioNames.length === 0 && <div className="scn-dim">No scenarios yet — create one below.</div>}
             {scenarioNames.map((name) => {
@@ -701,8 +761,20 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
                 <div key={name} className={`scn-list__item${name === scenario ? ' active' : ''}`}>
                   <button type="button" className="scn-list__pick" onClick={() => pickScenario(name)}>
                     <span className="scn-list__name">{name}</span>
+                    {(() => {
+                      // The open scenario shows its rules as they are on screen (a * when not saved yet), the others as saved.
+                      const open = name === scenario && ready;
+                      const rules = open ? totalRules(liveRules) : m?.rules ?? 0;
+                      const joins = open ? (liveRules.joins ?? []).length : m?.joins ?? 0;
+                      const unsaved = open && !rulesSaved;
+                      return (
+                        <span className="scn-list__rules" title={rules ? `${rules} rule${rules === 1 ? '' : 's'}${joins ? `, ${joins} join${joins === 1 ? '' : 's'}` : ''} — saved with the scenario${unsaved ? ' (changes not saved yet: Save)' : ''}` : "No rules: the generator's own logic"}>
+                          {rules ? `${rules}${joins ? ` · ${joins}⋈` : ''}${unsaved ? '*' : ''}` : unsaved ? '*' : '—'}
+                        </span>
+                      );
+                    })()}
                     <span className="scn-list__meta">
-                      {!m ? <span className="scn-chip">unsaved</span> : m.generated ? <span className="scn-chip scn-chip--ok" title="Generated">{new Date(m.generated).toLocaleString()}</span> : <span className="scn-chip">saved, not generated</span>}
+                      {!m ? <span className="scn-chip">unsaved</span> : m.generated ? <span className="scn-chip scn-chip--ok" title={`Generated ${new Date(m.generated).toLocaleString()}`}>{new Date(m.generated).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</span> : <span className="scn-chip">saved, not generated</span>}
                     </span>
                   </button>
                   <button type="button" className="scn-list__delete" disabled={!!busy} title={`Delete the scenario "${name}"`} aria-label={`Delete the scenario ${name}`} onClick={() => void deleteScenario(name)}>
@@ -716,7 +788,8 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
             className="scn-new"
             onSubmit={(e) => {
               e.preventDefault();
-              void createScenario(newName, newFrom).then((err) => {
+              const preset = newRules.startsWith('preset:') ? presets.find((x) => x.id === newRules.slice(7)) : undefined;
+              void createScenario(newName, newFrom, newRules === 'none' ? 'none' : preset ? { preset: preset.content } : 'source').then((err) => {
                 setCreateError(err);
                 if (!err) setNewName('');
               });
@@ -740,6 +813,15 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
               </select>
               <button className="btn primary" type="submit" disabled={!newName.trim()}>Create</button>
             </div>
+            <select value={newRules} onChange={(e) => setNewRules(e.target.value)} disabled={!!busy} aria-label="Rules of the new scenario" title="The rules the new scenario starts with. They are saved with the scenario (Save), and each scenario keeps its own.">
+              <option value="source">Rules: as the order it starts from</option>
+              <option value="none">Rules: none (the generator's own logic)</option>
+              {presets.length > 0 && (
+                <optgroup label="Rules: start from a preset">
+                  {presets.map((x) => <option key={x.id} value={`preset:${x.id}`}>{x.name}</option>)}
+                </optgroup>
+              )}
+            </select>
             {createError && <div className="scn-error">{createError}</div>}
           </form>
         </section>

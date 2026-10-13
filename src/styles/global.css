@@ -10832,11 +10832,12 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .scn-panel__body .scn-list__head { padding: 0; justify-content: flex-start; }
 .scn-panel__body .scn-list__head > span { padding: 3px 8px; }
 .scn-panel__body .scn-list__head > span:first-child { flex: 1; min-width: 0; padding-left: 18px; }
-.scn-panel__body .scn-list__head > span:nth-child(2) { flex: none; width: 168px; box-sizing: border-box; border-left: 1px solid var(--border); text-align: center; }
-.scn-panel__body .scn-list__head > span:nth-child(3) { flex: none; width: 28px; box-sizing: border-box; border-left: 1px solid var(--border); }
+.scn-panel__body .scn-list__head > span:nth-child(2) { flex: none; width: 70px; box-sizing: border-box; border-left: 1px solid var(--border); text-align: center; }
+.scn-panel__body .scn-list__head > span:nth-child(3) { flex: none; width: 128px; box-sizing: border-box; border-left: 1px solid var(--border); text-align: center; }
+.scn-panel__body .scn-list__head > span:nth-child(4) { flex: none; width: 28px; box-sizing: border-box; border-left: 1px solid var(--border); }
 .scn-list .scn-list__pick { align-items: stretch; padding: 0 0 0 10px; gap: 0; }
 .scn-list .scn-list__name { flex: 1; min-width: 0; align-self: center; padding: 4px 6px 4px 0; }
-.scn-list .scn-list__meta { flex: none; width: 168px; box-sizing: border-box; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center; padding: 2px 6px; }
+.scn-list .scn-list__meta { flex: none; width: 128px; box-sizing: border-box; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center; padding: 2px 6px; }
 .scn-list .scn-list__delete { align-self: stretch; flex: none; width: 28px; margin: 0; padding: 0; border-left: 1px solid var(--border); border-radius: 0; display: inline-flex; align-items: center; justify-content: center; }
 
 /* Status as plain text in the grid: no pill, no background. */
@@ -11428,3 +11429,294 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .ifct__eye:hover { color: var(--text); background: rgba(0, 0, 0, 0.06); }
 .ifct__eye.is-off { opacity: 0.5; }
 .ifct__eye.is-part { color: var(--accent-strong); }
+
+/* Scenario panel > Rules: extra activities, links and crews in one place (components/scenarios/ScenarioRules.tsx). */
+.scn-rules__bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; padding: 8px 8px 0; }
+.scn-rules__file { display: inline-flex; gap: 4px; }
+.scn-rules__note { margin: 6px 8px 0; font-size: 12px; color: var(--text-dim); }
+.scn-rules__note.is-error { color: var(--danger); }
+.scn-extras input { width: 100%; min-width: 0; font-size: 12px; }
+.scn-extras input[type='number'] { width: 56px; text-align: right; }
+.scn-extras input[type='date'] { width: 128px; }
+.scn-extras__tools { white-space: nowrap; text-align: right; }
+.scn-extras__paste { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.scn-extras__paste textarea { width: 100%; font-family: ui-monospace, Consolas, monospace; font-size: 12px; }
+
+/* Rules panel sections (components/scenarios/rules/*): navigation, rule cards, conditions, settings. */
+.scn-rules__title { display: inline-flex; gap: 6px; align-items: center; min-height: 22px; }
+.scn-rules__nav { display: flex; flex-direction: column; gap: 6px; padding: 8px 8px 0; }
+.scn-rules__navgroup { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.scn-rules__navlabel { flex: 0 0 132px; font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+.scn-rules__nav .segmented-choice { flex-wrap: wrap; }
+.scn-rules__problems { margin: 6px 8px 0; padding: 6px 8px 6px 22px; font-size: 12px; border: 1px solid var(--warn); border-radius: 4px; background: rgba(192, 135, 44, 0.08); }
+.scn-rules__problems li { margin: 1px 0; }
+.rule-section__actions { margin-left: auto; display: inline-flex; gap: 4px; }
+.rule-sub { font-size: 11px; font-weight: 600; color: var(--text-dim); margin-top: 6px; text-transform: uppercase; letter-spacing: 0.03em; }
+.rule-card { display: flex; flex-direction: column; gap: 5px; border: 1px solid var(--border); border-radius: 4px; padding: 6px 8px; background: var(--bg-card, transparent); }
+.rule-card.is-off { opacity: 0.55; }
+.rule-card.has-problem { border-color: var(--warn); }
+.rule-card__head { display: flex; align-items: center; gap: 6px; }
+.rule-card__id { font-weight: 600; font-size: 12px; min-width: 70px; width: 110px; font-family: ui-monospace, Consolas, monospace; }
+.rule-card__title { flex: 1; min-width: 0; }
+.rule-card__name { width: 100%; min-width: 0; font-size: 12px; }
+.rule-card__tools { margin-left: auto; display: inline-flex; gap: 3px; }
+.rule-card__note { font-size: 11px; }
+.rule-card__problem { font-size: 11px; color: var(--warn); }
+.rule-card__body { display: flex; flex-direction: column; gap: 6px; }
+.rule-when { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; font-size: 12px; }
+.rule-when__label { font-size: 11px; color: var(--text-dim); min-width: 62px; }
+.rule-when__add { font-size: 11px; max-width: 120px; }
+.rule-term { display: inline-flex; align-items: center; gap: 3px; padding: 1px 3px 1px 6px; border: 1px solid var(--border); border-radius: 10px; background: rgba(0, 0, 0, 0.03); }
+.rule-term__name { font-size: 11px; color: var(--text-dim); }
+.rule-term input, .rule-term select { width: 92px; font-size: 12px; border: 0; background: transparent; padding: 1px 2px; }
+.rule-chip { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; font-size: 11px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; user-select: none; }
+.rule-chip input { margin: 0; }
+.rule-chip.is-on { border-color: var(--accent); background: rgba(0, 120, 212, 0.08); }
+.rule-fits { font-size: 11px; color: var(--text-dim); }
+.rule-fits.is-none { color: var(--warn); }
+.rule-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px 10px; }
+.rule-field { display: flex; flex-direction: column; gap: 2px; font-size: 12px; min-width: 0; }
+.rule-field--wide { grid-column: span 2; }
+.rule-field__label { font-size: 11px; color: var(--text-dim); }
+.rule-field input, .rule-field select, .rule-text { width: 100%; min-width: 0; font-size: 12px; }
+.rule-num { width: 64px; font-size: 12px; text-align: right; }
+.rule-field .rule-num { width: 100%; text-align: left; }
+.rule-phases { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rule-phase { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; padding: 1px 4px 1px 6px; border: 1px solid var(--border); border-radius: 10px; }
+.rule-phase__name { font-size: 11px; color: var(--text-dim); }
+.rule-phase select { font-size: 12px; max-width: 150px; }
+.rule-list { display: flex; flex-wrap: wrap; gap: 3px 10px; font-size: 11px; max-height: 120px; overflow: auto; }
+.rule-list__item { white-space: nowrap; }
+.rule-order { font-size: 11px; line-height: 1.5; }
+.rule-steps { display: flex; flex-direction: column; gap: 4px; align-items: flex-start; }
+.rule-step { display: flex; align-items: center; gap: 5px; }
+.rule-step__n { width: 16px; text-align: right; font-size: 11px; color: var(--text-dim); }
+.rule-step select { font-size: 12px; max-width: 180px; }
+.rule-settings { display: flex; flex-direction: column; }
+.rule-setting { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(120px, 160px) minmax(90px, 130px); gap: 8px; align-items: center; padding: 3px 0; border-top: 1px solid var(--border); font-size: 12px; }
+.rule-setting:first-child { border-top: 0; }
+.rule-setting.is-set .rule-setting__label { font-weight: 600; }
+.rule-setting__control { display: inline-flex; align-items: center; gap: 4px; }
+.rule-setting__state { font-size: 11px; }
+
+/* Rules as a dock panel: scrolls on its own and uses the width. */
+.scn-rules--dock { flex: 1; min-height: 0; overflow: auto; }
+.scn-rules--dock .scn-extras input[type='text'], .scn-rules--dock .scn-extras td:nth-child(2) input { min-width: 220px; }
+.scn-rules--empty { padding: 12px; color: var(--text-dim); font-size: 12px; }
+
+/* ── Rules list: one list, each rule with its type ─────────────────────────────────────────────── */
+.rule-list-panel { display: flex; flex-direction: column; gap: 6px; padding: 8px; }
+.rule-toolbar { display: flex; gap: 6px; align-items: center; }
+.rule-toolbar__search { flex: 1; min-width: 0; }
+.rule-kinds { display: flex; flex-wrap: wrap; gap: 4px; }
+.rule-kind-chip { font-size: 11px; padding: 2px 8px; border: 1px solid var(--border); border-radius: 10px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.rule-kind-chip.is-on { color: var(--text); border-color: var(--accent, currentColor); background: rgba(80, 140, 220, 0.14); }
+.rule-rows { display: flex; flex-direction: column; gap: 3px; }
+.rule-empty { padding: 10px 2px; font-size: 12px; }
+.rule-footer { margin-top: 6px; }
+
+.rule-picker { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 4px; padding: 6px; border: 1px solid var(--border); border-radius: 4px; }
+.rule-picker__item { display: flex; flex-direction: column; gap: 2px; padding: 4px 6px; border-left: 3px solid var(--kind, var(--border)); border-radius: 3px; }
+.rule-picker__item > button:first-child { display: flex; flex-direction: column; align-items: flex-start; gap: 1px; text-align: left; background: transparent; border: 0; padding: 0; color: inherit; cursor: pointer; }
+.rule-picker__item.is-off { opacity: 0.5; }
+.rule-picker__item .mini-btn { align-self: flex-start; }
+.rule-picker__name { font-weight: 600; font-size: 12px; }
+.rule-picker__tip { font-size: 11px; color: var(--text-dim); }
+
+/* Colour of each family of rule types: the badge, the chip, the row's edge, the picker. */
+.rule-picker__item--programme, .rule-card--programme, .rule-kind-chip--programme { --kind: #8a6fd1; }
+.rule-picker__item--rates, .rule-card--rates, .rule-kind-chip--rates { --kind: #3f9a6a; }
+.rule-picker__item--engine, .rule-card--engine, .rule-kind-chip--engine { --kind: #8c8c8c; }
+.rule-picker__item--structure, .rule-card--structure, .rule-kind-chip--structure { --kind: #2f86c7; }
+.rule-picker__item--logic, .rule-card--logic, .rule-kind-chip--logic { --kind: #d0802c; }
+.rule-kind-chip[class*='--'] { border-left: 3px solid var(--kind); }
+
+.rule-card--list { margin-top: 0; border-left: 3px solid var(--kind, var(--border)); padding: 3px 8px; }
+.rule-card--list.is-open { padding-bottom: 6px; }
+.rule-card--list .rule-card__head { min-height: 24px; }
+.rule-card__chevron { display: inline-flex; align-items: center; justify-content: center; border: 0 !important; background: none !important; box-shadow: none; padding: 0; width: 20px; height: 20px; cursor: pointer; }
+.rule-card__chevron .section-chevron { width: 16px; height: 16px; }
+.rule-kind { flex: 0 0 auto; min-width: 92px; font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; color: var(--kind, var(--text-dim)); }
+.rule-card__summary { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.rule-card--list.is-open .rule-card__summary { display: none; }
+.rule-card--list.is-open .rule-card__title { flex: 1; }
+.rule-card__note--inline { flex: 0 0 auto; font-size: 11px; white-space: nowrap; }
+.rule-card--list .rule-card__title { flex: 0 1 220px; }
+
+.rule-presets { display: flex; flex-wrap: wrap; align-items: center; gap: 4px; padding: 6px 8px 0; }
+.rule-presets__label { font-size: 11px; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.03em; }
+.rule-presets select { max-width: 200px; }
+.rule-presets__name { display: inline-flex; gap: 4px; }
+.rule-presets__note { flex: 1 1 100%; font-size: 11px; }
+
+/* The Rules panel sits on white: its fields get a thin border so they still read as fields. */
+.scn-rules { background: #fff; --input-bg: #fff; }
+.scn-rules input:not([type='checkbox']):not([type='radio']), .scn-rules select, .scn-rules textarea { border: 1px solid var(--border); }
+.scn-rules .rule-card { background: #fff; }
+.scn-rules .rule-card--list:hover { background: #fafafa; }
+.scn-rules .rule-kind-chip { background: #fff; }
+.scn-rules .rule-kind-chip.is-on { background: rgba(80, 140, 220, 0.14); }
+.scn-rules .rule-kind-chip { font-size: 13px; padding: 3px 11px; color: #000; }
+.scn-rules .rule-kind-chip.is-on { color: #000; font-weight: 600; }
+
+/* Rule tools: borderless icon buttons, like the appearance profiles table (eye, copy, delete). */
+.rule-card__tools { gap: 0; }
+.rule-card__tools button { display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 24px; padding: 0; border: none !important; border-radius: 4px; background: none !important; box-shadow: none; color: var(--text-dim); cursor: pointer; }
+.rule-card__tools button svg { width: 18px; height: 18px; }
+.rule-card__tools button:hover { background: #f4f4f5 !important; color: var(--accent-strong); }
+.rule-card__tools button.rule-card__del:hover { color: var(--danger); }
+.rule-card__tools button.is-off { opacity: 0.45; }
+
+/* Row chevron and section toggles: the app's standard chevron, with room on its left. */
+.rule-card--list { padding-left: 10px; }
+.rule-card--list .rule-card__head { gap: 6px; }
+.rule-card__chevron { margin-left: 2px; }
+.rule-footer__toggle { display: inline-flex; align-items: center; gap: 4px; padding: 2px 8px 2px 4px; border: 0; background: none; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+.rule-footer__toggle .section-chevron { width: 16px; height: 16px; }
+
+/* The Settings rule: all the engine's settings as one table. */
+.rule-settings-table { width: 100%; }
+.rule-settings-table th { text-align: left; }
+.rule-settings-table td { padding: 2px 6px; vertical-align: middle; }
+.rule-settings-table td:first-child { width: 42%; padding-left: 20px; }
+.rule-settings-table__state { white-space: nowrap; font-size: 12px; }
+.rule-settings-table tr:not(.is-set):not(.rule-settings-table__group) td:first-child { color: var(--text-dim); }
+.rule-settings-table tr.is-set td:first-child { font-weight: 600; }
+.rule-settings-table__group td { padding-left: 6px; padding-top: 8px; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; color: var(--text-dim); border-bottom: 1px solid var(--border); }
+.rule-settings-table .rule-num { width: 80px; }
+.rule-settings-table .rule-text { width: 100%; min-width: 120px; }
+.rule-settings-table .rule-settings-table__group td:first-child { padding-left: 6px; }
+
+/* ── Rule editors: a label column and the controls beside it ───────────────────────────────────── */
+.rule-card--list .rule-card__body { gap: 12px; margin-top: 4px; padding: 12px 6px 6px 26px; border-top: 1px solid var(--border); }
+.rule-when:has(> .rule-when__items) { display: grid; grid-template-columns: 150px minmax(0, 1fr); align-items: start; gap: 8px 12px; }
+.rule-when:has(> .rule-when__items) > .rule-when__label { padding-top: 6px; min-width: 0; font-size: 12px; color: var(--text-dim); }
+.rule-when__items { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; }
+
+/* A condition: its name, its value, a remove button. */
+.rule-term { height: 28px; padding: 0 2px 0 9px; gap: 6px; border: 1px solid var(--border); border-radius: 4px; background: #fff; }
+.rule-term__name { font-size: 12px; font-weight: 600; color: var(--text); white-space: nowrap; }
+.rule-term input, .rule-term select { width: 110px; height: 24px; padding: 0 4px; border: 0 !important; border-left: 1px solid var(--border) !important; border-radius: 0; background: transparent !important; box-shadow: none; font-size: 12px; }
+.rule-term .mini-btn { border: 0 !important; background: none !important; box-shadow: none; color: var(--text-dim); }
+.rule-term .mini-btn:hover { color: var(--danger); }
+.rule-when__add { height: 28px; max-width: 130px; padding: 0 6px; border: 1px dashed var(--border) !important; border-radius: 4px; background: transparent !important; color: var(--accent-strong); font-size: 12px; }
+
+/* A choice from a list (rule groups, "made per"): a pill that is filled when chosen. */
+.rule-chip { position: relative; height: 26px; padding: 0 12px; gap: 5px; border-radius: 13px; background: #fff; font-size: 12px; color: var(--text); }
+.rule-chip input { position: absolute; opacity: 0; pointer-events: none; }
+.rule-chip:hover { border-color: var(--accent); }
+.rule-chip.is-on { border-color: var(--accent); background: var(--accent-dim); font-weight: 600; }
+.rule-chip.is-on::before { content: '✓'; font-size: 11px; color: var(--accent-strong); }
+.rule-card__body > .scn-dim .mini-btn { border: 0 !important; background: none !important; color: var(--accent-strong); padding: 0; }
+.rule-card__body select:not(.rule-when__add), .rule-card__body .rule-field input { height: 28px; background: #fff; }
+.rule-list { padding: 6px 8px; border-radius: 4px; background: #fafafa; }
+
+/* The Extra activities table: all the extras in one grid, to edit together. */
+.rule-extras__bar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.rule-extras__bar input[type='search'] { flex: 1 1 160px; min-width: 120px; }
+.rule-extras__bulk { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; padding: 6px 8px; border: 1px solid var(--accent); border-radius: 4px; background: var(--accent-dim); }
+.rule-extras__bulk select, .rule-extras__bulk input { height: 26px; max-width: 150px; }
+.rule-extras__scroll { max-height: 520px; overflow: auto; border: 1px solid var(--border); border-radius: 4px; }
+.rule-extras { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; }
+.rule-extras th { position: sticky; top: 0; z-index: 1; padding: 4px 6px; background: #f2f2f2; border-bottom: 1px solid var(--border); text-align: left; font-size: 11px; color: var(--text-dim); white-space: nowrap; }
+.rule-extras td { padding: 2px 4px; border-bottom: 1px solid #eee; vertical-align: middle; }
+.rule-extras tr.is-picked td { background: var(--accent-dim); }
+.rule-extras input:not([type='checkbox']), .rule-extras select { height: 26px; font-size: 12px; background: #fff; }
+.rule-extras td:nth-child(2) input { width: 170px; font-family: ui-monospace, Consolas, monospace; font-weight: 600; }
+.rule-extras td:nth-child(3) input { width: 190px; }
+.rule-extras td:nth-child(4) select, .rule-extras td:nth-child(8) select, .rule-extras td:nth-child(9) select { width: 150px; }
+.rule-extras td:nth-child(5) input { width: 64px; }
+.rule-extras td:nth-child(6) input, .rule-extras td:nth-child(7) input { width: 72px; }
+.rule-extras td:nth-child(10) input, .rule-extras td:nth-child(11) input { width: 128px; }
+.rule-extras .rule-card__tools { white-space: nowrap; }
+
+/* The Settings rule: a list of settings, each with what it does under its name and its control on the right. */
+.rule-settings { display: flex; flex-direction: column; gap: 14px; }
+.rule-settings__group h4 { margin: 0 0 2px; padding: 0 2px 4px; border-bottom: 1px solid var(--border); font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim); }
+.rule-setting { display: grid; grid-template-columns: minmax(0, 1fr) minmax(150px, 220px); gap: 16px; align-items: center; padding: 8px 6px 8px 14px; border-bottom: 1px solid #f0f0f0; border-left: 3px solid transparent; }
+.rule-setting:last-child { border-bottom: 0; }
+.rule-setting:hover { background: #fafafa; }
+.rule-setting.is-changed { border-left-color: var(--warn); background: rgba(192, 135, 44, 0.05); }
+.rule-setting__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.rule-setting__name { font-size: 13px; font-weight: 600; color: var(--text); }
+.rule-setting__help { font-size: 11.5px; line-height: 1.35; color: var(--text-dim); }
+.rule-setting__control { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; }
+.rule-setting__number { display: inline-flex; align-items: center; gap: 6px; }
+.rule-setting__number .rule-num { width: 84px; height: 28px; text-align: right; }
+.rule-setting__unit { min-width: 18px; font-size: 12px; color: var(--text-dim); }
+.rule-setting__control .rule-text { width: 100%; height: 28px; }
+.rule-setting__was { font-size: 11px; color: var(--text-dim); }
+.rule-setting.is-changed .rule-setting__was { color: var(--warn); }
+@media (max-width: 560px) { .rule-setting { grid-template-columns: minmax(0, 1fr); gap: 6px; } }
+
+/* The Inputs page's bar looks like the Programmes toolbar (grey strip, the segmented button on the right), and File details opens beside the list. */
+.inputs-page > .inputs-bar { grid-column: 1 / -1; position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: flex-start; gap: 8px; background: #E6E6E6; border-bottom: 1px solid rgba(60, 64, 68, 0.18); min-height: 38px; box-sizing: border-box; padding: 3px 0 3px 12px; font-size: 14px; }
+.inputs-bar .layouts-segment { margin-left: 4px; }
+.inputs-page--details { grid-template-columns: minmax(0, 1fr) auto; }
+.inputs-details { display: flex; align-self: stretch; min-height: 0; }
+.inputs-details > .panel { border-left: 1px solid var(--border); }
+.file-details__section { padding: 6px 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); background: var(--bg-soft); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.file-details__empty { padding: 12px 12px 16px; font-size: 12px; }
+.file-details__note { margin-top: 3px; font-size: 11px; color: var(--accent-strong); }
+.file-details__note.is-warn { color: #a15c00; }
+.file-details .ad-edit--long { height: auto; padding: 4px 6px; resize: vertical; }
+
+.inputs-page { align-content: start; grid-auto-rows: auto; }
+
+/* The relational tables of the rules (Rates, Crews, Assignments): a grid that copies to and from a spreadsheet. */
+.rel-bar { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.rel-filter { flex: 0 1 180px; min-height: 26px; padding: 2px 8px; font-size: 12px; }
+.rel-paste { margin-bottom: 8px; }
+.rel-paste textarea { width: 100%; box-sizing: border-box; font: 12px/1.4 Consolas, monospace; }
+.rel-scroll { overflow-x: auto; max-height: 420px; overflow-y: auto; }
+.rel-table { border-collapse: collapse; font-size: 12px; }
+.rel-table th { position: sticky; top: 0; background: var(--bg-soft); color: var(--text-dim); font-weight: 600; text-align: left; padding: 3px 6px; white-space: nowrap; border-bottom: 1px solid var(--border); z-index: 1; }
+.rel-table td { padding: 1px 3px; border-bottom: 1px solid var(--border); }
+.rel-table tr.is-off td { opacity: 0.5; }
+.rel-table tr.has-problem td:nth-child(2) { box-shadow: inset 3px 0 0 #c0392b; }
+.rel-cell { box-sizing: border-box; height: 24px; padding: 0 5px; font: inherit; font-size: 12px; border: 1px solid transparent; border-radius: 4px; background: transparent; }
+.rel-cell:hover, .rel-cell:focus { border-color: var(--border); background: #fff; outline: none; }
+
+.rule-legacy { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin: 6px 0; padding: 6px 10px; border: 1px solid #e0b400; border-radius: 6px; background: #fff8dc; font-size: 12px; }
+.rule-legacy--done { border-color: var(--accent); background: rgb(var(--accent-rgb) / 0.08); }
+
+/* The chevron and the type name are one button: the whole of it opens and closes the rule. */
+.rule-card__toggle { display: inline-flex; align-items: center; gap: 2px; align-self: stretch; padding: 0 6px 0 2px; border: 0 !important; background: none !important; box-shadow: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.rule-card__toggle:hover .rule-kind { text-decoration: underline; }
+.rule-card__toggle:focus-visible { outline: 2px solid var(--accent, currentColor); outline-offset: -2px; }
+
+/* Every rule row in the list is the same height, whatever it holds (an id box, a note, the on / off, copy and delete buttons). */
+.rule-card--list > .rule-card__head { min-height: 44px; box-sizing: border-box; align-items: center; }
+.rule-card--list .rule-card__head .rule-card__id { height: 28px; }
+.rule-card--list .rule-card__tools { align-self: center; }
+
+/* Compact: the collapsed rows of the rules list are 30 px, all the same. */
+.rule-card--list { padding-top: 0; padding-bottom: 0; }
+.rule-card--list.is-open { padding-bottom: 6px; }
+.rule-card--list > .rule-card__head { min-height: 30px; }
+.rule-card--list .rule-card__head .rule-card__id { height: 22px; font-size: 12px; padding-top: 0; padding-bottom: 0; }
+.rule-card--list .rule-card__head .rule-card__tools button { height: 22px; width: 22px; padding: 0; }
+.rule-card--list .rule-card__head .rule-card__tools svg { width: 16px; height: 16px; }
+.rule-rows { gap: 2px; }
+
+/* The icon buttons of the compact Scenarios toolbar: seven equal columns, and the three buttons under them are two columns wide each, so they line up. */
+.scn-tools--compact .scn-grp--icons { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 4px; align-items: stretch; }
+.scn-tools--compact .scn-grp--icons > .btn { min-width: 0; width: 100%; padding-left: 0; padding-right: 0; }
+.scn-tools--compact .scn-grp--icons-2 > .btn { grid-column: span 2; }
+
+/* Wider: each of the seven columns is at least 29 px (the toolbar grows to fit, and scrolls sideways when the panel is narrower). */
+.scn-tools--compact .scn-grp--icons { grid-template-columns: repeat(7, minmax(29px, 1fr)); }
+
+/* Objects joined into one: sub-rows under their main object in the Scenarios table. */
+.scn-subrow { background: rgb(0 0 0 / 0.035); color: var(--text-dim); font-style: italic; }
+.scn-subrow td { border-top: 0; }
+.scn-subrow:hover { background: var(--accent-dim); }
+.scn-subrow.is-selected { background: var(--accent-dim); color: var(--text); }
+.scn-subrow__first { padding-left: 22px; box-shadow: inset 3px 0 0 var(--accent); }
+.scn-subrow__tag { font-size: 11px; white-space: nowrap; }
+.scn-subrow__split { border: 0; background: transparent; color: var(--text-dim); cursor: pointer; font-size: 14px; line-height: 1; padding: 0 4px; border-radius: 3px; }
+.scn-subrow__split:hover { color: var(--danger, #b3261e); background: rgba(179, 38, 30, 0.1); }
+
+/* The Rules column of the scenario list (how many rules, and joins, the scenario holds; * = not saved yet). */
+.scn-list .scn-list__rules { flex: none; width: 70px; box-sizing: border-box; border-left: 1px solid var(--border); display: flex; align-items: center; justify-content: center; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.scn-list .scn-list__item.active .scn-list__rules { color: var(--text); }

@@ -3,6 +3,7 @@ import path from 'node:path';
 import type { Plugin } from 'vite';
 import { HttpError, readBody, send, sendError } from './http';
 import { WIKI_DIR } from './wiki';
+import { ADJUSTMENTS_FILE } from './engineFiles';
 
 /** Dev-server bridge to SeaTable (the local Docker instance in C:\insight-stack): the model
     elements go into its "Elements" table, and the columns its users add come back as custom
@@ -335,6 +336,35 @@ async function pushFiles(list: FilePush[]) {
   return { added: appends.length, updated: updates.length, table };
 }
 
+/** Writes edited details (File details pane): one field of one file per update. A select column gets any new option first; a file the table
+    does not have yet is counted in `missing` (it is added, with its details, at the next push). */
+async function updateFileDetails(list: { name: string; field: string; values: string[] }[]) {
+  const { name: table, exists } = await resolveFilesTable();
+  if (!exists) throw new HttpError(404, 'The files table does not exist yet in the Files base: push the files first.');
+  const info = await tableInfo(table, 'files');
+  const types = new Map(info.columns.map((c) => [c.name, c.type]));
+  const ids = new Map<string, string>();
+  for (const r of await allRows(table, 'files')) if (r.Name) ids.set(String(r.Name), r._id);
+  const wanted = list.filter((u) => types.has(u.field) && !FILES_MANAGED.includes(u.field) && !u.field.startsWith('_') && !SKIP_TYPES.has(types.get(u.field)!));
+  let changed = false;
+  for (const field of new Set(wanted.map((u) => u.field))) {
+    changed = (await ensureOptions(table, field, [...new Set(wanted.filter((u) => u.field === field).flatMap((u) => u.values))])) || changed;
+  }
+  if (changed) await new Promise((resolve) => setTimeout(resolve, 1500));
+  const rows = new Map<string, Record<string, unknown>>();
+  const missing = new Set<string>();
+  for (const u of wanted) {
+    const id = ids.get(u.name);
+    if (!id) { missing.add(u.name); continue; }
+    const row = rows.get(id) ?? rows.set(id, {}).get(id)!;
+    const type = types.get(u.field)!;
+    row[u.field] = type === 'multiple-select' ? u.values : type === 'single-select' ? (u.values[0] ?? null) : u.values.join(', ');
+  }
+  const updates = [...rows].map(([row_id, row]) => ({ row_id, row }));
+  for (let i = 0; i < updates.length; i += 200) await call('PUT', '/rows/', { base: 'files', json: { table_name: table, updates: updates.slice(i, i + 200) } });
+  return { updated: updates.length, missing: [...missing] };
+}
+
 /** The user's columns of the files table, for every file: field -> list of values (a file can have several buildings). */
 async function pullFiles() {
   const { name: table, exists } = await resolveFilesTable();
@@ -364,7 +394,6 @@ async function pullFiles() {
 const RETIRED = 'Retired';
 const BASELINES = 'Baselines';
 const EXTRAS = 'Extra activities';
-const ADJUSTMENTS_FILE = process.env.INSIGHT_ADJUSTMENTS_FILE ?? 'C:\\insight-stack\\data\\adjustments.json';
 const RETIRED_COLUMNS = [
   { name: 'Task name', type: 'text' },
   { name: 'Reason', type: 'text' },
@@ -726,6 +755,11 @@ export function seatablePlugin(): Plugin {
             const body = (await readBody(req)) as { files: FilePush[] };
             if (!Array.isArray(body.files)) throw new HttpError(400, 'No files given.');
             return send(res, 200, await pushFiles(body.files));
+          }
+          if (req.method === 'POST' && route === 'files/update') {
+            const body = (await readBody(req)) as { updates: { name: string; field: string; values: string[] }[] };
+            if (!Array.isArray(body.updates) || !body.updates.length) throw new HttpError(400, 'Nothing to update.');
+            return send(res, 200, await updateFileDetails(body.updates));
           }
           if (req.method === 'GET' && route === 'files') return send(res, 200, await pullFiles());
 

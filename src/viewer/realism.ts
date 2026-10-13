@@ -163,10 +163,12 @@ vec3 classLook(int c, vec3 base, vec3 p, vec3 n) {
   if (c == 12) return base * (0.96 + 0.06 * cFbm(p * 3.0));
   if (c == 13) return base * (0.95 + 0.08 * cNoise(p * 30.0));
   if (c == 14) {
-    // Rebar cage: a grid of bars (20 cm centres, 16 mm) cut out of the surface; what is
-    // between them is see-through. Bars widen to a pixel when far away so they don't vanish.
-    vec2 d = abs(fract(uv / 0.2 + 0.5) - 0.5) * 0.2;
-    float r = max(0.008, max(fwidth(uv.x), fwidth(uv.y)) * 0.75);
+    // Rebar cage: a grid of bars cut out of the surface; what is between them is see-through. The vertical bars
+    // (x = along the wall) are 20 cm apart and 40 mm; the horizontal bars (y = up it) 20 cm apart and 16 mm.
+    // Bars widen to a pixel when far away so they don't vanish.
+    vec2 sp = vec2(0.20, 0.20);
+    vec2 d = abs(fract(uv / sp + 0.5) - 0.5) * sp;
+    vec2 r = max(vec2(0.02, 0.008), vec2(max(fwidth(uv.x), fwidth(uv.y)) * 0.75));
     vec2 q = d / r;
     if (min(q.x, q.y) > 1.0) discard;
     float shade = 1.0 - 0.45 * pow(min(q.x, q.y), 2.0);

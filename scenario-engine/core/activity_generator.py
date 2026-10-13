@@ -1,24 +1,33 @@
 # core/activity_generator.py
 from core.stair_steps import stair_group_label
+from core import rules as _rules
 from config import (
     PROJECT_SHORT,
     PHASE_DEFINITIONS,
-    DURATIONS,
-    PRECAST_ACTIVITY_DEFINITIONS,
-    PRECAST_PROPPING_DEFINITION,
-    PRECAST_CURING_DEFINITION,
-    PRECAST_PROPPING_REMOVAL_DEFINITION,
+    DEFAULT_COMPONENT_DAYS,
+    DEFAULT_CHAIN,
+    DEFAULT_PRECAST_CHAIN,
+    DEFAULT_PHASE_DAYS,
 )
 
-try:
-    from config import ENABLE_WORKS_BEFORE_SLAB
-except ImportError:
-    ENABLE_WORKS_BEFORE_SLAB = False
 
-try:
-    from config import ENABLE_SLAB_CURING, SLAB_CURING_DAYS
-except ImportError:
-    ENABLE_SLAB_CURING, SLAB_CURING_DAYS = False, 0
+# Duration rows set these by their component: the activity's number is built from them.
+_COMPONENT_PHASES = {"Rebar", "Embedments", "Formwork", "Concrete"}
+
+
+def _durations_for(rec, key):
+    """The component days (Rebar, Embedments, Formwork, Concrete): the neutral defaults with the scenario's rules on top."""
+    durations = dict(DEFAULT_COMPONENT_DAYS)
+    for phase, days in _rules.active().phase_days(rec).items():
+        if phase in _COMPONENT_PHASES:
+            durations[phase] = days
+    return durations
+
+
+def _default_crew(phase, rec):
+    """The people on a phase by the scenario's crews (for a duration worked out from a quantity that names no crew)."""
+    from core.resources import crews_for
+    return sum(size for _trade, size in crews_for(phase, rec, {}))
 
 
 def _is_heavy_precast_rec(rec):
@@ -67,31 +76,22 @@ def create_activities(rec, wbs_manager, overrides=None):
     pour_type_raw = str(rec.get("pour_type", "")).strip().upper()
     pour_type_norm = pour_type_raw.replace(" ", "_")
 
-    # Requested exclusion: do not create activities for RAFT stage 2.
-    if pour_type_norm == "RAFT" and conc_stage == "2":
-        return activities
-
     # ── PRECAST ──────────────────────────────────────────────────────────────
     if conc_stage == "PRECAST":
         wbs_oid = rec["concrete_wbs_oid"]
         prev_task_id = None
 
-        phase_definitions = PRECAST_ACTIVITY_DEFINITIONS
-        if _is_heavy_precast_rec(rec):
-            # Propping (erect temp supports) precedes Installation; Curing
-            # (walls-under reaching strength) + Propping Removal follow
-            # Stitching. Curing's real predecessor is cross-record (the
-            # underlying wall's Concrete, not this Stitching task) — see
-            # xml_builder._build_heavy_precast_wall_predecessors_from_clashes,
-            # which adds that edge alongside these intra-chain ones.
-            phase_definitions = (
-                [PRECAST_PROPPING_DEFINITION]
-                + list(PRECAST_ACTIVITY_DEFINITIONS)
-                + [PRECAST_CURING_DEFINITION, PRECAST_PROPPING_REMOVAL_DEFINITION]
-            )
+        # The phases are the chain of the rules that fits (Rules > Chains), else the engine's one activity, Installation.
+        chain = _rules.active().chain_for(rec) or DEFAULT_PRECAST_CHAIN
+        phase_definitions = [
+            {"name": c["phase"], "suffix": c["suffix"], "resource": "", "duration_days": DEFAULT_PHASE_DAYS, "task_name_suffix": f" - {c.get('label') or c['phase']}",
+             "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates"))}
+            for c in chain
+        ]
 
+        ruled = _rules.active().phase_days(rec)
         for phase in phase_definitions:
-            duration = phase["duration_days"]
+            duration = ruled.get(phase["name"], phase["duration_days"])
             if duration <= 0:
                 continue
 
@@ -125,55 +125,19 @@ def create_activities(rec, wbs_manager, overrides=None):
                 "rebar_weight_tonnes": None,
                 "phase_order": len(activities),
                 "predecessor": prev_task_id,
+                "follows": phase.get("follows") or [],
+                "finish_after": bool(phase.get("finish_after")),
             }
+            if phase.get("gates"):
+                _rules.active().gate_tasks.add(final_task_id)
             activities.append(activity)
             prev_task_id = final_task_id
 
         return activities
 
-    # Requested simplification: Pedestal stage 2 has a single combined activity.
-    if pour_type_norm == "PEDESTAL" and conc_stage == "2":
-        key = determine_duration_key(pour_type_raw, rec.get("is_external", False), rec.get("is_double_height", False))
-        durations = DURATIONS.get(key, DURATIONS["Other"])
-        duration = (
-            durations.get("Rebar", 0)
-            + durations.get("Embedments", 0)
-            + durations.get("Formwork", 0)
-            + durations.get("Concrete", 0)
-        )
-        if duration <= 0:
-            duration = 1.0
-
-        task_name_base = (
-            f"{rec.get('building', '??')} - "
-            f"{rec.get('level_code', '??').upper()} - "
-            f"{_task_zone_prefix(rec)}{rec.get('lg1', '??')} {rec.get('task_pour_id', rec.get('pour_id', '??'))}"
-        )
-        default_task_name = f"{task_name_base} - Rebar, Formwork and Concrete"
-
-        phase_key = f"{guid}_Rebar, Formwork and Concrete"
-        ov = overrides.get(phase_key) or overrides.get(guid, {})
-
-        activities.append({
-            "rec": rec,
-            "phase": "Rebar, Formwork and Concrete",
-            "suffix": "-RFC",
-            "task_id": ov.get("TaskID") or f"{rec['task_id_base']}-RFC",
-            "task_name": ov.get("TaskName") or default_task_name,
-            "duration_days": duration,
-            "resource": None,
-            "wbs_oid": rec["concrete_wbs_oid"],
-            "volume": None,
-            "rebar_weight_tonnes": None,
-            "phase_order": 0,
-            "predecessor": None,
-        })
-        return activities
-
     # ── NORMAL IN-SITU CONCRETE ─────────────────────────────────────────────
     is_external = rec.get("is_external", False)
     is_double = rec.get("is_double_height", False)
-    is_raft = pour_type_norm == "RAFT"
 
     # Slab detection
     is_slab = any(keyword in pour_type_raw for keyword in [
@@ -185,7 +149,8 @@ def create_activities(rec, wbs_manager, overrides=None):
     is_stair = "STAIR" in pour_type_raw
 
     key = determine_duration_key(pour_type_raw, is_external, is_double)
-    durations = DURATIONS.get(key, DURATIONS["Other"])
+    durations = _durations_for(rec, key)
+    ruled = _rules.active().phase_days(rec)  # days the scenario's rules set by phase name
 
     # ── WBS BASE LOGIC ───────────────────────────────────────────────────────
     wbs_oid = rec["concrete_wbs_oid"]
@@ -224,44 +189,13 @@ def create_activities(rec, wbs_manager, overrides=None):
         wbs_oid = wbs_manager.register(slab_wbs_name, parent_name=slab_group_name)
 
     # ── PHASE SEQUENCE ───────────────────────────────────────────────────────
-    if is_landing:
-        phase_sequence = [
-            {"original_name": "Decking",  "display_name": "Decking",  "suffix": "-DK", "short_label": "Decking"},
-            {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R",  "short_label": "Rebar and EP/AP"},
-            {"original_name": "Concrete", "display_name": "Concrete", "suffix": "-C",  "short_label": "Concrete"},
-        ]
-    elif is_slab and is_raft:
-        phase_sequence = [
-            {"original_name": "Rebar",       "display_name": "Rebar",       "suffix": "-R",  "short_label": "Rebar"},
-            {"original_name": "EOP on Slab", "display_name": "EOP on Slab", "suffix": "-E2", "short_label": "E/P on Slab"},
-            {"original_name": "FWK",         "display_name": "FWK",         "suffix": "-F",  "short_label": "Formwork"},
-            {"original_name": "Concrete",    "display_name": "Concrete",    "suffix": "-C",  "short_label": "Concrete"},
-        ]
-    elif is_slab:
-        phase_sequence = [
-            {"original_name": "Works before slab", "display_name": "Works before slab", "suffix": "-ALL", "short_label": "Works before slab"},
-            {"original_name": "Decking",           "display_name": "Decking",           "suffix": "-DK",  "short_label": "Mills and Decking"},
-            {"original_name": "Under Slab",         "display_name": "Under Slab",       "suffix": "-D",   "short_label": "E/P under Slab"},
-            {"original_name": "Rebar",              "display_name": "Rebar",            "suffix": "-R",   "short_label": "Rebar"},
-            {"original_name": "EOP on Slab",        "display_name": "EOP on Slab",      "suffix": "-E2",  "short_label": "E/P on Slab"},
-            {"original_name": "FWK",                "display_name": "FWK",              "suffix": "-F",   "short_label": "Formwork"},
-            {"original_name": "Concrete",           "display_name": "Concrete",         "suffix": "-C",   "short_label": "Concrete"},
-        ]
-        if not ENABLE_WORKS_BEFORE_SLAB:
-            phase_sequence = [p for p in phase_sequence if p["original_name"] != "Works before slab"]
-    else:
-        phase_sequence = [
-            {"original_name": "Rebar",    "display_name": "Rebar",    "suffix": "-R", "short_label": "Rebar"},
-            {"original_name": "Formwork", "display_name": "Formwork", "suffix": "-F", "short_label": "E/P and Formwork"},
-            {"original_name": "Concrete", "display_name": "Concrete", "suffix": "-C", "short_label": "Concrete"},
-        ]
-
-    # Concrete curing after the slab's (or raft's) Concrete: a fixed number of calendar days, no labour. The phase is
-    # named "Curing", which is what puts it on the 7-day calendar (xml_builder) and gives it no crew (CREW_TABLE).
-    if is_slab and not is_landing and ENABLE_SLAB_CURING and SLAB_CURING_DAYS > 0:
-        phase_sequence = phase_sequence + [
-            {"original_name": "Curing", "display_name": "Curing", "suffix": "-CU", "short_label": "Curing", "fixed_days": SLAB_CURING_DAYS},
-        ]
+    # The chain of the rules that fits this pour (Rules > Chains), else the engine's Rebar, Formwork and Concrete.
+    chain = _rules.active().chain_for(rec) or DEFAULT_CHAIN
+    phase_sequence = [
+        {"original_name": c["phase"], "display_name": c["phase"], "suffix": c["suffix"], "short_label": c.get("label") or c["phase"], "material": c.get("material", ""),
+         "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates"))}
+        for c in chain
+    ]
 
     prev_task_id = None
     phase_order_counter = 0
@@ -277,14 +211,21 @@ def create_activities(rec, wbs_manager, overrides=None):
             "wbs_sub": None
         }
 
+        if seq.get("material") in ("rebar", "concrete"):
+            phase_def = {**phase_def, "resource": f"{PROJECT_SHORT}-{'R' if seq['material'] == 'rebar' else 'C'}"}
+
         # Calculate duration
-        if "fixed_days" in seq:
-            duration = seq["fixed_days"]
-            phase_def = {**phase_def, "resource": None}
-        elif isinstance(phase_def.get("duration"), str):
+        if isinstance(phase_def.get("duration"), str):
             duration = durations.get(phase_def["duration"], 1.0)
         else:
             duration = sum(durations.get(k, 0) for k in phase_def.get("duration", []))
+        # The scenario's rules: a phase named in a duration row (Decking, Under Slab, Curing...), or a duration worked out
+        # from a quantity (Rules > Durations), replaces the number above.
+        if seq["display_name"] not in _COMPONENT_PHASES and seq["display_name"] in ruled:
+            duration = ruled[seq["display_name"]]
+        computed = _rules.active().computed_days(rec, seq["display_name"], _default_crew(seq["display_name"], rec))
+        if computed is not None:
+            duration = computed
 
         if duration <= 0:
             continue
@@ -327,7 +268,11 @@ def create_activities(rec, wbs_manager, overrides=None):
             "rebar_weight_tonnes": rec.get("rebar_weight_tonnes", 0) if "Rebar" in seq["original_name"] else None,
             "phase_order": phase_order_counter,
             "predecessor": prev_task_id,
+            "follows": seq.get("follows") or [],
+            "finish_after": bool(seq.get("finish_after")),
         }
+        if seq.get("gates"):
+            _rules.active().gate_tasks.add(final_task_id)
 
         activities.append(activity)
         prev_task_id = final_task_id

@@ -86,6 +86,8 @@ interface ResourceWbsTableProps {
   /** WBS paths left out of the programme ("unloaded"): listed greyed, with an eye to load them again, and not counted in the totals above them. */
   unloaded?: string[];
   onToggleUnloaded?: (path: string) => void;
+  /** Unload / load several WBS paths at once (Space on a multi-selection). */
+  onSetUnloaded?: (paths: string[], out: boolean) => void;
   /** Search text: only the WBS levels whose name matches (with their parents and children) are listed. */
   query?: string;
   onWidth: (id: string, width: number) => void;
@@ -99,13 +101,15 @@ interface ResourceWbsTableProps {
     siblings with the toolbar arrows, or siblings sort by any column; the
     order is kept. */
 export const ResourceWbsTable = forwardRef<WbsTableHandle, ResourceWbsTableProps>(function ResourceWbsTable(
-  { activities, spans, resources, wbsPalette, hidden, widths, query, unloaded = [], onToggleUnloaded, onWidth, onState },
+  { activities, spans, resources, wbsPalette, hidden, widths, query, unloaded = [], onToggleUnloaded, onSetUnloaded, onWidth, onState },
   ref,
 ) {
   const [order, setOrder] = useWbsOrder();
   const [sort, setSort] = usePersistedState<Sort>('schedule.wbsResourceSort', null);
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  // `selected` is the anchor (the row the move arrows act on); `picked` is the whole selection (Ctrl/Shift-click).
   const [selected, setSelected] = useState<string | null>(null);
+  const [picked, setPicked] = useState<Set<string>>(new Set());
   const labour = useMemo(() => new Set(resources.filter((r) => r.type === 'labor').map((r) => r.name)), [resources]);
   const columns = useMemo(() => wbsColumns(resources).filter((c) => c.id === WBS_NAME_COL || !hidden.includes(c.id)), [resources, hidden]);
   const widthOf = (c: WbsColumn) => widths[c.id] ?? c.width;
@@ -212,6 +216,37 @@ export const ResourceWbsTable = forwardRef<WbsTableHandle, ResourceWbsTableProps
   const canDown = !!current && current.index < current.siblings.length - 1;
   useEffect(() => onState({ canUp, canDown, hasOrder }), [canUp, canDown, hasOrder, onState]);
 
+  const clickRow = (e: React.MouseEvent, path: string) => {
+    if (e.shiftKey && selected) {
+      const a = lines.findIndex((l) => l.node.path === selected);
+      const b = lines.findIndex((l) => l.node.path === path);
+      if (a >= 0 && b >= 0) {
+        const [from, to] = a < b ? [a, b] : [b, a];
+        setPicked(new Set(lines.slice(from, to + 1).map((l) => l.node.path)));
+        return;
+      }
+    }
+    if (e.ctrlKey || e.metaKey) {
+      const next = new Set(picked);
+      if (next.has(path)) next.delete(path);
+      else next.add(path);
+      setPicked(next);
+      setSelected(next.has(path) ? path : null);
+      return;
+    }
+    const only = picked.size === 1 && picked.has(path);
+    setSelected(only ? null : path);
+    setPicked(only ? new Set() : new Set([path]));
+  };
+  // Space: unload the selected levels (or, when all are already unloaded, load them again).
+  const toggleSelected = () => {
+    if (!onSetUnloaded || picked.size === 0) return;
+    const rows = [...picked].filter((p) => !isOut(p) || unloaded.includes(p));
+    if (rows.length === 0) return;
+    const unloadThem = rows.some((p) => !isOut(p));
+    onSetUnloaded(unloadThem ? rows.filter((p) => !isOut(p)) : rows, unloadThem);
+  };
+
   const move = (delta: -1 | 1) => {
     if (!current) return;
     const next = [...current.siblings];
@@ -316,7 +351,19 @@ export const ResourceWbsTable = forwardRef<WbsTableHandle, ResourceWbsTableProps
 
   return (
     <div className="activity-table-shell rv-wbs-shell">
-      <div className="activity-table-scroll">
+      <div
+        className="activity-table-scroll"
+        tabIndex={0}
+        onKeyDown={(e) => {
+          if (e.key === ' ' && picked.size > 0 && !(e.target as HTMLElement).closest('input,select,textarea')) {
+            e.preventDefault();
+            toggleSelected();
+          } else if (e.key === 'Escape') {
+            setPicked(new Set());
+            setSelected(null);
+          }
+        }}
+      >
         <table className="data-table no-resize wrap-headers">
           <thead>
             <tr>
@@ -345,9 +392,9 @@ export const ResourceWbsTable = forwardRef<WbsTableHandle, ResourceWbsTableProps
               return (
                 <tr
                   key={l.node.path}
-                  className={`group-header-row${selected === l.node.path ? ' rv-wbs-selected' : ''}${out ? ' rv-wbs-out' : ''}`}
-                  style={{ background: bg, color: fg }}
-                  onClick={() => setSelected(selected === l.node.path ? null : l.node.path)}
+                  className={`group-header-row${picked.has(l.node.path) ? ' rv-wbs-selected' : ''}${out ? ' rv-wbs-out' : ''}`}
+                  style={{ background: bg, color: fg, userSelect: 'none' }}
+                  onClick={(e) => clickRow(e, l.node.path)}
                 >
                   {columns.map((c) =>
                     c.id === WBS_NAME_COL ? (

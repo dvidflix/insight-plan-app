@@ -1,0 +1,1701 @@
+{
+ "version": 1,
+ "settings": {
+  "levelGate": true,
+  "levelGateSlabsOnly": true,
+  "levelGateDeckingConcreteOnly": true,
+  "levelGateMaxDistanceM": 0.05,
+  "completionCloseout": true,
+  "openEndSequencing": true,
+  "openEndMaxDistanceM": 0.3,
+  "openEndNearestSlabFallback": true,
+  "slabCuringGatesSuccessors": false,
+  "sideOverlapThreshold": 0.5,
+  "groupMilestones": false,
+  "buildingCompletion": false,
+  "sequenceFlow": true,
+  "sequenceLeadDays": 1
+ },
+ "durations": [],
+ "productivity": [],
+ "rebar": [],
+ "crews": [],
+ "trades": [
+  {
+   "id": "SF",
+   "name": "Steel fixers",
+   "capacity": 24
+  },
+  {
+   "id": "CP",
+   "name": "Carpenters / formwork",
+   "capacity": 24
+  },
+  {
+   "id": "CG",
+   "name": "Concrete gang",
+   "capacity": 12
+  },
+  {
+   "id": "GO",
+   "name": "General operatives",
+   "capacity": 12
+  },
+  {
+   "id": "EM",
+   "name": "Embedments fixers",
+   "capacity": 8
+  },
+  {
+   "id": "PE",
+   "name": "Precast erection crew",
+   "capacity": 8
+  }
+ ],
+ "rates": [
+  {
+   "id": "REBAR-0.25",
+   "type": "rebar",
+   "tonnesPerM3": 0.25
+  },
+  {
+   "id": "REBAR-SF-60",
+   "type": "productivity",
+   "basis": "rebar",
+   "manhoursPerUnit": 60,
+   "people": 12,
+   "shifts": 2,
+   "hoursPerShift": 9.17,
+   "rounding": "ceil",
+   "minDays": 1
+  },
+  {
+   "id": "REBAR-SF-75",
+   "type": "productivity",
+   "basis": "rebar",
+   "manhoursPerUnit": 75,
+   "people": 12,
+   "shifts": 2,
+   "hoursPerShift": 9.17,
+   "rounding": "ceil",
+   "minDays": 1
+  },
+  {
+   "id": "REBAR-SF-85",
+   "type": "productivity",
+   "basis": "rebar",
+   "manhoursPerUnit": 85,
+   "people": 12,
+   "shifts": 2,
+   "hoursPerShift": 9.17,
+   "rounding": "ceil",
+   "minDays": 1
+  },
+  {
+   "id": "REBAR-SF-95",
+   "type": "productivity",
+   "basis": "rebar",
+   "manhoursPerUnit": 95,
+   "people": 12,
+   "shifts": 2,
+   "hoursPerShift": 9.17,
+   "rounding": "ceil",
+   "minDays": 1
+  }
+ ],
+ "crewTemplates": [
+  {
+   "id": "SF-6",
+   "trades": [
+    {
+     "trade": "SF",
+     "size": 6
+    }
+   ]
+  },
+  {
+   "id": "SF-8",
+   "trades": [
+    {
+     "trade": "SF",
+     "size": 8
+    }
+   ]
+  },
+  {
+   "id": "SF-10",
+   "trades": [
+    {
+     "trade": "SF",
+     "size": 10
+    }
+   ]
+  },
+  {
+   "id": "CP-6",
+   "trades": [
+    {
+     "trade": "CP",
+     "size": 6
+    }
+   ]
+  },
+  {
+   "id": "CP-4",
+   "trades": [
+    {
+     "trade": "CP",
+     "size": 4
+    }
+   ]
+  },
+  {
+   "id": "GO-4",
+   "trades": [
+    {
+     "trade": "GO",
+     "size": 4
+    }
+   ]
+  },
+  {
+   "id": "EM-3",
+   "trades": [
+    {
+     "trade": "EM",
+     "size": 3
+    }
+   ]
+  },
+  {
+   "id": "CG-6",
+   "trades": [
+    {
+     "trade": "CG",
+     "size": 6
+    }
+   ]
+  },
+  {
+   "id": "RFC",
+   "trades": [
+    {
+     "trade": "SF",
+     "size": 3
+    },
+    {
+     "trade": "CP",
+     "size": 3
+    },
+    {
+     "trade": "CG",
+     "size": 3
+    }
+   ]
+  },
+  {
+   "id": "PE-4",
+   "trades": [
+    {
+     "trade": "PE",
+     "size": 4
+    }
+   ]
+  },
+  {
+   "id": "PE-6",
+   "trades": [
+    {
+     "trade": "PE",
+     "size": 6
+    }
+   ]
+  },
+  {
+   "id": "STITCHING",
+   "trades": [
+    {
+     "trade": "SF",
+     "size": 2
+    },
+    {
+     "trade": "CG",
+     "size": 3
+    }
+   ]
+  }
+ ],
+ "assignments": [
+  {
+   "id": "|REBAR",
+   "group": "",
+   "phase": "Rebar",
+   "days": 5,
+   "priority": 0,
+   "density": "REBAR-0.25",
+   "crew": "SF-6"
+  },
+  {
+   "id": "|EMBEDMENTS",
+   "group": "",
+   "phase": "Embedments",
+   "days": 2,
+   "priority": 0
+  },
+  {
+   "id": "|FORMWORK",
+   "group": "",
+   "phase": "Formwork",
+   "days": 4,
+   "priority": 0,
+   "crew": "CP-6"
+  },
+  {
+   "id": "|CONCRETE",
+   "group": "",
+   "phase": "Concrete",
+   "days": 1,
+   "priority": 0,
+   "crew": "CG-6"
+  },
+  {
+   "id": "T-WALL-EXT|REBAR",
+   "group": "T-WALL-EXT",
+   "phase": "Rebar",
+   "days": 7,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-EXT|EMBEDMENTS",
+   "group": "T-WALL-EXT",
+   "phase": "Embedments",
+   "days": 2,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-EXT|FORMWORK",
+   "group": "T-WALL-EXT",
+   "phase": "Formwork",
+   "days": 3,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-EXT|CONCRETE",
+   "group": "T-WALL-EXT",
+   "phase": "Concrete",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-EXT-DH|REBAR",
+   "group": "T-WALL-EXT-DH",
+   "phase": "Rebar",
+   "days": 12,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-EXT-DH|EMBEDMENTS",
+   "group": "T-WALL-EXT-DH",
+   "phase": "Embedments",
+   "days": 4,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-EXT-DH|FORMWORK",
+   "group": "T-WALL-EXT-DH",
+   "phase": "Formwork",
+   "days": 5,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-EXT-DH|CONCRETE",
+   "group": "T-WALL-EXT-DH",
+   "phase": "Concrete",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT|REBAR",
+   "group": "T-WALL-INT",
+   "phase": "Rebar",
+   "days": 4,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT|EMBEDMENTS",
+   "group": "T-WALL-INT",
+   "phase": "Embedments",
+   "days": 6,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT|FORMWORK",
+   "group": "T-WALL-INT",
+   "phase": "Formwork",
+   "days": 3,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT|CONCRETE",
+   "group": "T-WALL-INT",
+   "phase": "Concrete",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT-DH|REBAR",
+   "group": "T-WALL-INT-DH",
+   "phase": "Rebar",
+   "days": 9,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT-DH|EMBEDMENTS",
+   "group": "T-WALL-INT-DH",
+   "phase": "Embedments",
+   "days": 8,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT-DH|FORMWORK",
+   "group": "T-WALL-INT-DH",
+   "phase": "Formwork",
+   "days": 3,
+   "priority": 10
+  },
+  {
+   "id": "T-WALL-INT-DH|CONCRETE",
+   "group": "T-WALL-INT-DH",
+   "phase": "Concrete",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB-TABLE|REBAR",
+   "group": "T-SLAB-TABLE",
+   "phase": "Rebar",
+   "days": 18,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB-TABLE|EMBEDMENTS",
+   "group": "T-SLAB-TABLE",
+   "phase": "Embedments",
+   "days": 18,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB-TABLE|FORMWORK",
+   "group": "T-SLAB-TABLE",
+   "phase": "Formwork",
+   "days": 2,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB-TABLE|CONCRETE",
+   "group": "T-SLAB-TABLE",
+   "phase": "Concrete",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-RAFT|REBAR",
+   "group": "T-RAFT",
+   "phase": "Rebar",
+   "days": 18,
+   "priority": 10
+  },
+  {
+   "id": "T-RAFT|EMBEDMENTS",
+   "group": "T-RAFT",
+   "phase": "Embedments",
+   "days": 18,
+   "priority": 10
+  },
+  {
+   "id": "T-RAFT|FORMWORK",
+   "group": "T-RAFT",
+   "phase": "Formwork",
+   "days": 2,
+   "priority": 10
+  },
+  {
+   "id": "T-RAFT|CONCRETE",
+   "group": "T-RAFT",
+   "phase": "Concrete",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB|DECKING",
+   "group": "T-SLAB",
+   "phase": "Decking",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB|UNDER SLAB",
+   "group": "T-SLAB",
+   "phase": "Under Slab",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB|EOP ON SLAB",
+   "group": "T-SLAB",
+   "phase": "EOP on Slab",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-SLAB|FWK",
+   "group": "T-SLAB",
+   "phase": "FWK",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-RAFT|EOP ON SLAB",
+   "group": "T-RAFT",
+   "phase": "EOP on Slab",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-RAFT|FWK",
+   "group": "T-RAFT",
+   "phase": "FWK",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-PRECAST|INSTALLATION",
+   "group": "T-PRECAST",
+   "phase": "Installation",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-PRECAST|STITCHING",
+   "group": "T-PRECAST",
+   "phase": "Stitching",
+   "days": 2,
+   "priority": 10
+  },
+  {
+   "id": "T-HEAVY-PRECAST|PROPPING",
+   "group": "T-HEAVY-PRECAST",
+   "phase": "Propping",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-HEAVY-PRECAST|INSTALLATION",
+   "group": "T-HEAVY-PRECAST",
+   "phase": "Installation",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "T-HEAVY-PRECAST|STITCHING",
+   "group": "T-HEAVY-PRECAST",
+   "phase": "Stitching",
+   "days": 2,
+   "priority": 10
+  },
+  {
+   "id": "T-HEAVY-PRECAST|CURING",
+   "group": "T-HEAVY-PRECAST",
+   "phase": "Curing",
+   "days": 28,
+   "priority": 10
+  },
+  {
+   "id": "T-HEAVY-PRECAST|PROPPING REMOVAL",
+   "group": "T-HEAVY-PRECAST",
+   "phase": "Propping Removal",
+   "days": 1,
+   "priority": 10
+  },
+  {
+   "id": "|WORKS BEFORE SLAB",
+   "group": "",
+   "phase": "Works before slab",
+   "crew": "GO-4",
+   "priority": 0
+  },
+  {
+   "id": "|DECKING",
+   "group": "",
+   "phase": "Decking",
+   "crew": "CP-6",
+   "priority": 0
+  },
+  {
+   "id": "|UNDER SLAB",
+   "group": "",
+   "phase": "Under Slab",
+   "crew": "GO-4",
+   "priority": 0
+  },
+  {
+   "id": "|EOP ON SLAB",
+   "group": "",
+   "phase": "EOP on Slab",
+   "crew": "EM-3",
+   "priority": 0
+  },
+  {
+   "id": "|FWK",
+   "group": "",
+   "phase": "FWK",
+   "crew": "CP-4",
+   "priority": 0
+  },
+  {
+   "id": "|REBAR, FORMWORK AND CONCRETE",
+   "group": "",
+   "phase": "Rebar, Formwork and Concrete",
+   "crew": "RFC",
+   "priority": 0
+  },
+  {
+   "id": "|PROPPING",
+   "group": "",
+   "phase": "Propping",
+   "crew": "PE-4",
+   "priority": 0
+  },
+  {
+   "id": "|INSTALLATION",
+   "group": "",
+   "phase": "Installation",
+   "crew": "PE-6",
+   "priority": 0
+  },
+  {
+   "id": "|STITCHING",
+   "group": "",
+   "phase": "Stitching",
+   "crew": "STITCHING",
+   "priority": 0
+  },
+  {
+   "id": "|PROPPING REMOVAL",
+   "group": "",
+   "phase": "Propping Removal",
+   "crew": "PE-4",
+   "priority": 0
+  },
+  {
+   "id": "T-TYPE-SLAB|REBAR",
+   "group": "T-TYPE-SLAB",
+   "phase": "Rebar",
+   "crew": "SF-8",
+   "priority": 10
+  },
+  {
+   "id": "T-TYPE-MAIN-SLAB|REBAR",
+   "group": "T-TYPE-MAIN-SLAB",
+   "phase": "Rebar",
+   "crew": "SF-8",
+   "priority": 10
+  },
+  {
+   "id": "T-TYPE-RAFT|REBAR",
+   "group": "T-TYPE-RAFT",
+   "phase": "Rebar",
+   "crew": "SF-10",
+   "priority": 10
+  },
+  {
+   "id": "|CURING",
+   "group": "",
+   "phase": "Curing",
+   "days": 7,
+   "priority": 0,
+   "calendar": "7D"
+  },
+  {
+   "id": "C-SLAB|CURING",
+   "group": "C-SLAB",
+   "phase": "Curing",
+   "days": 20,
+   "priority": 10
+  },
+  {
+   "id": "C-RAFT|CURING",
+   "group": "C-RAFT",
+   "phase": "Curing",
+   "days": 20,
+   "priority": 10
+  },
+  {
+   "id": "C-PEDESTAL-2|REBAR, FORMWORK AND CONCRETE",
+   "group": "C-PEDESTAL-2",
+   "phase": "Rebar, Formwork and Concrete",
+   "days": 12,
+   "priority": 10
+  },
+  {
+   "id": "T-ANY|REBAR",
+   "group": "T-ANY",
+   "phase": "Rebar",
+   "rate": "REBAR-SF-75",
+   "priority": 0,
+   "enabled": false,
+   "note": "Every other pour"
+  },
+  {
+   "id": "T-WALLS-LOW|REBAR",
+   "group": "T-WALLS-LOW",
+   "phase": "Rebar",
+   "rate": "REBAR-SF-85",
+   "priority": 20,
+   "enabled": false,
+   "note": "Walls on levels 0 to 2 are slower"
+  },
+  {
+   "id": "T-1HDAB-L1-SLABS|REBAR",
+   "group": "T-1HDAB-L1-SLABS",
+   "phase": "Rebar",
+   "rate": "REBAR-SF-95",
+   "priority": 30,
+   "enabled": false,
+   "note": "The L1 slabs of 1HDAB are the slowest"
+  },
+  {
+   "id": "RAFTS|REBAR",
+   "group": "RAFTS",
+   "phase": "Rebar",
+   "rate": "REBAR-SF-60",
+   "priority": 10,
+   "enabled": false,
+   "note": "Rafts"
+  },
+  {
+   "id": "WALLS|REBAR",
+   "group": "WALLS",
+   "phase": "Rebar",
+   "rate": "REBAR-SF-75",
+   "priority": 10,
+   "enabled": false,
+   "note": "Walls"
+  }
+ ],
+ "chains": [
+  {
+   "id": "|REBAR",
+   "group": "",
+   "order": 1,
+   "phase": "Rebar",
+   "suffix": "-R",
+   "label": "Rebar",
+   "material": "rebar",
+   "priority": 0
+  },
+  {
+   "id": "|FORMWORK",
+   "group": "",
+   "order": 2,
+   "phase": "Formwork",
+   "suffix": "-F",
+   "label": "E/P and Formwork",
+   "follows": "Rebar@80",
+   "finishAfter": true,
+   "priority": 0
+  },
+  {
+   "id": "|CONCRETE",
+   "group": "",
+   "order": 3,
+   "phase": "Concrete",
+   "suffix": "-C",
+   "label": "Concrete",
+   "material": "concrete",
+   "priority": 0
+  },
+  {
+   "id": "|CURING",
+   "group": "",
+   "order": 4,
+   "phase": "Curing",
+   "suffix": "-CU",
+   "label": "Curing",
+   "follows": "Concrete",
+   "priority": 0
+  },
+  {
+   "id": "C-SLAB|DECKING",
+   "group": "C-SLAB",
+   "order": 1,
+   "phase": "Decking",
+   "suffix": "-DK",
+   "label": "Mills and Decking",
+   "priority": 10
+  },
+  {
+   "id": "C-SLAB|UNDER SLAB",
+   "group": "C-SLAB",
+   "order": 2,
+   "phase": "Under Slab",
+   "suffix": "-D",
+   "label": "E/P under Slab",
+   "follows": "Decking@80",
+   "priority": 10
+  },
+  {
+   "id": "C-SLAB|REBAR",
+   "group": "C-SLAB",
+   "order": 3,
+   "phase": "Rebar",
+   "suffix": "-R",
+   "label": "Rebar",
+   "material": "rebar",
+   "follows": "Decking@80, Under Slab@80",
+   "finishAfter": true,
+   "priority": 10
+  },
+  {
+   "id": "C-SLAB|EOP ON SLAB",
+   "group": "C-SLAB",
+   "order": 4,
+   "phase": "EOP on Slab",
+   "suffix": "-E2",
+   "label": "E/P on Slab",
+   "follows": "Rebar",
+   "priority": 10
+  },
+  {
+   "id": "C-SLAB|FWK",
+   "group": "C-SLAB",
+   "order": 5,
+   "phase": "FWK",
+   "suffix": "-F",
+   "label": "Formwork",
+   "follows": "Rebar@80",
+   "finishAfter": true,
+   "priority": 10
+  },
+  {
+   "id": "C-SLAB|CONCRETE",
+   "group": "C-SLAB",
+   "order": 6,
+   "phase": "Concrete",
+   "suffix": "-C",
+   "label": "Concrete",
+   "material": "concrete",
+   "follows": "FWK, EOP on Slab",
+   "priority": 10
+  },
+  {
+   "id": "C-SLAB|CURING",
+   "group": "C-SLAB",
+   "order": 7,
+   "phase": "Curing",
+   "suffix": "-CU",
+   "label": "Curing",
+   "follows": "Concrete",
+   "priority": 10
+  },
+  {
+   "id": "C-RAFT|REBAR",
+   "group": "C-RAFT",
+   "order": 1,
+   "phase": "Rebar",
+   "suffix": "-R",
+   "label": "Rebar",
+   "material": "rebar",
+   "priority": 20
+  },
+  {
+   "id": "C-RAFT|EOP ON SLAB",
+   "group": "C-RAFT",
+   "order": 2,
+   "phase": "EOP on Slab",
+   "suffix": "-E2",
+   "label": "E/P on Slab",
+   "follows": "Rebar",
+   "priority": 20
+  },
+  {
+   "id": "C-RAFT|FWK",
+   "group": "C-RAFT",
+   "order": 3,
+   "phase": "FWK",
+   "suffix": "-F",
+   "label": "Formwork",
+   "follows": "Rebar@80",
+   "finishAfter": true,
+   "priority": 20
+  },
+  {
+   "id": "C-RAFT|CONCRETE",
+   "group": "C-RAFT",
+   "order": 4,
+   "phase": "Concrete",
+   "suffix": "-C",
+   "label": "Concrete",
+   "material": "concrete",
+   "follows": "FWK, EOP on Slab",
+   "priority": 20
+  },
+  {
+   "id": "C-RAFT|CURING",
+   "group": "C-RAFT",
+   "order": 5,
+   "phase": "Curing",
+   "suffix": "-CU",
+   "label": "Curing",
+   "follows": "Concrete",
+   "gates": true,
+   "priority": 20
+  },
+  {
+   "id": "C-LANDING|DECKING",
+   "group": "C-LANDING",
+   "order": 1,
+   "phase": "Decking",
+   "suffix": "-DK",
+   "label": "Decking",
+   "priority": 30
+  },
+  {
+   "id": "C-LANDING|REBAR",
+   "group": "C-LANDING",
+   "order": 2,
+   "phase": "Rebar",
+   "suffix": "-R",
+   "label": "Rebar and EP/AP",
+   "material": "rebar",
+   "priority": 30
+  },
+  {
+   "id": "C-LANDING|CONCRETE",
+   "group": "C-LANDING",
+   "order": 3,
+   "phase": "Concrete",
+   "suffix": "-C",
+   "label": "Concrete",
+   "material": "concrete",
+   "priority": 30
+  },
+  {
+   "id": "C-LANDING|CURING",
+   "group": "C-LANDING",
+   "order": 4,
+   "phase": "Curing",
+   "suffix": "-CU",
+   "label": "Curing",
+   "follows": "Concrete",
+   "priority": 30
+  },
+  {
+   "id": "C-PEDESTAL-2|REBAR, FORMWORK AND CONCRETE",
+   "group": "C-PEDESTAL-2",
+   "order": 1,
+   "phase": "Rebar, Formwork and Concrete",
+   "suffix": "-RFC",
+   "label": "Rebar, Formwork and Concrete",
+   "priority": 40
+  },
+  {
+   "id": "C-PEDESTAL-2|CURING",
+   "group": "C-PEDESTAL-2",
+   "order": 2,
+   "phase": "Curing",
+   "suffix": "-CU",
+   "label": "Curing",
+   "follows": "Rebar, Formwork and Concrete",
+   "priority": 40
+  },
+  {
+   "id": "C-PRECAST|INSTALLATION",
+   "group": "C-PRECAST",
+   "order": 1,
+   "phase": "Installation",
+   "suffix": "-I",
+   "label": "Installation",
+   "priority": 50
+  },
+  {
+   "id": "C-PRECAST|STITCHING",
+   "group": "C-PRECAST",
+   "order": 2,
+   "phase": "Stitching",
+   "suffix": "-S",
+   "label": "Stitching",
+   "priority": 50
+  },
+  {
+   "id": "C-HEAVY-PRECAST|PROPPING",
+   "group": "C-HEAVY-PRECAST",
+   "order": 1,
+   "phase": "Propping",
+   "suffix": "-PR",
+   "label": "Propping",
+   "priority": 50
+  },
+  {
+   "id": "C-HEAVY-PRECAST|INSTALLATION",
+   "group": "C-HEAVY-PRECAST",
+   "order": 2,
+   "phase": "Installation",
+   "suffix": "-I",
+   "label": "Installation",
+   "priority": 50
+  },
+  {
+   "id": "C-HEAVY-PRECAST|STITCHING",
+   "group": "C-HEAVY-PRECAST",
+   "order": 3,
+   "phase": "Stitching",
+   "suffix": "-S",
+   "label": "Stitching",
+   "priority": 50
+  },
+  {
+   "id": "C-HEAVY-PRECAST|CURING",
+   "group": "C-HEAVY-PRECAST",
+   "order": 4,
+   "phase": "Curing",
+   "suffix": "-CU",
+   "label": "Curing (walls under)",
+   "priority": 50
+  },
+  {
+   "id": "C-HEAVY-PRECAST|PROPPING REMOVAL",
+   "group": "C-HEAVY-PRECAST",
+   "order": 5,
+   "phase": "Propping Removal",
+   "suffix": "-RP",
+   "label": "Propping Removal",
+   "priority": 50
+  }
+ ],
+ "calendars": [
+  {
+   "id": "6D",
+   "name": "CWA 6d Calendar",
+   "workDays": [
+    0,
+    1,
+    2,
+    3,
+    4
+   ],
+   "start": "09:00",
+   "hoursPerDay": 8,
+   "default": true
+  },
+  {
+   "id": "7D",
+   "name": "CWA 7d Curing Calendar",
+   "workDays": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6
+   ],
+   "start": "09:00",
+   "hoursPerDay": 8
+  }
+ ],
+ "calendarRules": [],
+ "groups": [
+  {
+   "id": "WALLS",
+   "name": "Walls",
+   "forEach": [
+    "building",
+    "level"
+   ],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "wall",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "SLABS",
+   "name": "Slabs",
+   "forEach": [
+    "building",
+    "level"
+   ],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "slab",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "RAFTS",
+   "name": "Rafts",
+   "forEach": [
+    "building"
+   ],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "raft",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "NOT-SCHEDULED",
+   "name": "Types not scheduled",
+   "treatAs": "exclude",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "BOSS|SCREED|GROUT|SPECIAL",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "SMALL",
+   "name": "Objects under 0.25 m³ (a stair is never small)",
+   "treatAs": "exclude",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "volume",
+     "op": "lessThan",
+     "value": "0.25",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "type",
+     "op": "notEquals",
+     "value": "STAIR",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "STAIR-STEPS",
+   "name": "Stair steps: small in-situ stair objects, cast with their flight",
+   "treatAs": "stairStep",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "STAIR",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "volume",
+     "op": "lessThan",
+     "value": "0.09",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-WALL-EXT",
+   "name": "External walls, standard height",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "wall",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "external",
+     "op": "equals",
+     "value": "true",
+     "conj": "and"
+    },
+    {
+     "id": "c3",
+     "field": "doubleHeight",
+     "op": "equals",
+     "value": "false",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-WALL-EXT-DH",
+   "name": "External walls, double height",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "wall",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "external",
+     "op": "equals",
+     "value": "true",
+     "conj": "and"
+    },
+    {
+     "id": "c3",
+     "field": "doubleHeight",
+     "op": "equals",
+     "value": "true",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-WALL-INT",
+   "name": "Internal walls, standard height",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "wall",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "external",
+     "op": "equals",
+     "value": "false",
+     "conj": "and"
+    },
+    {
+     "id": "c3",
+     "field": "doubleHeight",
+     "op": "equals",
+     "value": "false",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-WALL-INT-DH",
+   "name": "Internal walls, double height",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "wall",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "external",
+     "op": "equals",
+     "value": "false",
+     "conj": "and"
+    },
+    {
+     "id": "c3",
+     "field": "doubleHeight",
+     "op": "equals",
+     "value": "true",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-SLAB-TABLE",
+   "name": "Slab, main slab, pits and rafts, pit",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "SLAB|MAIN_SLAB|PITS_&_RAFT|PIT",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-RAFT",
+   "name": "Rafts",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "raft",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-SLAB",
+   "name": "Slabs (the Decking, Under Slab, EOP and FWK activities)",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "slab",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-PRECAST",
+   "name": "Precast",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "precast",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-HEAVY-PRECAST",
+   "name": "Heavy precast",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "heavyPrecast",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-TYPE-SLAB",
+   "name": "Pour type SLAB",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "SLAB",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-TYPE-MAIN-SLAB",
+   "name": "Pour type MAIN_SLAB",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "MAIN_SLAB",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-TYPE-RAFT",
+   "name": "Pour type RAFT",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "RAFT",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-ANY",
+   "name": "Every object",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "volume",
+     "op": "atLeast",
+     "value": "0",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "C-LANDING",
+   "name": "Landings",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "contains",
+     "value": "LANDING",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "C-SLAB",
+   "name": "Slab-like pours: slabs, pits, floors, rafts",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "contains",
+     "value": "SLAB",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "type",
+     "op": "contains",
+     "value": "PIT",
+     "conj": "or"
+    },
+    {
+     "id": "c3",
+     "field": "type",
+     "op": "contains",
+     "value": "FLOOR",
+     "conj": "or"
+    },
+    {
+     "id": "c4",
+     "field": "type",
+     "op": "contains",
+     "value": "RAFT",
+     "conj": "or"
+    }
+   ]
+  },
+  {
+   "id": "C-RAFT",
+   "name": "Rafts",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "RAFT",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "C-PRECAST",
+   "name": "Precast",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "precast",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "C-HEAVY-PRECAST",
+   "name": "Heavy precast (concrete stage PRECAST)",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "heavyPrecast",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "stage",
+     "op": "equals",
+     "value": "PRECAST",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "C-PEDESTAL-2",
+   "name": "Pedestals, stage 2: one combined activity",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "PEDESTAL",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "stage",
+     "op": "equals",
+     "value": "2",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "C-RAFT-STAGE-2",
+   "name": "Rafts, stage 2: no activities",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "type",
+     "op": "equals",
+     "value": "RAFT",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "stage",
+     "op": "equals",
+     "value": "2",
+     "conj": "and"
+    }
+   ],
+   "treatAs": "exclude"
+  },
+  {
+   "id": "T-WALLS-LOW",
+   "name": "Walls on levels 0 to 2",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "wall",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "levelNumber",
+     "op": "atMost",
+     "value": "2",
+     "conj": "and"
+    }
+   ]
+  },
+  {
+   "id": "T-1HDAB-L1-SLABS",
+   "name": "The L1 slabs of 1HDAB",
+   "forEach": [],
+   "filters": [
+    {
+     "id": "c1",
+     "field": "family",
+     "op": "equals",
+     "value": "slab",
+     "conj": "and"
+    },
+    {
+     "id": "c2",
+     "field": "building",
+     "op": "equals",
+     "value": "1HDAB",
+     "conj": "and"
+    },
+    {
+     "id": "c3",
+     "field": "level",
+     "op": "equals",
+     "value": "L1",
+     "conj": "and"
+    }
+   ]
+  }
+ ],
+ "levelTasks": [
+  {
+   "id": "WALLS",
+   "name": "Walls",
+   "group": "WALLS"
+  },
+  {
+   "id": "SLABS",
+   "name": "Slabs",
+   "group": "SLABS"
+  }
+ ],
+ "sequences": [
+  {
+   "id": "BUILD-UP",
+   "enabled": false,
+   "note": "Off: it makes all the walls of a level finish before its slabs start, and a level finish before the next, which neither the engine logic nor the high-level programme does (its slabs start before the walls are done)",
+   "name": "Build up: rafts, then walls and slabs level by level",
+   "type": "FS",
+   "lagHours": 0,
+   "steps": [
+    {
+     "group": "RAFTS"
+    },
+    {
+     "group": "WALLS",
+     "perLevel": true
+    },
+    {
+     "group": "SLABS",
+     "perLevel": true
+    }
+   ]
+  }
+ ],
+ "contacts": [],
+ "levelLinks": [
+  {
+   "id": "LEVEL-EXTRAS",
+   "name": "Extra activities finish with their level tasks",
+   "activities": "extras",
+   "tasks": [
+    "WALLS",
+    "SLABS"
+   ],
+   "type": "FF",
+   "direction": "toTask",
+   "lagHours": 0
+  }
+ ],
+ "joins": [],
+ "extraTags": {
+  "SZC-1HDAB-C-NR-40": {
+   "building": "1HDAB",
+   "level": "L0",
+   "wbs": "level"
+  },
+  "SZC-1HDAB-C-L1-W50": {
+   "building": "1HDAB",
+   "level": "L1",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L1-S40": {
+   "building": "1HDAB",
+   "level": "L1",
+   "wbs": "slabs",
+   "task": "SLABS"
+  },
+  "SZC-1HDAB-C-L2-W60": {
+   "building": "1HDAB",
+   "level": "L2",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L2-S50": {
+   "building": "1HDAB",
+   "level": "L2",
+   "wbs": "slabs",
+   "task": "SLABS"
+  },
+  "SZC-1HDAB-C-L3-W60": {
+   "building": "1HDAB",
+   "level": "L3",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L3-S50": {
+   "building": "1HDAB",
+   "level": "L3",
+   "wbs": "slabs",
+   "task": "SLABS"
+  },
+  "SZC-1HDAB-C-L4-W60": {
+   "building": "1HDAB",
+   "level": "L4",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L4-S50": {
+   "building": "1HDAB",
+   "level": "L4",
+   "wbs": "slabs",
+   "task": "SLABS"
+  },
+  "SZC-1HDAB-C-L5-W70": {
+   "building": "1HDAB",
+   "level": "L5",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L5-S60": {
+   "building": "1HDAB",
+   "level": "L5",
+   "wbs": "slabs",
+   "task": "SLABS"
+  },
+  "SZC-1HDAB-C-L6-W70": {
+   "building": "1HDAB",
+   "level": "L6",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L6-S60": {
+   "building": "1HDAB",
+   "level": "L6",
+   "wbs": "slabs",
+   "task": "SLABS"
+  },
+  "SZC-1HDAB-C-L7-W70": {
+   "building": "1HDAB",
+   "level": "L7",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L7-S60": {
+   "building": "1HDAB",
+   "level": "L7",
+   "wbs": "slabs",
+   "task": "SLABS"
+  },
+  "SZC-1HDAB-C-L8-W80": {
+   "building": "1HDAB",
+   "level": "L8",
+   "wbs": "level",
+   "task": "WALLS"
+  },
+  "SZC-1HDAB-C-L8-S70": {
+   "building": "1HDAB",
+   "level": "L8",
+   "wbs": "slabs",
+   "task": "SLABS"
+  }
+ }
+}

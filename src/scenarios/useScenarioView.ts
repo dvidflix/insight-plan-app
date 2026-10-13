@@ -10,7 +10,9 @@ import { taskFieldValue } from '../schedule/linkGroups';
 import { finishOf, isoWeekLabel, monthLabel, startOf } from '../schedule/columns';
 import { scenarioNamesForStems, stemsInInputs, useScenarioStem, useScenarioStore } from '../state/scenarioStore';
 import { queryMatcher } from '../schedule/search';
+import { joinMap } from '../prs/joins';
 
+const NO_JOINS: never[] = [];
 export type ScnItem = { r: PourRow; i: number };
 
 /** What the Scenarios table, toolbar and status line derive from the store:
@@ -37,12 +39,29 @@ export function useScenarioView() {
 
   const steps = useMemo(() => stepNumbers(rows), [rows]);
   const indexCol = loaded ? loaded.headers.indexOf('Index') : -1;
+  // Objects joined into one (rules.joins) are not rows of their own: they sit under their main object as sub-rows (subRows, by the main's key).
+  const joins = useScenarioStore((s) => s.rules.joins ?? NO_JOINS);
+  const { mains, subRows } = useMemo(() => {
+    const all: ScnItem[] = rows.map((r, i) => ({ r, i }));
+    const byGuid = new Map<string, ScnItem>();
+    for (const it of all) if (!byGuid.has(it.r.key.split('#')[0])) byGuid.set(it.r.key.split('#')[0], it);
+    const sub = new Map<string, ScnItem[]>();
+    const members = new Set<string>();
+    for (const [member, main] of joinMap(joins)) {
+      const m = byGuid.get(member);
+      const p = byGuid.get(main);
+      if (!m || !p || m === p) continue;
+      members.add(m.r.key);
+      (sub.get(p.r.key) ?? sub.set(p.r.key, []).get(p.r.key)!).push(m);
+    }
+    for (const list of sub.values()) list.sort((a, b) => a.i - b.i);
+    return { mains: members.size ? all.filter((it) => !members.has(it.r.key)) : all, subRows: sub };
+  }, [rows, joins]);
   const visible = useMemo(() => {
     const q = filter.trim().toLowerCase();
     const hit = queryMatcher(filter);
-    const all: ScnItem[] = rows.map((r, i) => ({ r, i }));
-    return q ? all.filter(({ r }) => r.cells.some((c) => hit(c))) : all;
-  }, [rows, filter]);
+    return q ? mains.filter(({ r }) => r.cells.some((c) => hit(c))) : mains;
+  }, [mains, filter]);
   /** Keys of the groups a pour sits in, as applyView names them. */
   const groupKeysOf = (it: ScnItem, valueOf: (it: ScnItem, field: string) => string) => {
     const out: string[] = [];
@@ -123,7 +142,7 @@ export function useScenarioView() {
 
   return {
     project, scenario, stem, loaded, rows, tableCfg, scenarioNames, modelInfo, generatedAt, ready,
-    steps, moved, fields, allColumnIds, shownColumns, shiftOf, valueOf, view, viewKeys, reordered,
+    steps, moved, fields, allColumnIds, shownColumns, shiftOf, valueOf, view, viewKeys, reordered, subRows,
     stepCount: steps.reduce((m, n) => Math.max(m, n), 0),
     unsequencedCount: rows.filter((r) => r.step === null).length,
     firstUnsequencedKey: rows.find((r) => r.step === null)?.key ?? null,

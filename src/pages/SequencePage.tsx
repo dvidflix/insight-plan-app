@@ -1,6 +1,7 @@
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
 import { ScenarioDock, ScenarioTabContent } from '../components/scenarios/ScenarioDock';
+import { ScenarioRulesDock } from '../components/scenarios/ScenarioRules';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule } from '../state/scheduleStore';
 import { useModelsStore } from '../state/modelsStore';
@@ -128,6 +129,7 @@ function shouldClaim(candidateStatus: SequenceStatus, candidateStart: number, ow
   return candidateStart >= ownerStart;
 }
 
+const NO_JOINS: never[] = [];
 export function SequencePanel() {
   const engine = useViewerEngine();
   const model = useSequenceSchedule();
@@ -254,12 +256,13 @@ export function SequencePanel() {
 
   // Each (model, group) pair keeps its own task->element map (so a group's
   // attached Appearance Profile, if any, can be applied per-group).
+  const joins = useScenarioStore((s) => s.rules.joins ?? NO_JOINS); // joined objects play with their main object
   const groupResultsByModel = useMemo(() => {
     if (!model) return [];
     return models.flatMap((m) =>
       groups.map((g) => ({ modelId: m.modelId, group: g, links: computeGroupLinks(model, m.elements, g) })),
     );
-  }, [model, models, groups]);
+  }, [model, models, groups, joins]);
 
   const appearanceById = useMemo(() => new Map(appearanceProfiles.map((p) => [p.id, p])), [appearanceProfiles]);
 
@@ -305,6 +308,42 @@ export function SequencePanel() {
     return best?.id ?? null;
   }, [model, linkedActivityIds]);
 
+  const [ganttSelectedId, setGanttSelectedId] = useState<string | null>(null);
+  // Picking an object in 3D picks its first (earliest) linked activity in the Gantt (which scrolls to it). Once per pick: the Gantt can then be
+  // used freely, and picking the object again picks the activity again. The timeline does not move: Ctrl+Shift+F does that (below).
+  const [selectOnPick, setSelectOnPick] = usePersistedState('sequence.selectOnPick', true);
+  const pickedFor = useRef('');
+  useEffect(() => {
+    const key = selectedElementIds.join(',');
+    if (!key) { pickedFor.current = ''; return; }
+    if (!selectOnPick || pickedFor.current === key || !focusActivityId) return;
+    pickedFor.current = key;
+    setGanttSelectedId(focusActivityId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedElementIds, focusActivityId, selectOnPick]);
+
+  // Ctrl+Shift+F: the timeline jumps to the day the activity picked in the Gantt starts.
+  const ganttPickRef = useRef<string | null>(null);
+  ganttPickRef.current = ganttSelectedId;
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey || e.altKey || e.key.toLowerCase() !== 'f') return;
+      if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement | null)?.tagName ?? '')) return;
+      const m = modelRef.current;
+      const activity = m?.activities.find((a) => a.id === ganttPickRef.current);
+      e.preventDefault();
+      if (!m || !activity) return;
+      const basisNow = useSequenceTimelineStore.getState().basis;
+      const start = activityStartMs(activity, basisNow);
+      if (start === null || start === undefined) return;
+      const range = scheduleRange(m, basisNow);
+      useSequenceTimelineStore.getState().setPlaying(false);
+      useSequenceTimelineStore.getState().setDate(range ? Math.min(range.max, Math.max(range.min, start)) : start);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
+
   // Scenarios table: a double-click on a pour moves the 4D timeline to the
   // day its (earliest linked) activity starts.
   const focusRef = useRef(focusActivityId);
@@ -327,7 +366,6 @@ export function SequencePanel() {
     }, 250);
   };
 
-  const [ganttSelectedId, setGanttSelectedId] = useState<string | null>(null);
 
   // Double-click on an activity (Gantt or Tasks): the 4D timeline moves to its start and its linked objects are selected in 3D.
   const openActivity = async (activity: Activity) => {
@@ -752,11 +790,12 @@ export function SequencePanel() {
       <DockPanel id="gantt" label="Gantt">
         {ready && model ? (
           <>
-            {linkedActivityIds.size > 0 && (
-              <div className="seq-linked" style={{ padding: '3px 10px', borderBottom: '1px solid var(--border)' }}>
-                {linkedActivityIds.size} activit{linkedActivityIds.size === 1 ? 'y' : 'ies'} linked to selection
-              </div>
-            )}
+            <div className="seq-linked" style={{ padding: '3px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
+              <span>{linkedActivityIds.size > 0 ? `${linkedActivityIds.size} activit${linkedActivityIds.size === 1 ? 'y' : 'ies'} linked to selection` : 'Pick an object in 3D to see its activities'}</span>
+              <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }} title="On: picking an object in the 3D view picks its first linked activity here. Ctrl+Shift+F then moves the timeline to the start of the picked activity.">
+                <input type="checkbox" checked={selectOnPick} onChange={(e) => setSelectOnPick(e.target.checked)} /> Pick first activity
+              </label>
+            </div>
             <DockGantt model={model} getColor={taskColorOf ?? undefined} selectedId={ganttSelectedId} highlightedIds={linkedActivityIds} scrollToId={focusActivityId} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
           </>
         ) : needProgramme}
@@ -770,6 +809,7 @@ export function SequencePanel() {
         {ready && model ? <SequenceResources model={model} /> : needProgramme}
       </DockPanel>
       {experimental.scenarios && <DockPanel id="scenarios" label="Scenarios"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
+      {experimental.scenarios && <DockPanel id="rules" label="Rules"><ScenarioRulesDock /></DockPanel>}
       {experimental.bcf && <DockPanel id="topics" label={`Topics${topicCount ? ` (${topicCount})` : ''}`}><div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div></DockPanel>}
       {experimental.scenarios && scenariosShowing && isSettingsOpen(settingsTarget, 'scenarios') && <ScenarioDock />}
       {tasksShowing && isSettingsOpen(settingsTarget, 'tasks') && ready && model && ganttColumnCtx && <TasksDock model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} />}

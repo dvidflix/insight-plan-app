@@ -1,3 +1,6 @@
+import { setObjectJoins } from '../schedule/linkGroups';
+import type { PresetContent } from '../prs/presets';
+import { withJoins } from '../prs/joins';
 import { create } from 'zustand';
 import { useModelsStore } from './modelsStore';
 import { reloadFromDb, useProjectDbStore } from './projectDbStore';
@@ -5,6 +8,8 @@ import {
   downloadText,
   fetchProject,
   fetchSequence,
+  fetchBaseSequence,
+  forgetBaseSequence,
   fetchXml,
   loadIntoInputs,
   deleteScenarioOnServer,
@@ -17,6 +22,7 @@ import {
   type ScenarioCrew,
   type ScenarioFlag,
   type ScenarioRelation,
+  type ScenarioExtra,
 } from '../scenarios/api';
 import { baseStem, indexFromProgramme } from '../scenarios/fromProgramme';
 import { fromSheet, indexColumn, stepNumbers, toSheet, type PourRow } from '../scenarios/pourOrder';
@@ -30,6 +36,7 @@ import { filterXmlText } from '../schedule/exportFilter';
 import { DEFAULT_SCN_TABLE, type ScnTableConfig } from '../scenarios/tableView';
 import type { ScnConfigTab } from '../components/scenarios/ScenarioTableConfig';
 import { getWbsOrder } from './wbsOrder';
+import { NO_RULES, normalizeRules, type EngineDefaults, type ScenarioRules } from '../prs/rules';
 
 /** The Scenarios work in progress — project, scenario, pour order, unsaved
     edits, undo/redo, selection, table view — in one store, so the Scenarios
@@ -40,6 +47,7 @@ import { getWbsOrder } from './wbsOrder';
 export const NO_ROWS: PourRow[] = [];
 const NO_RELATIONS: ScenarioRelation[] = [];
 const NO_CREWS: ScenarioCrew[] = [];
+const NO_EXTRAS: ScenarioExtra[] = [];
 const NO_FLAGS: Record<string, FlagState> = {};
 
 /** Review flag on a pour (its GUID) or a group (its key): to fix, or fixed. */
@@ -59,9 +67,9 @@ export interface LoadedOrder {
 }
 
 type Message = { kind: 'ok' | 'error' | 'warn'; text: string } | null;
-export type ScenarioCfgTab = 'scenario' | 'links' | 'crews' | ScnConfigTab;
+export type ScenarioCfgTab = 'scenario' | 'rules' | ScnConfigTab;
 /** Tabs showing the table configuration (the others are cards). */
-export const isTableCfgTab = (tab: ScenarioCfgTab): tab is ScnConfigTab => tab !== 'scenario' && tab !== 'links' && tab !== 'crews';
+export const isTableCfgTab = (tab: ScenarioCfgTab): tab is ScnConfigTab => tab !== 'scenario' && tab !== 'rules';
 
 // Same localStorage keys (and JSON format) the Scenarios tab used before.
 function load<T>(key: string, fallback: T): T {
@@ -114,6 +122,8 @@ interface ScenarioState {
     /** Links, crews, flags and crew options carried over from the scenario copied. */
     relations?: ScenarioRelation[];
     crews?: ScenarioCrew[];
+    extras?: ScenarioExtra[];
+    rules?: ScenarioRules;
     flags?: Record<string, FlagState>;
     crewOptions?: CrewOptions | null;
   } | null;
@@ -122,13 +132,21 @@ interface ScenarioState {
   /** Regenerate 4D automatically a moment after each change to the order. */
   autoUpdate: boolean;
   /** The order, links and crews the programme in 4D was last updated from. */
-  updatedFrom: { rows: PourRow[]; relations: ScenarioRelation[]; crews: ScenarioCrew[] } | null;
+  updatedFrom: { rows: PourRow[]; relations: ScenarioRelation[]; crews: ScenarioCrew[]; extras: ScenarioExtra[]; rules: ScenarioRules } | null;
   /** The scenario's manual links and crews (saved with it), and as last
       saved (for the unsaved flag). */
   relations: ScenarioRelation[];
   crews: ScenarioCrew[];
   savedRelations: ScenarioRelation[];
   savedCrews: ScenarioCrew[];
+  /** The scenario's extra activities (from a high-level programme), and as last saved. */
+  extras: ScenarioExtra[];
+  savedExtras: ScenarioExtra[];
+  /** The scenario's programme rules (durations, rebar, crews, rule groups, level tasks, sequences, contact links, settings), and as last saved. */
+  rules: ScenarioRules;
+  savedRules: ScenarioRules;
+  /** What the generator does without rules (shown beside the scenario's own rows). */
+  engineDefaults: EngineDefaults | null;
   /** Review flags (pour GUID / group key -> state), saved with the scenario; and the table showing only the flagged. */
   flags: Record<string, FlagState>;
   savedFlags: Record<string, FlagState>;
@@ -168,6 +186,11 @@ export const useScenarioStore = create<ScenarioState>(() => ({
   crews: NO_CREWS,
   savedRelations: NO_RELATIONS,
   savedCrews: NO_CREWS,
+  extras: NO_EXTRAS,
+  savedExtras: NO_EXTRAS,
+  rules: NO_RULES,
+  savedRules: NO_RULES,
+  engineDefaults: null,
   flags: NO_FLAGS,
   savedFlags: NO_FLAGS,
   flaggedOnly: false,
@@ -268,6 +291,16 @@ export async function loadOrder(stem: string | null) {
   }
 }
 
+/** The rules, extra activities, links and crews a new scenario was asked to start with (instead of its source's): applied when it opens, and
+    left unsaved, so Save stores them with the scenario. */
+let pendingContent: { scenario: string; content: PresetContent } | null = null;
+function applyPendingContent(scenario: string) {
+  if (!pendingContent || pendingContent.scenario !== scenario) return;
+  const { content } = pendingContent;
+  pendingContent = null;
+  set({ rules: withJoins(content.rules, get().rules.joins), extras: content.extras, relations: content.relations, crews: content.crews, savedRules: NO_RULES, savedExtras: NO_EXTRAS, savedRelations: NO_RELATIONS, savedCrews: NO_CREWS });
+}
+
 async function loadOrderNow(stem: string | null) {
   const { project, scenario, loaded, copy } = get();
   if (!project || !scenario || !stem || !project.models.some((m) => m.stem === stem)) {
@@ -279,13 +312,16 @@ async function loadOrderNow(stem: string | null) {
     set({
       copy: null, loaded: { ...copy.loaded, scenario, root: project.root }, rows: copy.rows, savedRows: [], undo: [], redo: [],
       relations: copy.relations ?? NO_RELATIONS, crews: copy.crews ?? NO_CREWS, savedRelations: NO_RELATIONS, savedCrews: NO_CREWS,
+      extras: copy.extras ?? NO_EXTRAS, savedExtras: NO_EXTRAS,
+      rules: copy.rules ?? NO_RULES, savedRules: NO_RULES,
       flags: copy.flags ?? NO_FLAGS, savedFlags: NO_FLAGS, ...(copy.crewOptions ? { crewOptions: copy.crewOptions } : {}),
     });
+    applyPendingContent(scenario);
     return;
   }
   set({ busy: 'Loading order…', copy: null });
   try {
-    const [own, base] = await Promise.all([fetchSequence(project.root, stem, scenario), fetchSequence(project.root, stem, null)]);
+    const [own, base] = await Promise.all([fetchSequence(project.root, stem, scenario), fetchBaseSequence(project.root, stem)]);
     // Still the one asked for?
     if (get().scenario !== scenario || get().project?.root !== project.root || currentStem() !== stem) return;
     const baseOrder = fromSheet(base.headers, base.rows);
@@ -309,6 +345,11 @@ async function loadOrderNow(stem: string | null) {
       crews: own.crews ?? NO_CREWS,
       savedRelations: own.relations ?? NO_RELATIONS,
       savedCrews: own.crews ?? NO_CREWS,
+      extras: own.extras ?? NO_EXTRAS,
+      savedExtras: own.extras ?? NO_EXTRAS,
+      rules: normalizeRules(own.rules),
+      savedRules: normalizeRules(own.rules),
+      engineDefaults: own.defaults ?? get().engineDefaults,
       flags: flagsOf(own.flags),
       savedFlags: flagsOf(own.flags),
       crewOptions: { trades: own.trades ?? [], phases: own.phases ?? [], defaultCrews: own.defaultCrews ?? [] },
@@ -319,6 +360,7 @@ async function loadOrderNow(stem: string | null) {
       selected: new Set(),
       message: fromProgramme ? { kind: 'ok', text: `"${scenario}" opened from its programme — the pour order comes from the programme's start dates. Edit it, Update 4D, then Save.` } : null,
     });
+    applyPendingContent(scenario);
   } catch (e) {
     set({ message: { kind: 'error', text: e instanceof Error ? e.message : String(e) } });
   } finally {
@@ -328,13 +370,16 @@ async function loadOrderNow(stem: string | null) {
 
 // ---- editing ----
 
-export const isDirty = (s: Pick<ScenarioState, 'rows' | 'savedRows' | 'relations' | 'savedRelations' | 'crews' | 'savedCrews' | 'flags' | 'savedFlags'>) =>
-  s.rows !== s.savedRows || s.relations !== s.savedRelations || s.crews !== s.savedCrews || s.flags !== s.savedFlags;
+export const isDirty = (s: Pick<ScenarioState, 'rows' | 'savedRows' | 'relations' | 'savedRelations' | 'crews' | 'savedCrews' | 'extras' | 'savedExtras' | 'rules' | 'savedRules' | 'flags' | 'savedFlags'>) =>
+  s.rows !== s.savedRows || s.relations !== s.savedRelations || s.crews !== s.savedCrews || s.extras !== s.savedExtras || s.rules !== s.savedRules || s.flags !== s.savedFlags;
 export const confirmDiscard = () => !isDirty(get()) || window.confirm('Discard the unsaved changes to this scenario (order, links, crews)?');
 
 /** Manual links and crews are edited in place; Save stores them. */
 export const setRelations = (relations: ScenarioRelation[]) => set({ relations });
 export const setCrews = (crews: ScenarioCrew[]) => set({ crews });
+export const setExtras = (extras: ScenarioExtra[]) => set({ extras });
+/** The programme rules are edited in place (a new object per change); Save stores them, Update 4D generates with them. */
+export const setRules = (rules: ScenarioRules) => set({ rules });
 
 /** Sets (or, with null, clears) the review flag of these pours / groups. */
 export const setFlags = (keys: string[], state: FlagState | null) => {
@@ -350,6 +395,7 @@ export const setFlags = (keys: string[], state: FlagState | null) => {
     database elsewhere). Asks first when there are unsaved edits. */
 export function reloadOrder(): boolean {
   if (!confirmDiscard()) return false;
+  forgetBaseSequence();
   set({ loaded: null });
   return true;
 }
@@ -390,15 +436,15 @@ async function run(label: string, fn: () => Promise<void>) {
 }
 
 function request() {
-  const { project, scenario, loaded, rows, relations, crews, flags } = get();
-  return { root: project!.root, scenario: scenario!, stem: loaded!.stem, headers: loaded!.headers, rows: toSheet({ headers: loaded!.headers, rows }), relations, crews, flags: flagList(flags), wbsOrder: getWbsOrder() };
+  const { project, scenario, loaded, rows, relations, crews, extras, rules, flags } = get();
+  return { root: project!.root, scenario: scenario!, stem: loaded!.stem, headers: loaded!.headers, rows: toSheet({ headers: loaded!.headers, rows }), relations, crews, extras, rules, flags: flagList(flags), wbsOrder: getWbsOrder() };
 }
 
 export const saveOrder = () =>
   run('Saving…', async () => {
-    const { rows, scenario, relations, crews, flags } = get();
+    const { rows, scenario, relations, crews, extras, rules, flags } = get();
     await saveScenario(request());
-    set({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedFlags: flags });
+    set({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedExtras: extras, savedRules: rules, savedFlags: flags });
     // Drop the draft only once the refreshed project lists the scenario:
     // in between it would be in neither list and be taken as deleted.
     await refreshProject(get().project!.root);
@@ -411,13 +457,13 @@ export const saveOrder = () =>
     saved (Save does that) unless the scenario needed a full run first. */
 export const updateFourD = () =>
   run('Updating 4D…', async () => {
-    const { rows, scenario, startDate, loaded, relations, crews, flags } = get();
+    const { rows, scenario, startDate, loaded, relations, crews, extras, rules, flags } = get();
     const stem = loaded!.stem;
     const res = await updateScenario({ ...request(), startDate: startDate || null });
     xmlCache.set(`${scenario}|${stem}`, res.xml);
     await loadIntoInputs(res.xml, stem, scenario!);
     set((s) => ({
-      updatedFrom: { rows, relations, crews },
+      updatedFrom: { rows, relations, crews, extras, rules },
       generation: s.generation + 1,
       log: res.log || s.log,
       message: {
@@ -428,14 +474,14 @@ export const updateFourD = () =>
       },
     }));
     if (!res.fast) {
-      set((s) => ({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedFlags: flags, drafts: s.drafts.filter((n) => n !== scenario) }));
+      set((s) => ({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedExtras: extras, savedRules: rules, savedFlags: flags, drafts: s.drafts.filter((n) => n !== scenario) }));
       await refreshProject(get().project!.root);
     }
   });
 
 /** The order, links or crews changed since 4D was last updated. */
-export const needsUpdate = (s: Pick<ScenarioState, 'rows' | 'relations' | 'crews' | 'updatedFrom'>) =>
-  !s.updatedFrom || s.updatedFrom.rows !== s.rows || s.updatedFrom.relations !== s.relations || s.updatedFrom.crews !== s.crews;
+export const needsUpdate = (s: Pick<ScenarioState, 'rows' | 'relations' | 'crews' | 'extras' | 'rules' | 'updatedFrom'>) =>
+  !s.updatedFrom || s.updatedFrom.rows !== s.rows || s.updatedFrom.relations !== s.relations || s.updatedFrom.crews !== s.crews || s.updatedFrom.extras !== s.extras || s.updatedFrom.rules !== s.rules;
 
 // Auto-update: one run a moment after the last change, never two at once.
 let autoTimer: ReturnType<typeof setTimeout> | null = null;
@@ -510,6 +556,30 @@ function programmeStarts(scheduleId: string): { starts: Map<string, number>; err
   return { starts, error: starts.size === 0 ? 'No activity of that programme has an Element ID and a start date.' : null };
 }
 
+/** The pour order of another scenario of the same model (key -> step number, 0 = unsequenced), to put this scenario's order in the same
+    order: the order it saved, or for one with none the order of its programme's start dates. An error text when it has no order. */
+export async function orderOfScenario(name: string): Promise<{ steps: Map<string, number>; count: number } | string> {
+  const { project } = get();
+  const stem = currentStem();
+  if (!project || !stem) return "Load the building's model in Inputs first.";
+  try {
+    const other = await fetchSequence(project.root, stem, name);
+    let rows = other.rows;
+    if (other.source !== 'scenario') {
+      const programme = useScheduleStore.getState().schedules.find((x) => x.sourceFileName.includes(`[${name}]`));
+      const derived = programme ? indexFromProgramme(programme, other.headers, other.rows) : null;
+      if (derived) rows = derived;
+    }
+    const order = fromSheet(other.headers, rows);
+    const numbers = stepNumbers(order.rows);
+    const steps = new Map(order.rows.map((r, i) => [r.key, numbers[i]]));
+    const count = [...steps.values()].filter((n) => n > 0).length;
+    return count === 0 ? `“${name}” has no pour order saved, and no programme to read one from.` : { steps, count };
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  }
+}
+
 /** Starts a scenario as a copy of a saved one, or from a programme's dates: the
     pour order (and for a copy, its links, crews and flags) is built from the
     building's baseline sheet. */
@@ -521,7 +591,7 @@ async function createFromSource(name: string, from: StartFrom): Promise<string |
   set({ busy: 'Preparing the new scenario…' });
   try {
     const source = from.startsWith('saved:') ? from.slice('saved:'.length) : null;
-    const [own, base] = await Promise.all([fetchSequence(project.root, stem, source), fetchSequence(project.root, stem, null)]);
+    const [own, base] = await Promise.all([fetchSequence(project.root, stem, source), fetchBaseSequence(project.root, stem)]);
     let headers = own.headers;
     let sheetRows = own.rows;
     let note: Message = null;
@@ -564,10 +634,10 @@ async function createFromSource(name: string, from: StartFrom): Promise<string |
     set({
       copy: {
         scenario: name, stem, loaded: loadedOrder, rows: order.rows,
-        ...(source ? { relations: own.relations ?? NO_RELATIONS, crews: own.crews ?? NO_CREWS, flags: flagsOf(own.flags) } : {}),
+        ...(source ? { relations: own.relations ?? NO_RELATIONS, crews: own.crews ?? NO_CREWS, extras: own.extras ?? NO_EXTRAS, rules: normalizeRules(own.rules), flags: flagsOf(own.flags) } : {}),
         crewOptions: { trades: own.trades ?? [], phases: own.phases ?? [], defaultCrews: own.defaultCrews ?? [] },
       },
-      drafts: [...drafts, name], scenario: name, loaded: null, message: note,
+      drafts: [...drafts, name], scenario: name, loaded: null, message: note, ...(own.defaults ? { engineDefaults: own.defaults } : {}),
     });
     return null;
   } catch (e) {
@@ -577,17 +647,29 @@ async function createFromSource(name: string, from: StartFrom): Promise<string |
   }
 }
 
-export async function createScenario(rawName: string, from: StartFrom): Promise<string | null> {
+/** What rules a new scenario starts with: those of the order it is made from (the default), none, or a preset's. */
+export type RulesFrom = 'source' | 'none' | { preset: PresetContent };
+
+export async function createScenario(rawName: string, from: StartFrom, rulesFrom: RulesFrom = 'source'): Promise<string | null> {
   const name = rawName.trim();
-  const { project, drafts, loaded, rows } = get();
+  const { project, drafts, loaded, rows, rules, extras, relations, crews, flags } = get();
   if (!NAME_RE.test(name) || name === '.' || name === '..') return 'Scenario names cannot contain < > : " / \\ | ? *';
   if (scenarioNamesFor(project, drafts, currentStem()).includes(name)) return `There is already a scenario called "${name}".`;
+  pendingContent = rulesFrom === 'source' ? null : { scenario: name, content: rulesFrom === 'none' ? { rules: NO_RULES, extras: NO_EXTRAS, relations: NO_RELATIONS, crews: NO_CREWS } : rulesFrom.preset };
   if (from === 'current' && loaded) {
-    set({ copy: { scenario: name, stem: loaded.stem, loaded, rows }, drafts: [...drafts, name], scenario: name });
+    // The order on screen with what goes with it: its rules (the joins too), extra activities, manual links, crews and flags.
+    set({ copy: { scenario: name, stem: loaded.stem, loaded, rows, rules, extras, relations, crews, flags }, drafts: [...drafts, name], scenario: name });
     return null;
   }
-  if (from.startsWith('saved:') || from.startsWith('programme:')) return createFromSource(name, from);
-  if (!confirmDiscard()) return null;
+  if (from.startsWith('saved:') || from.startsWith('programme:')) {
+    const err = await createFromSource(name, from);
+    if (err) pendingContent = null;
+    return err;
+  }
+  if (!confirmDiscard()) {
+    pendingContent = null;
+    return null;
+  }
   set({ drafts: [...drafts, name], scenario: name, loaded: null });
   return null;
 }
@@ -623,3 +705,8 @@ export function pickStem(stem: string) {
   if (stem === currentStem() || !confirmDiscard()) return;
   set({ pickedStem: stem, loaded: null });
 }
+
+// Joined objects are shown with their main object's activities in 4D.
+useScenarioStore.subscribe((s, prev) => {
+  if (s.rules.joins !== prev.rules.joins) setObjectJoins(s.rules.joins ?? []);
+});

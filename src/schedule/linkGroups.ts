@@ -227,6 +227,30 @@ export interface GroupLinkResult {
   sub?: Map<string, SubSlots>;
 }
 
+/** Objects joined into one (the scenario's rules.joins, GlobalIds): a member is linked to every activity its main object is linked to, so
+    it plays, is coloured and is picked with its main in 4D. Set by the scenario store. */
+export interface ObjectJoinLink { main: string; members: string[] }
+let objectJoins: ObjectJoinLink[] = [];
+export const setObjectJoins = (next: ObjectJoinLink[]) => { objectJoins = next; };
+export const getObjectJoins = () => objectJoins;
+
+const localIdsByGuid = new WeakMap<ElementSummary[], Map<string, number>>();
+function addJoinedMembers(elements: ElementSummary[], taskToElements: Map<string, number[]>, elementIds: Set<number>) {
+  if (!objectJoins.length) return;
+  let byGuid = localIdsByGuid.get(elements);
+  if (!byGuid) localIdsByGuid.set(elements, (byGuid = new Map(elements.map((el) => [el.guid, el.localId]))));
+  for (const j of objectJoins) {
+    const main = byGuid.get(j.main);
+    if (main === undefined) continue;
+    const members = j.members.map((g) => byGuid!.get(g)).filter((id): id is number => id !== undefined);
+    if (!members.length) continue;
+    for (const [taskId, ids] of taskToElements) {
+      if (ids.includes(main)) taskToElements.set(taskId, [...new Set([...ids, ...members])]);
+    }
+    if (elementIds.has(main)) for (const id of members) elementIds.add(id);
+  }
+}
+
 /** Evaluates one Group: filters tasks and objects independently, then pairs
     them via the explicit matching-criteria rules (task field value equals
     an object property value) — mirrors the Filter Tasks / Filter Objects /
@@ -267,6 +291,7 @@ export function computeGroupLinks(model: ScheduleModel, elements: ElementSummary
     }
   }
 
+  addJoinedMembers(elements, taskToElements, elementIds);
   if (subOn) return { groupId: group.id, taskIds, elementIds, taskToElements, sub: subSlotsOf(taskToElements, candidateObjects, subField, subSep) };
   return { groupId: group.id, taskIds, elementIds, taskToElements };
 }

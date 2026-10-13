@@ -86,7 +86,7 @@ def _build_reserved_placeholder_row(proposed_id_text):
         "Placeholder Note": "Reserved number placeholder (available for future pours)",
         "Level": "", "Pour ID Number": "", ALT_POUR_ID_PROP: "", "FullPourID": "", "Pour Type": "",
         "General Pour Type": "", "Pour Volume m3": "", "Is External?": "",
-        "Cardinal": "", "Building Zone": "", "Concrete Stage": "",
+        "Building Zone": "", "Concrete Stage": "",
         "Logic Group 1": "", "Logic Group 2": "", "Logic Group 3": "",
         "Max Z": "", "Min Z": "", "Include": "", "Building": "",
         "Centre of Gravity X": "", "Centre of Gravity Y": "", "Centre of Gravity Z": "",
@@ -193,7 +193,7 @@ def _apply_sheet_formatting_and_tables(wb, precomputed_widths=None):
         "Logic Group 1": 25, "Logic Group 2": 35, "Logic Group 3": 35, "Type": 9,
         "Connected Pours": 11, "Include": 9, "TaskID_Override": 20, "WBS": 45,
         "Phase": 10, "Predecessors": 20, "Qty": 8, "Quantity Source": 16,
-        "Cardinal": 10, "Stage": 10, "Zone": 7, "Min Z": 7, "Max Z": 7,
+        "Stage": 10, "Zone": 7, "Min Z": 7, "Max Z": 7,
     }
 
     for sheet_name in wb.sheetnames:
@@ -578,7 +578,7 @@ def _build_numbering_table_from_records(records, overrides=None, include_overrid
     ordered_columns = [
         "No.", "PlanningProposedPourID", "PlanningProposedPourID_Override", "Entry Type",
         "Placeholder Note", "Level", "Pour ID Number", ALT_POUR_ID_PROP, "FullPourID", "Pour Type",
-        "General Pour Type", "Pour Volume m3", "Is External?", "Cardinal", "Building Zone",
+        "General Pour Type", "Pour Volume m3", "Is External?", "Building Zone",
         "Concrete Stage", "Logic Group 1", "Logic Group 2", "Logic Group 3", "Max Z", "Min Z",
         "Include", "Building", "Centre of Gravity X", "Centre of Gravity Y", "Centre of Gravity Z", "GUID"
     ]
@@ -626,7 +626,6 @@ def _build_numbering_table_from_records(records, overrides=None, include_overrid
             "General Pour Type": general_pour_type,
             "Pour Volume m3": pour_volume,
             "Is External?": is_external,
-            "Cardinal": rec.get("cardinal_zone", ""),
             "Building Zone": building_zone,
             "Concrete Stage": concrete_stage,
             "GUID": guid,
@@ -1304,7 +1303,6 @@ def export_activities_to_excel(activity_list, excel_path: str, clash_results=Non
                  round(r.get("rebar_weight_tonnes", 0), 3) if phase == "Rebar" else "",
             "Quantity Source": r.get("quantity_source", "Unknown"),
             "Level": level_code,
-            "Cardinal": r.get("cardinal_zone", ""),
             "Ext": "YES" if r.get("is_external", False) else "NO",
             "Stage": r.get("conc_stage", ""),
             "Zone": r.get("building_zone", ""),
@@ -1349,13 +1347,13 @@ def export_activities_to_excel(activity_list, excel_path: str, clash_results=Non
     # Sorting
     if numbering_mode == "stage_priority":
         df_activities = df_activities.sort_values(
-            by=["Include", "Building", "_LevelSortKey", "Ext", "Type", "Stage", "Cardinal", "Logic Group 1", "Logic Group 2", "Phase", "PlanningProposedPourID"],
-            ascending=[False, True, True, False, True, True, False, False, False, True, True]
+            by=["Include", "Building", "_LevelSortKey", "Ext", "Type", "Stage", "Logic Group 1", "Logic Group 2", "Phase", "PlanningProposedPourID"],
+            ascending=[False, True, True, False, True, True, False, False, True, True]
         ).reset_index(drop=True)
     else:
         df_activities = df_activities.sort_values(
-            by=["Include", "Building", "_LevelSortKey", "Ext", "Type", "Stage", "Cardinal", "Logic Group 1", "Logic Group 2", "Full Pour ID", "Phase", "PlanningProposedPourID"],
-            ascending=[False, True, True, False, True, True, False, False, False, True, True, True]
+            by=["Include", "Building", "_LevelSortKey", "Ext", "Type", "Stage", "Logic Group 1", "Logic Group 2", "Full Pour ID", "Phase", "PlanningProposedPourID"],
+            ascending=[False, True, True, False, True, True, False, False, True, True, True]
         ).reset_index(drop=True)
 
     if "_LevelSortKey" in df_activities.columns:
@@ -1402,7 +1400,6 @@ def export_activities_to_excel(activity_list, excel_path: str, clash_results=Non
                 "A:IsExternal": "YES" if a.get("is_external", False) else "NO",
                 "A:PourType": a.get("pour_type", "").title(),
                 "A:ConcreteStage": a.get("conc_stage", ""),
-                "A:CardinalZone": a.get("cardinal_zone", ""),
                 "A:LogicGroup1": a.get("lg1", ""),
                 "A:PourID": a.get("pour_id", ""),
                 f"A:{ALT_POUR_ID_PROP}": a.get("alt_pour_id", a.get("original_pour_id", "")),
@@ -1412,7 +1409,6 @@ def export_activities_to_excel(activity_list, excel_path: str, clash_results=Non
                 "B:IsExternal": "YES" if b.get("is_external", False) else "NO",
                 "B:PourType": b.get("pour_type", "").title(),
                 "B:ConcreteStage": b.get("conc_stage", ""),
-                "B:CardinalZone": b.get("cardinal_zone", ""),
                 "B:LogicGroup1": b.get("lg1", ""),
                 "B:PourID": b.get("pour_id", ""),
                 f"B:{ALT_POUR_ID_PROP}": b.get("alt_pour_id", b.get("original_pour_id", "")),
@@ -1427,9 +1423,9 @@ def export_activities_to_excel(activity_list, excel_path: str, clash_results=Non
         df_group_clashes = pd.DataFrame(clash_rows)
         if df_group_clashes.empty:
             df_group_clashes = pd.DataFrame(columns=["No.", "A:Include", "A:IsExternal", "A:PourType", "A:ConcreteStage",
-                                                     "A:CardinalZone", "A:LogicGroup1", "A:PourID", f"A:{ALT_POUR_ID_PROP}", "A:Min Z",
+                                                     "A:LogicGroup1", "A:PourID", f"A:{ALT_POUR_ID_PROP}", "A:Min Z",
                                                      "A:Max Z", "B:Include", "B:IsExternal", "B:PourType", "B:ConcreteStage",
-                                                     "B:CardinalZone", "B:LogicGroup1", "B:PourID", f"B:{ALT_POUR_ID_PROP}", "B:Min Z",
+                                                     "B:LogicGroup1", "B:PourID", f"B:{ALT_POUR_ID_PROP}", "B:Min Z",
                                                      "B:Max Z", "Position (B rel. A)", "Distance (mm)", "Distance (m)", "Violation"])
         df_group_clashes.to_excel(writer, sheet_name="Group Clashes", index=False)
         df_clash_relations.to_excel(writer, sheet_name="Clash Relations", index=False)
@@ -1503,7 +1499,6 @@ def export_activities_to_excel(activity_list, excel_path: str, clash_results=Non
             "FullPourID": rec.get("full_pour_id", ""),
             "Type": rec.get("pour_type", "").title(),
             "Ext": "YES" if rec.get("is_external", False) else "NO",
-            "Cardinal": rec.get("cardinal_zone", ""),
             "Zone": rec.get("building_zone", ""),
             "Stage": rec.get("conc_stage", ""),
             "Logic Group 1": rec.get("lg1", ""),
@@ -1529,8 +1524,8 @@ def export_activities_to_excel(activity_list, excel_path: str, clash_results=Non
             df_overrides["PlanningProposedPourID"] = df_overrides["PlanningProposedPourID"].apply(_normalize_proposed_id_text)
 
         df_overrides = df_overrides.sort_values(
-            by=["Building", "PlanningProposedPourID", "Level", "Ext", "Cardinal", "Logic Group 1", "Logic Group 2", "Pour ID", "Phase"],
-            ascending=[True, True, True, False, True, True, True, True, True]
+            by=["Building", "PlanningProposedPourID", "Level", "Ext", "Logic Group 1", "Logic Group 2", "Pour ID", "Phase"],
+            ascending=[True, True, True, False, True, True, True, True]
         ).reset_index(drop=True)
         df_overrides["No."] = range(1, len(df_overrides) + 1)
 
@@ -1666,8 +1661,8 @@ def merge_excel_files(source_excels, master_excel):
         df_master_activities["_LevelSortKey"] = df_master_activities["Level"].apply(_extract_level_sort_key)
 
     df_master_activities = df_master_activities.sort_values(
-        by=["Include", "Building", "PlanningProposedPourID", "_LevelSortKey", "Ext", "Type", "Stage", "Cardinal", "Logic Group 1", "Logic Group 2", "Full Pour ID", "Phase"],
-        ascending=[False, True, True, True, False, True, True, False, False, False, True, True]
+        by=["Include", "Building", "PlanningProposedPourID", "_LevelSortKey", "Ext", "Type", "Stage", "Logic Group 1", "Logic Group 2", "Full Pour ID", "Phase"],
+        ascending=[False, True, True, True, False, True, True, False, False, True, True]
     ).reset_index(drop=True)
 
     if "_LevelSortKey" in df_master_activities.columns:

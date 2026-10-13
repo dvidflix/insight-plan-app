@@ -10,6 +10,7 @@ import { SettingsSync } from './components/SettingsMenu';
 import { CustomFieldsSync } from './components/CustomFieldsSync';
 import { SidePaneHost } from './components/SidePane';
 import { AutoLinkGenerator } from './components/schedule/AutoLinkGenerator';
+import { ScenarioSync } from './components/scenarios/ScenarioParts';
 import { ViewerWorkspace } from './viewer/ViewerWorkspace';
 import { SchedulePage, type TabId as ScheduleTabId } from './pages/SchedulePage';
 import { takePendingTab, useScheduleLayoutsStore } from './state/scheduleLayoutsStore';
@@ -27,12 +28,12 @@ import { hasMadeChoice, useProgrammeChoiceStore } from './state/programmeChoiceS
 import { programmeKey } from './state/unloadedWbsStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
-import { IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
+import { IconSidePanel, IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
 import { FileDrop } from './components/FileDrop';
 import { SCHEDULE_ACCEPT, buildScheduleModel, parseScheduleFile, xmlScheduleTables } from './schedule/loadSchedule';
 import { buildXerSchedule, indexXerFile, isXer, type ImportProgress, type XerIndex } from './schedule/importSchedule';
 import { ProjectPicker } from './components/schedule/ProjectPicker';
-import { useAppPrefsStore } from './state/appPrefsStore';
+import { experimentalOn, useAppPrefsStore } from './state/appPrefsStore';
 import { useRecordingStore } from './state/recordingStore';
 import { DbStatusChip } from './components/ProjectDbPanel';
 import { UpdateChip } from './components/UpdateChip';
@@ -45,6 +46,9 @@ import { DEFAULT_INPUT_COLUMNS, buildCombinedGroups, buildGroups, passesFilters,
 import { pushToSeaTable, DetailValue, GroupHeaderRow, ColumnResizer, InputsColgroup, InputsStatusBar, useInputsTableStyle } from './components/InputDetails';
 import { InputsSidePane } from './components/InputsSidePane';
 import type { PushFile } from './seatable/filesClient';
+import { FileDetails, type FileSummary } from './components/FileDetails';
+import { ResizeHandle, useResizableWidth } from './components/ResizeHandle';
+import { usePersistedState } from './utils/persistedState';
 import { StoredModelsNotes, useStoredModels } from './components/StoredModelsPanel';
 import { ModelsRestoreSync } from './components/ModelsRestoreSync';
 import type { StoredModel } from './db/modelsApi';
@@ -313,6 +317,7 @@ export default function App() {
       </div>
       <SidePaneHost />
       <AutoLinkGenerator />
+      {FEATURES.scenarios && scenariosOn && <ScenarioSync loadOnly />}
       </div>
     </ViewerEngineProvider>
   );
@@ -480,6 +485,24 @@ function InputsPage() {
   const [anchorKey, setAnchorKey] = useState<string | null>(null);
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const rowId = (r: InputRow) => `${r.kind}-${r.key}`;
+  // The File details pane (the selected files, else the current one).
+  const [detailsOpen, setDetailsOpen] = usePersistedState('inputs.detailsOpen', false);
+  const detailsWidth = useResizableWidth('inputs.detailsWidth', 320, 260, 640);
+  const detailFiles = useMemo<FileSummary[]>(() => {
+    const keys = selectedKeys.size ? selectedKeys : new Set(activeKey ? [activeKey] : []);
+    return listedRows.filter((r) => keys.has(rowId(r))).map((r) => ({
+      key: rowId(r),
+      name: r.name,
+      kind: KIND_LABEL[r.kind],
+      format: formatOfRow(r),
+      items: r.unloaded ? 0 : r.items,
+      size: r.size === null ? '—' : formatBytes(r.size),
+      uploaded: r.uploaded === null ? '—' : new Date(r.uploaded).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }),
+      version: r.version,
+      bounds: r.bounds ? `Min ${r.bounds.min.map((v) => v.toFixed(1)).join(', ')} · Max ${r.bounds.max.map((v) => v.toFixed(1)).join(', ')}` : '',
+    }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [listedRows, selectedKeys, activeKey]);
   const pickRow = (r: InputRow, mod: { shift?: boolean; ctrl?: boolean } = {}) => {
     setActiveKey(rowId(r));
     const from = listedRows.findIndex((x) => rowId(x) === anchorKey);
@@ -583,7 +606,7 @@ function InputsPage() {
     // Wait for the rest of a multi-file upload to arrive; each new file restarts the wait.
     const timer = window.setTimeout(() => {
       uploaded.current.clear();
-      if (FEATURES.seatable && useInputDetailsStore.getState().autoPush) void pushToSeaTable(filesToPush, true);
+      if (FEATURES.seatable && experimentalOn('seatableFiles') && useInputDetailsStore.getState().autoPush) void pushToSeaTable(filesToPush, true);
     }, 2500);
     return () => window.clearTimeout(timer);
   }, [filesToPush]);
@@ -761,20 +784,26 @@ function InputsPage() {
   const closeXerPick = () => setXerPicks((q) => q.slice(1));
 
   return (
-    <div className="inputs-page">
+    <div className={`inputs-page${detailsOpen ? ' inputs-page--details' : ''}`}>
+      <div className="inputs-panel__header inputs-bar">
+        <span>Models and programmes</span>
+        <span className="inputs-panel__count">{rows.length}</span>
+        <span className="inputs-panel__spacer" />
+        {rows.length > 0 && (
+          <>
+            <button className="mini-btn mini-btn--icon" onClick={syncAll} title="Sync all" aria-label="Sync all"><IconSync /></button>
+            <RowButtonsChooser compact buttons={INPUT_BUTTONS} rb={inputBtns} title="Choose which buttons show on each row" />
+          </>
+        )}
+        <div className="schedule-toolbar__segmented layouts-segment">
+          <button className={`btn layouts-toggle${detailsOpen ? ' primary' : ''}`} type="button" aria-pressed={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)} title="Show the selected file's details and edit them: discipline, building, status, notes ...">
+            <span className="toolbar-button__icon"><IconSidePanel /></span>
+            File details
+          </button>
+        </div>
+      </div>
       <InputsSidePane onCollapseAll={collapseAllGroups} onExpandAll={expandAllGroups} />
       <div className="inputs-panel">
-        <div className="inputs-panel__header">
-          <span>Models and programmes</span>
-          <span className="inputs-panel__count">{rows.length}</span>
-          <span className="inputs-panel__spacer" />
-          {rows.length > 0 && (
-            <>
-              <button className="mini-btn mini-btn--icon" onClick={syncAll} title="Sync all" aria-label="Sync all"><IconSync /></button>
-              <RowButtonsChooser compact buttons={INPUT_BUTTONS} rb={inputBtns} title="Choose which buttons show on each row" />
-            </>
-          )}
-        </div>
         <div className="inputs-panel__body">
           <FileDrop
             label="Drop files here or click to upload"
@@ -978,6 +1007,14 @@ function InputsPage() {
           <StoredModelsNotes actions={storedActions} />
         </div>
       </div>
+      {detailsOpen && (
+        <div className="inputs-details">
+          <ResizeHandle onMouseDown={detailsWidth.startDrag(true)} />
+          <div className="panel" style={{ width: detailsWidth.width, flexShrink: 0 }}>
+            <FileDetails files={detailFiles} onClose={() => setDetailsOpen(false)} />
+          </div>
+        </div>
+      )}
     </div>
   );
 }

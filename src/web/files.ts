@@ -81,6 +81,21 @@ export class ProjectFolders implements DbHost, ModelsHost {
     return (await this.entry(root)).db;
   }
 
+  async writeFiles(rawRoot: unknown, files: { name: string; content: string }[]): Promise<string[]> {
+    const root = String(rawRoot ?? '').trim();
+    const folder = this.folders.get(root);
+    if (!folder) throw new HttpError(400, 'Choose the project folder first (Inputs > Project database).');
+    const written: string[] = [];
+    for (const f of files) {
+      const handle = await folder.getFileHandle(f.name, { create: true });
+      const out = await handle.createWritable();
+      await out.write(f.content);
+      await out.close();
+      written.push(f.name);
+    }
+    return written;
+  }
+
   saveStatus(rawRoot: unknown) {
     const e = this.open.get(String(rawRoot ?? '').trim());
     return { dirty: !!e?.dirty, savedAt: e?.savedAt ?? null, error: e?.error ?? null };

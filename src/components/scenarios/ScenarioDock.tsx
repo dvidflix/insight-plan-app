@@ -8,6 +8,7 @@ import { baseStem } from '../../scenarios/fromProgramme';
 import { useSelectionStore } from '../../state/selectionStore';
 import { isTableCfgTab, setSelected, useScenarioStore } from '../../state/scenarioStore';
 import { useScenarioView } from '../../scenarios/useScenarioView';
+import { useJoinShortcut } from '../../scenarios/useJoinShortcut';
 import { ScenarioNotice, ScenarioPanelBody, ScenarioStatus, ScenarioSync, ScenarioTable, ScenarioToolbar, useScenarioTabs } from './ScenarioParts';
 
 /** Pours (rows, keyed by GlobalId) <-> elements of the scenario's building
@@ -95,6 +96,7 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
   const engine = useViewerEngine();
   const { ready } = useScenarioView();
   const pours = usePourElements();
+  useJoinShortcut(pours); // Alt+J joins the objects picked in 3D
 
   const selectInViewer = (keys: Set<string>) => {
     if (!pours.modelId) return;
@@ -149,8 +151,9 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
 export function ScenarioDock() {
   const { ready } = useScenarioView();
   const cfgTab = useScenarioStore((s) => s.cfgTab);
-  const tabs = useScenarioTabs();
-  const tab = ready ? cfgTab : 'scenario';
+  const tabs = useScenarioTabs(false);
+  // Rules has a dock panel of its own here.
+  const tab = ready && cfgTab !== 'rules' ? cfgTab : 'scenario';
   return (
     <SidePaneDock>
       <div className="scn-dock" aria-label="Scenario">

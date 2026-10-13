@@ -82,64 +82,6 @@ def get_original_building_name(element) -> str:
     return ""
 
 
-def get_cardinal_zone(element, building_code: str = None) -> str:
-    """
-    Calculate cardinal zone (North/South or East/West) based on geometry centroid coordinate.
-    Falls back to 'Unknown' if geometry is unavailable or calculation fails.
-    
-    Args:
-        element: IFC element to analyze
-        building_code: Building code to lookup coordinate threshold from config
-    """
-    if not GEOM_AVAILABLE:
-        return "Unknown (geometry engine not available)"
-
-    # Import here to avoid circular dependency
-    from config import BUILDING_COORDINATES
-
-    try:
-        # Get building configuration or use default
-        config = BUILDING_COORDINATES.get(building_code or "DEFAULT", BUILDING_COORDINATES["DEFAULT"])
-        axis = config.get("axis", "X").upper()
-        threshold = config.get("threshold")
-
-        if threshold is None:
-            return "Unknown (no threshold configured)"
-
-        # Prefer absolute placement coordinates (typically global/site coordinates)
-        x, y, _ = get_element_world_coordinates(element)
-        if axis == "X" and x is not None:
-            return "North" if x > threshold else "South"
-        if axis == "Y" and y is not None:
-            return "East" if y > threshold else "West"
-
-        # Fallback: centroid from geometry vertices
-        shape = ifcopenshell.geom.create_shape(geom_settings, element)
-        verts = shape.geometry.verts
-
-        if not verts or len(verts) < 3:
-            return "No usable geometry"
-
-        xs = [verts[i] for i in range(0, len(verts), 3)]
-        ys = [verts[i+1] for i in range(0, len(verts), 3)]
-
-        if not xs or not ys:
-            return "Empty vertex list"
-
-        if axis == "X":
-            center_value = sum(xs) / len(xs)
-            return "North" if center_value > threshold else "South"
-        elif axis == "Y":
-            center_value = sum(ys) / len(ys)
-            return "East" if center_value > threshold else "West"
-        else:
-            return f"Unknown (invalid axis: {axis})"
-
-    except Exception as e:
-        print(f"Geometry error in get_cardinal_zone for element #{element.id()}: {e}")
-        return "Unknown (geometry error)"
-
-
 _BBOX_HEIGHT_CACHE = {}
 
 

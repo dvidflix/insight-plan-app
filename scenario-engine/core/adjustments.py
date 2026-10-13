@@ -9,23 +9,18 @@ generator works with SeaTable switched off, like the rates file:
             dates become the activity's target dates), predecessors / successors (Task IDs) and an optional WBS name
   baselines the named baselines with their start / finish dates (already resolved onto each extra)
 
-No file, or an unreadable one: no adjustments.
+The file is the one named by the INSIGHT_ADJUSTMENTS_FILE environment variable (the app sets it). No file, or an unreadable one: no adjustments.
 """
 import json
 import os
 from xml.etree import ElementTree as ET
-
-try:
-    from config import ADJUSTMENTS_FILE
-except ImportError:
-    ADJUSTMENTS_FILE = r"C:\insight-stack\data\adjustments.json"
 
 EXTRA_WBS_NAME = "Extra activities"
 
 
 def load_adjustments(path=None):
     """{'retired': set of Task IDs, 'extras': [dict]} (both empty when there is no file)."""
-    path = path or os.environ.get("INSIGHT_ADJUSTMENTS_FILE") or ADJUSTMENTS_FILE
+    path = path or os.environ.get("INSIGHT_ADJUSTMENTS_FILE")
     empty = {"retired": set(), "extras": []}
     if not path or not os.path.isfile(path):
         return empty

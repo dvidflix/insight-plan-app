@@ -127,34 +127,6 @@ EXCLUDED_POUR_TYPES = {"BOSS", "SCREED", "GROUT", "SPECIAL"}
 MIN_VOLUME_OVERRIDE = 1
 ABBREVIATE_TASKNAME = False
 
-# ── Building coordinate thresholds ───────────────────────────────────────────
-# Configure X or Y coordinate thresholds for each building to determine cardinal zones
-# Format: "BUILDING_CODE": {"axis": "X" or "Y", "threshold": float_value}
-# Example: If axis="X" and threshold=2150.0, then X > 2150.0 = North, X <= 2150.0 = South
-#          If axis="Y" and threshold=1000.0, then Y > 1000.0 = East, Y <= 1000.0 = West
-
-BUILDING_COORDINATES = {
-    "CRX":        {"axis": "X", "threshold": None},
-    "HK":         {"axis": "X", "threshold": None},
-    "HR":         {"axis": "X", "threshold": None},
-    "HL1":        {"axis": "X", "threshold": None},
-    "HL4":        {"axis": "X", "threshold": None},
-    "HL23":       {"axis": "X", "threshold": None},
-    "HW":         {"axis": "X", "threshold": None},
-    "HDAB":       {"axis": "X", "threshold": 1914},
-    "HDCD":       {"axis": "X", "threshold": 2088.3},
-    "HHI":        {"axis": "Y", "threshold": 5851.627},
-    "HN":         {"axis": "X", "threshold": 2047.048},
-    "HQA":        {"axis": "X", "threshold": 2085.3501},
-    "HQB":        {"axis": "X", "threshold": 2085.9501},  # Add X or Y threshold value
-    "HQC":        {"axis": "X", "threshold": 1844.6501},
-    "HVD":        {"axis": "X", "threshold": 2150.4501},
-    "HXA":        {"axis": "X", "threshold": 2125.2501},
-    "HVL":        {"axis": "X", "threshold": None},
-    # Fallback for unknown buildings
-    "DEFAULT":    {"axis": "X", "threshold": 2150.0}
-}
-
 # ── Level property source configuration ──────────────────────────────────────
 # Configure which property set and property to use for level information per building
 # Format: "BUILDING_CODE": {"pset": "PropertySetName", "property": "PropertyName"}
@@ -173,14 +145,11 @@ USE_PADDED_LEVEL_CODES = False
 LEVEL_CODE_FALLBACK    = "L0"
 
 # ── Duration settings ────────────────────────────────────────────────────────
-DURATIONS = {
-    "Standard External Wall":      {"Rebar": 7,   "Embedments": 2,  "Formwork": 3,  "Concrete": 1},
-    "Double Height External Wall": {"Rebar": 12,  "Embedments": 4,  "Formwork": 5,  "Concrete": 1},
-    "Standard Internal Wall":      {"Rebar": 4,   "Embedments": 6,  "Formwork": 3,  "Concrete": 1},
-    "Double Height Internal Wall": {"Rebar": 9,   "Embedments": 8,  "Formwork": 3,  "Concrete": 1},
-    "Standard Internal Slab":      {"Rebar": 18,  "Embedments": 18, "Formwork": 2,  "Concrete": 1},
-    "Other":                       {"Rebar": 5,   "Embedments": 2,  "Formwork": 4,  "Concrete": 1}
-}
+# The engine has no duration table: the days of every phase are Duration / Productivity rules of the scenario (the 1HDAB_TOC preset holds
+# the table this project used). Where no rule fits, a phase takes these neutral days, and a component (Rebar, Embedments, Formwork, Concrete)
+# of the Rebar / Formwork / Concrete activities takes its own.
+DEFAULT_PHASE_DAYS = 1
+DEFAULT_COMPONENT_DAYS = {"Rebar": 1, "Embedments": 0, "Formwork": 1, "Concrete": 1}
 
 PHASE_DEFINITIONS = [
     {"name": "Rebar",      "suffix": "-R", "resource": f"{PROJECT_SHORT}-R",  "wbs_sub": "Rebar",      "duration": "Rebar"},
@@ -203,6 +172,10 @@ ENABLE_BUILDING_COMPLETION = False
 # On, so each level's slabs wait for the level below's concrete (otherwise a slab
 # with nothing above touching it is left with no successor).
 ENABLE_LEVEL_GATE = True
+# How the user's sequence steps follow each other: False = each step starts when the previous one is finished; True = a step starts SEQUENCE_LEAD_DAYS
+# working days after the previous one starts and the concrete is poured in step order (core/xml_builder.py).
+SEQUENCE_FLOW = False
+SEQUENCE_LEAD_DAYS = 3.0
 
 # Close-out: a "<project>-<building>-COMPLETION" finish milestone per building, which
 # every activity left with no successor feeds (FS), so the programme has no open ends.
@@ -222,10 +195,6 @@ OPEN_END_NEAREST_SLAB_FALLBACK = True
 # False for the old behaviour (every start task -> every lower-level final).
 LEVEL_GATE_SLABS_ONLY = True
 
-# When False, the slab phase sequence skips the "Works before slab" task
-# entirely (Decking becomes the slab's first activity).
-ENABLE_WORKS_BEFORE_SLAB = False
-
 # Level-gate predecessors feeding a slab's first task (Decking): only the
 # lower level's pure "Concrete" phase tasks count, and stage-2 pours are
 # excluded. Set False to also count Stitching/Installation/combined finals
@@ -239,11 +208,7 @@ LEVEL_GATE_DECKING_CONCRETE_ONLY = True
 # pours whose geometry can't be measured are kept. None/0 = no limit (old behaviour).
 LEVEL_GATE_MAX_DISTANCE_M = 0.05
 
-# Concrete curing of slabs (and rafts): a "Curing" activity after the slab's Concrete, written onto the
-# 7-day calendar like the Heavy Precast one (concrete cures on weekends too), with no labour.
-ENABLE_SLAB_CURING = True
-# Calendar days of curing.
-SLAB_CURING_DAYS = 7
+# Curing is an activity of the slab and raft chains (Rules > Chains), with its days and its 7-day calendar from Assignments.
 # False: what follows a slab (the pours it supports, the slab on the level above) waits for the slab's Concrete only,
 # and Curing runs alongside. True: it waits for the Curing to finish.
 SLAB_CURING_GATES_SUCCESSORS = False
@@ -266,117 +231,24 @@ USE_ACTIVITY_BASED_ACTIVITY_CODES = True
 CLASH_POSITION_SIDE_OVERLAP_THRESHOLD = 0.5
 
 # ── Resources: rebar and labour ─────────────────────────────────────────────
-# Rebar tonnes per m³ of concrete, by pour type (normalised: upper case,
-# spaces → underscores). "DEFAULT" covers every type not listed. 0.25 t/m³ =
-# 250 kg/m³ ("rebar = 25% of the concrete volume, in tonnes"). The tonnes go
-# onto each pour's Rebar activity as the <project>-R (Rebar, t) resource.
-REBAR_TONNES_PER_M3 = {
-    "DEFAULT": 0.25,
-    "WALL": 0.25,
-    "SLAB": 0.25,
-    "MAIN_SLAB": 0.25,
-    "RAFT": 0.25,
-}
-
-# Labour trades: resource Id suffix -> name and site capacity (people per day,
-# written to P6 as the resource's max units/time and used by the app as the
-# levelling limit until changed there). PLACEHOLDER capacities — set them to
-# the gangs actually available.
-LABOUR_TRADES = {
-    "SF": {"name": "Steel fixers",          "capacity": 24},
-    "CP": {"name": "Carpenters / formwork", "capacity": 24},
-    "CG": {"name": "Concrete gang",         "capacity": 12},
-    "GO": {"name": "General operatives",    "capacity": 12},
-    "EM": {"name": "Embedments fixers",     "capacity": 8},
-    "PE": {"name": "Precast erection crew", "capacity": 8},
-}
+# Rebar tonnes per m³ of concrete are Rebar rate rules of the scenario (none: no rebar quantity). The tonnes go onto each pour's Rebar
+# activity as the <project>-R (Rebar, t) resource.
+# The labour trades (code, name, people per day on site) are Trade rules of the scenario (Rules panel): the engine has none of its own.
 LABOUR_RESOURCE_PREFIX = f"{PROJECT_SHORT}-L-"   # resource Id = prefix + trade code, e.g. PRJ-L-SF
 
-# Crew per activity phase: [(trade code, crew size), ...] — people working on
-# that activity every day of its duration (man-hours = crew × duration × 8 h,
-# as in Labour_Resource_Assignment_and_Levelling.xlsx). Keyed by phase name as
-# activity_generator.py names them; "<phase>|<POUR_TYPE>" rows win over the
-# plain phase for that pour type. An empty list = no labour (e.g. Curing).
-# PLACEHOLDER crew sizes — tune here, or per scenario in the Overrides
-# workbook's "Crews" sheet (columns Phase, PourType, Trade, Crew).
-CREW_TABLE = {
-    "Rebar":                        [("SF", 6)],
-    "Rebar|SLAB":                   [("SF", 8)],
-    "Rebar|MAIN_SLAB":              [("SF", 8)],
-    "Rebar|RAFT":                   [("SF", 10)],
-    "Formwork":                     [("CP", 6)],
-    "Works before slab":            [("GO", 4)],
-    "Decking":                      [("CP", 6)],
-    "Under Slab":                   [("GO", 4)],
-    "EOP on Slab":                  [("EM", 3)],
-    "FWK":                          [("CP", 4)],
-    "Concrete":                     [("CG", 6)],
-    "Rebar, Formwork and Concrete": [("SF", 3), ("CP", 3), ("CG", 3)],
-    "Propping":                     [("PE", 4)],
-    "Installation":                 [("PE", 6)],
-    "Stitching":                    [("SF", 2), ("CG", 3)],
-    "Curing":                       [],
-    "Propping Removal":             [("PE", 4)],
-}
+# Crews are Crews and Assignments of the scenario's rules (the engine has no crew table of its own; the Overrides workbook's "Crews" sheet
+# still adds rows by phase and pour type).
 
-# Note: For slabs we override "Formwork" → "Decking" / "-D" in activity_generator.py
-
-PRECAST_ACTIVITY_DEFINITIONS = [
-    {
-        "name": "Installation",
-        "suffix": "-I",
-        "resource": "",
-        "duration_days": 1,
-        "task_name_suffix": " - Installation"
-    },
-    {
-        "name": "Stitching",
-        "suffix": "-S",
-        "resource": "",
-        "duration_days": 2,
-        "task_name_suffix": " - Stitching"
-    }
+# The activity chains are Chain rules of the scenario (Rules > Chains): the phases of a pour, in order. Where no chain fits, an in-situ pour
+# has these and a precast pour (concrete stage PRECAST) has the second.
+DEFAULT_CHAIN = [
+    {"phase": "Rebar", "suffix": "-R", "label": "Rebar"},
+    {"phase": "Formwork", "suffix": "-F", "label": "E/P and Formwork"},
+    {"phase": "Concrete", "suffix": "-C", "label": "Concrete"},
 ]
-
-# Heavy Precast only: an extra activity ahead of Installation. Not part of
-# PRECAST_ACTIVITY_DEFINITIONS because Removable Element / Stair precast
-# pours (which also route through the PRECAST conc_stage branch) don't get
-# it — see activity_generator.create_activities' _is_heavy_precast_rec check.
-PRECAST_PROPPING_DEFINITION = {
-    "name": "Propping",
-    "suffix": "-PR",
-    "resource": "",
-    "duration_days": 1,
-    "task_name_suffix": " - Propping"
-}
-
-# Heavy Precast only, appended after Stitching:
-#   Curing   — the walls underneath reaching 28d strength. A CALENDAR-day
-#              count, not a working-day count (concrete cures on weekends
-#              too), so this phase's Activity is written onto the 7-day
-#              calendar (CalendarObjectId "2" — see
-#              xml_builder.add_detailed_calendar / cpm_apply._CWA_CURING_CALENDAR)
-#              instead of the normal Mon-Fri one every other phase uses.
-#              Its predecessor is cross-record (the underlying wall's own
-#              Concrete finishing), not the precast's own Stitching — see
-#              xml_builder._build_heavy_precast_wall_predecessors_from_clashes.
-#   Propping Removal — dismantling the temporary supports, once Curing
-#              finishes.
-PRECAST_CURING_DEFINITION = {
-    "name": "Curing",
-    "suffix": "-CU",
-    "resource": "",
-    "duration_days": 28,
-    "task_name_suffix": " - Curing (walls under)"
-}
-
-PRECAST_PROPPING_REMOVAL_DEFINITION = {
-    "name": "Propping Removal",
-    "suffix": "-RP",
-    "resource": "",
-    "duration_days": 1,
-    "task_name_suffix": " - Propping Removal"
-}
+DEFAULT_PRECAST_CHAIN = [
+    {"phase": "Installation", "suffix": "-I", "label": "Installation"},
+]
 
 # Project start / data date for the CPM. None = today. The insight-plan-app
 # Scenarios tab passes CWA_START_DATE (YYYY-MM-DD) so every scenario of a
@@ -384,13 +256,5 @@ PRECAST_PROPPING_REMOVAL_DEFINITION = {
 START_DATE = datetime.strptime(os.environ["CWA_START_DATE"], "%Y-%m-%d") if os.environ.get("CWA_START_DATE") else None
 
 
-# -- Wall classes and rates (SeaTable "Insight Plan Rates") --
-# Local copy written by `python seatable_sync.py pull-rates`. The generator writes each
-# wall class and its rate assumptions on the wall activities as user fields (the
-# INSIGHT_RATES_FILE environment variable overrides this path). No file: no fields.
-RATES_FILE = r"C:\insight-stack\data\rates.json"
-
-# Retired and extra activities, from SeaTable's "Retired", "Extra activities" and "Baselines" tables: written by the app's
-# Settings > Retired and extra activities > Pull (the INSIGHT_ADJUSTMENTS_FILE environment variable overrides this path).
-# No file: nothing is retired and nothing is added. See core/adjustments.py.
-ADJUSTMENTS_FILE = r"C:\insight-stack\data\adjustments.json"
+# The SeaTable copies (the wall-class rates, and the retired / extra activities) are found through the INSIGHT_RATES_FILE and
+# INSIGHT_ADJUSTMENTS_FILE environment variables, which the app sets (vite-plugins/engineFiles.ts); no variable, no file, no fields.

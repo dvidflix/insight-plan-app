@@ -124,6 +124,20 @@ export function projectDbPlugin(): Plugin {
             projectDb(body.root).writeSetting(key, body.value);
             return send(res, 200, { ok: true });
           }
+          // ---- Settings > Import / Export: "Export all" writes the export files into the project folder ----
+          if (req.method === 'POST' && route === 'export-files') {
+            const body = await readBody(req);
+            const folder = projectDb(body.root).root;
+            const files = Array.isArray(body.files) ? body.files : [];
+            const written: string[] = [];
+            for (const f of files) {
+              const name = String(f?.name ?? '');
+              if (!/^insight-plan-[a-z]+\.json$/.test(name) || typeof f.content !== 'string') throw new HttpError(400, `Not an export file: ${name}`);
+              fs.writeFileSync(path.join(folder, name), f.content, 'utf8');
+              written.push(name);
+            }
+            return send(res, 200, { folder, written });
+          }
           // ---- clashes & contacts ----
           if (req.method === 'POST' && route === 'clashes/get') {
             const body = await readBody(req);

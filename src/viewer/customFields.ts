@@ -3,6 +3,7 @@ import { useViewerEngine } from './ViewerEngineContext';
 import type { ViewerEngine } from './ViewerEngine';
 import { customKey, useCustomFieldsStore } from '../state/customFieldsStore';
 import { pullFields } from '../seatable/client';
+import { experimentalOn } from '../state/appPrefsStore';
 
 /** Puts the custom fields (SeaTable columns) on the model elements as "Custom.<column>"
     properties: the elements of the viewer's indexes are the ones every panel reads, so the
@@ -49,7 +50,7 @@ export function useCustomFieldsSync() {
     const onReady = (modelId: string) => {
       if (applying) return;
       applyCustomFields(engine, [modelId]);
-      if (useCustomFieldsStore.getState().autoPull) {
+      if (experimentalOn('seatableModel') && useCustomFieldsStore.getState().autoPull) {
         window.clearTimeout(timer);
         timer = window.setTimeout(() => void pullFields(engine, { quiet: true }), 1500);
       }

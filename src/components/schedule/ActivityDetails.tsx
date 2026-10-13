@@ -16,14 +16,15 @@ import { useClashStore } from '../../state/clashStore';
 import { useViewerEngine } from '../../viewer/ViewerEngineContext';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { activityStartMs } from '../../schedule/linking';
+import { constraintName } from '../../schedule/reports';
 import { alignDown } from '../../schedule/period';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { useVisibleSchedules } from '../../state/scheduleStore';
 import { programmeKey } from '../../state/unloadedWbsStore';
 import { useActivityOverridesStore } from '../../state/activityOverridesStore';
 
-type SectionId = 'details' | 'cpm' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
-const DEFAULT_OPEN: SectionId[] = ['details', 'cpm', 'notes', 'suggested', 'codes', 'udf', 'resources'];
+type SectionId = 'details' | 'dates' | 'cpm' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
+const DEFAULT_OPEN: SectionId[] = ['details', 'dates', 'cpm', 'notes', 'suggested', 'codes', 'udf', 'resources'];
 
 /** What a resource's quantity is counted in: a unit in its name ("Concrete (m3)", "Rebar (t)"), else hours for labour and equipment, nothing for other materials. */
 function unitOf(r: ResourceAssignment): string {
@@ -34,6 +35,21 @@ function unitOf(r: ResourceAssignment): string {
 const fmtQty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
 
 const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—');
+
+const TYPE_LABEL: Record<Activity['type'], string> = {
+  task: 'Task dependent',
+  'milestone-start': 'Start milestone',
+  'milestone-finish': 'Finish milestone',
+  loe: 'Level of effort',
+  'wbs-summary': 'WBS summary',
+};
+/** P6's coded values, spelt out (DT_FixedDUR2 → Fixed duration & units / time). */
+const DURATION_TYPE: Record<string, string> = {
+  DT_FixedDUR2: 'Fixed duration & units/time', DT_FixedDrtn: 'Fixed duration & units/time',
+  DT_FixedQty: 'Fixed units', DT_FixedQty2: 'Fixed units/time', DT_FixedRate: 'Fixed units/time', DT_FixedDUR: 'Fixed duration & units',
+};
+const PCT_TYPE: Record<string, string> = { CP_Phys: 'Physical', CP_Drtn: 'Duration', CP_Units: 'Units' };
+const nice = (map: Record<string, string>, v?: string | null) => (v ? map[v] ?? v : '—');
 
 const days = (hours: number) => Math.round((hours / 8) * 10) / 10;
 
@@ -50,7 +66,7 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
   onSelect: (activity: Activity) => void;
   onClose: () => void;
 }) {
-  const sections = useOpenSections<SectionId>('schedule.detailSections2', DEFAULT_OPEN);
+  const sections = useOpenSections<SectionId>('schedule.detailSections3', DEFAULT_OPEN);
   // The objects each activity is linked to (Link Groups), and the contacts found between objects (Clashes & contacts).
   const loadedModels = useModelsStore((s) => s.models);
   const groups = useLinkGroupsStore((s) => s.groups);
@@ -223,7 +239,9 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
         {grid([
           ['Code', activity.code],
           ['Name', editing ? <input className="ad-edit" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} aria-label="Name" /> : activity.name],
+          ['Activity type', TYPE_LABEL[activity.type] ?? activity.type],
           ['Status', activity.status],
+          ['WBS', activity.wbsPath || '—'],
           ['Calendar', editing
             ? (
               <select className="ad-edit" value={draft.calendarId} onChange={(e) => setDraft({ ...draft, calendarId: e.target.value })} aria-label="Calendar">
@@ -235,8 +253,14 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Original duration (d)', editing
             ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.days} onChange={(e) => setDraft({ ...draft, days: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }} aria-label="Original duration in days" />
             : days(activity.durationHours)],
+          ['Remaining duration (d)', days(activity.remainingDurationHours)],
           ['Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours) : '—'],
           ['% Complete', `${activity.percentComplete}%`],
+          ['% Complete type', nice(PCT_TYPE, activity.percentCompleteType)],
+          ['Physical %', activity.physicalPercentComplete != null ? `${activity.physicalPercentComplete}%` : '—'],
+          ['Duration type', nice(DURATION_TYPE, activity.durationType)],
+          ['Primary resource', activity.primaryResource || '—'],
+          ['Critical', activity.isCritical ? 'Yes' : 'No'],
         ])}
         {(editing || edited) && (
           <div className="ad-edit-bar">
@@ -289,6 +313,22 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
         </button>
       </CollapsibleSection>
 
+      <CollapsibleSection title="Dates & constraints" flush open={sections.isOpen('dates')} onToggle={() => sections.toggle('dates')}>
+        {grid([
+          ['Planned Start', fmtDate(activity.targetStart)],
+          ['Planned Finish', fmtDate(activity.targetFinish)],
+          ['Actual Start', fmtDate(activity.actualStart)],
+          ['Actual Finish', fmtDate(activity.actualFinish)],
+          ['Remaining Start', fmtDate(activity.remainingStart ?? null)],
+          ['Remaining Finish', fmtDate(activity.remainingFinish ?? null)],
+          ['Expected Finish', fmtDate(activity.expectedFinish ?? null)],
+          ['Suspend', fmtDate(activity.suspendDate ?? null)],
+          ['Resume', fmtDate(activity.resumeDate ?? null)],
+          ['Primary constraint', activity.constraintType ? `${constraintName(activity.constraintType)}${activity.constraintDate ? ` · ${fmtDate(activity.constraintDate)}` : ''}` : 'None'],
+          ['Secondary constraint', activity.secondaryConstraintType ? `${constraintName(activity.secondaryConstraintType)}${activity.secondaryConstraintDate ? ` · ${fmtDate(activity.secondaryConstraintDate)}` : ''}` : 'None'],
+        ])}
+      </CollapsibleSection>
+
       <CollapsibleSection title="CPM dates" flush open={sections.isOpen('cpm')} onToggle={() => sections.toggle('cpm')}>
         {grid([
           ['Early Start', fmtDate(activity.earlyStart)],
@@ -297,6 +337,7 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Late Finish', fmtDate(activity.lateFinish)],
           ['Total Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours) : '—'],
           ['Free Float (d)', activity.freeFloatHours !== null ? days(activity.freeFloatHours) : '—'],
+          ['Longest path', activity.longestPath ? 'Yes' : 'No'],
         ])}
       </CollapsibleSection>
 

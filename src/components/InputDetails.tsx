@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { BUILT_IN_GROUPS, NO_VALUE, passesFilters, useInputDetailsStore, valuesOfFile } from '../state/inputDetailsStore';
 import { FEATURES } from '../features';
+import { experimentalOn } from '../state/appPrefsStore';
 import { pushFiles, type PushFile } from '../seatable/filesClient';
 import { queryMatcher } from '../schedule/search';
 import { IconChevronDown, IconChevronRight, IconExpander } from './icons';
@@ -45,7 +46,7 @@ export function InputsStatusBar() {
 
   // Read the details when the page opens (quietly: the last read is kept when SeaTable is off).
   useEffect(() => {
-    if (FEATURES.seatable) void useInputDetailsStore.getState().read();
+    if (FEATURES.seatable && experimentalOn('seatableFiles')) void useInputDetailsStore.getState().read();
   }, []);
 
   const labelFor = (id: string) => BUILT_IN_GROUPS.find((g) => g.id === id)?.label ?? id;

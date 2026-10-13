@@ -2,7 +2,7 @@
 The wall class and rate assumptions of an element, for the user fields written on its
 activities. Reads the local copy of the SeaTable "Insight Plan Rates" base
 (seatable_sync.py pull-rates): the file named by the INSIGHT_RATES_FILE environment
-variable, else config.RATES_FILE. No file, or an element with no class: no fields.
+variable (the app sets it). No file, or an element with no class: no fields.
 """
 from __future__ import annotations
 
@@ -10,16 +10,15 @@ import json
 import os
 from pathlib import Path
 
-try:
-    from config import RATES_FILE as _CONFIG_RATES_FILE
-except ImportError:  # config without the setting
-    _CONFIG_RATES_FILE = r"C:\insight-stack\data\rates.json"
-
 _cache = {"path": None, "mtime": None, "classes": {}, "walls": {}}
 
 
 def _load():
-    path = Path(os.environ.get("INSIGHT_RATES_FILE") or _CONFIG_RATES_FILE)
+    name = os.environ.get("INSIGHT_RATES_FILE")
+    if not name:
+        _cache.update(path=None, mtime=None, classes={}, walls={})
+        return
+    path = Path(name)
     try:
         mtime = path.stat().st_mtime
     except OSError:

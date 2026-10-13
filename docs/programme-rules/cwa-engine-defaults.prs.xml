@@ -1,0 +1,221 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  First rules file: everything the scenario engine does today, written as rules the Rules panel can import
+  (Rules tab > Import). Importing it into a scenario must change nothing: the parity run of a real model gives the same
+  activities, links and dates with and without it. From here, edit a row to change a rule; the original value is in the
+  comment or in scenario-engine/config.py.
+
+  What is in the file (sections the engine reads today; see README.md, "The Rules panel"):
+    settings     config.py switches and distances, at their current values
+    rates        durations per phase (config.py DURATIONS), rebar t/m3 (REBAR_TONNES_PER_M3), crew rules (CREW_TABLE)
+    ruleGroups   WALLS, SLABS and RAFTS per building and level, to use in rates, crews, sequences and links
+
+  What is left out on purpose, because it would change the programme (examples at the end, commented out):
+    productivity (computed durations), levelTasks, sequences, contacts, levelLinks.
+  Extra activities and manual links belong to a scenario, so they are not here.
+  Not expressible yet: types, levels, numbering, build order, WBS, calendars, checks (the engine keeps them in code).
+-->
+<prs xmlns="https://insightplan.app/prs/1.0" version="1.0">
+  <info>
+    <title>CWA engine defaults (parity with config.py)</title>
+    <date>2026-10-12</date>
+  </info>
+
+  <!-- ===================================================================================================
+       SETTINGS  (config.py; each key is the panel's setting)
+       =================================================================================================== -->
+  <settings>
+    <!-- Level gate: a slab's first task waits for the concrete of the pours on the level below that touch it. -->
+    <setting key="levelGate" value="true"/>                          <!-- ENABLE_LEVEL_GATE -->
+    <setting key="levelGateSlabsOnly" value="true"/>                 <!-- LEVEL_GATE_SLABS_ONLY -->
+    <setting key="levelGateDeckingConcreteOnly" value="true"/>       <!-- LEVEL_GATE_DECKING_CONCRETE_ONLY -->
+    <setting key="levelGateMaxDistanceM" value="0.05"/>              <!-- LEVEL_GATE_MAX_DISTANCE_M (0 = no limit) -->
+
+    <!-- Open ends and close-out. -->
+    <setting key="completionCloseout" value="true"/>                 <!-- ENABLE_COMPLETION_CLOSEOUT -->
+    <setting key="openEndSequencing" value="true"/>                  <!-- ENABLE_OPEN_END_SEQUENCING -->
+    <setting key="openEndMaxDistanceM" value="0.3"/>                 <!-- OPEN_END_MAX_DISTANCE_M -->
+    <setting key="openEndNearestSlabFallback" value="true"/>         <!-- OPEN_END_NEAREST_SLAB_FALLBACK -->
+
+    <!-- Curing holds back what follows (Curing itself is a phase of the slab chain, Rules > Chains). -->
+    <setting key="slabCuringGatesSuccessors" value="false"/>         <!-- SLAB_CURING_GATES_SUCCESSORS -->
+
+    <!-- Clash positions. -->
+    <setting key="sideOverlapThreshold" value="0.5"/>                <!-- CLASH_POSITION_SIDE_OVERLAP_THRESHOLD -->
+
+    <!-- Off by default today. -->
+    <setting key="groupMilestones" value="false"/>                   <!-- ENABLE_GROUP_MILESTONES -->
+    <setting key="buildingCompletion" value="false"/>                <!-- ENABLE_BUILDING_COMPLETION -->
+  </settings>
+
+  <rates>
+    <!-- ===============================================================================================
+         DURATIONS  (the table config.py DURATIONS held: days per phase, by the kind of pour)
+         A row sets the days of the phases it lists for the pours its "when" fits; per phase the row with the most
+         conditions wins, a tie goes to the earlier row. Embedments + Formwork are the one EP+FWK activity.
+         Pours of any other family (columns, beams, landings, parapets...) take the "Other" row (empty "when"): the engine
+         has no table of its own now, so a pour no row fits takes 1 day per phase.
+         =============================================================================================== -->
+    <durations>
+      <row id="DUR-OTHER" note="Other: every pour no row below fits (floors, columns, beams, pedestals ...)">
+        <days phase="Rebar" value="5"/>
+        <days phase="Embedments" value="2"/>
+        <days phase="Formwork" value="4"/>
+        <days phase="Concrete" value="1"/>
+      </row>
+      <row id="DUR-EXT-WALL" note="Standard External Wall">
+        <when family="wall" external="true" doubleHeight="false"/>
+        <days phase="Rebar" value="7"/>
+        <days phase="Embedments" value="2"/>
+        <days phase="Formwork" value="3"/>
+        <days phase="Concrete" value="1"/>
+      </row>
+      <row id="DUR-EXT-WALL-DH" note="Double Height External Wall">
+        <when family="wall" external="true" doubleHeight="true"/>
+        <days phase="Rebar" value="12"/>
+        <days phase="Embedments" value="4"/>
+        <days phase="Formwork" value="5"/>
+        <days phase="Concrete" value="1"/>
+      </row>
+      <row id="DUR-INT-WALL" note="Standard Internal Wall">
+        <when family="wall" external="false" doubleHeight="false"/>
+        <days phase="Rebar" value="4"/>
+        <days phase="Embedments" value="6"/>
+        <days phase="Formwork" value="3"/>
+        <days phase="Concrete" value="1"/>
+      </row>
+      <row id="DUR-INT-WALL-DH" note="Double Height Internal Wall">
+        <when family="wall" external="false" doubleHeight="true"/>
+        <days phase="Rebar" value="9"/>
+        <days phase="Embedments" value="8"/>
+        <days phase="Formwork" value="3"/>
+        <days phase="Concrete" value="1"/>
+      </row>
+      <row id="DUR-SLAB" note="Standard Internal Slab (the engine names these types exactly; a FLOOR or other slab-like type is 'Other')">
+        <when type="SLAB|MAIN_SLAB|PITS_&amp;_RAFT|PIT"/>
+        <days phase="Rebar" value="18"/>
+        <days phase="Embedments" value="18"/>
+        <days phase="Formwork" value="2"/>
+        <days phase="Concrete" value="1"/>
+      </row>
+      <row id="DUR-RAFT" note="Rafts use the slab row">
+        <when family="raft"/>
+        <days phase="Rebar" value="18"/>
+        <days phase="Embedments" value="18"/>
+        <days phase="Formwork" value="2"/>
+        <days phase="Concrete" value="1"/>
+      </row>
+
+      <!-- Slab phases (activity_generator.py): one day each. -->
+      <row id="DUR-SLAB-PHASES" note="Decking, Under Slab, EOP on Slab and FWK of slabs and rafts">
+        <when family="slab"/>
+        <days phase="Decking" value="1"/>
+        <days phase="Under Slab" value="1"/>
+        <days phase="EOP on Slab" value="1"/>
+        <days phase="FWK" value="1"/>
+      </row>
+      <row id="DUR-RAFT-PHASES" note="EOP on Slab and FWK of rafts">
+        <when family="raft"/>
+        <days phase="EOP on Slab" value="1"/>
+        <days phase="FWK" value="1"/>
+      </row>
+
+      <!-- Precast (config.py PRECAST_*_DEFINITION). Curing is in calendar days on the 7-day calendar. -->
+      <row id="DUR-PRECAST" note="Precast: Installation 1, Stitching 2">
+        <when family="precast"/>
+        <days phase="Installation" value="1"/>
+        <days phase="Stitching" value="2"/>
+      </row>
+      <row id="DUR-HEAVY-PRECAST" note="Heavy precast: Propping 1, Installation 1, Stitching 2, Curing 28, Propping Removal 1">
+        <when family="heavyPrecast"/>
+        <days phase="Propping" value="1"/>
+        <days phase="Installation" value="1"/>
+        <days phase="Stitching" value="2"/>
+        <days phase="Curing" value="28"/>
+        <days phase="Propping Removal" value="1"/>
+      </row>
+    </durations>
+
+    <!-- ===============================================================================================
+         REBAR  (config.py REBAR_TONNES_PER_M3: 0.25 t per m3 for every type)
+         =============================================================================================== -->
+    <rebar>
+      <row id="REBAR-DEFAULT" tonnesPerM3="0.25" note="Every pour (DEFAULT, WALL, SLAB, MAIN_SLAB and RAFT are all 0.25)"/>
+    </rebar>
+
+    <!-- ===============================================================================================
+         CREWS  (config.py CREW_TABLE: the people on an activity every day of its duration)
+         A row with a "type" wins over the plain phase row (the table's "Rebar|SLAB" entries). Trades:
+         SF steel fixers, CP carpenters, CG concrete gang, GO general operatives, EM embedments fixers, PE precast erectors.
+         =============================================================================================== -->
+    <crewRules>
+      <row id="CREW-REBAR" phase="Rebar"><trade ref="SF" size="6"/></row>
+      <row id="CREW-REBAR-SLAB" phase="Rebar"><when type="SLAB"/><trade ref="SF" size="8"/></row>
+      <row id="CREW-REBAR-MAIN-SLAB" phase="Rebar"><when type="MAIN_SLAB"/><trade ref="SF" size="8"/></row>
+      <row id="CREW-REBAR-RAFT" phase="Rebar"><when type="RAFT"/><trade ref="SF" size="10"/></row>
+      <row id="CREW-FORMWORK" phase="Formwork"><trade ref="CP" size="6"/></row>
+      <row id="CREW-WORKS-BEFORE-SLAB" phase="Works before slab"><trade ref="GO" size="4"/></row>
+      <row id="CREW-DECKING" phase="Decking"><trade ref="CP" size="6"/></row>
+      <row id="CREW-UNDER-SLAB" phase="Under Slab"><trade ref="GO" size="4"/></row>
+      <row id="CREW-EOP-ON-SLAB" phase="EOP on Slab"><trade ref="EM" size="3"/></row>
+      <row id="CREW-FWK" phase="FWK"><trade ref="CP" size="4"/></row>
+      <row id="CREW-CONCRETE" phase="Concrete"><trade ref="CG" size="6"/></row>
+      <row id="CREW-RFC" phase="Rebar, Formwork and Concrete"><trade ref="SF" size="3"/><trade ref="CP" size="3"/><trade ref="CG" size="3"/></row>
+      <row id="CREW-PROPPING" phase="Propping"><trade ref="PE" size="4"/></row>
+      <row id="CREW-INSTALLATION" phase="Installation"><trade ref="PE" size="6"/></row>
+      <row id="CREW-STITCHING" phase="Stitching"><trade ref="SF" size="2"/><trade ref="CG" size="3"/></row>
+      <row id="CREW-CURING" phase="Curing"/>
+      <row id="CREW-PROPPING-REMOVAL" phase="Propping Removal"><trade ref="PE" size="4"/></row>
+    </crewRules>
+
+    <!-- Computed durations (quantity x man-hours per unit / (crew x shifts x hours per shift)) change the programme, so
+         none is on. SF-003 as a row: steel fixers 12, two shifts of 9.17 h, 85 Mh per tonne, whole days, at least one.
+         Put it in a <productivity> section here to use it.
+    <productivity>
+      <row id="PROD-REBAR-WALLS" phase="Rebar" basis="rebar" manhoursPerUnit="85" crew="12" shifts="2" hoursPerShift="9.17" rounding="ceil" minDays="1">
+        <when family="wall" levelFrom="L0" levelTo="L2"/>
+      </row>
+    </productivity>
+    -->
+  </rates>
+
+  <!-- ===================================================================================================
+       RULE GROUPS  (named selections of pours; "forEach" makes one group per value, here per building and level)
+       Used by name in the "group" term of any row above, in sequences, level tasks and links. Not the 4D Link Groups.
+       =================================================================================================== -->
+  <ruleGroups>
+    <ruleGroup id="WALLS" name="Walls" forEach="building level"><select family="wall"/></ruleGroup>
+    <ruleGroup id="SLABS" name="Slabs" forEach="building level"><select family="slab"/></ruleGroup>
+    <ruleGroup id="RAFTS" name="Rafts" forEach="building"><select family="raft"/></ruleGroup>
+    <!-- What the generator leaves out of the schedule, and the stair steps, are groups: treatAs="exclude" leaves the pours of a group out,
+         treatAs="stairStep" makes them steps cast with their stair flight. These replace the smallest pour (0.25 m3), the excluded pour types
+         and the stair step volume (0.09 m3) settings, which are not used once such groups exist. -->
+    <ruleGroup id="NOT-SCHEDULED" name="Pour types not scheduled" treatAs="exclude"><select type="BOSS|SCREED|GROUT|SPECIAL"/></ruleGroup>
+    <ruleGroup id="SMALL" name="Pours under 0.25 m3 (a stair is never small)" treatAs="exclude"><select volumeBelow="0.25" typeNot="STAIR"/></ruleGroup>
+    <ruleGroup id="STAIR-STEPS" name="Stair steps" treatAs="stairStep"><select type="STAIR" volumeBelow="0.09"/></ruleGroup>
+  </ruleGroups>
+
+  <!-- ===================================================================================================
+       OPTIONAL, OFF: they add tasks or links the engine does not write today. Move one out of this comment to use it.
+
+  <levelTasks>
+    <task id="WALLS" name="Walls" ruleGroup="WALLS" dates="rollup"/>
+    <task id="SLABS" name="Slabs" ruleGroup="SLABS" dates="rollup"/>
+  </levelTasks>
+
+  <sequences>
+    <sequence id="BUILD-UP" name="Build up" type="FS" lagHours="0">
+      <step ruleGroup="RAFTS"/>
+      <step ruleGroup="WALLS" perLevel="true"/>
+      <step ruleGroup="SLABS" perLevel="true"/>
+    </sequence>
+  </sequences>
+
+  <contacts>
+    <contact id="SLABS-ON-WALLS" name="Slabs wait for what is below them" contact="below" position="any" predEnd="final" succEnd="start" direction="subjectIsSuccessor" type="FS" lagHours="0" maxLevelGap="1" ignoreStage2="true" replaceBuiltIn="slabSupport levelGate">
+      <subject family="slab"/>
+      <with family="wall|column"/>
+    </contact>
+  </contacts>
+       =================================================================================================== -->
+</prs>

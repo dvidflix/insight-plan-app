@@ -8,6 +8,8 @@ import type { BrowserProjectDb } from './browserDb';
 export interface DbHost {
   /** The project folder's database (opened on first use). */
   database(root: unknown): Promise<BrowserProjectDb>;
+  /** Writes plain files into the project folder (the export files of Settings > Import / Export). */
+  writeFiles(root: unknown, files: { name: string; content: string }[]): Promise<string[]>;
   /** How the file is doing: saved, waiting to be saved, or failing. */
   saveStatus(root: unknown): { dirty: boolean; savedAt: number | null; error: string | null };
 }
@@ -50,6 +52,12 @@ export async function handleDbRequest(host: DbHost, method: string, route: strin
     if (get && route === 'opened') return ok({ files: [] });
     if (get && route === 'changes') return ok({ changes: (await host.database(root)).changes() });
     if (get && route === 'save-status') return ok(host.saveStatus(root));
+    if (post && route === 'export-files') {
+      const b = json(body);
+      const files = (Array.isArray(b.files) ? b.files : []) as { name: string; content: string }[];
+      for (const f of files) if (!/^insight-plan-[a-z]+\.json$/.test(String(f?.name)) || typeof f.content !== 'string') throw new HttpError(400, `Not an export file: ${f?.name}`);
+      return ok({ folder: String(b.root ?? ''), written: await host.writeFiles(b.root, files) });
+    }
 
     // ---- programmes ----
     if (get && route === 'programmes') return ok({ programmes: (await host.database(root)).programmes() });

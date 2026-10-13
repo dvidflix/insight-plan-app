@@ -36,6 +36,7 @@ export function WbsView({ model, activities, wbsPalette }: WbsViewProps) {
   const key = programmeKey(model);
   const unloaded = useUnloadedWbsStore((s) => s.byProgramme[key]) ?? NONE;
   const toggleUnloaded = useUnloadedWbsStore((s) => s.toggle);
+  const setManyUnloaded = useUnloadedWbsStore((s) => s.setMany);
   const clearUnloaded = useUnloadedWbsStore((s) => s.clear);
   const full = useScheduleStore((s) => s.schedules.find((m) => m.id === model.id));
   const shown = useMemo(
@@ -50,8 +51,11 @@ export function WbsView({ model, activities, wbsPalette }: WbsViewProps) {
   const resources = useMemo(() => [...loading.resources.filter((r) => r.type === 'labor'), ...loading.resources.filter((r) => r.type !== 'labor')], [loading.resources]);
   const optional = useMemo(() => wbsColumns(resources).filter((c) => c.id !== WBS_NAME_COL), [resources]);
 
-  // A remembered level is applied when the tree is first built.
+  // A remembered level is applied when the tree is first built (not again when unloading a WBS changes the activity count).
+  const levelApplied = useRef(false);
   useEffect(() => {
+    if (levelApplied.current || activities.length === 0) return;
+    levelApplied.current = true;
     if (level !== '') ref.current?.setLevel(Number(level));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activities.length]);
@@ -131,6 +135,7 @@ export function WbsView({ model, activities, wbsPalette }: WbsViewProps) {
         activities={shown}
         unloaded={unloaded}
         onToggleUnloaded={(path) => toggleUnloaded(key, path)}
+        onSetUnloaded={(paths, out) => setManyUnloaded(key, paths, out)}
         spans={loading.spans}
         resources={resources}
         wbsPalette={wbsPalette}

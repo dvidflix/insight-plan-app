@@ -3,7 +3,13 @@ import { useViewpointStore, type ViewpointRecord } from './viewpointStore';
 import { useDataTableStore, type DataTablePreset } from './dataTableStore';
 import { useScheduleLayoutsStore, type ScheduleLayout } from './scheduleLayoutsStore';
 import { useMarkersStore, type Marker } from './markersStore';
+import { useLinkGroupsStore } from './linkGroupsStore';
+import { useTagsStore, type Tag } from './tagsStore';
+import { useAppearanceStore } from './appearanceStore';
+import type { LinkGroup } from '../schedule/linkGroups';
+import type { AppearanceProfile } from '../schedule/appearance';
 import { useConstructionPlanesStore, type ConstructionPlane } from './constructionPlanesStore';
+import { writeExportFiles } from '../db/api';
 import { PERSISTED_CONFIG_PREFIXES, snapshotPersistedConfig } from '../utils/persistedState';
 import type { SearchSet } from '../viewer/searchSets';
 
@@ -12,7 +18,7 @@ import type { SearchSet } from '../viewer/searchSets';
     without choosing the row first. Importing adds what is new and replaces what has the same id (name for the
     data table presets), and never removes anything. */
 export interface DataPort {
-  id: 'options' | 'sets' | 'viewpoints' | 'datatable' | 'layouts' | 'decorators';
+  id: 'options' | 'sets' | 'viewpoints' | 'datatable' | 'layouts' | 'decorators' | 'linkgroups' | 'appearance' | 'tags';
   label: string;
   hint: string;
   /** How many items there are now. */
@@ -136,6 +142,42 @@ export const DATA_PORTS: DataPort[] = [
     },
   },
   {
+    id: 'linkgroups',
+    label: 'Link Groups',
+    hint: 'The 4D Link Groups: which objects each activity drives. A group with the same id is replaced.',
+    count: () => useLinkGroupsStore.getState().groups.length,
+    collect: () => useLinkGroupsStore.getState().groups,
+    apply: (data) => {
+      const { next, added, updated } = mergeById(useLinkGroupsStore.getState().groups, list<LinkGroup>(data, 'link groups'), (g) => g.id);
+      useLinkGroupsStore.getState().replaceAll(next);
+      return { added, updated };
+    },
+  },
+  {
+    id: 'appearance',
+    label: 'Appearance Profiles',
+    hint: 'The 4D Appearance Profiles: how objects look before, during and after their activity. A profile with the same id is replaced.',
+    count: () => useAppearanceStore.getState().profiles.length,
+    collect: () => useAppearanceStore.getState().profiles,
+    apply: (data) => {
+      const { next, added, updated } = mergeById(useAppearanceStore.getState().profiles, list<AppearanceProfile>(data, 'appearance profiles'), (p) => p.id);
+      useAppearanceStore.getState().replaceAll(next);
+      return { added, updated };
+    },
+  },
+  {
+    id: 'tags',
+    label: 'Tags',
+    hint: 'The 4D tags (on-viewer labels): name, text with its task and object tokens, placement and look. A tag with the same id is replaced.',
+    count: () => useTagsStore.getState().tags.length,
+    collect: () => useTagsStore.getState().tags,
+    apply: (data) => {
+      const { next, added, updated } = mergeById(useTagsStore.getState().tags, list<Tag>(data, 'tags'), (t) => t.id);
+      useTagsStore.setState({ tags: next });
+      return { added, updated };
+    },
+  },
+  {
     id: 'decorators',
     label: 'Decorators',
     hint: 'Markers and construction planes (Views > Decorators).',
@@ -152,6 +194,16 @@ export const DATA_PORTS: DataPort[] = [
     },
   },
 ];
+
+const portFile = (port: DataPort) => ({
+  name: `${KIND_PREFIX}${port.id}.json`,
+  content: JSON.stringify({ kind: `${KIND_PREFIX}${port.id}`, version: FILE_VERSION, exportedAt: new Date().toISOString(), data: port.collect() }, null, 2),
+});
+
+/** Every list as its export file, written into the project folder (the files "Export" would download). Resolves to the folder and the file names. */
+export async function exportAllToProject(root: string): Promise<{ folder: string; written: string[] }> {
+  return writeExportFiles(root, DATA_PORTS.map(portFile));
+}
 
 export function exportPort(port: DataPort) {
   const payload = { kind: `${KIND_PREFIX}${port.id}`, version: FILE_VERSION, exportedAt: new Date().toISOString(), data: port.collect() };

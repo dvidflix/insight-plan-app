@@ -42,4 +42,13 @@ export async function fetchFileDetails(): Promise<FileDetails> {
   return { fields: r.fields, values: Object.fromEntries(r.files.map((f) => [f.name, f.values])), note: r.note };
 }
 
+export interface DetailUpdate {
+  name: string;
+  field: string;
+  values: string[];
+}
+
+/** Writes edited details to the files table; `missing` are the files it does not have yet (they go with the next push). */
+export const updateFileDetails = (updates: DetailUpdate[]) => api<{ updated: number; missing: string[] }>('files/update', { method: 'POST', body: { updates } });
+
 export const pushFiles = (files: PushFile[]) => api<{ added: number; updated: number }>('files/push', { method: 'POST', body: { files } });

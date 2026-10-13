@@ -1,4 +1,5 @@
 import { XER_TABLE_COLUMNS } from '../schedule/parsers/xerColumns';
+import { normalizeRules, totalRules } from '../prs/rules';
 
 /** The project database's logic, independent of where SQLite runs: the dev / production server (node:sqlite, see
     vite-plugins/db/projectDb.ts) and the browser edition (SQLite compiled to WebAssembly, see src/web/). Both give it a
@@ -11,9 +12,11 @@ export interface SequenceItem { GUID: string; Index: number; Phase?: string }
 export interface Relation { ActivityID1: string; ActivityID2: string; Relation: string; Lag: number }
 /** Replaces the default crews of a phase (or phase + pour type). */
 export interface Crew { Phase: string; PourType: string; Trade: string; Crew: string }
+/** An extra activity of a scenario (from a high-level programme): a milestone or work the generated programme does not make. */
+export interface Extra { TaskID: string; Name: string; DurationDays: number; BaselineStart: string; BaselineFinish: string }
 /** A flag on a pour (its GUID) or a group of the Scenarios table (its key), for review: 'flag' = to fix, 'done' = fixed. */
 export interface Flag { Key: string; State: 'flag' | 'done' }
-export interface ScenarioContent { sequence: SequenceItem[]; relations: Relation[]; crews: Crew[]; flags?: Flag[]; /** The WBS order to write into the generated schedule (parent path -> children paths); not stored with the scenario. */ wbsOrder?: Record<string, string[]> }
+export interface ScenarioContent { sequence: SequenceItem[]; relations: Relation[]; crews: Crew[]; flags?: Flag[]; extras?: Extra[]; /** The scenario's programme rules (src/prs/rules.ts), stored as one JSON document. */ rules?: Record<string, unknown>; /** The WBS order to write into the generated schedule (parent path -> children paths); not stored with the scenario. */ wbsOrder?: Record<string, string[]> }
 
 /** An error with the HTTP status the API answers with. */
 export class HttpError extends Error {
@@ -96,6 +99,28 @@ CREATE TABLE IF NOT EXISTS ip_scenario_link (
   succ_task_code TEXT NOT NULL,
   rel_type TEXT NOT NULL DEFAULT 'FS' CHECK (rel_type IN ('FS', 'SS', 'FF', 'SF')),
   lag_hours REAL NOT NULL DEFAULT 0,
+  FOREIGN KEY (scenario, stem) REFERENCES ip_scenario_model (scenario, stem) ON DELETE CASCADE ON UPDATE CASCADE
+);
+-- Extra activities of the scenario (a high-level programme's milestones and work): added to the generated programme.
+-- Baseline dates (yyyy-mm-dd) become the activity's target dates. Duration 0 is a milestone.
+CREATE TABLE IF NOT EXISTS ip_scenario_extra (
+  id INTEGER PRIMARY KEY,
+  scenario TEXT NOT NULL,
+  stem TEXT NOT NULL,
+  task_code TEXT NOT NULL,
+  name TEXT NOT NULL DEFAULT '',
+  duration_days REAL NOT NULL DEFAULT 0,
+  baseline_start TEXT NOT NULL DEFAULT '',
+  baseline_finish TEXT NOT NULL DEFAULT '',
+  FOREIGN KEY (scenario, stem) REFERENCES ip_scenario_model (scenario, stem) ON DELETE CASCADE ON UPDATE CASCADE
+);
+-- Programme rules of the scenario (src/prs/rules.ts): durations, rebar, crews, rule groups, level tasks, sequences, contact
+-- links, settings. One JSON document per scenario and model; the generator reads it (scenario-engine/core/rules.py).
+CREATE TABLE IF NOT EXISTS ip_scenario_rules (
+  scenario TEXT NOT NULL,
+  stem TEXT NOT NULL,
+  rules_json TEXT NOT NULL,
+  PRIMARY KEY (scenario, stem),
   FOREIGN KEY (scenario, stem) REFERENCES ip_scenario_model (scenario, stem) ON DELETE CASCADE ON UPDATE CASCADE
 );
 -- Crews: the rows for a phase (or phase + pour type) replace that phase's
@@ -552,7 +577,7 @@ export abstract class ProjectDbBase {
 
   // ---- scenarios ----
 
-  listScenarios(): { name: string; models: { stem: string; saved: number; generated: number | null }[] }[] {
+  listScenarios(): { name: string; models: { stem: string; saved: number; generated: number | null; rules: number; joins: number }[] }[] {
     const rows = this.db
       .prepare(
         `SELECT s.name, m.stem, m.saved_at,
@@ -562,11 +587,17 @@ export abstract class ProjectDbBase {
          ORDER BY s.name, m.stem`,
       )
       .all() as { name: string; stem: string | null; saved_at: string | null; generated: string | null }[];
-    const out = new Map<string, { name: string; models: { stem: string; saved: number; generated: number | null }[] }>();
+    // How many rules each saved scenario holds (and how many objects are joined), for the scenario list.
+    const ruleCounts = new Map<string, { rules: number; joins: number }>();
+    for (const r of this.db.prepare('SELECT scenario, stem, rules_json FROM ip_scenario_rules').all() as { scenario: string; stem: string; rules_json: string }[]) {
+      const rules = normalizeRules(parseJson(r.rules_json, undefined));
+      ruleCounts.set(`${r.scenario}|${r.stem}`, { rules: totalRules(rules), joins: (rules.joins ?? []).length });
+    }
+    const out = new Map<string, { name: string; models: { stem: string; saved: number; generated: number | null; rules: number; joins: number }[] }>();
     for (const r of rows) {
       const s = out.get(r.name) ?? { name: r.name, models: [] };
       out.set(r.name, s);
-      if (r.stem) s.models.push({ stem: r.stem, saved: Date.parse(r.saved_at ?? '') || 0, generated: r.generated ? Date.parse(r.generated) : null });
+      if (r.stem) s.models.push({ stem: r.stem, saved: Date.parse(r.saved_at ?? '') || 0, generated: r.generated ? Date.parse(r.generated) : null, rules: ruleCounts.get(`${r.name}|${r.stem}`)?.rules ?? 0, joins: ruleCounts.get(`${r.name}|${r.stem}`)?.joins ?? 0 });
     }
     // Scenario programmes with no saved order yet (loaded from a file or
     // another project): listed too, so they open as scenarios (saved = 0).
@@ -580,7 +611,7 @@ export abstract class ProjectDbBase {
     for (const o of orphans) {
       const s = out.get(o.scenario) ?? { name: o.scenario, models: [] };
       out.set(o.scenario, s);
-      if (!s.models.some((m) => m.stem === o.stem)) s.models.push({ stem: o.stem, saved: 0, generated: o.generated ? Date.parse(o.generated) : null });
+      if (!s.models.some((m) => m.stem === o.stem)) s.models.push({ stem: o.stem, saved: 0, generated: o.generated ? Date.parse(o.generated) : null, rules: 0, joins: 0 });
     }
     return [...out.values()].sort((a, b) => a.name.localeCompare(b.name));
   }
@@ -612,7 +643,17 @@ export abstract class ProjectDbBase {
       crew: number;
     }[];
     const flags = this.db.prepare('SELECT key, state FROM ip_scenario_flag WHERE scenario = ? AND stem = ? ORDER BY key').all(...args) as { key: string; state: 'flag' | 'done' }[];
+    const extras = this.db.prepare('SELECT task_code, name, duration_days, baseline_start, baseline_finish FROM ip_scenario_extra WHERE scenario = ? AND stem = ? ORDER BY id').all(...args) as {
+      task_code: string;
+      name: string;
+      duration_days: number;
+      baseline_start: string;
+      baseline_finish: string;
+    }[];
+    const ruleRow = this.db.prepare('SELECT rules_json FROM ip_scenario_rules WHERE scenario = ? AND stem = ?').get(...args) as { rules_json: string } | undefined;
     return {
+      rules: ruleRow ? parseJson(ruleRow.rules_json, undefined) : undefined,
+      extras: extras.map((e) => ({ TaskID: e.task_code, Name: e.name, DurationDays: Number(e.duration_days) || 0, BaselineStart: e.baseline_start, BaselineFinish: e.baseline_finish })),
       flags: flags.map((f) => ({ Key: f.key, State: f.state })),
       sequence: steps.map((s) => ({ GUID: s.guid, Index: Math.trunc(Number(s.step)), Phase: s.phase ?? '' })),
       relations: links.map((l) => ({ ActivityID1: l.pred_task_code, ActivityID2: l.succ_task_code, Relation: l.rel_type, Lag: Number(l.lag_hours) || 0 })),
@@ -627,7 +668,7 @@ export abstract class ProjectDbBase {
       this.db
         .prepare('INSERT INTO ip_scenario_model (scenario, stem, saved_at) VALUES (?, ?, ?) ON CONFLICT (scenario, stem) DO UPDATE SET saved_at = excluded.saved_at')
         .run(scenario, stem, savedAt);
-      for (const t of ['ip_scenario_step', 'ip_scenario_link', 'ip_scenario_crew', 'ip_scenario_flag']) this.db.prepare(`DELETE FROM ${t} WHERE scenario = ? AND stem = ?`).run(...args);
+      for (const t of ['ip_scenario_step', 'ip_scenario_link', 'ip_scenario_crew', 'ip_scenario_flag', 'ip_scenario_extra', 'ip_scenario_rules']) this.db.prepare(`DELETE FROM ${t} WHERE scenario = ? AND stem = ?`).run(...args);
       const step = this.db.prepare('INSERT OR REPLACE INTO ip_scenario_step (scenario, stem, guid, step, phase) VALUES (?, ?, ?, ?, ?)');
       for (const s of content.sequence) step.run(scenario, stem, s.GUID, Math.trunc(s.Index), s.Phase || null);
       const link = this.db.prepare('INSERT INTO ip_scenario_link (scenario, stem, pred_task_code, succ_task_code, rel_type, lag_hours) VALUES (?, ?, ?, ?, ?, ?)');
@@ -640,6 +681,18 @@ export abstract class ProjectDbBase {
       }
       const flag = this.db.prepare('INSERT OR REPLACE INTO ip_scenario_flag (scenario, stem, key, state) VALUES (?, ?, ?, ?)');
       for (const f of content.flags ?? []) if (f.Key && (f.State === 'flag' || f.State === 'done')) flag.run(scenario, stem, f.Key, f.State);
+      const extra = this.db.prepare('INSERT INTO ip_scenario_extra (scenario, stem, task_code, name, duration_days, baseline_start, baseline_finish) VALUES (?, ?, ?, ?, ?, ?, ?)');
+      const seen = new Set<string>();
+      for (const e of content.extras ?? []) {
+        const code = String(e.TaskID ?? '').trim();
+        if (!code || seen.has(code.toUpperCase())) continue;
+        seen.add(code.toUpperCase());
+        const day = (v: unknown) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v ?? '').trim()) ? String(v).trim() : '');
+        extra.run(scenario, stem, code, String(e.Name ?? '').trim(), Math.max(0, Number(e.DurationDays) || 0), day(e.BaselineStart), day(e.BaselineFinish));
+      }
+      if (content.rules && Object.keys(content.rules).length) {
+        this.db.prepare('INSERT INTO ip_scenario_rules (scenario, stem, rules_json) VALUES (?, ?, ?)').run(scenario, stem, JSON.stringify(content.rules));
+      }
       const crew = this.db.prepare('INSERT INTO ip_scenario_crew (scenario, stem, phase, pour_type, trade, crew) VALUES (?, ?, ?, ?, ?, ?)');
       for (const c of content.crews) {
         const phase = String(c.Phase ?? '').trim();

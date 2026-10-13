@@ -41,9 +41,10 @@ sys.stdout = sys.stderr
 import ifcopenshell  # noqa: E402
 import pandas as pd  # noqa: E402
 
+import config as _config  # noqa: E402
 import main as engine  # noqa: E402
 from core.excel_exporter import _build_sequence_order_template  # noqa: E402
-from config import CREW_TABLE, LABOUR_TRADES  # noqa: E402
+from core import pours_cache  # noqa: E402
 
 
 class NeedsFullRun(Exception):
@@ -138,13 +139,15 @@ def _pours(req, session, input_path: Path, scenario_dir: Path):
             str(rec.get("building_zone", "") or ""),
             "Yes" if str(rec.get("include", "NO")).upper() == "YES" else "No",
         ])
-    phases = sorted({k.split("|")[0] for k in CREW_TABLE})
+    phases = sorted({c["phase"] for c in _config.DEFAULT_CHAIN + _config.DEFAULT_PRECAST_CHAIN})
     session["pours"] = {
         "headers": headers,
         "rows": rows,
-        "trades": [{"code": code, "name": t.get("name", code), "capacity": t.get("capacity")} for code, t in LABOUR_TRADES.items()],
+        "trades": [],  # the scenario's Trade rules (the panel lists them)
         "phases": phases,
-        "defaultCrews": [{"key": k, "crews": [[t, c] for t, c in v]} for k, v in CREW_TABLE.items()],
+        "defaultCrews": [],
+        # What the generator does without rules (the Rules panel shows it next to the scenario's own rows).
+        "defaults": {**engine._rules.engine_defaults(), "pourTypes": sorted(engine.CONTEMPLATED_POUR_TYPES)},
     }
     return session["pours"]
 
@@ -156,12 +159,22 @@ def _handle(req):
     input_path = Path(req["input"])
     scenario_dir = Path(req["scenarioDir"])
     stem = input_path.stem
-    session = _session(input_path, scenario_dir)
     op = req.get("op") or "generate"
+    if op == "pours":
+        # The pour list is kept on disk (core/pours_cache.py): while the model and the generator are the same, opening a scenario does not
+        # open the IFC, build the pours or generate a programme again.
+        ifc_dir = scenario_dir / "2-enriched-ifc"
+        key = pours_cache.key_for(input_path, ifc_dir / f"{stem}.ifc", ifc_dir / f"{stem}.geometry_cache.json")
+        hit = pours_cache.read(scenario_dir, stem, key)
+        if hit is not None:
+            return hit
+        result = _pours(req, _session(input_path, scenario_dir), input_path, scenario_dir)
+        # (a first run may have written the geometry cache the key is made from)
+        pours_cache.write(scenario_dir, stem, pours_cache.key_for(input_path, ifc_dir / f"{stem}.ifc", ifc_dir / f"{stem}.geometry_cache.json"), result)
+        return result
+    session = _session(input_path, scenario_dir)
     if op == "warm":
         return None
-    if op == "pours":
-        return _pours(req, session, input_path, scenario_dir)
 
     overrides = engine.overrides_from_scenario(req)
     xml_path = scenario_dir / "3-schedule-xml" / f"{stem}.xml"

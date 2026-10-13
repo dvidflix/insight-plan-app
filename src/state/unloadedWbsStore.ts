@@ -12,6 +12,8 @@ interface UnloadedWbsState {
   /** programme key -> WBS paths ("A / B / C", as an activity's wbsPath) left out. */
   byProgramme: Record<string, string[]>;
   toggle: (key: string, path: string) => void;
+  /** Unload (out = true) or load (out = false) several WBS paths at once. */
+  setMany: (key: string, paths: string[], out: boolean) => void;
   clear: (key: string) => void;
 }
 
@@ -23,6 +25,15 @@ export const useUnloadedWbsStore = create<UnloadedWbsState>()(
         set((s) => {
           const cur = s.byProgramme[key] ?? [];
           const next = cur.includes(path) ? cur.filter((p) => p !== path) : [...cur, path];
+          const byProgramme = { ...s.byProgramme };
+          if (next.length) byProgramme[key] = next;
+          else delete byProgramme[key];
+          return { byProgramme };
+        }),
+      setMany: (key, paths, out) =>
+        set((s) => {
+          const cur = s.byProgramme[key] ?? [];
+          const next = out ? [...cur, ...paths.filter((p) => !cur.includes(p))] : cur.filter((p) => !paths.includes(p));
           const byProgramme = { ...s.byProgramme };
           if (next.length) byProgramme[key] = next;
           else delete byProgramme[key];

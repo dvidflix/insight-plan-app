@@ -12,9 +12,15 @@ from copy import deepcopy
 
 from core.helpers import title_case, get_plan_footprint
 from core.clash_position import classify_vertical_position, DEFINITELY_BELOW, MAJORITY_BELOW, DEFINITELY_ABOVE, MAJORITY_ABOVE
-from core.resources import crews_for, labour_resource_id, rebar_tonnes
+from core.resources import crews_for, labour_resource_id, labour_trades, rebar_tonnes
+from core import calendars as _calendars
+from core import rules as _rules_module
 from core.rates_info import rate_fields
-from config import LABOUR_TRADES, PROJECT_SHORT, ALT_POUR_ID_PROP
+from config import PROJECT_SHORT, ALT_POUR_ID_PROP
+
+def _rules_active():
+    return _rules_module.active()
+
 
 try:
     import config as _config
@@ -41,6 +47,11 @@ ENABLE_COMPLETION_CLOSEOUT = getattr(_config, "ENABLE_COMPLETION_CLOSEOUT", Fals
 # every-start-task-to-every-lower-final behaviour.
 LEVEL_GATE_SLABS_ONLY = getattr(_config, "LEVEL_GATE_SLABS_ONLY", True)
 ENABLE_LEVEL_GATE = getattr(_config, "ENABLE_LEVEL_GATE", True)
+# How the user's sequence steps follow each other (Rules > Settings > Sequence): False = each step starts when the previous one is finished;
+# True = a step starts SEQUENCE_LEAD_DAYS working days after the previous one starts, and the concrete is poured in step order.
+SEQUENCE_FLOW = getattr(_config, "SEQUENCE_FLOW", False)
+SEQUENCE_LEAD_DAYS = getattr(_config, "SEQUENCE_LEAD_DAYS", 3.0)
+_HOURS_PER_DAY = 8.0
 # Feeding a slab's first task (Decking): count only the lower level's pure
 # "Concrete" phase tasks, and drop stage-2 pours entirely.
 LEVEL_GATE_DECKING_CONCRETE_ONLY = getattr(_config, "LEVEL_GATE_DECKING_CONCRETE_ONLY", True)
@@ -55,15 +66,19 @@ OPEN_END_NEAREST_SLAB_FALLBACK = getattr(_config, "OPEN_END_NEAREST_SLAB_FALLBAC
 
 
 def _concrete_done_task(task_map):
-    """The task a pour's successors wait for: its Concrete, or (a slab with curing, when SLAB_CURING_GATES_SUCCESSORS
-    is on) the Curing that follows it. Heavy Precast has a Curing but no Concrete, so it is not affected."""
+    """The task a pour's successors wait for: the activity its chain marks as gating, else its Concrete, or (a slab with curing, when
+    SLAB_CURING_GATES_SUCCESSORS is on) the Curing that follows it. Heavy Precast has a Curing but no Concrete, so it is not affected."""
+    # A chain row marked "gates" (Rules > Chains) is what the pour's successors wait for, whatever it is called: a raft's Curing, say.
+    gates = _rules_active().gate_tasks
+    for task_id in task_map.values():
+        if task_id in gates:
+            return task_id
     concrete = task_map.get("Concrete")
     if concrete and SLAB_CURING_GATES_SUCCESSORS and task_map.get("Curing"):
         return task_map["Curing"]
     return concrete
 
 
-ENABLE_WORKS_BEFORE_SLAB = getattr(_config, "ENABLE_WORKS_BEFORE_SLAB", False)
 USE_ACTIVITY_BASED_ACTIVITY_CODES = getattr(_config, "USE_ACTIVITY_BASED_ACTIVITY_CODES", False)
 WBS_BUILDING_ROOT_OBJECT_ID = getattr(_config, "WBS_BUILDING_ROOT_OBJECT_ID", {"DEFAULT": 1})
 
@@ -220,51 +235,23 @@ def _build_intra_pour_predecessors(activities, sequence_order=None):
         if len(acts) < 2:
             continue
             
-        ptype = str(acts[0].get("rec", {}).get("pour_type", "")).upper()
-        gtype = str(acts[0].get("rec", {}).get("general_pour_type", "")).upper()
-        phase_map = {str(a.get("phase", "")).strip(): a.get("task_id") 
-                     for a in acts if a.get("phase")}
+        # The pour's activities in the order of its chain (Rules > Chains). Each follows the one before, or the phases its chain row names
+        # ("Decking@80, Under Slab": 80 % of Decking done, and Under Slab finished); the edges that are not finish-to-start are in `intra_edges`.
+        ordered = [a for a in sorted(acts, key=lambda a: a.get("phase_order", 0)) if a.get("task_id")]
+        by_phase = {str(a.get("phase", "")).strip().upper(): a for a in ordered}
+        for index, act in enumerate(ordered):
+            curr = act["task_id"]
+            edges = {}
+            for name, pct in act.get("follows") or []:
+                pred = by_phase.get(name.strip().upper())
+                if pred is not None and pred["task_id"] != curr:
+                    edges[pred["task_id"]] = pct
+            if not edges and index > 0 and ordered[index - 1]["task_id"] != curr:
+                edges[ordered[index - 1]["task_id"]] = 100.0
+            for pred_id, pct in edges.items():
+                predecessors[curr].append(pred_id)
+            act["intra_edges"] = edges
 
-        # (A raft has the slab's EOP on Slab / FWK phases, so it chains like a slab.)
-        if "SLAB" in ptype or "MAIN_SLAB" in ptype or "LANDING" in ptype or ptype == "RAFT":
-            order = [
-                "Works before slab",
-                "Decking",
-                "Under Slab", 
-                "Rebar", 
-                "EOP on Slab",
-                "FWK",
-                "Concrete",
-                "Curing",  # slabs and rafts only (ENABLE_SLAB_CURING); missing phases are skipped
-            ]
-        elif (
-            "PRECAST" in ptype
-            or "HEAVY_PRECAST" in gtype
-            or "REMOVABLE" in ptype
-            or ("STAIR" in ptype and not _is_insitu_stair(acts[0].get("rec", {})))
-        ):
-            # "Propping"/"Curing"/"Propping Removal" only exist for Heavy
-            # Precast pours (see activity_generator._is_heavy_precast_rec);
-            # phase_map.get() returns None for the rest, and the loop below
-            # skips missing phases, so listing them here is harmless for
-            # Removable/Stair. Curing's REAL predecessor is cross-record
-            # (the underlying wall's Concrete finishing, see
-            # _build_heavy_precast_wall_predecessors_from_clashes) — this
-            # intra-chain Stitching->Curing edge is just a safety-net
-            # fallback for when no supporting wall gets detected under it.
-            order = ["Propping", "Installation", "Stitching", "Curing", "Propping Removal"]
-        else:
-            order = ["Rebar", "Formwork", "EP+FWK", "Concrete"]
-
-        prev = None
-        for ph in order:
-            curr = phase_map.get(ph)
-            if not curr:
-                continue
-            if prev and curr != prev:
-                predecessors[curr].append(prev)
-            prev = curr
-                    
     return predecessors
 
 
@@ -813,6 +800,31 @@ def _build_heavy_precast_wall_predecessors_from_clashes(activities, clash_result
     return predecessors
 
 
+def _open_ended_tasks(activities, adjacency):
+    """The task ids with no successor yet. A Curing that does not hold back what follows (SLAB_CURING_GATES_SUCCESSORS off, and not a chain row
+    marked "gates") is looked through: it is the Concrete before it that is open-ended when nothing but that Curing follows it, so a pour
+    with a Curing is tied to the slab above (and the rest of the open-end logic) as it was without one."""
+    open_tasks = {a.get("task_id") for a in activities if a.get("task_id") and not adjacency.get(a.get("task_id"))}
+    if SLAB_CURING_GATES_SUCCESSORS:
+        return open_tasks
+    gates = _rules_active().gate_tasks
+    by_pour = defaultdict(dict)
+    for act in activities:
+        element = (act.get("rec") or {}).get("element")
+        guid = str(getattr(element, "GlobalId", "") or "").strip() if element else ""
+        phase = str(act.get("phase", "") or "").strip()
+        if guid and phase and act.get("task_id"):
+            by_pour[guid][phase] = act["task_id"]
+    for tasks in by_pour.values():
+        curing, concrete = tasks.get("Curing"), tasks.get("Concrete")
+        if not curing or not concrete or curing in gates or curing not in open_tasks:
+            continue
+        open_tasks.discard(curing)
+        if set(adjacency.get(concrete) or ()) <= {curing}:
+            open_tasks.add(concrete)
+    return open_tasks
+
+
 def _build_open_end_successors(activities, open_tasks):
     """Finds the next thing in the sequence for activities left with no successor, so they are not all
     dumped on the building's completion milestone.
@@ -1142,10 +1154,10 @@ def add_currency(root):
         ET.SubElement(currency, k).text = v
 
 
-def _add_calendar(root, object_id, name, hours_per_week, weekday_windows):
+def _add_calendar(root, object_id, name, hours_per_week, weekday_windows, hours_per_day=8.0):
     cal = ET.SubElement(root, "Calendar")
     ET.SubElement(cal, "BaseCalendarObjectId").set("xsi:nil", "true")
-    for k, v in [("HoursPerDay", "8.0"), ("HoursPerMonth", str(hours_per_week * 52.0 / 12.0)),
+    for k, v in [("HoursPerDay", str(float(hours_per_day))), ("HoursPerMonth", str(hours_per_week * 52.0 / 12.0)),
                  ("HoursPerWeek", str(hours_per_week)), ("HoursPerYear", str(hours_per_week * 52.0)),
                  ("Name", name), ("ObjectId", object_id),
                  ("ProjectObjectId", None), ("Type", "Global")]:
@@ -1167,36 +1179,13 @@ def _add_calendar(root, object_id, name, hours_per_week, weekday_windows):
 
 
 def add_detailed_calendar(root):
-    # CalendarObjectId "1" — every normal Activity. 09:00-17:00 is a true
-    # 8-hour day, matching HoursPerDay above and how duration_hours is
-    # derived from duration_days (* 8) elsewhere in this file. A 09:00-16:59
-    # window (7h59m) used to be here, one minute short of a full day, which
-    # made every whole-day-multiple duration overflow a minute into the next
-    # calendar day when CPM-scheduled.
-    _add_calendar(root, "1", "CWA 6d Calendar", 40.0, [
-        ("Sunday", None, None),
-        ("Monday", "09:00:00", "17:00:00"),
-        ("Tuesday", "09:00:00", "17:00:00"),
-        ("Wednesday", "09:00:00", "17:00:00"),
-        ("Thursday", "09:00:00", "17:00:00"),
-        ("Friday", "09:00:00", "17:00:00"),
-        ("Saturday", None, None),
-    ])
-
-    # CalendarObjectId "2" — Heavy Precast's "Curing" activity only (see
-    # PRECAST_CURING_DEFINITION / write_activities_and_relationships). Same
-    # 8-hour daily window, but every day of the week is "working" — concrete
-    # cures on weekends too, so a 28-day Curing duration must elapse 28
-    # actual calendar days, not 28 Mon-Fri workdays.
-    _add_calendar(root, "2", "CWA 7d Curing Calendar", 56.0, [
-        ("Sunday", "09:00:00", "17:00:00"),
-        ("Monday", "09:00:00", "17:00:00"),
-        ("Tuesday", "09:00:00", "17:00:00"),
-        ("Wednesday", "09:00:00", "17:00:00"),
-        ("Thursday", "09:00:00", "17:00:00"),
-        ("Friday", "09:00:00", "17:00:00"),
-        ("Saturday", "09:00:00", "17:00:00"),
-    ])
+    """Writes the programme's calendars: the scenario's (Rules > Calendars), or the generator's own two (core/calendars.py:
+    "CWA 6d Calendar", Mon-Fri 09:00-17:00 for every activity, and "CWA 7d Curing Calendar", every day, for Curing, so a 28-day
+    cure elapses 28 actual days). A window is a true hours-per-day span (09:00-17:00 for 8 h), matching how duration_hours is
+    derived from duration_days (days x hours per day) in write_activities_and_relationships; a window a minute short of a
+    full day made every whole-day-multiple duration overflow a minute into the next calendar day when CPM-scheduled."""
+    for calendar in _calendars.active().items:
+        _add_calendar(root, calendar.oid, calendar.name, calendar.hours_per_week, calendar.xml_windows(), calendar.hours_per_day)
 
 
 def add_udf_types(root):
@@ -1256,25 +1245,25 @@ def add_project_and_calendar(root, building_code="DEFAULT", project_wbs_object_i
     for k, v in [("ObjectId", "1"), ("Id", resolved_project_id), ("Name", f"{project_prefix} - Construction"),
                  ("Status", "Active"), ("PlannedStartDate", START_DATE.strftime("%Y-%m-%dT00:00:00")),
                  ("DataDate", START_DATE.strftime("%Y-%m-%dT00:00:00")),
-                 ("ActivityDefaultCalendarObjectId", "1"), ("WBSObjectId", str(resolved_root_oid))]:
+                 ("ActivityDefaultCalendarObjectId", _calendars.active().default.oid), ("WBSObjectId", str(resolved_root_oid))]:
         ET.SubElement(project, k).text = v
     ET.SubElement(project, "GUID").text = str(uuid.uuid4()).upper()
 
 
 def add_resources(root):
     """Materials <project>-C (concrete, m³) and <project>-R (rebar, t), plus one Labor
-    resource per config.LABOUR_TRADES entry (<project>-L-<code>), whose max
+    resource per Trade rule (<project>-L-<code>), whose max
     units/time is the trade's site capacity in people (P6 stores labour
     units/time as hours per hour, so 1 person = 1). Returns {Id: ObjectId}."""
     specs = [(f"{PROJECT_SHORT}-C", "Concrete (m3)", "Material", 0.125), (f"{PROJECT_SHORT}-R", "Rebar (t)", "Material", 0.125)]
-    for code, trade in LABOUR_TRADES.items():
+    for code, trade in labour_trades().items():
         specs.append((labour_resource_id(code), trade["name"], "Labor", float(trade.get("capacity") or 0)))
 
     ids = {}
     for oid, (rid, name, rtype, max_units) in enumerate(specs, start=1):
         r = ET.SubElement(root, "Resource")
         for k, v in [("ObjectId", str(oid)), ("Id", rid), ("Name", name), ("ResourceType", rtype),
-                     ("CalendarObjectId", "1"), ("CurrencyObjectId", "1"), ("IsActive", "1"),
+                     ("CalendarObjectId", _calendars.active().default.oid), ("CurrencyObjectId", "1"), ("IsActive", "1"),
                      ("GUID", str(uuid.uuid4()).upper())]:
             ET.SubElement(r, k).text = v
 
@@ -1404,13 +1393,14 @@ def _get_sequence_phase_for_rec(rec):
     gtype = str(rec.get("general_pour_type", "") or "").upper()
     conc_stage = str(rec.get("conc_stage", "") or "").strip().upper()
 
+    chain = _rules_active().chain_for(rec)
+    if chain:
+        return chain[0]["phase"]  # the first activity of the pour's chain (Rules > Chains)
     if "SLAB" in ptype or "MAIN_SLAB" in ptype:
         # For slabs, blank Phase should target the first executable slab task.
-        return "Works before slab" if ENABLE_WORKS_BEFORE_SLAB else "Decking"
+        return "Decking"
     elif "LANDING" in ptype:
         return "Decking"
-    elif ptype == "PEDESTAL" and conc_stage in {"2", "STAGE 2", "2.0", "STAGE2"}:
-        return "Rebar, Formwork and Concrete"
     elif (
         (ptype in {"HEAVY_PRECAST", "REMOVABLE_ELEMENT"} or (ptype == "STAIR" and conc_stage == "PRECAST"))
         or "HEAVY_PRECAST" in gtype
@@ -1429,6 +1419,7 @@ def _build_sequence_order_relationships(activities, sequence_order_list):
     # Build lookup: GUID → rec + tasks by phase
     guid_to_rec = {}
     guid_to_tasks = defaultdict(dict)
+    guid_last = {}
 
     for act in activities:
         rec = act.get("rec", {})
@@ -1442,8 +1433,23 @@ def _build_sequence_order_relationships(activities, sequence_order_list):
         task_id = act.get("task_id")
         if phase and task_id:
             guid_to_tasks[guid][phase] = task_id
+            order = act.get("phase_order", 0)
+            if guid not in guid_last or order >= guid_last[guid][0]:
+                guid_last[guid] = (order, task_id)
 
-    def _resolve_task_for_phase(task_map, phase_value):
+    def _final_task(guid):
+        """What a pour's successors wait for: the activity its chain marks as gating, else its Concrete (or Curing when that holds back what
+        follows), else its last activity (the same as the slab-support and contact links take it)."""
+        task_map = guid_to_tasks.get(guid, {})
+        return (
+            _concrete_done_task(task_map)
+            or task_map.get("Rebar, Formwork and Concrete")
+            or task_map.get("Stitching")
+            or task_map.get("Installation")
+            or (guid_last.get(guid) or (0, None))[1]
+        )
+
+    def _task_for_named_phase(task_map, phase_value):
         phase_value = str(phase_value or "").strip()
         if not task_map:
             return None
@@ -1474,7 +1480,18 @@ def _build_sequence_order_relationships(activities, sequence_order_list):
         if normalized in {"STITCHING", "PRECAST STITCHING"}:
             return task_map.get("Stitching")
 
-        return combined_task or task_map.get("Rebar") or task_map.get("Works before slab") or task_map.get("Installation") or task_map.get("Stitching") or next(iter(task_map.values()), None)
+        return None
+
+    def _resolve_task_for_phase(task_map, phase_value):
+        """The pour's activity a sequence row points at: the phase it names, else (a precast pour has only its Installation, a phase the rows
+        do not name is not in the chain) the pour's first one. A pour is never left out of the sequence for lack of the phase."""
+        if not task_map:
+            return None
+        return (
+            _task_for_named_phase(task_map, phase_value)
+            or task_map.get("Rebar, Formwork and Concrete") or task_map.get("Rebar") or task_map.get("Works before slab")
+            or task_map.get("Installation") or task_map.get("Stitching") or next(iter(task_map.values()), None)
+        )
 
     # Rows sharing the same Index value are one group, meant to start
     # together — every row after the group's first links to that first row
@@ -1533,11 +1550,16 @@ def _build_sequence_order_relationships(activities, sequence_order_list):
 
     prev_group_first_task = None
     prev_group_first_guid = None
+    prev_group_ends = []  # what the previous step's pours finish with: every one of them, not just the first
+    prev_group_first_concrete = None
+    lead_hours = max(0.0, float(SEQUENCE_LEAD_DAYS or 0)) * _HOURS_PER_DAY
 
     for group in groups:
         group_first_task = None
         group_first_guid = None
         rest_of_group = []  # (task_id, guid) for every OTHER distinct task in this group
+        group_ends = []
+        group_concretes = []
 
         for item in group:
             task_id, guid, err = _resolve(item)
@@ -1547,6 +1569,14 @@ def _build_sequence_order_relationships(activities, sequence_order_list):
             if err == "unresolved_phase":
                 skipped_unresolved_phase += 1
                 continue
+            # A pour in the sequence ends with its final activity (concrete, or the curing that gates what follows) unless the row names a
+            # phase: then the step is over when that activity is.
+            end = task_id if str(item.get("Phase", "") or "").strip() else (_final_task(guid) or task_id)
+            if end not in group_ends:
+                group_ends.append(end)
+            concrete = _resolve_task_for_phase(guid_to_tasks.get(guid, {}), "Concrete")
+            if concrete and concrete not in group_concretes:
+                group_concretes.append(concrete)
             if group_first_task is None:
                 group_first_task, group_first_guid = task_id, guid
             elif task_id != group_first_task:
@@ -1555,32 +1585,43 @@ def _build_sequence_order_relationships(activities, sequence_order_list):
         if group_first_task is None:
             continue  # nothing usable in this group
 
+        def _edge(pred, succ, kind, lag=0.0):
+            if pred == succ:
+                return False
+            if (pred, succ, kind) in added_edges:
+                return False
+            edges.append((pred, succ, kind, lag) if lag else (pred, succ, kind))
+            added_edges.add((pred, succ, kind))
+            return True
+
         for task_id, _guid in rest_of_group:
-            edge = (group_first_task, task_id, "StartToStart")
-            if edge not in added_edges:
-                edges.append(edge)
-                added_edges.add(edge)
+            if _edge(group_first_task, task_id, "StartToStart"):
                 added_ss += 1
 
-        if prev_group_first_task is not None and group_first_task != prev_group_first_task:
-            # No level-direction check here — the user's SequenceOrder is an
-            # explicit, deliberate override (e.g. "all external walls up to
-            # level N before any inner structures", which necessarily needs
-            # a higher level's task before a lower level's). Any edge this
-            # would genuinely conflict with (level-gate, clash-derived slab
-            # support, Heavy Precast <-> wall linking) is instead filtered
-            # OUT on the automatic-edge side in main.py's merge, precisely
-            # because it conflicts with this SequenceOrder flow — so
-            # SequenceOrder itself should never need to self-censor. The
-            # final backstop against a truly self-contradictory
-            # SequenceOrder is _emit_relationship's cycle guard.
-            edge = (prev_group_first_task, group_first_task, "FinishToStart")
-            if edge not in added_edges:
-                edges.append(edge)
-                added_edges.add(edge)
-                added_fs += 1
+        if SEQUENCE_FLOW:
+            # The sequence is the order the work starts and the concrete is poured, not a relay: a step starts a set number of days after the
+            # previous one starts, and its concrete waits for the previous step's. Each pour's own chain is not held back by the other steps.
+            if prev_group_first_task is not None and _edge(prev_group_first_task, group_first_task, "StartToStart", lead_hours):
+                added_ss += 1
+            if group_concretes:
+                first_concrete = group_concretes[0]
+                for end in prev_group_ends:
+                    if _edge(end, first_concrete, "FinishToStart"):
+                        added_fs += 1
+                for other in group_concretes[1:]:
+                    if _edge(first_concrete, other, "StartToStart"):
+                        added_ss += 1
+        else:
+            # Each step starts when the one before it is over: every pour of the previous step finished (finish-to-start into the step's
+            # first activity; the others of the step start together with it, above). The user's sequence is deliberate, so no level check
+            # here: a contradiction with an automatic link is settled on the automatic side (main.py's merge) and by _emit_relationship's
+            # cycle guard.
+            for end in prev_group_ends:
+                if _edge(end, group_first_task, "FinishToStart"):
+                    added_fs += 1
 
         prev_group_first_task, prev_group_first_guid = group_first_task, group_first_guid
+        prev_group_ends = group_ends
 
     print(f"✅ Created {added_ss} SequenceOrder Start-to-Start + {added_fs} Finish-to-Start relationships")
     if skipped_missing_guid or skipped_unresolved_phase:
@@ -1729,7 +1770,9 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
                                        sequence_ss_predecessors=None,
                                        custom_relations=None,
                                        automatic_predecessor_sources=None,
-                                       crew_table=None):
+                                       crew_table=None,
+                                       rule_relations=None,
+                                       late_rule_relations=None):
     """automatic_predecessor_sources: optional list of (label, predecessors_dict)
     pairs — e.g. [("level_gate", level_gate_predecessors), ("slab_support", ...),
     ("heavy_precast_wall", ...)] — for cross-pour edges inferred from
@@ -1743,6 +1786,7 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
     custom_relations = custom_relations or []
     automatic_predecessor_sources = automatic_predecessor_sources or []
     crew_table = crew_table or {}
+    rule_relations = rule_relations or []
 
     if ENABLE_GROUP_MILESTONES:
         group_milestones, group_give_preds = _build_group_milestones_and_summary(activity_list, wbs_manager)
@@ -1773,6 +1817,8 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
     closeout_milestones = []
     if ENABLE_COMPLETION_CLOSEOUT:
         for act in activity_list:
+            if act.get("loe") or act.get("rule_milestone"):
+                continue
             rec = act.get("rec") or {}
             building = str(rec.get("building", "") or "").strip()
             if not building or building in closeout_by_building:
@@ -1790,6 +1836,7 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
                 "rec": {},
             })
 
+    activity_by_task = {a.get("task_id"): a for a in activity_list if a.get("task_id")}
     all_activities = activity_list + group_milestones + closeout_milestones + ([building_completion] if building_completion else [])
 
     act_counter = 1000
@@ -1824,6 +1871,7 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
     # reject any edge that would close a directed loop.
     adjacency = defaultdict(set)
     skipped_edges_by_source = defaultdict(list)
+    not_written = defaultdict(int)  # why links were not written (missing activity, already there, would close a loop)
 
     # Successors listed in Relations sheet are treated as overrides:
     # generated links to those successors are suppressed and replaced.
@@ -1844,6 +1892,9 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         })
 
     override_successors = set(custom_overrides_by_successor.keys())
+    manual_successors = set(override_successors)  # the user's manual links: they win over a rule's
+    # A rule that replaces what leads into its successor (a contact rule's replaceBuiltIn is handled before this) says so.
+    override_successors |= {r["succ"] for r in (rule_relations or []) if r.get("replaces")}
 
     def _creates_cycle(pred_task_id, succ_task_id):
         if pred_task_id == succ_task_id:
@@ -1863,18 +1914,24 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
                     stack.append(nxt)
         return False
 
-    def _emit_relationship(pred_task_id, succ_task_id, rel_type, lag_days=0, source="generated"):
+    def _emit_relationship(pred_task_id, succ_task_id, rel_type, lag_days=0, source="generated", track=True):
+        """track=False writes the link without counting it in the precedence graph (no cycle check, and the predecessor
+        still counts as having no successor): the level-of-effort links of a rule's level task."""
         nonlocal rel_counter
         p_oid = task_object_id_map.get(pred_task_id)
         s_oid = task_object_id_map.get(succ_task_id)
         if not p_oid or not s_oid:
+            not_written["missing"] += 1
             return False
 
         dedupe_key = (p_oid, s_oid, rel_type)
         if dedupe_key in seen:
+            not_written["already there"] += 1
             return False
 
-        if _creates_cycle(pred_task_id, succ_task_id):
+        if not track:
+            seen.add(dedupe_key)
+        elif _creates_cycle(pred_task_id, succ_task_id):
             # Named per source, not just counted: SequenceOrder is the
             # user's explicit, manual override and is emitted before every
             # automatic source below, so a rejection here almost always
@@ -1883,10 +1940,12 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             # silently dropping just a count leaves no way to find (or
             # explain) which rows are in conflict.
             skipped_edges_by_source[source].append((pred_task_id, succ_task_id))
+            not_written["would close a loop"] += 1
             return False
 
         seen.add(dedupe_key)
-        adjacency[pred_task_id].add(succ_task_id)
+        if track:
+            adjacency[pred_task_id].add(succ_task_id)
         rel_counter += 1
         rel = ET.SubElement(project_elem, "Relationship")
         ET.SubElement(rel, "ObjectId").text = str(rel_counter)
@@ -2014,7 +2073,8 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         rec = act_data.get("rec", {})
         task_id = act_data.get("task_id")
         duration_days = float(act_data.get("duration_days", 1.0))
-        duration_hours = max(0, int(duration_days * 8))
+        calendar = _calendars.active().for_activity(act_data.get("phase"), rec)
+        duration_hours = max(0, int(duration_days * calendar.hours_per_day))
 
         act_counter += 1
         act = ET.SubElement(project_elem, "Activity")
@@ -2023,11 +2083,9 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         ET.SubElement(act, "Name").text = act_data.get("task_name", task_id)
         ET.SubElement(act, "WBSObjectId").text = str(act_data["wbs_oid"])
         ET.SubElement(act, "GUID").text = str(uuid.uuid4()).upper()
-        # Curing runs on the 7-day calendar (CalendarObjectId "2") — a 28-day
-        # cure must elapse 28 actual calendar days, weekends included, not
-        # 28 Mon-Fri workdays. See add_detailed_calendar / cpm_apply.py.
-        is_curing = str(act_data.get("phase", "") or "").strip() == "Curing"
-        ET.SubElement(act, "CalendarObjectId").text = "2" if is_curing else "1"
+        # The activity's calendar: the first rule of Rules > Calendars that fits it, else the default (the generator's own: Curing on
+        # the 7-day calendar, so a 28-day cure elapses 28 actual days, weekends included). See add_detailed_calendar / cpm_apply.py.
+        ET.SubElement(act, "CalendarObjectId").text = calendar.oid
         ET.SubElement(act, "PlannedDuration").text = str(duration_hours)
         ET.SubElement(act, "AtCompletionDuration").text = str(duration_hours)
         ET.SubElement(act, "RemainingDuration").text = str(duration_hours)
@@ -2050,6 +2108,9 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             ET.SubElement(act, "Type").text = "Start Milestone" if mtype == "Start" else "Finish Milestone"
         elif act_data.get("summary"):
             ET.SubElement(act, "Type").text = "WBS Summary"
+        elif act_data.get("loe"):
+            # A rule's level task: dated from its pours by the CPM (core/cpm_schedule.py) and in P6 by its SS / FF links.
+            ET.SubElement(act, "Type").text = "Level of Effort"
         else:
             ET.SubElement(act, "Type").text = "Task Dependent"
 
@@ -2175,17 +2236,42 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
     # are StartToStart (start together), while moving to the next Index
     # value is FinishToStart (the next group only starts once the previous
     # one has actually finished) — see _build_sequence_order_relationships.
-    for pred_id, succ_id, rel_type in sequence_ss_predecessors:
+    for pred_id, succ_id, rel_type, *lag in sequence_ss_predecessors:
         if succ_id in override_successors:
             continue
-        _emit_relationship(pred_id, succ_id, rel_type, source="sequence")
+        _emit_relationship(pred_id, succ_id, rel_type, lag[0] if lag else 0, source="sequence")
 
     # 2. Intra-pour relationships (a pour's own phase chain)
     for succ_id, pred_list in intra_predecessors.items():
         if succ_id in override_successors:
             continue
+        succ_act = activity_by_task.get(succ_id) or {}
         for p_id in pred_list:
-            _emit_relationship(p_id, succ_id, "FinishToStart", source="intra")
+            pct = (succ_act.get("intra_edges") or {}).get(p_id, 100.0)
+            pred_act = activity_by_task.get(p_id)
+            if pct < 100.0 and pred_act is not None:
+                # An overlap: starts when the predecessor is `pct` % done (start-to-start, lagged by that share of its hours), and, when the
+                # chain row says so, cannot finish before it does (finish-to-finish).
+                pred_hours = float(pred_act.get("duration_days", 0) or 0) * _calendars.active().for_activity(pred_act.get("phase"), pred_act.get("rec", {})).hours_per_day
+                _emit_relationship(p_id, succ_id, "StartToStart", round(pred_hours * pct / 100.0, 2), source="intra")
+                if succ_act.get("finish_after"):
+                    _emit_relationship(p_id, succ_id, "FinishToFinish", 0, source="intra")
+            else:
+                _emit_relationship(p_id, succ_id, "FinishToStart", source="intra")
+
+    # 2b. The scenario's programme rules (sequences, contacts, level tasks and links: core/rule_logic.py). Ahead of the
+    # automatic sources, so a cycle drops the automatic link; after SequenceOrder and the pours' own chains, which win.
+    rule_emitted = 0
+    not_written.clear()
+    for r in rule_relations:
+        if r.get("succ") in manual_successors:
+            continue
+        rel = relation_type_map.get(str(r.get("type") or "FS").upper(), "FinishToStart")
+        if _emit_relationship(r["pred"], r["succ"], rel, r.get("lag", 0), source=str(r.get("source") or "rule"), track=r.get("track", True)):
+            rule_emitted += 1
+    if rule_relations:
+        why = ", ".join(f"{n} {reason}" for reason, n in not_written.items() if n)
+        print(f"  Rules: {rule_emitted} of {len(rule_relations)} rule link(s) written" + (f" (not written: {why})" if why else ""))
 
     # 3. Automatic/clash-derived cross-pour edges (level gating, slab
     # support, Heavy Precast <-> wall linking, ...). Each source keeps its
@@ -2217,9 +2303,20 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         for spec in specs:
             _emit_relationship(spec["pred_id"], spec["succ_id"], spec["rel_type"], spec.get("lag", 0), source="custom")
 
+    # 6b. Rule links for the open ends: what still has no successor once every other link is written.
+    if late_rule_relations is not None:
+        open_now = {a.get("task_id") for a in activity_list if a.get("task_id") and not adjacency.get(a.get("task_id"))}
+        late_made = 0
+        for r in late_rule_relations(open_now) or []:
+            rel = relation_type_map.get(str(r.get("type") or "FS").upper(), "FinishToStart")
+            if _emit_relationship(r["pred"], r["succ"], rel, r.get("lag", 0), source=str(r.get("source") or "rule"), track=r.get("track", True)):
+                late_made += 1
+        if late_made:
+            print(f"  Rules: {late_made} link(s) of open-ended activities to their level task")
+
     # 7. Close-out: activities with no successor feed their building's completion milestone
     # Before that, an open-ended pour precedes the slab above it (part of the sequence, not of the close-out).
-    open_ended = {a.get("task_id") for a in activity_list if a.get("task_id") and not adjacency.get(a.get("task_id"))}
+    open_ended = _open_ended_tasks(activity_list, adjacency)
     sequenced = 0
     for pred_id, succ_ids in _build_open_end_successors(activity_list, open_ended).items():
         if pred_id in override_successors:

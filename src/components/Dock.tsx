@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
 import { activeOn, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTwoPane, IconViewTable, IconWarning } from './icons';
+import { IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
 const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -9,6 +9,7 @@ const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   tasks: IconList,
   resources: IconLineGraph,
   scenarios: IconSplit,
+  rules: IconTune,
   clash: IconWarning,
   topics: IconChat,
   viewpoints: IconCamera,

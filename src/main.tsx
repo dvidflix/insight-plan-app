@@ -15,6 +15,7 @@ import { useProjectDbStore } from './state/projectDbStore';
 import { useWebFolderStore } from './web/folderStore';
 import { LicenceGate } from './licence/LicenceGate';
 import { ProjectGate } from './web/ProjectGate';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 installTableColumnResize();
 
@@ -31,6 +32,7 @@ async function start() {
   }
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
+     <ErrorBoundary>
       {FEATURES.licence ? (
         <LicenceGate>
           <ProjectGate>
@@ -40,6 +42,7 @@ async function start() {
       ) : (
         <App />
       )}
+     </ErrorBoundary>
     </StrictMode>,
   );
 }

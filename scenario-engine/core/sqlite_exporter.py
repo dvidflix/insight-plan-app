@@ -28,7 +28,6 @@ def create_database(db_path: Path) -> None:
             is_external INTEGER,
             is_connected INTEGER,
             is_double_height INTEGER,
-            cardinal_zone TEXT,
             building_zone TEXT,
             conc_stage TEXT,
             lg1 TEXT,
@@ -62,7 +61,6 @@ def create_database(db_path: Path) -> None:
             building TEXT,
             level_code TEXT,
             is_external INTEGER,
-            cardinal_zone TEXT,
             is_precast INTEGER,
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
         )
@@ -105,10 +103,10 @@ def insert_records(db_path: Path, records: List[Dict[str, Any]], ifc_filename: s
             INSERT INTO pour_records (
                 building, level_code, level_display, level_int, pour_id, alt_pour_id, full_pour_id,
                 pour_type, volume, is_external, is_connected, is_double_height,
-                cardinal_zone, building_zone, conc_stage, lg1, lg2, base_task_id,
+                building_zone, conc_stage, lg1, lg2, base_task_id,
                 include, rebar_weight_tonnes, max_elevation, min_elevation,
                 concrete_wbs_name, concrete_wbs_oid, wbs_prefix, duration_key
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             rec.get("building"),
             rec.get("level_code"),
@@ -122,7 +120,6 @@ def insert_records(db_path: Path, records: List[Dict[str, Any]], ifc_filename: s
             1 if rec.get("is_external") else 0,
             1 if rec.get("is_connected") else 0,
             1 if rec.get("is_double_height") else 0,
-            rec.get("cardinal_zone"),
             rec.get("building_zone"),
             rec.get("conc_stage"),
             rec.get("lg1"),
@@ -152,8 +149,8 @@ def insert_activities(db_path: Path, activities: List[Dict[str, Any]]) -> None:
         cursor.execute("""
             INSERT OR REPLACE INTO activities (
                 task_id, task_name, phase, duration, resource, wbs_name, wbs_oid,
-                pour_id, alt_pour_id, building, level_code, is_external, cardinal_zone, is_precast
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                pour_id, alt_pour_id, building, level_code, is_external, is_precast
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             act.get("task_id"),
             act.get("task_name"),
@@ -167,7 +164,6 @@ def insert_activities(db_path: Path, activities: List[Dict[str, Any]]) -> None:
             rec.get("building"),
             rec.get("level_code"),
             1 if rec.get("is_external") else 0,
-            rec.get("cardinal_zone"),
             1 if act.get("is_precast", False) else 0
         ))
     
@@ -221,7 +217,7 @@ def merge_databases(source_dbs: List[Path], master_db: Path) -> None:
             INSERT INTO pour_records 
             SELECT NULL, building, level_code, level_display, level_int, pour_id, alt_pour_id,
                    full_pour_id, pour_type, volume, is_external, is_connected, 
-                   is_double_height, cardinal_zone, building_zone, conc_stage, 
+                   is_double_height, building_zone, conc_stage, 
                    lg1, lg2, base_task_id, include, rebar_weight_tonnes, max_elevation, 
                    min_elevation, concrete_wbs_name, concrete_wbs_oid, wbs_prefix, 
                    duration_key, created_at
@@ -235,7 +231,7 @@ def merge_databases(source_dbs: List[Path], master_db: Path) -> None:
             INSERT OR IGNORE INTO activities 
             SELECT NULL, task_id, task_name, phase, duration, resource, wbs_name, 
                    wbs_oid, pour_id, alt_pour_id, building, level_code, is_external,
-                   cardinal_zone, is_precast, created_at
+                   is_precast, created_at
             FROM source.activities
         """)
         activities_count = master_cursor.rowcount

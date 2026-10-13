@@ -51,6 +51,8 @@ const qs = (params: Record<string, string | number | null | undefined>) =>
 const post = <T>(path: string, body: unknown) =>
   call<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
+/** Writes the export files of Settings > Import / Export into the project folder. */
+export const writeExportFiles = (root: string, files: { name: string; content: string }[]) => post<{ folder: string; written: string[] }>('export-files', { root, files });
 export const openDb = (root: string) => post<{ root: string; file: string; changes: number }>('open', { root });
 /** Folders of an earlier layout (1-input-ifc, fixed-models, 7-scenarios) still in the project. */
 export const fetchLegacyFolders = (root: string) => call<{ legacy: string[] }>(`layout?${qs({ root })}`).then((r) => r.legacy);

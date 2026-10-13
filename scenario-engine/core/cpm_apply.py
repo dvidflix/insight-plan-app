@@ -14,7 +14,7 @@
 
 from datetime import datetime, time as dt_time
 
-from core import cpm_schedule
+from core import calendars, cpm_schedule
 
 # Fixed display clock windows for Rebar/Concrete activities, overriding
 # whatever time-of-day the calendar arithmetic lands on. Rebar keeps
@@ -40,49 +40,13 @@ def _apply_fixed_phase_times(task_id, start_dt, finish_dt):
         finish_dt = datetime.combine(start_dt.date(), _CONCRETE_FINISH_TIME)
     return start_dt, finish_dt
 
-# "CWA 6d Calendar" — matches xml_builder.add_detailed_calendar()'s
-# StandardWorkWeek exactly (Mon-Fri 09:00-17:00, weekends off, a true 8-hour
-# day). Every Activity this tool writes uses CalendarObjectId "1", so this is
-# the only calendar CPM ever needs here.
+# The calendars CPM needs are the ones xml_builder.add_detailed_calendar() wrote (core/calendars.py: the scenario's, or the generator's
+# own Mon-Fri 09:00-17:00 and 7-day Curing calendars), by CalendarObjectId.
 #
-# NOTE: this window must stay an exact 8-hour span, matching how
-# xml_builder.py turns duration_days into PlannedDuration hours
-# (duration_hours = duration_days * 8). A window of 09:00-16:59 (7h59m) used
-# to be here, one minute short of a full day — over a whole-day-multiple
-# duration (the norm for every phase in this project's DURATIONS config),
-# that shortfall pushed the computed finish one minute into the NEXT
-# calendar day, so what should be e.g. a same-day concrete pour instead
-# spilled across two days.
-_CWA_CALENDAR = {
-    "hours_per_day": 8.0,
-    "workdays": {
-        0: ("09:00:00", "17:00:00"),
-        1: ("09:00:00", "17:00:00"),
-        2: ("09:00:00", "17:00:00"),
-        3: ("09:00:00", "17:00:00"),
-        4: ("09:00:00", "17:00:00"),
-        5: None,
-        6: None,
-    },
-}
-
-# CalendarObjectId "2" — matches xml_builder.add_detailed_calendar()'s "CWA
-# 7d Curing Calendar". Used only by Heavy Precast's "Curing" activity
-# (PRECAST_CURING_DEFINITION): concrete cures on weekends too, so a 28-day
-# duration must elapse 28 actual calendar days rather than 28 Mon-Fri
-# workdays — every day of the week is open here, same 8-hour window.
-_CWA_CURING_CALENDAR = {
-    "hours_per_day": 8.0,
-    "workdays": {
-        0: ("09:00:00", "17:00:00"),
-        1: ("09:00:00", "17:00:00"),
-        2: ("09:00:00", "17:00:00"),
-        3: ("09:00:00", "17:00:00"),
-        4: ("09:00:00", "17:00:00"),
-        5: ("09:00:00", "17:00:00"),
-        6: ("09:00:00", "17:00:00"),
-    },
-}
+# NOTE: a window must stay an exact hours-per-day span, matching how xml_builder.py turns duration_days into PlannedDuration hours
+# (duration_days x the calendar's hours per day). A window of 09:00-16:59 (7h59m) used to be here, one minute short of a full day:
+# over a whole-day-multiple duration (the norm for every phase in this project's DURATIONS config) that shortfall pushed the
+# computed finish one minute into the NEXT calendar day, so what should be e.g. a same-day concrete pour instead spilled across two days.
 
 
 def apply_cpm_to_xml(root, data_date):
@@ -120,6 +84,7 @@ def apply_cpm_to_xml(root, data_date):
         tasks[task_id] = {
             "duration_hours": duration_hours,
             "calendar_id": act.findtext("CalendarObjectId") or "1",
+            "loe": act.findtext("Type") == "Level of Effort",
             "has_actual_start": False,
             "has_actual_finish": False,
             "start": None,
@@ -142,13 +107,14 @@ def apply_cpm_to_xml(root, data_date):
 
     result = {
         "tasks": tasks,
-        "calendars": {"1": _CWA_CALENDAR, "2": _CWA_CURING_CALENDAR},
+        "calendars": calendars.active().cpm_calendars(),
         "data_date": data_date.isoformat(),
     }
 
     stats = cpm_schedule.calculate_cpm(result)
 
     updated = 0
+    final = {}  # task id -> (start, finish) as written, after the fixed Rebar / Concrete clock times
     for task_id, task in tasks.items():
         act = activity_elements.get(task_id)
         if act is None:
@@ -164,6 +130,7 @@ def apply_cpm_to_xml(root, data_date):
         start_dt = datetime.fromisoformat(start_str)
         finish_dt = datetime.fromisoformat(finish_str)
         start_dt, finish_dt = _apply_fixed_phase_times(task_id, start_dt, finish_dt)
+        final[task_id] = (start_dt, finish_dt)
         start_elem = act.find("PlannedStartDate")
         finish_elem = act.find("PlannedFinishDate")
         if start_elem is not None:
@@ -171,6 +138,26 @@ def apply_cpm_to_xml(root, data_date):
         if finish_elem is not None:
             finish_elem.text = finish_dt.strftime("%Y-%m-%dT%H:%M:%S")
         updated += 1
+
+    # A level of effort (a programme rule's level task) spans what is tied to it: its dates follow the dates as written above
+    # (the Rebar and Concrete activities show fixed clock times), not the raw CPM ones.
+    default_calendar = cpm_schedule.WorkCalendar(calendars.active().default.cpm())
+    for task_id, task in tasks.items():
+        if not task.get("loe") or task_id not in final:
+            continue
+        starts = [final[p["id"]][0] for p in task.get("predecessors", []) if p["id"] in final and cpm_schedule._normalize_rel_type(p.get("type")) == "SS"]
+        finishes = [final[p["id"]][1] for p in task.get("predecessors", []) if p["id"] in final and cpm_schedule._normalize_rel_type(p.get("type")) == "FF"]
+        start_dt = min(starts) if starts else final[task_id][0]
+        finish_dt = max(finishes) if finishes else final[task_id][1]
+        finish_dt = max(finish_dt, start_dt)
+        act = activity_elements[task_id]
+        act.find("PlannedStartDate").text = start_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        act.find("PlannedFinishDate").text = finish_dt.strftime("%Y-%m-%dT%H:%M:%S")
+        hours = str(int(round(default_calendar.hours_between(start_dt, finish_dt)))) if finish_dt > start_dt else "0"
+        for tag in ("PlannedDuration", "AtCompletionDuration", "RemainingDuration"):
+            el = act.find(tag)
+            if el is not None:
+                el.text = hours
 
     if stats is not None:
         stats["activities_updated"] = updated

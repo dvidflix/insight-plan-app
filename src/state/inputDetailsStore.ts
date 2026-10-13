@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { fetchFileDetails, type PushFile } from '../seatable/filesClient';
+import { fetchFileDetails, updateFileDetails, type PushFile } from '../seatable/filesClient';
+import { FEATURES } from '../features';
+import { experimentalOn } from './appPrefsStore';
 export interface SortRule {
   id: string;
   field: string;
@@ -65,6 +67,10 @@ interface InputDetailsState {
   setSortRules: (rules: SortRule[]) => void;
   setCollapsedAll: (keys: string[]) => void;
   toggleCollapsed: (key: string) => void;
+  /** Edits not yet written to SeaTable ("<file><field>"): kept over what a read brings, until they are written. */
+  pending: string[];
+  /** Sets one field of some files (the File details pane): here at once, and in SeaTable when it is on; resolves to a short note (never throws). */
+  saveDetails: (files: string[], field: string, values: string[]) => Promise<{ ok: boolean; message: string }>;
   /** Reads the details from SeaTable; resolves to a short message (never throws). */
   read: () => Promise<{ ok: boolean; message: string }>;
 }
@@ -82,6 +88,7 @@ export const useInputDetailsStore = create<InputDetailsState>()(
       readAt: null,
       filters: {},
       files: [],
+      pending: [],
       autoPush: true,
       setAutoPush: (autoPush) => set({ autoPush }),
       pushNote: null,
@@ -102,12 +109,46 @@ export const useInputDetailsStore = create<InputDetailsState>()(
       setSortRules: (sortRules) => set({ sortRules }),
       setCollapsedAll: (collapsed) => set({ collapsed }),
       toggleCollapsed: (key) => set((s) => ({ collapsed: s.collapsed.includes(key) ? s.collapsed.filter((k) => k !== key) : [...s.collapsed, key] })),
+      saveDetails: async (files, field, values) => {
+        const clean = values.map((v) => v.trim()).filter(Boolean);
+        const keys = files.map((f) => `${f}${field}`);
+        set((s) => {
+          const next = { ...s.values };
+          for (const f of files) {
+            const mine = { ...(next[f] ?? {}) };
+            if (clean.length) mine[field] = clean;
+            else delete mine[field];
+            next[f] = mine;
+          }
+          return { values: next, fields: s.fields.includes(field) ? s.fields : [...s.fields, field], pending: [...new Set([...s.pending, ...keys])] };
+        });
+        if (!FEATURES.seatable || !experimentalOn('seatableFiles')) return { ok: true, message: 'Kept here only (SeaTable file details are off: Settings > Experimental features).' };
+        try {
+          const r = await updateFileDetails(files.map((name) => ({ name, field, values: clean })));
+          set((s) => ({ pending: s.pending.filter((k) => !keys.includes(k)) }));
+          return { ok: true, message: r.missing.length ? `${r.missing.length} file${r.missing.length === 1 ? ' is' : 's are'} not in SeaTable yet: saved here, and added with the next push.` : 'Saved to SeaTable.' };
+        } catch (e) {
+          return { ok: false, message: `Saved here only: ${e instanceof Error ? e.message : String(e)}` };
+        }
+      },
       read: async () => {
         try {
           const d = await fetchFileDetails();
           if (d.note) return { ok: false, message: d.note };
           const fields = d.fields.map((f) => f.name);
-          set((s) => ({ fields, values: d.values, readAt: Date.now(), groupRules: s.groupRules.filter((r) => ['type', 'name', 'format', ...fields].includes(r.field)) }));
+          set((s) => {
+            // Edits not written to SeaTable yet stay as they are here.
+            const values = { ...d.values };
+            for (const k of s.pending) {
+              const [file, field] = k.split('');
+              const mine = { ...(values[file] ?? {}) };
+              const kept = s.values[file]?.[field];
+              if (kept?.length) mine[field] = kept;
+              else delete mine[field];
+              values[file] = mine;
+            }
+            return { fields, values, readAt: Date.now(), groupRules: s.groupRules.filter((r) => ['type', 'name', 'format', ...fields].includes(r.field)) };
+          });
           const n = Object.keys(d.values).length;
           return { ok: true, message: `Read the details of ${n} file${n === 1 ? '' : 's'} from SeaTable.` };
         } catch (e) {
@@ -127,7 +168,7 @@ export const useInputDetailsStore = create<InputDetailsState>()(
         if (next.filters) delete next.filters.folder;
         return next;
       },
-      partialize: (s) => ({ fields: s.fields, columns: s.columns, sortRules: s.sortRules, groupRules: s.groupRules, groupCombine: s.groupCombine, values: s.values, filters: s.filters, widths: s.widths, collapsed: s.collapsed, readAt: s.readAt, autoPush: s.autoPush }),
+      partialize: (s) => ({ fields: s.fields, columns: s.columns, sortRules: s.sortRules, groupRules: s.groupRules, groupCombine: s.groupCombine, values: s.values, filters: s.filters, widths: s.widths, collapsed: s.collapsed, readAt: s.readAt, autoPush: s.autoPush, pending: s.pending }),
     },
   ),
 );

@@ -297,6 +297,18 @@ def calculate_cpm(result):
 		has_actual_start = bool(task.get("has_actual_start"))
 		has_actual_finish = bool(task.get("has_actual_finish"))
 
+		if task.get("loe"):
+			# A level of effort (a programme rule's level task): it starts with the earliest of the activities tied to
+			# it by Start-to-Start and finishes with the latest tied by Finish-to-Finish, whatever its own duration.
+			starts = [es[p["id"]] for p in task.get("predecessors", []) if p["id"] in es and _normalize_rel_type(p.get("type")) == "SS"]
+			finishes = [ef[p["id"]] for p in task.get("predecessors", []) if p["id"] in ef and _normalize_rel_type(p.get("type")) == "FF"]
+			es[key] = min(starts) if starts else (min(finishes) if finishes else data_date)
+			ef[key] = max(finishes) if finishes else es[key]
+			if ef[key] < es[key]:
+				ef[key] = es[key]
+			task["loe_hours"] = round(calendar.hours_between(es[key], ef[key]), 2) if ef[key] > es[key] else 0.0
+			continue
+
 		# An activity that's already actually started/finished in P6 keeps
 		# that real date fixed — it already happened, so no amount of
 		# predecessor/duration logic should move it. Only activities without
@@ -356,6 +368,10 @@ def calculate_cpm(result):
 		calendar = get_calendar(task.get("calendar_id", ""))
 		duration = task.get("duration_hours") or 0.0
 
+		if task.get("loe"):
+			lf[key], ls[key] = ef[key], es[key]
+			continue
+
 		if task.get("has_actual_finish"):
 			# Already complete — fixed, zero float, not subject to
 			# successor-driven late-date pull (there's nothing left to
@@ -370,6 +386,8 @@ def calculate_cpm(result):
 			succ_key = succ["id"]
 			if succ_key not in ls:
 				continue
+			if tasks[succ_key].get("loe"):
+				continue  # a level of effort follows what it spans: it does not hold its pours back
 			has_successor = True
 			lag = succ.get("lag_hours") or 0.0
 			rel_type = _normalize_rel_type(succ.get("type"))

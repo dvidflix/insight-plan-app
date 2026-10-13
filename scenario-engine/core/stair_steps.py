@@ -12,6 +12,7 @@ Steps" WBS group (activity_generator / xml_builder read stair_parent / is_stair_
 volume rule skips them), so steps are scheduled like any other stair pour. A step touching only other steps is linked through them. A step touching no stair stays
 an ordinary stair pour."""
 from config import STAIR_STEP_MAX_VOLUME_M3
+from core import rules as _rules
 
 
 def _is_stair(rec):
@@ -53,7 +54,13 @@ def link_stair_steps(records, clashes):
 
     # Every stair pour can be a flight (precast flights included); a step is a small in-situ one.
     stairs = {guid: rec for guid, rec in by_guid.items() if _is_stair(rec)}
-    is_step = {guid: _is_insitu_stair(rec) and _volume(rec) < STAIR_STEP_MAX_VOLUME_M3 for guid, rec in stairs.items()}
+    def step(rec):
+        if not _is_insitu_stair(rec):
+            return False
+        by_group = _rules.active().is_stair_step(rec)  # the rule groups treated as stair steps, when the rules have any
+        return by_group if by_group is not None else _volume(rec) < STAIR_STEP_MAX_VOLUME_M3
+
+    is_step = {guid: step(rec) for guid, rec in stairs.items()}
     # Every small in-situ stair pour is a step (linked to a stair or not): it has its own WBS group.
     for guid, rec in stairs.items():
         rec["is_stair_step"] = is_step[guid]

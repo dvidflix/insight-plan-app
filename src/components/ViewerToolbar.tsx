@@ -665,15 +665,6 @@ export function ViewerToolbar() {
         menuTip="What is shown"
         onClick={null}
         items={[
-          {
-            key: 'sections',
-            label: 'Section planes',
-            icon: IconSection,
-            items: [
-              { key: 'cut', label: 'Planes cut the model', checked: engine.isInitialized && engine.sectionsActive, keepOpen: true, disabled: !hasSections, onClick: () => engine.setSectionsActive(!engine.sectionsActive) },
-              { key: 'handles', label: 'Show the planes', checked: engine.isInitialized && engine.sectionHandlesVisible, keepOpen: true, onClick: () => engine.setSectionHandlesVisible(!engine.sectionHandlesVisible) },
-            ],
-          },
           // Both views of a split (the grid has no switch of its own in View settings).
           { key: 'grid', label: 'Grid', icon: IconGrid, checked: main.grid, keepOpen: true, onClick: () => { patchView(page, 'main', { grid: !main.grid }); patchView(page, 'second', { grid: !main.grid }); } },
           { key: 'ifcgrids', label: 'IFC grids', icon: IconIfcGrid, checked: showIfcGrids, keepOpen: true, onClick: () => patchPage(page, { showIfcGrids: !showIfcGrids }) },

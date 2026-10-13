@@ -1,4 +1,5 @@
 import { modelsDir, scenariosDir } from './projectLayout';
+import { engineEnv } from './engineFiles';
 import { spawn, type ChildProcess } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -132,7 +133,7 @@ const writeScenario = (root: string, scenario: string, stem: string, content: Sc
     from the database for the run. */
 function withOverridesFile<T>(content: ScenarioContent, stem: string, fn: (file: string) => Promise<T>): Promise<T> {
   const file = path.join(os.tmpdir(), `insight-plan-${process.pid}-${Date.now()}-${stem}.scenario.json`);
-  fs.writeFileSync(file, JSON.stringify({ version: 1, building: stem, sequence: content.sequence, relations: content.relations, crews: content.crews, wbsOrder: content.wbsOrder }));
+  fs.writeFileSync(file, JSON.stringify({ version: 1, building: stem, sequence: content.sequence, relations: content.relations, crews: content.crews, extras: content.extras ?? [], rules: content.rules ?? {}, wbsOrder: content.wbsOrder }));
   return fn(file).finally(() => fs.rmSync(file, { force: true }));
 }
 
@@ -152,6 +153,8 @@ function contentOf(body: any): ScenarioContent {
     sequence: toSequence(body.headers, body.rows),
     relations: Array.isArray(body.relations) ? body.relations : [],
     crews: Array.isArray(body.crews) ? body.crews : [],
+    extras: Array.isArray(body.extras) ? body.extras : [],
+    rules: body.rules && typeof body.rules === 'object' && !Array.isArray(body.rules) ? body.rules : undefined,
     flags: Array.isArray(body.flags) ? body.flags : [],
     wbsOrder: body.wbsOrder && typeof body.wbsOrder === 'object' ? body.wbsOrder : undefined,
   };
@@ -197,7 +200,7 @@ function runEngine(root: string, workDir: string, stem: string, startDate: strin
       cwd: path.dirname(ENGINE_MAIN),
       // The generator prints emoji progress markers; without UTF-8 stdout a
       // Windows console codepage makes those prints throw.
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1', CWA_START_DATE: startDate ?? '' },
+      env: engineEnv({ CWA_START_DATE: startDate ?? '' }),
       windowsHide: true,
     });
     let log = '';
@@ -252,6 +255,7 @@ interface WorkerReply {
   trades?: unknown[];
   phases?: string[];
   defaultCrews?: unknown[];
+  defaults?: unknown;
 }
 
 /** One Python process kept running, holding each building's opened model
@@ -273,7 +277,7 @@ class EngineWorker {
     const python = process.env.SCENARIO_PYTHON || 'python';
     const child = spawn(python, [ENGINE_SERVE], {
       cwd: path.dirname(ENGINE_SERVE),
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8', PYTHONUTF8: '1' },
+      env: engineEnv(),
       windowsHide: true,
     });
     this.child = child;
@@ -415,13 +419,32 @@ async function pourList(root: string, stem: string) {
     the building's pours, each row's Index from the scenario (project
     database) or the base (legacy project workbook, else the generator's
     automatic order). Plus the manual links and crews. */
+/** The legacy base workbook read once while the file is the same (parsing it is slow, and every scenario opened asks for it). */
+const legacyCache = new Map<string, { stamp: string; content: ReturnType<typeof readLegacyWorkbook> }>();
+function legacyBaseContent(root: string, stem: string) {
+  const file = legacyBaseWorkbook(root, stem);
+  let stamp: string;
+  try {
+    const st = fs.statSync(file);
+    stamp = `${st.mtimeMs}|${st.size}`;
+  } catch {
+    legacyCache.delete(file);
+    return null;
+  }
+  const hit = legacyCache.get(file);
+  if (hit && hit.stamp === stamp) return hit.content;
+  const content = readLegacyWorkbook(file);
+  legacyCache.set(file, { stamp, content });
+  return content;
+}
+
 async function readSequence(root: string, stem: string, scenario: string | null) {
   const pours = await pourList(root, stem);
   const headers = pours.headers!;
   const indexCol = headers.indexOf('Index');
   const guidCol = headers.indexOf('GUID');
   const own = scenario ? projectDb(root).readScenario(scenario, stem) : null;
-  const legacyBase = readLegacyWorkbook(legacyBaseWorkbook(root, stem));
+  const legacyBase = legacyBaseContent(root, stem);
   const base = legacyBase && legacyBase.sequence.length ? legacyBase : null;
   const source = own ? 'scenario' : base ? 'legacy' : 'auto';
   const chosen = own ?? base;
@@ -440,10 +463,13 @@ async function readSequence(root: string, stem: string, scenario: string | null)
     source,
     relations: (own ?? legacyBase)?.relations ?? [],
     crews: (own ?? legacyBase)?.crews ?? [],
+    extras: own?.extras ?? [],
+    rules: own?.rules ?? {},
     flags: own?.flags ?? [],
     trades: pours.trades,
     phases: pours.phases,
     defaultCrews: pours.defaultCrews,
+    defaults: pours.defaults,
   };
 }
 
@@ -454,7 +480,7 @@ async function quickGenerate(root: string, scenario: string, stem: string, conte
   checkModel(root, stem);
   const workDir = scenarioDirOf(root, scenario);
   stageInputs(root, workDir, stem);
-  const reply = await worker.request({ op: 'generate', input: path.join(modelsDir(root), `${stem}.ifc`), scenarioDir: workDir, startDate, sequence: content.sequence, relations: content.relations, crews: content.crews, wbsOrder: content.wbsOrder });
+  const reply = await worker.request({ op: 'generate', input: path.join(modelsDir(root), `${stem}.ifc`), scenarioDir: workDir, startDate, sequence: content.sequence, relations: content.relations, crews: content.crews, extras: content.extras ?? [], rules: content.rules ?? {}, wbsOrder: content.wbsOrder });
   if (!reply.ok) {
     if (reply.needsFullRun) return { ...(await fullRun(root, scenario, stem, content, startDate)), fast: false, seconds: null };
     throw new HttpError(500, `${reply.error}\n\n${reply.trace ?? ''}${reply.log ?? ''}`);

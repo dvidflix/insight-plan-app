@@ -4,6 +4,7 @@ import { xmlToXer } from '../schedule/xmlToXer';
 import { useScheduleStore } from '../state/scheduleStore';
 import { dbRoot, dbScheduleId, importIntoDb, setHidden, useProjectDbStore } from '../state/projectDbStore';
 import { useAutoLinksStore } from '../state/autoLinksStore';
+import type { EngineDefaults, ScenarioRules } from '../prs/rules';
 
 /** Client for the dev-server bridge in vite-plugins/scenarios.ts. */
 
@@ -16,7 +17,8 @@ export interface ScenarioModelInfo {
 
 export interface ScenarioInfo {
   name: string;
-  models: { stem: string; saved: number; generated: number | null }[];
+  /** rules: how many rules the saved scenario holds (totalRules); joins: how many objects are joined into another. */
+  models: { stem: string; saved: number; generated: number | null; rules?: number; joins?: number }[];
 }
 
 export interface ProjectInfo {
@@ -43,6 +45,8 @@ export interface CrewOptions {
 /** The pour table for a scenario (or the base order): the building's pours
     from the model with their columns, Index = the scenario's step. */
 /** A review flag: 'flag' = to fix, 'done' = fixed. Key = a pour's GUID or a group's key in the Scenarios table. */
+/** An extra activity (from a high-level programme) added to the scenario's generated programme. Days of 0 make a milestone; baseline dates are yyyy-mm-dd. */
+export interface ScenarioExtra { TaskID: string; Name: string; DurationDays: number; BaselineStart: string; BaselineFinish: string }
 export interface ScenarioFlag { Key: string; State: 'flag' | 'done' }
 
 export interface SequenceSheet {
@@ -52,6 +56,10 @@ export interface SequenceSheet {
   source: 'scenario' | 'legacy' | 'auto';
   relations: ScenarioRelation[];
   crews: ScenarioCrew[];
+  extras?: ScenarioExtra[];
+  /** The scenario's programme rules (src/prs/rules.ts), and what the generator does without them. */
+  rules?: unknown;
+  defaults?: EngineDefaults;
   /** Review flags saved with the scenario (pour GUID / group key). */
   flags?: ScenarioFlag[];
   trades: CrewTrade[];
@@ -88,6 +96,7 @@ export function addModelToProject(root: string, stem: string, file: File, onProg
     xhr.upload.onprogress = (e) => e.lengthComputable && onProgress?.(e.loaded / e.total);
     xhr.onerror = () => reject(new Error('Could not reach the scenarios service — run the app with Autorun.bat / npm run dev.'));
     xhr.onload = () => {
+      forgetBaseSequence();
       let res: { replaced?: boolean; note?: string | null; error?: string } | null = null;
       try {
         res = JSON.parse(xhr.responseText);
@@ -106,6 +115,21 @@ export const fetchProject = (root: string) => call<ProjectInfo>(`project?${qs({ 
 export const fetchSequence = (root: string, stem: string, scenario: string | null) =>
   call<SequenceSheet>(`sequence?${qs({ root, stem, scenario })}`);
 
+/** The building's base order, kept for the session: every scenario opened compares with it, and it only changes with the model. A failed
+    read is not kept. forgetBaseSequence drops it (after the model or the database changed). */
+const baseSequences = new Map<string, Promise<SequenceSheet>>();
+export function fetchBaseSequence(root: string, stem: string): Promise<SequenceSheet> {
+  const key = `${root}|${stem}`;
+  let hit = baseSequences.get(key);
+  if (!hit) {
+    hit = fetchSequence(root, stem, null);
+    hit.catch(() => baseSequences.delete(key));
+    baseSequences.set(key, hit);
+  }
+  return hit;
+}
+export const forgetBaseSequence = () => baseSequences.clear();
+
 export const fetchXml = (root: string, scenario: string, stem: string) => call<{ xml: string }>(`xml?${qs({ root, scenario, stem })}`).then((r) => r.xml);
 
 const post = <T>(path: string, body: unknown) =>
@@ -119,6 +143,8 @@ export interface SaveRequest {
   rows: string[][];
   relations?: ScenarioRelation[];
   crews?: ScenarioCrew[];
+  extras?: ScenarioExtra[];
+  rules?: ScenarioRules;
   flags?: ScenarioFlag[];
   /** The WBS order set in Programmes > WBS (parent path -> children paths): the generated schedule's WBS follows it. */
   wbsOrder?: Record<string, string[]>;

@@ -1,10 +1,9 @@
 import { EXPERIMENTAL_FEATURES, useAppPrefsStore } from '../state/appPrefsStore';
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { CollapsibleSection } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
 import { useTableStyleStore } from '../state/tableStyleStore';
-import { exportAppConfig, importAppConfig } from '../state/appConfig';
 import { ImportExportPanel } from './ImportExportPanel';
 import { FULL_SCREEN_KEY } from './FullScreenOnStart';
 import { ACCENT_PALETTES, useAccentPaletteStore } from '../state/accentPaletteStore';
@@ -139,34 +138,9 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
   const setShowWikiTab = useAppPrefsStore((s) => s.setShowWikiTab);
   const experimental = useAppPrefsStore((s) => s.experimental);
   const setExperimental = useAppPrefsStore((s) => s.setExperimental);
-  const [configError, setConfigError] = useState<string | null>(null);
-  const [configNotice, setConfigNotice] = useState<string | null>(null);
-  const importRef = useRef<HTMLInputElement>(null);
-
-  const handleImportConfig = async (file: File) => {
-    setConfigError(null);
-    setConfigNotice(null);
-    try {
-      const { missingModels, missingSchedules } = await importAppConfig(file);
-      // Link Groups, Appearance Profiles and Programmes are store-backed, so
-      // they're already showing everywhere. Column arrangements, color/
-      // group/sort rules, palettes etc. are seeded from localStorage only on
-      // mount (usePersistedState), so they need a reload to take effect —
-      // left to the user to trigger (Reload now) rather than done
-      // automatically, since a reload would also drop any 3D model loaded
-      // this session (models aren't persisted at all, by design — see
-      // exportAppConfig's doc comment).
-      const missing = [...missingModels, ...missingSchedules];
-      const missingNote = missing.length > 0 ? ` See the Inputs tab for which files are still needed.` : '';
-      setConfigNotice(`Link Groups, Appearance Profiles and Programmes loaded.${missingNote} Reload to apply saved column/color/view settings.`);
-    } catch (e) {
-      setConfigError(e instanceof Error ? e.message : String(e));
-    }
-  };
-
   return (
     <div className="settings-panel">
-      <Section title="Import / Export" defaultOpen tip="Each kind of thing on its own, as a small file to keep or hand to a colleague. Importing adds what is new and replaces what has the same id; it never removes anything. For everything at once, including programmes, use Preferences > Export all.">
+      <Section title="Import / Export" defaultOpen tip="Each kind of thing on its own, as a small file to keep or hand to a colleague. Importing adds what is new and replaces what has the same id; it never removes anything. Export all writes every file into the project folder at once.">
         <ImportExportPanel />
       </Section>
 
@@ -174,7 +148,7 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
 
       {inputs && (
         <>
-          {FEATURES.seatable && <Section title="File details (SeaTable)" defaultOpen tip="The details of each file (discipline, building, status…) are filled in on SeaTable's Insight Plan Files table. Push sends the files of the Inputs page (name, type, format, size…): new ones are added, the others updated, and the details you filled in are not touched. Read brings the details back, to show as columns and to group and filter by.">
+          {FEATURES.seatable && experimental.seatableFiles && <Section title="File details (SeaTable)" defaultOpen tip="The details of each file (discipline, building, status…) are filled in on SeaTable's Insight Plan Files table. Push sends the files of the Inputs page (name, type, format, size…): new ones are added, the others updated, and the details you filled in are not touched. Read brings the details back, to show as columns and to group and filter by.">
             <FileDetailsSync />
           </Section>}
           <Section title="Project database" defaultOpen tip="The project folder and its database (insight-plan.db): programmes in P6 tables, scenarios and settings. Open it in DBeaver or DB Browser for SQLite; edits made there come in with Reload.">
@@ -183,7 +157,7 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
           <Section title="Exports (XML / XER)" defaultOpen={false} tip="Tick what goes into the XML and XER files you download (scenario programmes, and programmes from the Inputs list). Untick the user fields, resources and activity codes that are for your own use: they stay in the app but are left out of the files, with their values and assignments. The app-only Precast (m3) resource is left out unless you tick it.">
             <ExportFieldsPanel bare />
           </Section>
-          {FEATURES.seatable && <Section title="SeaTable (model data)" defaultOpen={false} tip="Push sends the elements of the IFC classes you tick, with the properties the Properties table shows, to the Elements table of the SeaTable base, one row per element, by its GlobalId. Pull brings back every column you add to that table yourself (names without a dot) as Custom properties of the elements.">
+          {FEATURES.seatable && experimental.seatableModel && <Section title="SeaTable (model data)" defaultOpen={false} tip="Push sends the elements of the IFC classes you tick, with the properties the Properties table shows, to the Elements table of the SeaTable base, one row per element, by its GlobalId. Pull brings back every column you add to that table yourself (names without a dot) as Custom properties of the elements.">
             <SeaTablePanel bare />
           </Section>}
         </>
@@ -259,7 +233,7 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
       </Section>
 
       <Section title="Experimental features" defaultOpen tip="Features still being tried out. They are hidden until switched on here, and may change or be removed.">
-        {EXPERIMENTAL_FEATURES.filter((f) => f.id !== 'scenarios' || FEATURES.scenarios).map((f) => (
+        {EXPERIMENTAL_FEATURES.filter((f) => (f.id !== 'scenarios' || FEATURES.scenarios) && (!f.id.startsWith('seatable') || FEATURES.seatable)).map((f) => (
           <div key={f.id} className="disp__row">
             <span>
               {f.label}{' '}
@@ -270,36 +244,6 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
             </button>
           </div>
         ))}
-      </Section>
-
-      <Section
-        title="Preferences"
-        defaultOpen={false}
-        tip="Link Groups, Appearance Profiles, loaded Programmes (which/hidden), loaded Model references (which/hidden), and every saved view setting (columns, colors, sort, palettes, zoom) as one file. Model geometry itself isn't included; re-add those files from Inputs after importing, and matching names restore their hidden state."
-      >
-        <div className="settings-subheading">Configuration</div>
-        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-          <button className="btn" type="button" onClick={exportAppConfig}>Export all</button>
-          <button className="btn" type="button" onClick={() => importRef.current?.click()}>Import all</button>
-        </div>
-        <input
-          ref={importRef}
-          type="file"
-          accept=".json"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) handleImportConfig(f);
-            e.target.value = '';
-          }}
-        />
-        {configError && <div style={{ color: 'var(--danger)', fontSize: 12, marginTop: 6 }}>{configError}</div>}
-        {configNotice && (
-          <div style={{ marginTop: 6 }}>
-            <div style={{ color: 'var(--text-dim)', fontSize: 12, marginBottom: 4 }}>{configNotice}</div>
-            <button className="btn" type="button" onClick={() => window.location.reload()}>Reload now</button>
-          </div>
-        )}
       </Section>
 
       <Section title="Tables" defaultOpen>

@@ -25,12 +25,19 @@ from config import (
     BUILDING_NAME_MAP,
 )
 
+from core.quantities import collect_props
 from core.resources import rebar_tonnes, crew_table_with_overrides
-from core.helpers import extract_value, title_case, get_cardinal_zone, get_element_world_coordinates, get_original_building_name, get_bbox_height
+from core import rules as _rules
+from core.helpers import extract_value, title_case, get_element_world_coordinates, get_original_building_name, get_bbox_height
 from core.wbs_manager import WBSManager
 from core.activity_generator import create_activities
 from core.excel_exporter import export_activities_to_excel, merge_excel_files, load_overrides, _safe_int
 from core.cpm_apply import apply_cpm_to_xml
+from core.prs_links import merge_extras, resolve_relations
+from core.rule_logic import (
+    place_extras,
+    PourTasks, build_level_tasks, build_sequences, build_contact_relations, build_level_links, late_level_relations, drop_builtin,
+)
 from core.adjustments import load_adjustments, drop_retired, extra_activities, extra_predecessors, apply_baselines, EXTRA_WBS_NAME
 from core.xml_builder import (
     create_p6_xml_root,
@@ -513,13 +520,35 @@ def _pad_pour_id(value):
     return text.zfill(4) if text.isdigit() else text
 
 
+def _include_pour(rec):
+    """Whether a pour gets activities: big enough (stairs always) and not an excluded type. The minimum volume and the
+    excluded types are settings of the scenario's rules (Rules > Settings), by default 0.25 m3 and config.EXCLUDED_POUR_TYPES."""
+    return "YES" if _rules.active().is_included(rec, _rules.excluded_pour_types(EXCLUDED_POUR_TYPES)) else "NO"
+
+
+def _refresh_records(records):
+    """What the rules can change on a record read from the model: whether the pour is in, and its rebar tonnes. (A long-running
+    generator keeps its records between requests, so this runs for every generation.)"""
+    active = _rules.active()
+    active.reset_joins(records)
+    for rec in records:
+        rec["include"] = _include_pour(rec)
+        rec["rebar_weight_tonnes"] = rebar_tonnes(rec)
+    joined = active.apply_joins(records)  # after the above: the main object takes its members' volume and rebar
+    if joined:
+        print(f"  Joined {joined} object(s) into their main object")
+    # A duration from rebar tonnes (a productivity rate) with no rebar rate: every pour has 0 t, so every one gets its minimum days.
+    from_rebar = [r for r in active.productivity if r.get("enabled") is not False and str(r.get("basis") or "rebar").lower() == "rebar"]
+    if from_rebar and records and not any(float(r.get("rebar_weight_tonnes") or 0) > 0 for r in records):
+        print("  WARNING: durations are worked out from rebar tonnes, but no Rebar rate gives tonnes per m3 of concrete, so every pour has 0 t and "
+              "gets the minimum days. Add a Rebar rate (Rules > Rates, and an assignment for the Rebar phase).")
+
+
 def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heights=None):
     records = []
     cached_bbox_heights = cached_bbox_heights or {}
     building_name_map = _resolve_building_name_map(source_stem)
     seen_guids = set()
-    INCLUDE_MIN_VOLUME_M3 = 0.25
-    excluded_types = {str(t).replace("_", " ").strip().upper() for t in (EXCLUDED_POUR_TYPES or [])}
 
     for rel in model.by_type("IfcRelDefinesByProperties"):
         pset_name = getattr(rel.RelatingPropertyDefinition, "Name", None)
@@ -589,7 +618,6 @@ def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heig
             is_disconnected = "DISCONNECTED" in building_zone.upper()
             is_connected = "CONNECTED" in building_zone.upper() and not is_disconnected
 
-            cardinal_zone = get_cardinal_zone(element, base_building)
 
             zone_code = _activity_zone_code(is_connected=is_connected, is_disconnected=is_disconnected)
             type_code = _activity_type_code(pour_type, is_external=is_external)
@@ -683,17 +711,18 @@ def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heig
                 "building_zone": building_zone,
                 "is_connected": is_connected,
                 "is_disconnected": is_disconnected,
-                "cardinal_zone": cardinal_zone,
                 "coord_x": coord_x,
                 "coord_y": coord_y,
                 "coord_z": coord_z,
                 # Small pours are left out, except stairs (a small stair pour is a step of a flight: see core/stair_steps.py).
-                "include": "YES" if (volume >= INCLUDE_MIN_VOLUME_M3 or "STAIR" in pour_type) and pour_type not in excluded_types else "NO",
+                "include": "NO",  # set below, once the record exists (_include_pour)
                 "min_elevation": min_elevation,
                 "max_elevation": max_elevation,
                 "general_level_3": general_level_3,
                 "bbox_height": bbox_height,
             }
+            rec["props"] = collect_props(guid, property_cache)  # the model's numbers a rule can take a quantity from
+            rec["include"] = _include_pour(rec)
             rec["rebar_weight_tonnes"] = rebar_tonnes(rec)
             records.append(rec)
             seen_guids.add(guid)
@@ -767,6 +796,7 @@ def resolve_pour_ids(records, clashes, overrides, generate_new_pour_ids):
 
 def create_all_activities(records, overrides):
     """Every pour's activity chain, in the Option 3 build order."""
+    _refresh_records(records)
     activities = []
     for rec in records:
         activities.extend(create_activities(rec, rec.get("wbs_manager"), overrides=overrides))
@@ -788,10 +818,13 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
     if start_date is not None:
         _xml_builder.START_DATE = start_date
     data_date = _xml_builder.START_DATE
+    clashes = _rules.active().remap_clashes(clashes)  # what touched a joined object touches its main object
     xml_activities = [
         a for a in activities
         if str(a.get("rec", {}).get("include", "NO")).upper() == "YES"
     ]
+
+    pour_activities = list(xml_activities)  # the pours' own activities (before the extras and the rules add theirs)
 
     raw_sequence_order = overrides.get("__sequence_order__", [])
     sequence_order = []
@@ -826,7 +859,7 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
     for source in (intra_predecessors, slab_support_predecessors, level_gate_predecessors, stair_step_predecessors, heavy_precast_wall_predecessors):
         for succ, preds in source.items():
             known_edges[succ].extend(preds)
-    for pred_id, succ_id, _rel in sequence_ss_predecessors:
+    for pred_id, succ_id, *_rest in sequence_ss_predecessors:
         known_edges[succ_id].append(pred_id)
     heavy_precast_open_end_predecessors = _build_heavy_precast_open_end_predecessors(xml_activities, clashes, known_edges)
 
@@ -855,7 +888,7 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
         print("  WBS order from the app applied")
 
     # Extra activities from SeaTable (with their baseline dates): their own WBS under the building's Construction node.
-    adjustments = load_adjustments()
+    adjustments = merge_extras(load_adjustments(), overrides.get("__extras__"))
     extras_acts = []
     if adjustments["extras"] and xml_activities:
         first_rec = xml_activities[0].get("rec", {})
@@ -871,6 +904,50 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
                 extra_edges = extra_predecessors(adjustments["extras"], [a["task_id"] for a in xml_activities])
                 if extra_edges:
                     automatic_predecessor_sources.append(("extra_activities", extra_edges))
+
+    # The scenario's programme rules (Rules panel): level tasks, sequences, links from the clash results, level links. They
+    # add activities and links; the engine's own links they take over (replaceBuiltIn) are dropped here.
+    rules = overrides.get("__rules__") or _rules.active()
+    if extras_acts and pour_activities:
+        # Where each extra activity goes in the WBS (its tag: on the level, in the level's Slabs group, or a folder of its own).
+        for msg in place_extras(rules, extras_acts, xml_wbs_manager, pour_activities, str(pour_activities[0].get("rec", {}).get("building", "") or "")):
+            print(f"  {msg}")
+    rule_relations, late_rule_relations = [], None
+    if not rules.empty and pour_activities:
+        tasks = PourTasks(pour_activities)
+        taken = [a["task_id"] for a in xml_activities]
+        level_acts, level_rel, level_msgs = build_level_tasks(rules, tasks, xml_wbs_manager, taken)
+        taken += [a["task_id"] for a in level_acts]
+        seq_acts, seq_rel, seq_msgs = build_sequences(rules, tasks, xml_wbs_manager, taken)
+        contact_rel, builtin, contact_msgs = build_contact_relations(rules, tasks, clashes)
+        first_building = str(pour_activities[0].get("rec", {}).get("building", "") or "").upper()
+        link_early, link_late, link_msgs = build_level_links(rules, tasks, extras_acts, level_acts, xml_activities + level_acts, first_building)
+        if level_acts or seq_acts:
+            xml_activities = xml_activities + level_acts + seq_acts
+        if builtin:
+            automatic_predecessor_sources = [(label, drop_builtin(preds, builtin.get(label, set()))) for label, preds in automatic_predecessor_sources]
+        # (Pours sharing a Pour ID share their Task IDs, so the same link can come up twice: it is written once.)
+        rule_relations, seen_links = [], set()
+        for r in seq_rel + contact_rel + level_rel + link_early:
+            key = (r["pred"], r["succ"], r["type"])
+            if key not in seen_links:
+                seen_links.add(key)
+                rule_relations.append(r)
+        if link_late:
+            programme = list(xml_activities)
+            late_rule_relations = lambda open_ids: late_level_relations(link_late, open_ids, level_acts, programme, tasks)  # noqa: E731
+        for message in level_msgs + seq_msgs + contact_msgs + link_msgs:
+            print(f"  {message}")
+        if level_acts:
+            print(f"  {len(level_acts)} level task(s) added")
+        if seq_acts:
+            print(f"  {len(seq_acts)} sequence milestone(s) added")
+
+    # Manual links that name activities by a selector (select:{...}) become links between Task IDs, now that every
+    # generated activity (and the extras) exists.
+    custom_relations, link_messages = resolve_relations(custom_relations, xml_activities)
+    for message in link_messages:
+        print(f"  {message}")
     project_building_code = (
         str(records[0].get("building", "DEFAULT") or "DEFAULT")
         if records else
@@ -894,6 +971,8 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
         custom_relations=custom_relations,
         automatic_predecessor_sources=automatic_predecessor_sources,
         crew_table=crew_table_with_overrides(overrides),
+        rule_relations=rule_relations,
+        late_rule_relations=late_rule_relations,
     )
     skipped_edges_by_source = (relationship_stats or {}).get("skipped_edges_by_source", {})
 
@@ -930,7 +1009,9 @@ def overrides_from_scenario(data):
     vite-plugins/scenarios.ts) instead of an Overrides workbook: the pour
     order, manual links and crews. {"sequence": [{"GUID", "Index", "Phase"}],
     "relations": [{"ActivityID1", "ActivityID2", "Relation", "Lag"}],
-    "crews": [{"Phase", "PourType", "Trade", "Crew"}]}"""
+    "crews": [{"Phase", "PourType", "Trade", "Crew"}],
+    "extras": [{"TaskID", "Name", "DurationDays", "BaselineStart", "BaselineFinish"}]}
+    A link's ActivityID1 / ActivityID2 may be a selector (core/prs_links.py)."""
     data = data or {}
     sequence = []
     for item in data.get("sequence") or []:
@@ -947,10 +1028,15 @@ def overrides_from_scenario(data):
                               "Relation": str(r.get("Relation") or "FS").strip().upper(),
                               "Lag": float(r.get("Lag") or 0)})
     crews = [{k: str(c.get(k, "") or "").strip() for k in ("Phase", "PourType", "Trade", "Crew")} for c in data.get("crews") or []]
+    # The scenario's programme rules (docs/programme-rules) become the active ones, settings included: every lookup in
+    # the generator (durations, rebar, crews, links) reads them. Without rules this puts the defaults back.
+    rules = _rules.activate(data.get("rules"))
     return {
+        "__rules__": rules,
         "__sequence_order__": sorted(sequence, key=lambda x: x["Index"]),
         "__relations__": relations,
         "__crews__": crews,
+        "__extras__": [e for e in data.get("extras") or [] if isinstance(e, dict)],
         "__wbs_order__": data.get("wbsOrder") or {},
     }
 
@@ -978,6 +1064,7 @@ def process_single_ifc(input_path, ifc_dir, xml_dir, xlsx_dir, create_ifc=True, 
             overrides = overrides_from_scenario(json.load(f))
     else:
         overrides = load_overrides(str(excel_path))
+        _rules.activate(None)
 
     # "schedule" stage structurally can't do what "prepare" already did:
     # Pour IDs are permanent once assigned (assigning them again would

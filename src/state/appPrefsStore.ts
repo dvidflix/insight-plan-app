@@ -26,6 +26,8 @@ export const EXPERIMENTAL_FEATURES = [
   { id: 'monteCarlo', label: 'Programmes: Risk (Monte Carlo)', tip: 'Programmes › Views: the chance of finishing by a date, from a Monte Carlo run.' },
   { id: 'anonymise', label: 'Programmes: Anonymise', tip: 'Programmes › Views: replace names and codes so a programme can be shared.' },
   { id: 'whatIf', label: 'Programmes: What-If Scenarios', tip: 'Programmes › Views: try changes to the programme and see their effect.' },
+  { id: 'seatableFiles', label: 'SeaTable: file details', tip: 'Inputs page: the file details (discipline, building, status ...) are read from and written to the Insight Plan Files table of SeaTable, and files are pushed to it. Needs the SeaTable Docker stack. Off: the details you type stay in the app.' },
+  { id: 'seatableModel', label: 'SeaTable: model data', tip: 'Settings > Inputs: push the elements of the model to SeaTable and pull custom fields back onto the elements, also automatically when a model loads. Needs the SeaTable Docker stack.' },
   { id: 'bcf', label: 'BCF topics', tip: 'Models page: the Topics tab, to create BCF topics and comments and to import / export BCF files.' },
 ] as const;
 export type ExperimentalId = (typeof EXPERIMENTAL_FEATURES)[number]['id'];
@@ -112,6 +114,9 @@ export const useAppPrefsStore = create<AppPrefs>((set) => ({
     set((s) => ({ experimental: { ...s.experimental, [id]: v } }));
   },
 }));
+
+/** Whether an experimental feature is switched on (for code outside components). */
+export const experimentalOn = (id: ExperimentalId): boolean => useAppPrefsStore.getState().experimental[id];
 
 /** Whether an experimental feature is switched on. */
 export const useExperimental = (id: ExperimentalId) => useAppPrefsStore((s) => s.experimental[id]);
