@@ -118,14 +118,14 @@ export const RELATIONAL_RULES = {
     group('T-1HDAB-L1-SLABS', 'The L1 slabs of 1HDAB', c('family', 'equals', 'slab'), c('building', 'equals', '1HDAB', 2), c('level', 'equals', 'L1', 3)),
   ],
   chains: [
-    // Every in-situ pour: Rebar, Formwork, Concrete, then Curing (the concrete maturing: it does not hold back what follows).
+    // Every in-situ pour: Rebar, Formwork, Concrete (Curing is for slabs and rafts only: see below).
     // Overlaps: the formwork starts when the rebar is 80 % done (and does not finish before it).
-    ...chain('', 0, [['Rebar', '-R', 'Rebar', 'rebar'], ['Formwork', '-F', 'E/P and Formwork', undefined, 'Rebar@80', true], ['Concrete', '-C', 'Concrete', 'concrete'], ['Curing', '-CU', 'Curing', undefined, 'Concrete']]),
+    ...chain('', 0, [['Rebar', '-R', 'Rebar', 'rebar'], ['Formwork', '-F', 'E/P and Formwork', undefined, 'Rebar@80', true], ['Concrete', '-C', 'Concrete', 'concrete']]),
     // The rebar starts when the decking is 80 % done, the formwork when the rebar is; the concrete waits for the formwork and the embedded parts.
     ...chain('C-SLAB', 10, [['Decking', '-DK', 'Mills and Decking'], ['Under Slab', '-D', 'E/P under Slab', undefined, 'Decking@80'], ['Rebar', '-R', 'Rebar', 'rebar', 'Decking@80, Under Slab@80', true], ['EOP on Slab', '-E2', 'E/P on Slab', undefined, 'Rebar'], ['FWK', '-F', 'Formwork', undefined, 'Rebar@80', true], ['Concrete', '-C', 'Concrete', 'concrete', 'FWK, EOP on Slab'], ['Curing', '-CU', 'Curing', undefined, 'Concrete']]),
     ...chain('C-RAFT', 20, [['Rebar', '-R', 'Rebar', 'rebar'], ['EOP on Slab', '-E2', 'E/P on Slab', undefined, 'Rebar'], ['FWK', '-F', 'Formwork', undefined, 'Rebar@80', true], ['Concrete', '-C', 'Concrete', 'concrete', 'FWK, EOP on Slab'], ['Curing', '-CU', 'Curing', undefined, 'Concrete', false, true]]),
-    ...chain('C-LANDING', 30, [['Decking', '-DK', 'Decking'], ['Rebar', '-R', 'Rebar and EP/AP', 'rebar'], ['Concrete', '-C', 'Concrete', 'concrete'], ['Curing', '-CU', 'Curing', undefined, 'Concrete']]),
-    ...chain('C-PEDESTAL-2', 40, [['Rebar, Formwork and Concrete', '-RFC', 'Rebar, Formwork and Concrete'], ['Curing', '-CU', 'Curing', undefined, 'Rebar, Formwork and Concrete']]),
+    ...chain('C-LANDING', 30, [['Decking', '-DK', 'Decking'], ['Rebar', '-R', 'Rebar and EP/AP', 'rebar'], ['Concrete', '-C', 'Concrete', 'concrete']]),
+    ...chain('C-PEDESTAL-2', 40, [['Rebar, Formwork and Concrete', '-RFC', 'Rebar, Formwork and Concrete']]),
     ...chain('C-PRECAST', 50, [['Installation', '-I', 'Installation'], ['Stitching', '-S', 'Stitching']]),
     ...chain('C-HEAVY-PRECAST', 50, [['Propping', '-PR', 'Propping'], ['Installation', '-I', 'Installation'], ['Stitching', '-S', 'Stitching'], ['Curing', '-CU', 'Curing (walls under)'], ['Propping Removal', '-RP', 'Propping Removal']]),
   ] as ChainRow[],
@@ -160,9 +160,9 @@ export const RELATIONAL_RULES = {
     assign('', 'Propping', { crew: 'PE-4', priority: 0 }), assign('', 'Installation', { crew: 'PE-6', priority: 0 }), assign('', 'Stitching', { crew: 'STITCHING', priority: 0 }),
     assign('', 'Propping Removal', { crew: 'PE-4', priority: 0 }),
     assign('T-TYPE-SLAB', 'Rebar', { crew: 'SF-8', priority: 10 }), assign('T-TYPE-MAIN-SLAB', 'Rebar', { crew: 'SF-8', priority: 10 }), assign('T-TYPE-RAFT', 'Rebar', { crew: 'SF-10', priority: 10 }),
-    // Curing: 7 days for every in-situ pour, 20 for slabs and rafts (for now: to be set from the specification), 28 for heavy precast (above); the combined activity of
+    // Curing: slabs and rafts only, 20 days (for now: to be set from the specification), 28 for heavy precast (above); the combined activity of
     // a stage 2 pedestal: the days of the "Other" row added up.
-    ...phasesOf('', { Curing: 7 }, 0), ...phasesOf('C-SLAB', { Curing: 20 }), ...phasesOf('C-RAFT', { Curing: 20 }), ...phasesOf('C-PEDESTAL-2', { 'Rebar, Formwork and Concrete': 12 }),
+    ...phasesOf('C-SLAB', { Curing: 20 }), ...phasesOf('C-RAFT', { Curing: 20 }), ...phasesOf('C-PEDESTAL-2', { 'Rebar, Formwork and Concrete': 12 }),
     // Calendar: Curing is concrete maturing: it runs on weekends too, so 28 days elapse as 28 calendar days.
     assign('', 'Curing', { calendar: '7D', priority: 0 }),
     // The computed rebar durations (SF-003: 12 steel fixers, two shifts of 9.17 h), switched off until they are wanted.
@@ -262,8 +262,8 @@ export const DEFAULT_PRESETS: RulePreset[] = [PRESET_1HDAB_TOC];
 
 // ---------------------------------------------------------------- applying a preset
 
-/** A preset is rules only: the objects a scenario joins are its own (they are ids of one model's objects). */
-export const withoutJoins = (rules: ScenarioRules): ScenarioRules => ((rules.joins ?? []).length ? { ...rules, joins: [] } : rules);
+/** A preset is rules only: the objects a scenario joins are its own (they are ids of one model's objects), and so are its recipes (their own file). */
+export const withoutJoins = (rules: ScenarioRules): ScenarioRules => ((rules.joins ?? []).length || (rules.recipes ?? []).length || (rules.resourcePools ?? []).length ? { ...rules, joins: [], recipes: [], resourcePools: [] } : rules);
 
 /** What the scenario holds after a preset is added: rules with the same id are replaced, the others kept, and so for extras and links. */
 export function addPreset(current: PresetContent, preset: PresetContent): PresetContent {

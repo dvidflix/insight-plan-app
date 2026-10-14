@@ -33,7 +33,7 @@ export interface ResourceInfo {
   id: string;
   name: string;
   type: ResourceAssignment['resourceType'];
-  /** Labour: people available per day (P6 max units/time); null if unset. */
+  /** Labour: people available per day (P6 max units/time); equipment and counted materials (a scenario's pool): how many there are; null if unset. */
   capacity: number | null;
   /** App-only resource (see virtualResources.ts). */
   virtual?: boolean;
@@ -127,6 +127,9 @@ export interface ScheduleModel {
   /** Loaded from the project database (ip_programme.id) — the database,
       not this copy, is the source of truth. */
   dbProgrammeId?: number;
+  /** A programme edited in place (see db ProgrammeRow.editable): its edits change the model and are written to the database, instead of
+      being kept on top of it (state/activityOverridesStore.ts). */
+  editable?: boolean;
   project: ScheduleProject;
   activities: Activity[];
   relationships: Relationship[];

@@ -609,14 +609,6 @@
    "priority": 10
   },
   {
-   "id": "|CURING",
-   "group": "",
-   "phase": "Curing",
-   "days": 7,
-   "priority": 0,
-   "calendar": "7D"
-  },
-  {
    "id": "C-SLAB|CURING",
    "group": "C-SLAB",
    "phase": "Curing",
@@ -636,6 +628,13 @@
    "phase": "Rebar, Formwork and Concrete",
    "days": 12,
    "priority": 10
+  },
+  {
+   "id": "|CURING",
+   "group": "",
+   "phase": "Curing",
+   "calendar": "7D",
+   "priority": 0
   },
   {
    "id": "T-ANY|REBAR",
@@ -713,16 +712,6 @@
    "suffix": "-C",
    "label": "Concrete",
    "material": "concrete",
-   "priority": 0
-  },
-  {
-   "id": "|CURING",
-   "group": "",
-   "order": 4,
-   "phase": "Curing",
-   "suffix": "-CU",
-   "label": "Curing",
-   "follows": "Concrete",
    "priority": 0
   },
   {
@@ -881,32 +870,12 @@
    "priority": 30
   },
   {
-   "id": "C-LANDING|CURING",
-   "group": "C-LANDING",
-   "order": 4,
-   "phase": "Curing",
-   "suffix": "-CU",
-   "label": "Curing",
-   "follows": "Concrete",
-   "priority": 30
-  },
-  {
    "id": "C-PEDESTAL-2|REBAR, FORMWORK AND CONCRETE",
    "group": "C-PEDESTAL-2",
    "order": 1,
    "phase": "Rebar, Formwork and Concrete",
    "suffix": "-RFC",
    "label": "Rebar, Formwork and Concrete",
-   "priority": 40
-  },
-  {
-   "id": "C-PEDESTAL-2|CURING",
-   "group": "C-PEDESTAL-2",
-   "order": 2,
-   "phase": "Curing",
-   "suffix": "-CU",
-   "label": "Curing",
-   "follows": "Rebar, Formwork and Concrete",
    "priority": 40
   },
   {
@@ -1595,6 +1564,8 @@
   }
  ],
  "joins": [],
+ "recipes": [],
+ "resourcePools": [],
  "extraTags": {
   "SZC-1HDAB-C-NR-40": {
    "building": "1HDAB",

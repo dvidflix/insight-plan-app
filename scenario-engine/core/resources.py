@@ -6,7 +6,7 @@ the Overrides workbook's Crews sheet; the trades are the scenario's rules). xml_
 assignments into the P6 XML.
 """
 import config
-from config import LABOUR_RESOURCE_PREFIX
+from config import LABOUR_RESOURCE_PREFIX, PROJECT_SHORT
 from core import rules as _rules
 
 
@@ -71,3 +71,29 @@ def crews_for(phase, rec, table):
     if specific in table:
         return table[specific]
     return table.get(phase, [])
+
+
+_POOL_LETTER = {"equipment": "E", "crane": "K", "material": "M"}
+# P6 types: equipment and cranes are non-labour resources, materials are material resources.
+POOL_P6_TYPE = {"equipment": "Nonlabor", "crane": "Nonlabor", "material": "Material"}
+
+
+def pool_resource_id(kind, code):
+    """The P6 resource of a pool: <project>-E-<id> (equipment), -K- (cranes), -M- (materials)."""
+    return f"{PROJECT_SHORT}-{_POOL_LETTER[kind]}-{code}"
+
+
+def pools():
+    """The scenario's pools: [{kind, id, name, quantity}]."""
+    return _rules.active().pools()
+
+
+def uses_for(phase, rec):
+    """[(resource id, count)] the recipes give this activity: its equipment, cranes and materials (those whose pool the scenario defines)."""
+    known = {(p["kind"], p["id"].upper()): p["id"] for p in pools()}
+    out = []
+    for use in _rules.active().resource_uses(phase, rec):
+        code = known.get((use["kind"], use["type"].upper()))
+        if code is not None:
+            out.append((pool_resource_id(use["kind"], code), use["count"]))
+    return out

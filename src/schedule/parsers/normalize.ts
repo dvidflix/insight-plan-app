@@ -251,7 +251,8 @@ function xerResourceCatalog(tables: XerTables, names: Map<string, string>): Reso
   }
   return (tables.RSRC ?? []).map((row) => {
     const type = RSRC_TYPE_MAP[row.rsrc_type] ?? 'other';
-    return { id: row.rsrc_id, name: names.get(row.rsrc_id) ?? row.rsrc_id, type, capacity: type === 'labor' ? maxById.get(row.rsrc_id)?.units ?? null : null };
+    const units = maxById.get(row.rsrc_id)?.units ?? null;
+    return { id: row.rsrc_id, name: names.get(row.rsrc_id) ?? row.rsrc_id, type, capacity: type === 'labor' || type === 'equipment' || (type === 'material' && (units ?? 0) >= 1) ? units : null };
   });
 }
 
@@ -330,7 +331,7 @@ function workSpans(body: string): CalendarDay {
     const finish = /f\|(\d{1,2}:\d{2})/.exec(x[1])?.[1] ?? '';
     return { start: start.padStart(5, '0'), finish: finish.padStart(5, '0') };
   });
-  return spans.length ? { working: true, range: `${spans[0].start}–${spans[spans.length - 1].finish}` } : { working: false, range: '' };
+  return spans.length ? { working: true, range: `${spans[0].start}–${spans[spans.length - 1].finish}`, spans } : { working: false, range: '' };
 }
 
 export function listXerProjects(tables: XerTables): { id: string; name: string }[] {

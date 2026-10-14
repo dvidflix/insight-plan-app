@@ -38,6 +38,7 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'day', label: 'Day' },
   { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' },
+  { id: 'year', label: 'Year' },
 ];
 const MAX_ROWS = 300;
 const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' }) : '—');
@@ -64,7 +65,7 @@ const keptLevelling = new WeakMap<ScheduleModel, Levelled>();
     graphs. */
 export function ResourcesView({ model, activities, onSelect }: ResourcesViewProps) {
   const addSchedule = useScheduleStore((s) => s.addSchedule);
-  const [view, setView] = usePersistedState<'labour' | 'materials'>('resources.view', 'labour');
+  const [view, setView] = usePersistedState<'labour' | 'plant' | 'materials'>('resources.view', 'labour');
   const [zoom, setZoom] = usePersistedState<number>('resources.zoom', 1);
   const [period, setPeriod] = usePersistedState<Period>('resources.period', 'week');
   const [metric, setMetric] = usePersistedState<Metric>('resources.metric', 'peak');
@@ -97,7 +98,24 @@ export function ResourcesView({ model, activities, onSelect }: ResourcesViewProp
   const shown: ResourceLoading = after ?? before;
 
   const labour = shown.resources.filter((r) => r.type === 'labor');
-  const materials = shown.resources.filter((r) => r.type !== 'labor');
+  // Equipment, cranes and counted materials (a scenario's pools: the programme gives their count as max units) are charted against it.
+  const plant = shown.resources.filter((r) => r.type !== 'labor' && !r.virtual && r.fileCapacity !== null);
+  const materials = shown.resources.filter((r) => r.type !== 'labor' && !plant.includes(r));
+  const plantStats = useMemo(() => {
+    const out = new Map<string, { peak: number; over: number }>();
+    for (const r of plant) {
+      const s = shown.demand.get(r.name);
+      let peak = 0;
+      let over = 0;
+      for (let d = 0; s && d < s.length; d++) {
+        peak = Math.max(peak, s[d]);
+        if (r.fileCapacity && s[d] > r.fileCapacity + 1e-9) over++;
+      }
+      out.set(r.name, { peak, over });
+    }
+    return out;
+  }, [plant, shown.demand]);
+  const plantOver = plant.filter((r) => (plantStats.get(r.name)?.over ?? 0) > 0);
   const colorOf = useMemo(() => {
     const all = (catalog.length ? catalog : shown.resources).filter((r) => r.type === 'labor').map((r) => r.name);
     return (name: string) => {
@@ -269,6 +287,7 @@ export function ResourcesView({ model, activities, onSelect }: ResourcesViewProp
         <div className="rv-toolbar">
           <div className="rv-seg" role="tablist" aria-label="Resource kind">
             <button type="button" role="tab" aria-selected={view === 'labour'} className={view === 'labour' ? 'active' : ''} onClick={() => setView('labour')} disabled={!labour.length}>Labour</button>
+            <button type="button" role="tab" aria-selected={view === 'plant'} className={view === 'plant' ? 'active' : ''} onClick={() => setView('plant')} disabled={!plant.length} title="Equipment, cranes and counted materials against the pool of the scenario">Equipment</button>
             <button type="button" role="tab" aria-selected={view === 'materials'} className={view === 'materials' ? 'active' : ''} onClick={() => setView('materials')} disabled={!materials.length}>Materials</button>
           </div>
           {view === 'labour' && (
@@ -523,6 +542,48 @@ export function ResourcesView({ model, activities, onSelect }: ResourcesViewProp
                 {...zoomProps}
               />
             </section>
+          </>
+        )}
+
+
+        {view === 'plant' && plant.length === 0 && <div className="rv-note">No equipment, cranes or counted materials in the filtered activities.</div>}
+
+        {view === 'plant' && plant.length > 0 && (
+          <>
+            <div className="rv-kpis">
+              <div className={`rv-kpi${plantOver.length ? ' rv-kpi--bad' : ' rv-kpi--good'}`}>
+                <div className="rv-kpi__label">Over their pool</div>
+                <div className="rv-kpi__value"><span className="rv-status" aria-hidden="true">{plantOver.length ? '▲' : '✓'}</span> {plantOver.length}</div>
+                <div className="rv-kpi__sub">{plantOver.length ? plantOver.map((p) => p.name).join(', ') : `of ${plant.length} resource${plant.length === 1 ? '' : 's'}: every day within its pool`}</div>
+              </div>
+            </div>
+            {plant.map((r) => {
+              const cap = r.fileCapacity!;
+              const f = aggregate({ ...shown, dayCount }, [r.name], new Map([[r.name, cap]]), buckets, 'peak');
+              const stats = plantStats.get(r.name)!;
+              return (
+                <section key={r.name} className="rv-card">
+                  <h4 className="rv-card__title">
+                    {r.name} in use, peak per {period}
+                    <span className="rv-card__meta">pool {fmtNum(cap, cap % 1 ? 1 : 0)} · peak {fmtNum(stats.peak, stats.peak % 1 ? 1 : 0)} · {stats.over ? `${stats.over} day${stats.over === 1 ? '' : 's'} over` : 'within the pool'}</span>
+                  </h4>
+                  <StackedChart
+                    title={`${r.name} in use, peak per ${period}`}
+                    buckets={buckets}
+                    figures={f}
+                    series={[{ name: r.name, color: SERIES_COLORS[2] }]}
+                    unit={r.type === 'material' ? 'units' : 'in use'}
+                    capacity={cap}
+                    before={null}
+                    selected={selected}
+                    onSelect={setSelected}
+                    height={180}
+                    integer={cap >= 1 && Number.isInteger(cap)}
+                    {...zoomProps}
+                  />
+                </section>
+              );
+            })}
           </>
         )}
 

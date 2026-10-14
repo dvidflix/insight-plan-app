@@ -388,6 +388,59 @@ def build_contact_relations(rules, tasks, clashes):
     return relations, {k: v for k, v in builtin.items()}, messages
 
 
+_MAX_RECIPE_LINKS = 50000
+
+
+def _task_in(tasks, guid, phase):
+    """The Task ID of a pour's activity of this phase (names compared without case), or None."""
+    want = str(phase or "").strip().upper()
+    return next((tid for name, tid in tasks.phases(guid).items() if name.strip().upper() == want), None)
+
+
+def _scope_key(rec, scope):
+    building = str(rec.get("building") or "").strip().upper()
+    if scope == "all":
+        return ""
+    if scope == "building":
+        return building
+    return f"{building}|{str(rec.get('level_code') or '').strip().upper()}"
+
+
+def build_recipe_links(rules, tasks):
+    """Links between the pours of two recipes (a recipe task that calls a task of another recipe): the task of the objects of this recipe's group
+    and the target task of the objects of the target recipe's group, for the pairs in the same level (or building, or anywhere). 'after': the target
+    task follows this one; 'before': it precedes it. Returns (relations, messages)."""
+    relations, messages = [], []
+    for link in getattr(rules, "recipe_links", []):
+        subject_when = {"group": link["group"]} if link["group"] else {}
+        target_when = {"group": link["targetGroup"]} if link["targetGroup"] else {}
+        scope = link["scope"]
+        subjects = [g for g in tasks.order if rules.matches(subject_when, tasks.rec[g])]
+        by_scope = defaultdict(list)
+        for g in tasks.order:
+            if rules.matches(target_when, tasks.rec[g]):
+                by_scope[_scope_key(tasks.rec[g], scope)].append(g)
+        added = 0
+        for s in subjects:
+            mine = _task_in(tasks, s, link["phase"])
+            if not mine:
+                continue
+            for o in by_scope.get(_scope_key(tasks.rec[s], scope), []):
+                other = _task_in(tasks, o, link["targetPhase"]) if o != s else None
+                if not other or other == mine:
+                    continue
+                pred, succ = (mine, other) if link["direction"] == "after" else (other, mine)
+                relations.append(_relation(pred, succ, link["type"] if link["type"] in _TYPES else "FS", link["lagHours"], f"recipe:{link['id']}"))
+                added += 1
+                if added >= _MAX_RECIPE_LINKS:
+                    break
+            if added >= _MAX_RECIPE_LINKS:
+                messages.append(f"Recipe link {link['id']}: stopped at {_MAX_RECIPE_LINKS} links (use a narrower scope)")
+                break
+        messages.append(f"Recipe link {link['id']}: {len(subjects)} pour(s), {added} link(s)")
+    return relations, messages
+
+
 def drop_builtin(predecessors, task_ids):
     """The engine's own predecessor dict without the links into these tasks (taken over by a contact rule)."""
     if not task_ids:

@@ -1,3 +1,5 @@
+import { normalizeRecipes, type Recipe } from './recipes';
+
 /** A scenario's programme rules, as the Rules panel edits them and the generator reads them
     (scenario-engine/core/rules.py, core/rule_logic.py; the format is described in docs/programme-rules).
 
@@ -328,6 +330,20 @@ export interface ObjectJoin extends Row {
   members: string[];
 }
 
+/** A pool of the scenario: a type of equipment, crane or material and how many of it there are (0: not limited). Recipes name the type; the
+    count is the scenario's (so one recipes file serves scenarios with different fleets). Written to P6 as a resource, the count its max units. */
+export type PoolKind = 'equipment' | 'crane' | 'material';
+export const POOL_KINDS: { value: PoolKind; label: string }[] = [
+  { value: 'equipment', label: 'Equipment' },
+  { value: 'crane', label: 'Crane' },
+  { value: 'material', label: 'Material' },
+];
+export interface PoolRow extends Row {
+  kind: PoolKind;
+  name: string;
+  quantity: number;
+}
+
 export interface ScenarioRules {
   version: 1;
   settings: Record<string, SettingValue>;
@@ -348,6 +364,10 @@ export interface ScenarioRules {
   contacts: ContactRule[];
   levelLinks: LevelLink[];
   joins: ObjectJoin[];
+  /** How each kind of object is built (docs/design/recipes.md, prs/recipes.ts): compiled into chains and assignments for the generator. The scenario's own, like its joins. */
+  recipes: Recipe[];
+  /** How many of each equipment, crane and material type the scenario has (the recipes' resources). The scenario's own, like its recipes. */
+  resourcePools: PoolRow[];
   /** Where an extra activity belongs, by its ID: its building and level (for the level links and the WBS), where it goes in the WBS, and
       which level task it is tied to. */
   extraTags: Record<string, ExtraTag>;
@@ -357,7 +377,7 @@ export interface ScenarioRules {
 export const NO_RULES: ScenarioRules = Object.freeze({
   version: 1,
   settings: Object.freeze({}) as Record<string, SettingValue>,
-  durations: [], productivity: [], rebar: [], crews: [], trades: [], rates: [], crewTemplates: [], assignments: [], chains: [], calendars: [], calendarRules: [], groups: [], levelTasks: [], sequences: [], contacts: [], levelLinks: [], joins: [],
+  durations: [], productivity: [], rebar: [], crews: [], trades: [], rates: [], crewTemplates: [], assignments: [], chains: [], calendars: [], calendarRules: [], groups: [], levelTasks: [], sequences: [], contacts: [], levelLinks: [], joins: [], recipes: [], resourcePools: [],
   extraTags: Object.freeze({}) as ScenarioRules['extraTags'],
 }) as ScenarioRules;
 
@@ -387,6 +407,8 @@ export function normalizeRules(raw: unknown): ScenarioRules {
     contacts: arr<ContactRule>(r.contacts).map((c) => ({ ...c, subject: c.subject ?? {}, with: c.with ?? {} })),
     levelLinks: arr<LevelLink>(r.levelLinks).map((l) => ({ ...l, tasks: Array.isArray(l.tasks) ? l.tasks : [] })),
     joins: arr<ObjectJoin>(r.joins).filter((j) => typeof j.main === 'string' && j.main).map((j) => ({ ...j, members: Array.isArray(j.members) ? j.members.filter((m) => typeof m === 'string' && m && m !== j.main) : [] })),
+    recipes: normalizeRecipes({ recipes: r.recipes }).recipes,
+    resourcePools: arr<PoolRow>(r.resourcePools).filter((p) => typeof p.id === 'string' && p.id.trim() !== '').map((p) => ({ ...p, kind: p.kind === 'crane' || p.kind === 'material' ? p.kind : 'equipment', name: p.name ?? '', quantity: Number.isFinite(Number(p.quantity)) ? Number(p.quantity) : 0 })),
     extraTags: r.extraTags && typeof r.extraTags === 'object' && !Array.isArray(r.extraTags) ? { ...r.extraTags } : {},
   };
   return isEmptyRules(out) ? NO_RULES : out;
@@ -402,10 +424,12 @@ export const sectionCount = (r: ScenarioRules, section: RuleSection): number =>
 export const isEmptyRules = (r: ScenarioRules): boolean =>
   SECTIONS.every((s) => sectionCount(r, s) === 0) &&
   (r.joins ?? []).length === 0 &&
+  (r.recipes ?? []).length === 0 &&
+  (r.resourcePools ?? []).length === 0 &&
   Object.keys(r.extraTags).length === 0;
 
 export const totalRules = (r: ScenarioRules): number =>
-  SECTIONS.reduce((n, s) => n + sectionCount(r, s), 0) + (r.joins ?? []).length;
+  SECTIONS.reduce((n, s) => n + sectionCount(r, s), 0) + (r.joins ?? []).length + (r.recipes ?? []).length + (r.resourcePools ?? []).length;
 
 /** A new row id that no row of the section has: "WALLS", "WALLS-2", ... (or prefix-1, prefix-2 ...). */
 export function freshId(prefix: string, existing: string[]): string {
@@ -462,12 +486,13 @@ export interface SettingMeta {
   help: string;
   kind: 'bool' | 'number' | 'list';
   unit?: string;
-  group: 'Sequence' | 'Level gate' | 'Open ends & close-out' | 'Slab curing & phases' | 'Clash positions';
+  group: 'Sequence' | 'Level gate' | 'Open ends & close-out' | 'Slab curing & phases' | 'Clash positions' | 'Resources';
 }
 
 export const SETTINGS_META: SettingMeta[] = [
   { key: 'sequenceFlow', label: 'Steps overlap (flow)', kind: 'bool', group: 'Sequence', help: "Off: each step of the scenario's order starts when the one before it has finished (a relay: a long programme). On: the order is the order the work starts and the concrete is poured: a step starts a few days after the previous step starts, its concrete follows the previous step's, and each pour's own rebar, formwork and concrete run as they can." },
   { key: 'sequenceLeadDays', label: 'A step starts this long after the previous one', kind: 'number', unit: 'working days', group: 'Sequence', help: 'Only with Steps overlap. 0: every step starts with the one before (the concrete order alone sets the pace). More days: a slower build, with each step later. The default is 3.' },
+  { key: 'sequenceConcreteFollows', label: "A step's concrete follows the previous step's", kind: 'bool', group: 'Sequence', help: "Only with Steps overlap. On (the default): the pours are cast in exactly the order of the steps, so a pour that is not ready yet (a slab waiting for its rebar, say) holds up every pour after it. Off: the order sets when each step starts, and a pour is cast when it is ready; the programme is shorter." },
   { key: 'levelGate', label: 'Level gate', kind: 'bool', group: 'Level gate', help: "A slab's first task waits for the concrete of the objects on the level below that touch it." },
   { key: 'levelGateSlabsOnly', label: 'Slabs only', kind: 'bool', group: 'Level gate', help: 'Only slabs are tied back to the level below; walls and columns follow their own slab.' },
   { key: 'levelGateDeckingConcreteOnly', label: 'Concrete of the level below only', kind: 'bool', group: 'Level gate', help: "Only the lower level's Concrete tasks (not Stitching or Installation) and no stage-2 objects feed a slab's first task." },
@@ -477,6 +502,7 @@ export const SETTINGS_META: SettingMeta[] = [
   { key: 'openEndMaxDistanceM', label: 'Reach', kind: 'number', unit: 'm', group: 'Open ends & close-out', help: 'A slab counts as "on it" within this gap.' },
   { key: 'openEndNearestSlabFallback', label: 'Nearest slab above when none is in reach', kind: 'bool', group: 'Open ends & close-out', help: 'Only objects with no slab above them at all (the roof) then end on the completion milestone.' },
   { key: 'slabCuringGatesSuccessors', label: 'Curing holds back what follows', kind: 'bool', group: 'Slab curing & phases', help: "Off: what follows a slab waits for its Concrete only and Curing runs alongside. On: it waits for the Curing to finish." },
+  { key: 'maximizeResources', label: 'Maximize resource availability', kind: 'bool', group: 'Resources', help: 'No labour trade, equipment, crane or material pool has a limit: the programme the logic alone allows, to see the shortest build when resources are not the constraint. Switch it off to go back to the capacities and counts of the scenario (they are kept).' },
   { key: 'sideOverlapThreshold', label: 'Beside = overlap of at least', kind: 'number', group: 'Clash positions', help: "How much of the smaller object's height must overlap the other for the pair to count as beside (rather than below or above): 0 to 1." },
 ];
 
@@ -549,6 +575,8 @@ export function mergeRules(base: ScenarioRules, incoming: ScenarioRules): Scenar
     contacts: byId(base.contacts, incoming.contacts),
     levelLinks: byId(base.levelLinks, incoming.levelLinks),
     joins: base.joins ?? [], // (the objects joined in this scenario stay; joins belong to the scenario's order, not to a file or preset)
+    recipes: base.recipes ?? [], // (so do its recipes: their own file, not a preset's)
+    resourcePools: base.resourcePools ?? [], // (and its pools of equipment, cranes and materials)
     extraTags: { ...base.extraTags, ...incoming.extraTags },
   };
   return isEmptyRules(next) ? NO_RULES : next;

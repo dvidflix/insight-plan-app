@@ -1,0 +1,191 @@
+"""Recipes (core/recipes.py) compile into the chains and assignments the generator reads: the 1HDAB_TOC preset written as recipes
+(fixtures/preset_recipes.json, kept equal to src/prs/recipes.ts's output by tests/unit/recipes.test.ts) must generate exactly what the preset
+generates with its chains and assignments."""
+import json
+import sys
+from pathlib import Path
+
+import pytest
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from config import PROJECT_SHORT  # noqa: E402
+from core import rules  # noqa: E402
+from core.recipes import compile_recipes  # noqa: E402
+from test_preset_parity import PRESET, snapshot  # noqa: E402
+from test_rules import rec  # noqa: E402
+
+FIXTURE = json.loads((Path(__file__).parent / "fixtures" / "preset_recipes.json").read_text(encoding="utf8"))
+
+
+@pytest.fixture(autouse=True)
+def reset():
+    rules.activate(None)
+    yield
+    rules.activate(None)
+
+
+def test_the_preset_as_recipes_generates_what_the_preset_does():
+    with_recipes = {**FIXTURE["rules"], "recipes": FIXTURE["recipes"]["recipes"]}
+    assert not with_recipes["chains"] and not with_recipes["assignments"]
+    before, after = snapshot(PRESET), snapshot(with_recipes)
+    differing = [(b, a) for b, a in zip(before, after) if b != a]
+    assert len(before) == len(after) > 1000
+    assert not differing, f"{len(differing)} of {len(before)} pours differ, first: {differing[0]}"
+    assert any(row[4] for row in before)
+
+
+def test_the_recipes_compile_to_the_presets_rows():
+    out = compile_recipes({"recipes": FIXTURE["recipes"]["recipes"]})
+    assert [c["id"] for c in out["chains"]] == [c["id"] for c in PRESET["chains"]]
+    assert sorted(a["id"] for a in out["assignments"]) == sorted(a["id"] for a in PRESET["assignments"])
+    slab = next(c for c in out["chains"] if c["id"] == "C-SLAB|REBAR")
+    assert slab["follows"] == "Decking@80, Under Slab@80" and slab["finishAfter"] is True and slab["material"] == "rebar"
+
+
+def test_a_recipe_switched_off_gives_nothing():
+    recipes = [{**r, "enabled": False} for r in FIXTURE["recipes"]["recipes"]]
+    assert compile_recipes({"recipes": recipes}) == {"chains": [], "assignments": [], "uses": [], "links": []}
+
+
+def test_no_recipes_change_nothing():
+    assert compile_recipes({}) == {"chains": [], "assignments": [], "uses": [], "links": []}
+    assert compile_recipes({"recipes": "nonsense"}) == {"chains": [], "assignments": [], "uses": [], "links": []}
+    assert rules.Rules({"recipes": []}).empty
+
+
+def test_a_recipe_alone_gives_a_group_its_activities_and_days():
+    recipes = [{"id": "WALLS-R", "group": "", "priority": 0, "tasks": [{"phase": "Rebar", "suffix": "-R", "name": "Rebar", "days": 3},
+                                                                        {"phase": "Concrete", "suffix": "-C", "name": "Concrete", "days": 1}],
+                "edges": [{"from": "Rebar", "to": "Concrete", "sharePct": 50}]}]
+    r = rules.Rules({"recipes": recipes})
+    assert [c["phase"] for c in r.chains] == ["Rebar", "Concrete"] and r.chains[1]["follows"] == "Rebar@50"
+    rec = {"pour_type": "WALL"}
+    assert r.chain_for(rec)[1]["follows"] == [("Rebar", 50.0)]
+    assert r.phase_days(rec) == {"Rebar": 3.0, "Concrete": 1.0}
+
+
+def test_a_values_recipe_may_give_a_calendar_to_every_phase_of_a_group():
+    out = compile_recipes({"recipes": [{"id": "G", "group": "G", "chain": False, "tasks": [{"phase": "", "calendar": "7D", "priority": 5}]}]})
+    assert out["chains"] == [] and out["assignments"] == [{"id": "G|", "group": "G", "phase": "", "priority": 5, "calendar": "7D"}]
+
+
+# ---------------------------------------------------------------- equipment, cranes and materials
+
+POOLS = [{"id": "TC1", "kind": "crane", "name": "Tower crane 1", "quantity": 2}, {"id": "PUMP", "kind": "equipment", "name": "Concrete pump", "quantity": 1},
+         {"id": "FWSET", "kind": "material", "name": "Slab formwork sets", "quantity": 3}]
+RECIPES = [{"id": "SLAB", "group": "", "tasks": [
+    {"phase": "Formwork", "days": 2, "cranes": [{"type": "TC1", "count": 1}], "materials": [{"type": "FWSET"}]},
+    {"phase": "Concrete", "days": 1, "equipment": [{"type": "PUMP", "count": 1}, {"type": "NOPOOL", "count": 1}]}]}]
+
+
+def test_the_tasks_equipment_cranes_and_materials_are_compiled_as_uses():
+    out = compile_recipes({"recipes": RECIPES})
+    assert [(u["phase"], [(x["kind"], x["type"], x["count"]) for x in u["uses"]]) for u in out["uses"]] == [
+        ("Formwork", [("crane", "TC1", 1.0), ("material", "FWSET", 1.0)]), ("Concrete", [("equipment", "PUMP", 1.0), ("equipment", "NOPOOL", 1.0)])]
+
+
+def test_a_pour_gets_the_resources_of_its_recipe_that_the_scenario_has_a_pool_for():
+    from core import resources
+    rules.activate({"recipes": RECIPES, "resourcePools": POOLS})
+    r = rec("W1", "WALL")
+    assert resources.uses_for("Formwork", r) == [(f"{PROJECT_SHORT}-K-TC1", 1.0), (f"{PROJECT_SHORT}-M-FWSET", 1.0)]
+    assert resources.uses_for("Concrete", r) == [(f"{PROJECT_SHORT}-E-PUMP", 1.0)]  # NOPOOL has no pool: nothing is assigned
+    assert resources.uses_for("Rebar", r) == []
+
+
+def test_the_pools_become_p6_resources_with_their_count_as_max_units():
+    import xml.etree.ElementTree as ET
+    from core import xml_builder
+    rules.activate({"recipes": RECIPES, "resourcePools": POOLS})
+    root = ET.Element("APIBusinessObjects")
+    ids = xml_builder.add_resources(root)
+    kinds = {r.find("Id").text: r.find("ResourceType").text for r in root.findall("Resource")}
+    assert kinds[f"{PROJECT_SHORT}-K-TC1"] == "Nonlabor" and kinds[f"{PROJECT_SHORT}-E-PUMP"] == "Nonlabor" and kinds[f"{PROJECT_SHORT}-M-FWSET"] == "Material"
+    rates = {rate.find("ResourceObjectId").text: rate.find("MaxUnitsPerTime").text for rate in root.findall("ResourceRate")}
+    assert float(rates[ids[f"{PROJECT_SHORT}-K-TC1"]]) == 2.0 and float(rates[ids[f"{PROJECT_SHORT}-E-PUMP"]]) == 1.0
+
+
+def test_without_pools_there_are_no_equipment_resources():
+    import xml.etree.ElementTree as ET
+    from core import xml_builder
+    rules.activate({"recipes": RECIPES})
+    root = ET.Element("APIBusinessObjects")
+    xml_builder.add_resources(root)
+    assert not [r for r in root.findall("Resource") if "-K-" in r.find("Id").text or "-E-" in r.find("Id").text]
+
+
+def test_a_tasks_crane_is_assigned_to_its_activity_in_the_programme():
+    """The recipe's crane on the Rebar task becomes a P6 resource assignment on that activity: units = count x its days, units per time = count."""
+    from core import activity_generator as gen, xml_builder
+    from core.wbs_manager import WBSManager
+    from test_rules import FakeWbs
+    recipes = [{"id": "SLAB", "group": "", "tasks": [{"phase": "Rebar", "suffix": "-R", "name": "Rebar", "days": 4, "cranes": [{"type": "TC1", "count": 2}]},
+                                                      {"phase": "Concrete", "suffix": "-C", "name": "Concrete", "days": 1}]}]
+    rules.activate({"recipes": recipes, "resourcePools": POOLS})
+    acts = gen.create_activities(rec("S1", "SLAB"), FakeWbs())
+    for a in acts:
+        a["wbs_oid"] = 1
+    wbs = WBSManager("XML", start_counter=0)
+    wbs.register("B1 - Construction")
+    root = xml_builder.create_p6_xml_root()
+    xml_builder.add_project_and_calendar(root, building_code="B1", project_wbs_object_id="1", project_id="1")
+    ids = xml_builder.add_resources(root)
+    xml_builder.write_activities_and_relationships(root, acts, ids, wbs, intra_predecessors=xml_builder._build_intra_pour_predecessors(acts))
+    project = root.find("Project")
+    rebar = next(a for a in project.findall("Activity") if a.findtext("Id").endswith("-R"))
+    mine = [ra for ra in root.findall("ResourceAssignment") if ra.findtext("ActivityObjectId") == rebar.findtext("ObjectId") and ra.findtext("ResourceObjectId") == ids[f"{PROJECT_SHORT}-K-TC1"]]
+    assert len(mine) == 1
+    assert float(mine[0].findtext("PlannedUnits")) == 8.0 and float(mine[0].findtext("PlannedUnitsPerTime")) == 2.0
+    concrete = next(a for a in project.findall("Activity") if a.findtext("Id").endswith("-C"))
+    assert not [ra for ra in root.findall("ResourceAssignment") if ra.findtext("ActivityObjectId") == concrete.findtext("ObjectId") and ra.findtext("ResourceObjectId") == ids[f"{PROJECT_SHORT}-K-TC1"]]
+
+
+# ---------------------------------------------------------------- maximize resource availability
+
+def test_maximize_resource_availability_leaves_every_pool_and_trade_without_a_limit():
+    trades = [{"id": "SF", "name": "Steel fixers", "capacity": 24}]
+    rules.activate({"resourcePools": POOLS, "trades": trades})
+    assert [p["quantity"] for p in rules.active().pools()] == [2, 1, 3] and rules.active().trades()["SF"]["capacity"] == 24
+    rules.activate({"resourcePools": POOLS, "trades": trades, "settings": {"maximizeResources": True}})
+    assert [p["quantity"] for p in rules.active().pools()] == [0, 0, 0] and rules.active().trades()["SF"]["capacity"] == 0
+    # switched off again (the next run): the scenario's own counts are back, nothing was lost
+    rules.activate({"resourcePools": POOLS, "trades": trades})
+    assert [p["quantity"] for p in rules.active().pools()] == [2, 1, 3] and rules.active().trades()["SF"]["capacity"] == 24
+
+
+# ---------------------------------------------------------------- recipe links
+
+def test_a_recipe_link_ties_a_task_of_one_recipe_to_a_task_of_another_on_the_same_level():
+    from core import activity_generator as gen
+    from core.rule_logic import PourTasks, build_recipe_links
+    from test_rules import FakeWbs
+    groups = [{"id": "WALLS", "forEach": [], "filters": [{"id": "c1", "field": "family", "op": "equals", "value": "wall", "conj": "and"}]},
+              {"id": "SLABS", "forEach": [], "filters": [{"id": "c1", "field": "family", "op": "equals", "value": "slab", "conj": "and"}]}]
+    recipes = [
+        {"id": "WALL", "group": "WALLS", "tasks": [{"phase": "Rebar", "suffix": "-R"}, {"phase": "Concrete", "suffix": "-C",
+                                                     "links": [{"recipe": "SLAB", "phase": "Rebar", "direction": "after", "type": "SS", "lagHours": 8}]}]},
+        {"id": "SLAB", "group": "SLABS", "tasks": [{"phase": "Rebar", "suffix": "-R"}, {"phase": "Concrete", "suffix": "-C"}]},
+    ]
+    r = rules.activate({"groups": groups, "recipes": recipes})
+    assert [link["targetPhase"] for link in r.recipe_links] == ["Rebar"]
+    pours = [rec("W1", "WALL", level=1), rec("S1", "SLAB", level=1), rec("S2", "SLAB", level=2)]
+    acts = [a for p in pours for a in gen.create_activities(p, FakeWbs())]
+    relations, messages = build_recipe_links(r, PourTasks(acts))
+    by = lambda guid, phase: next(a["task_id"] for a in acts if a["rec"]["element"].GlobalId == guid and a["phase"] == phase)  # noqa: E731
+    assert [(x["pred"], x["succ"], x["type"], x["lag"]) for x in relations] == [(by("W1", "Concrete"), by("S1", "Rebar"), "SS", 8.0)]  # level 2 is not tied
+    assert messages and "1 link" in messages[0]
+
+
+def test_a_recipe_link_to_a_recipe_that_is_not_there_is_ignored_and_before_reverses_it():
+    from core import activity_generator as gen
+    from core.rule_logic import PourTasks, build_recipe_links
+    from test_rules import FakeWbs
+    recipes = [{"id": "A", "group": "", "tasks": [{"phase": "Rebar", "links": [{"recipe": "NOPE", "phase": "Rebar"}]}]}]
+    assert rules.activate({"recipes": recipes}).recipe_links == []
+    recipes = [{"id": "A", "group": "", "tasks": [{"phase": "Rebar", "suffix": "-R", "links": [{"recipe": "B", "phase": "Rebar", "direction": "before", "scope": "all"}]}]},
+               {"id": "B", "group": "", "tasks": [{"phase": "Rebar", "suffix": "-R"}]}]
+    r = rules.activate({"recipes": recipes})
+    acts = [a for p in [rec("S1", "SLAB", level=1)] for a in gen.create_activities(p, FakeWbs())]
+    relations, _ = build_recipe_links(r, PourTasks(acts))
+    assert relations == []  # the only pour is its own target: a task is never tied to itself

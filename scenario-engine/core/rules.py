@@ -28,6 +28,7 @@ import math
 import sys
 
 from core import quantities
+from core.recipes import compile_recipes
 
 # JSON setting -> (module global it replaces, how the value is read)
 _BOOL, _NUM, _NUM_OR_NONE, _LIST = "bool", "num", "num_or_none", "list"
@@ -41,6 +42,7 @@ SETTINGS = {
     "openEndMaxDistanceM": ("OPEN_END_MAX_DISTANCE_M", _NUM),
     "openEndNearestSlabFallback": ("OPEN_END_NEAREST_SLAB_FALLBACK", _BOOL),
     "slabCuringGatesSuccessors": ("SLAB_CURING_GATES_SUCCESSORS", _BOOL),
+    "maximizeResources": ("MAXIMIZE_RESOURCES", _BOOL),
     "stairStepMaxVolumeM3": ("STAIR_STEP_MAX_VOLUME_M3", _NUM),
     "sideOverlapThreshold": ("CLASH_POSITION_SIDE_OVERLAP_THRESHOLD", _NUM),
     "groupMilestones": ("ENABLE_GROUP_MILESTONES", _BOOL),
@@ -48,6 +50,7 @@ SETTINGS = {
     "excludedPourTypes": ("EXCLUDED_POUR_TYPES", _LIST),
     "sequenceFlow": ("SEQUENCE_FLOW", _BOOL),
     "sequenceLeadDays": ("SEQUENCE_LEAD_DAYS", _NUM),
+    "sequenceConcreteFollows": ("SEQUENCE_CONCRETE_FOLLOWS", _BOOL),
 }
 DEFAULT_MIN_POUR_VOLUME_M3 = 0.25
 
@@ -321,6 +324,14 @@ class Rules:
                 member = str(member).strip()
                 if member and member != main:
                     self.join_map.setdefault(member, main)
+        # Recipes (their own file, handed over with the scenario) are compiled into the chains and assignments above.
+        compiled = compile_recipes(data)
+        self.chains += [r for r in compiled["chains"] if str(r.get("phase", "")).strip()]
+        self.assignments += compiled["assignments"]
+        # Equipment, cranes and materials the recipes' tasks use, and the scenario's pool of each type (its count).
+        self.uses = compiled["uses"]
+        self.recipe_links = compiled["links"]
+        self.pool_rows = [r for r in data.get("resourcePools") or [] if isinstance(r, dict) and str(r.get("id", "")).strip() and r.get("enabled") is not False]
         self._group_cache = {}
         self._phase_cache = {}
         # The activities (task ids) that what follows a pour waits for, set by the chain rows marked "gates" as the activities are made.
@@ -329,7 +340,7 @@ class Rules:
 
     @property
     def empty(self):
-        return not any((self.settings, self.durations, self.productivity, self.rebar, self.crews, self.groups,
+        return not any((self.pool_rows, self.settings, self.durations, self.productivity, self.rebar, self.crews, self.groups,
                         self.level_tasks, self.sequences, self.contacts, self.level_links, self.trade_rows, self.calendars,
                         self.calendar_rules, self.rate_rows, self.crew_templates, self.assignments, self.chains, self.joins))
 
@@ -573,8 +584,27 @@ class Rules:
             if row.get("enabled") is False:
                 continue
             capacity = _number(row.get("capacity"), 0.0)
-            out[code] = {"name": str(row.get("name") or code).strip() or code, "capacity": capacity if capacity and capacity > 0 else 0}
+            out[code] = {"name": str(row.get("name") or code).strip() or code, "capacity": 0 if _maximize() else (capacity if capacity and capacity > 0 else 0)}
         return out
+
+    # ---- equipment, cranes and materials
+    def pools(self):
+        """[{kind, id, name, quantity}] the scenario's pools: a type of equipment, crane or material and how many there are (0: not limited)."""
+        out = []
+        for r in self.pool_rows:
+            kind = str(r.get("kind") or "equipment").strip().lower()
+            if kind not in ("equipment", "crane", "material"):
+                continue
+            code = str(r.get("id")).strip()
+            quantity = 0.0 if _maximize() else _number(r.get("quantity"), 0.0) or 0.0
+            out.append({"kind": kind, "id": code, "name": str(r.get("name") or code).strip() or code, "quantity": quantity})
+        return out
+
+    def resource_uses(self, phase, rec):
+        """[{kind, type, count}] the recipes give this activity of this pour (the best fitting recipe task), or []."""
+        phase = str(phase or "").strip()
+        row = self.best(self.uses, rec, lambda r: str(r.get("phase", "")).strip().upper() == phase.upper())
+        return row["uses"] if row else []
 
     # ---- joined objects
     @staticmethod
@@ -655,6 +685,12 @@ class Rules:
         except (TypeError, ValueError):
             volume = 0.0
         return (volume >= self.min_pour_volume() or "STAIR" in pour_type) and pour_type not in excluded_types
+
+
+def _maximize():
+    """Whether the scenario has "Maximize resource availability": no pool and no trade has a limit."""
+    import config
+    return bool(getattr(config, "MAXIMIZE_RESOURCES", False))
 
 
 def _parse_follows(value):

@@ -483,16 +483,6 @@
     "priority": 0
    },
    {
-    "id": "|CURING",
-    "group": "",
-    "order": 4,
-    "phase": "Curing",
-    "suffix": "-CU",
-    "label": "Curing",
-    "follows": "Concrete",
-    "priority": 0
-   },
-   {
     "id": "C-SLAB|DECKING",
     "group": "C-SLAB",
     "order": 1,
@@ -648,32 +638,12 @@
     "priority": 30
    },
    {
-    "id": "C-LANDING|CURING",
-    "group": "C-LANDING",
-    "order": 4,
-    "phase": "Curing",
-    "suffix": "-CU",
-    "label": "Curing",
-    "follows": "Concrete",
-    "priority": 30
-   },
-   {
     "id": "C-PEDESTAL-2|REBAR, FORMWORK AND CONCRETE",
     "group": "C-PEDESTAL-2",
     "order": 1,
     "phase": "Rebar, Formwork and Concrete",
     "suffix": "-RFC",
     "label": "Rebar, Formwork and Concrete",
-    "priority": 40
-   },
-   {
-    "id": "C-PEDESTAL-2|CURING",
-    "group": "C-PEDESTAL-2",
-    "order": 2,
-    "phase": "Curing",
-    "suffix": "-CU",
-    "label": "Curing",
-    "follows": "Rebar, Formwork and Concrete",
     "priority": 40
    },
    {
@@ -1036,6 +1006,8 @@
   "contacts": [],
   "levelLinks": [],
   "joins": [],
+  "recipes": [],
+  "resourcePools": [],
   "extraTags": {}
  },
  "converted": {
@@ -1704,16 +1676,6 @@
     "priority": 0
    },
    {
-    "id": "|CURING",
-    "group": "",
-    "order": 4,
-    "phase": "Curing",
-    "suffix": "-CU",
-    "label": "Curing",
-    "follows": "Concrete",
-    "priority": 0
-   },
-   {
     "id": "C-SLAB|DECKING",
     "group": "C-SLAB",
     "order": 1,
@@ -1869,32 +1831,12 @@
     "priority": 30
    },
    {
-    "id": "C-LANDING|CURING",
-    "group": "C-LANDING",
-    "order": 4,
-    "phase": "Curing",
-    "suffix": "-CU",
-    "label": "Curing",
-    "follows": "Concrete",
-    "priority": 30
-   },
-   {
     "id": "C-PEDESTAL-2|REBAR, FORMWORK AND CONCRETE",
     "group": "C-PEDESTAL-2",
     "order": 1,
     "phase": "Rebar, Formwork and Concrete",
     "suffix": "-RFC",
     "label": "Rebar, Formwork and Concrete",
-    "priority": 40
-   },
-   {
-    "id": "C-PEDESTAL-2|CURING",
-    "group": "C-PEDESTAL-2",
-    "order": 2,
-    "phase": "Curing",
-    "suffix": "-CU",
-    "label": "Curing",
-    "follows": "Rebar, Formwork and Concrete",
     "priority": 40
    },
    {
@@ -2516,6 +2458,8 @@
   "contacts": [],
   "levelLinks": [],
   "joins": [],
+  "recipes": [],
+  "resourcePools": [],
   "extraTags": {}
  }
 }

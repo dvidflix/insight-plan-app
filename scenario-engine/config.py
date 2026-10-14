@@ -176,6 +176,9 @@ ENABLE_LEVEL_GATE = True
 # working days after the previous one starts and the concrete is poured in step order (core/xml_builder.py).
 SEQUENCE_FLOW = False
 SEQUENCE_LEAD_DAYS = 3.0
+# With SEQUENCE_FLOW: True = a step's concrete also waits for the previous step's to finish, so the pours go in exactly the order of the steps (a pour
+# that is not ready yet holds up every pour after it); False = the order only sets when each step starts, and a pour is cast when it is ready.
+SEQUENCE_CONCRETE_FOLLOWS = True
 
 # Close-out: a "<project>-<building>-COMPLETION" finish milestone per building, which
 # every activity left with no successor feeds (FS), so the programme has no open ends.
@@ -212,6 +215,8 @@ LEVEL_GATE_MAX_DISTANCE_M = 0.05
 # False: what follows a slab (the pours it supports, the slab on the level above) waits for the slab's Concrete only,
 # and Curing runs alongside. True: it waits for the Curing to finish.
 SLAB_CURING_GATES_SUCCESSORS = False
+# Every pool (equipment, cranes, materials) and every labour trade has no limit: the programme the logic alone allows (a scenario's "Maximize resource availability").
+MAXIMIZE_RESOURCES = False
 
 # Pour ID behavior
 # True: generate new planning proposed pour IDs (current workflow).
@@ -246,8 +251,19 @@ DEFAULT_CHAIN = [
     {"phase": "Formwork", "suffix": "-F", "label": "E/P and Formwork"},
     {"phase": "Concrete", "suffix": "-C", "label": "Concrete"},
 ]
+# Precast pours: installed, then stitched (the joints between the units). Heavy precast (the walls the slabs sit on) is propped while it
+# is installed, stitched, cured (28 days, under the walls above) and then its props come out once the wall concrete above has gained
+# strength (core/xml_builder.py links these). "days" is what each takes without a rule (Rules > Assignments set their own).
 DEFAULT_PRECAST_CHAIN = [
-    {"phase": "Installation", "suffix": "-I", "label": "Installation"},
+    {"phase": "Installation", "suffix": "-I", "label": "Installation", "days": 1},
+    {"phase": "Stitching", "suffix": "-S", "label": "Stitching", "days": 2},
+]
+DEFAULT_HEAVY_PRECAST_CHAIN = [
+    {"phase": "Propping", "suffix": "-PR", "label": "Propping", "days": 1},
+    {"phase": "Installation", "suffix": "-I", "label": "Installation", "days": 1},
+    {"phase": "Stitching", "suffix": "-S", "label": "Stitching", "days": 2},
+    {"phase": "Curing", "suffix": "-CU", "label": "Curing (walls under)", "days": 28},
+    {"phase": "Propping Removal", "suffix": "-RP", "label": "Propping Removal", "days": 1},
 ]
 
 # Project start / data date for the CPM. None = today. The insight-plan-app

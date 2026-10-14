@@ -79,7 +79,9 @@ export function normalizeXml(tables: XmlTables, fileName: string, projectId?: st
   }
   const resourceCatalog: ResourceInfo[] = [...rsrcNames.entries()].map(([id, name]) => {
     const type = rsrcTypeById.get(id) ?? 'other';
-    return { id, name, type, capacity: type === 'labor' ? maxUnitsById.get(id)?.units ?? null : null };
+    const units = maxUnitsById.get(id)?.units ?? null;
+    // (materials: the 0.125 of concrete and rebar is not a pool; a counted material, such as a set of formwork, has 1 or more)
+    return { id, name, type, capacity: type === 'labor' || type === 'equipment' || (type === 'material' && (units ?? 0) >= 1) ? units : null };
   });
   const rsrcByActivity = new Map<string, ResourceAssignment[]>();
   for (const row of t('ResourceAssignment')) {

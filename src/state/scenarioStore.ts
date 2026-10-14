@@ -1,6 +1,6 @@
 import { setObjectJoins } from '../schedule/linkGroups';
 import type { PresetContent } from '../prs/presets';
-import { withJoins } from '../prs/joins';
+import { withOwn } from '../prs/recipeRules';
 import { create } from 'zustand';
 import { useModelsStore } from './modelsStore';
 import { reloadFromDb, useProjectDbStore } from './projectDbStore';
@@ -131,6 +131,8 @@ interface ScenarioState {
   generation: number;
   /** Regenerate 4D automatically a moment after each change to the order. */
   autoUpdate: boolean;
+  /** A saved scenario saves itself a moment after each change (order, joins, links, crews, extras, flags, rules). */
+  autoSave: boolean;
   /** The order, links and crews the programme in 4D was last updated from. */
   updatedFrom: { rows: PourRow[]; relations: ScenarioRelation[]; crews: ScenarioCrew[]; extras: ScenarioExtra[]; rules: ScenarioRules } | null;
   /** The scenario's manual links and crews (saved with it), and as last
@@ -181,6 +183,7 @@ export const useScenarioStore = create<ScenarioState>(() => ({
   copy: null,
   generation: 0,
   autoUpdate: load('scenarios.autoUpdate', false),
+  autoSave: load('scenarios.autoSave', true),
   updatedFrom: null,
   relations: NO_RELATIONS,
   crews: NO_CREWS,
@@ -204,6 +207,7 @@ const PERSISTED: [keyof ScenarioState, string][] = [
   ['tableCfg', 'scenarios.table'],
   ['cfgTab', 'scenarios.cfgTab'],
   ['autoUpdate', 'scenarios.autoUpdate'],
+  ['autoSave', 'scenarios.autoSave'],
 ];
 useScenarioStore.subscribe((s, prev) => {
   for (const [field, key] of PERSISTED) if (s[field] !== prev[field]) save(key, s[field]);
@@ -298,7 +302,7 @@ function applyPendingContent(scenario: string) {
   if (!pendingContent || pendingContent.scenario !== scenario) return;
   const { content } = pendingContent;
   pendingContent = null;
-  set({ rules: withJoins(content.rules, get().rules.joins), extras: content.extras, relations: content.relations, crews: content.crews, savedRules: NO_RULES, savedExtras: NO_EXTRAS, savedRelations: NO_RELATIONS, savedCrews: NO_CREWS });
+  set({ rules: withOwn(content.rules, get().rules), extras: content.extras, relations: content.relations, crews: content.crews, savedRules: NO_RULES, savedExtras: NO_EXTRAS, savedRelations: NO_RELATIONS, savedCrews: NO_CREWS });
 }
 
 async function loadOrderNow(stem: string | null) {
@@ -451,6 +455,44 @@ export const saveOrder = () =>
     set((s) => ({ drafts: s.drafts.filter((n) => n !== scenario) }));
     set({ message: { kind: 'ok', text: `Saved "${scenario}" to the project database.` } });
   });
+
+// ---- autosave: a scenario that is saved in the project keeps itself saved
+let autoSaveTimer: ReturnType<typeof setTimeout> | null = null;
+
+const savedInProject = (s: ScenarioState) =>
+  !!s.scenario && !!s.loaded && !!s.project?.scenarios.some((sc) => sc.name === s.scenario && sc.models.some((m) => m.stem === s.loaded!.stem && m.saved > 0));
+
+/** Saves the scenario on screen a moment after the last change. A draft that was never saved is left for the first Save (so creating a scenario
+    does not fill the project), and nothing is saved while something else is running. What is saved is what was on screen when it started: a
+    change made meanwhile stays unsaved and goes with the next one. */
+export function scheduleAutoSave() {
+  if (autoSaveTimer) clearTimeout(autoSaveTimer);
+  autoSaveTimer = setTimeout(async () => {
+    autoSaveTimer = null;
+    const s = get();
+    if (!s.autoSave || !s.loaded || !isDirty(s) || !savedInProject(s)) return;
+    if (s.busy) return scheduleAutoSave();
+    const { rows, relations, crews, extras, rules, flags, scenario, loaded } = s;
+    try {
+      await saveScenario(request());
+    } catch (e) {
+      set({ message: { kind: 'error', text: `Autosave failed: ${e instanceof Error ? e.message : String(e)}` } });
+      return;
+    }
+    const now = get();
+    if (now.scenario !== scenario || now.loaded !== loaded) return; // another scenario was opened meanwhile: it was saved, nothing to mark
+    set({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedExtras: extras, savedRules: rules, savedFlags: flags });
+    await refreshProject(now.project!.root).catch(() => undefined);
+    set({ message: { kind: 'ok', text: `Autosaved "${scenario}" at ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}.` } });
+    if (isDirty(get())) scheduleAutoSave();
+  }, 1500);
+}
+
+useScenarioStore.subscribe((s, prev) => {
+  if (!s.autoSave || !s.loaded) return;
+  const changed = s.rows !== prev.rows || s.relations !== prev.relations || s.crews !== prev.crews || s.extras !== prev.extras || s.rules !== prev.rules || s.flags !== prev.flags;
+  if ((changed || (s.autoSave && !prev.autoSave)) && isDirty(s)) scheduleAutoSave();
+});
 
 /** "Update 4D": the programme for the order on screen from the long-running
     generator (about a second once warm), straight into 4D. The order is not

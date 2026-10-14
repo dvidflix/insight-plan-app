@@ -36,7 +36,7 @@ from core.cpm_apply import apply_cpm_to_xml
 from core.prs_links import merge_extras, resolve_relations
 from core.rule_logic import (
     place_extras,
-    PourTasks, build_level_tasks, build_sequences, build_contact_relations, build_level_links, late_level_relations, drop_builtin,
+    PourTasks, build_level_tasks, build_sequences, build_contact_relations, build_recipe_links, build_level_links, late_level_relations, drop_builtin,
 )
 from core.adjustments import load_adjustments, drop_retired, extra_activities, extra_predecessors, apply_baselines, EXTRA_WBS_NAME
 from core.xml_builder import (
@@ -920,6 +920,7 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
         taken += [a["task_id"] for a in level_acts]
         seq_acts, seq_rel, seq_msgs = build_sequences(rules, tasks, xml_wbs_manager, taken)
         contact_rel, builtin, contact_msgs = build_contact_relations(rules, tasks, clashes)
+        recipe_rel, recipe_msgs = build_recipe_links(rules, tasks)
         first_building = str(pour_activities[0].get("rec", {}).get("building", "") or "").upper()
         link_early, link_late, link_msgs = build_level_links(rules, tasks, extras_acts, level_acts, xml_activities + level_acts, first_building)
         if level_acts or seq_acts:
@@ -928,7 +929,7 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
             automatic_predecessor_sources = [(label, drop_builtin(preds, builtin.get(label, set()))) for label, preds in automatic_predecessor_sources]
         # (Pours sharing a Pour ID share their Task IDs, so the same link can come up twice: it is written once.)
         rule_relations, seen_links = [], set()
-        for r in seq_rel + contact_rel + level_rel + link_early:
+        for r in seq_rel + contact_rel + recipe_rel + level_rel + link_early:
             key = (r["pred"], r["succ"], r["type"])
             if key not in seen_links:
                 seen_links.add(key)
@@ -936,7 +937,7 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
         if link_late:
             programme = list(xml_activities)
             late_rule_relations = lambda open_ids: late_level_relations(link_late, open_ids, level_acts, programme, tasks)  # noqa: E731
-        for message in level_msgs + seq_msgs + contact_msgs + link_msgs:
+        for message in level_msgs + seq_msgs + contact_msgs + recipe_msgs + link_msgs:
             print(f"  {message}")
         if level_acts:
             print(f"  {len(level_acts)} level task(s) added")

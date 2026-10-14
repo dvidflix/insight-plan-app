@@ -12,7 +12,7 @@ from copy import deepcopy
 
 from core.helpers import title_case, get_plan_footprint
 from core.clash_position import classify_vertical_position, DEFINITELY_BELOW, MAJORITY_BELOW, DEFINITELY_ABOVE, MAJORITY_ABOVE
-from core.resources import crews_for, labour_resource_id, labour_trades, rebar_tonnes
+from core.resources import POOL_P6_TYPE, crews_for, labour_resource_id, labour_trades, pool_resource_id, pools, rebar_tonnes, uses_for
 from core import calendars as _calendars
 from core import rules as _rules_module
 from core.rates_info import rate_fields
@@ -51,6 +51,7 @@ ENABLE_LEVEL_GATE = getattr(_config, "ENABLE_LEVEL_GATE", True)
 # True = a step starts SEQUENCE_LEAD_DAYS working days after the previous one starts, and the concrete is poured in step order.
 SEQUENCE_FLOW = getattr(_config, "SEQUENCE_FLOW", False)
 SEQUENCE_LEAD_DAYS = getattr(_config, "SEQUENCE_LEAD_DAYS", 3.0)
+SEQUENCE_CONCRETE_FOLLOWS = getattr(_config, "SEQUENCE_CONCRETE_FOLLOWS", True)
 _HOURS_PER_DAY = 8.0
 # Feeding a slab's first task (Decking): count only the lower level's pure
 # "Concrete" phase tasks, and drop stage-2 pours entirely.
@@ -1258,6 +1259,9 @@ def add_resources(root):
     specs = [(f"{PROJECT_SHORT}-C", "Concrete (m3)", "Material", 0.125), (f"{PROJECT_SHORT}-R", "Rebar (t)", "Material", 0.125)]
     for code, trade in labour_trades().items():
         specs.append((labour_resource_id(code), trade["name"], "Labor", float(trade.get("capacity") or 0)))
+    # The scenario's equipment, cranes and materials (recipes): the count of each is its max units.
+    for pool in pools():
+        specs.append((pool_resource_id(pool["kind"], pool["id"]), pool["name"], POOL_P6_TYPE[pool["kind"]], pool["quantity"]))
 
     ids = {}
     for oid, (rid, name, rtype, max_units) in enumerate(specs, start=1):
@@ -1605,7 +1609,7 @@ def _build_sequence_order_relationships(activities, sequence_order_list):
                 added_ss += 1
             if group_concretes:
                 first_concrete = group_concretes[0]
-                for end in prev_group_ends:
+                for end in (prev_group_ends if SEQUENCE_CONCRETE_FOLLOWS else []):
                     if _edge(end, first_concrete, "FinishToStart"):
                         added_fs += 1
                 for other in group_concretes[1:]:
@@ -2207,6 +2211,10 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         if rec:
             for trade_code, crew in crews_for(act_data.get("phase", ""), rec, crew_table):
                 _assign_resource_to_activity(act_counter, labour_resource_id(trade_code), crew * duration_hours, units_per_time=crew)
+            # Equipment, cranes and materials of the recipe's task: held for the whole activity (units x its days, so the app's
+            # daily demand is the count).
+            for resource_id, count in uses_for(act_data.get("phase", ""), rec):
+                _assign_resource_to_activity(act_counter, resource_id, count * max(duration_days, 1), units_per_time=count)
 
     # ====================== RELATIONSHIPS ======================
     # Priority (highest first): Relations sheet overrides (skip generated

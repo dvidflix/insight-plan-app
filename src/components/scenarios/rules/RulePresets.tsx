@@ -1,7 +1,8 @@
-import { useState } from 'react';
-import { setCrews, setExtras, setRelations, setRules, useScenarioStore } from '../../../state/scenarioStore';
+import { useEffect, useRef, useState } from 'react';
+import { setCrews, setExtras, setRelations, setRules, updateFourD, useScenarioStore } from '../../../state/scenarioStore';
+import { useScenarioView } from '../../../scenarios/useScenarioView';
 import { addPreset, countPreset, DEFAULT_PRESETS, normalizePresets, presetId, withoutJoins, type PresetContent, type RulePreset } from '../../../prs/presets';
-import { withJoins } from '../../../prs/joins';
+import { withOwn } from '../../../prs/recipeRules';
 import { usePersistedState } from '../../../utils/persistedState';
 
 /** Presets of the Rules list: a named copy of all the rules, extra activities, manual links and crew overrides. Load replaces what the
@@ -14,7 +15,7 @@ const current = (): PresetContent => {
 };
 
 function put(c: PresetContent) {
-  setRules(withJoins(c.rules, useScenarioStore.getState().rules.joins)); // the objects joined in this scenario stay
+  setRules(withOwn(c.rules, useScenarioStore.getState().rules)); // the objects joined in this scenario and its recipes stay
   setExtras(c.extras);
   setRelations(c.relations);
   setCrews(c.crews);
@@ -25,18 +26,35 @@ export function RulePresets() {
   const [selected, setSelected] = useState('');
   const [naming, setNaming] = useState<string | null>(null);
   const [note, setNote] = useState('');
+  const [menu, setMenu] = useState(false);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!menu) return;
+    const away = (e: MouseEvent) => { if (!menuRef.current?.contains(e.target as Node)) setMenu(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setMenu(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [menu]);
   const ready = useScenarioStore((s) => !!s.loaded);
+  const busy = useScenarioStore((s) => s.busy);
+  const { modelInfo } = useScenarioView();
   const preset = presets.find((p) => p.id === selected) ?? null;
 
+  // Applying or adding a preset changes the rules, so 4D is regenerated at once (as Update 4D does; the scenario is not saved).
+  const canUpdate = !!modelInfo?.hasSource && !busy;
+  const refresh4D = () => { if (canUpdate) void updateFourD(); };
   const load = (p: RulePreset) => {
     const had = countPreset(current());
     if (had > 0 && !window.confirm(`Replace the ${had} rule${had === 1 ? '' : 's'} of this scenario with the preset "${p.name}"? Use Add to keep them.`)) return;
     put(p.content);
-    setNote(`Loaded "${p.name}" (${countPreset(p.content)} rules). Save the scenario to keep them.`);
+    refresh4D();
+    setNote(`Loaded "${p.name}" (${countPreset(p.content)} rules)${canUpdate ? ' and updated 4D' : ''}. Save the scenario to keep them.`);
   };
   const add = (p: RulePreset) => {
     put(addPreset(current(), p.content));
-    setNote(`Added "${p.name}" (${countPreset(p.content)} rules; a rule with the same id was replaced). Save the scenario to keep them.`);
+    refresh4D();
+    setNote(`Added "${p.name}" (${countPreset(p.content)} rules; a rule with the same id was replaced)${canUpdate ? ' and updated 4D' : ''}. Save the scenario to keep them.`);
   };
   const saveNew = (name: string) => {
     const clean = name.trim();
@@ -54,6 +72,13 @@ export function RulePresets() {
     setPresets(presets.map((x) => (x.id === p.id ? { ...x, savedAt: new Date().toISOString().slice(0, 10), content, userEdited: true } : x)));
     setNote(`Updated "${p.name}" (${countPreset(content)} rules).`);
   };
+  // A preset that ships with the app: its saved copy (after an Update, say) can go back to the app's own.
+  const shipped = preset ? DEFAULT_PRESETS.find((d) => d.id === preset.id) : undefined;
+  const restore = (p: RulePreset, original: RulePreset) => {
+    if (!window.confirm(`Put the preset "${p.name}" back to the one that ships with the app (revision ${original.revision})? Your saved changes to it are lost.`)) return;
+    setPresets(presets.map((x) => (x.id === p.id ? original : x)));
+    setNote(`Restored "${p.name}" to the app's own (${countPreset(original.content)} rules). Load or Add it to a scenario to use it.`);
+  };
   const remove = (p: RulePreset) => {
     if (!window.confirm(`Delete the preset "${p.name}"? The scenarios that used it keep their rules.`)) return;
     setPresets(presets.filter((x) => x.id !== p.id));
@@ -61,25 +86,38 @@ export function RulePresets() {
     setNote(`Deleted "${p.name}".`);
   };
 
+  const item = (label: string, onClick: () => void, disabled: boolean, title: string, danger?: boolean) => (
+    <button type="button" role="menuitem" className={`rule-presets__item${danger ? ' is-danger' : ''}`} disabled={disabled} title={title} onClick={() => { setMenu(false); onClick(); }}>{label}</button>
+  );
+
   return (
     <div className="rule-presets">
       <span className="rule-presets__label">Preset</span>
-      <select value={selected} onChange={(e) => { setSelected(e.target.value); setNote(''); }} aria-label="Rule preset">
-        <option value="">{presets.length ? 'Choose a preset…' : 'No presets yet'}</option>
+      <select value={selected} onChange={(e) => { setSelected(e.target.value); setNote(''); }} aria-label="Rule preset" title={preset?.note}>
+        <option value="">{presets.length ? 'Preset…' : 'No presets yet'}</option>
         {presets.map((p) => <option key={p.id} value={p.id}>{p.name} ({countPreset(p.content)})</option>)}
       </select>
-      <button type="button" className="btn btn--small" disabled={!preset || !ready} onClick={() => preset && load(preset)} title="Replace this scenario's rules with the preset">Load</button>
-      <button type="button" className="btn btn--small" disabled={!preset || !ready} onClick={() => preset && add(preset)} title="Add the preset's rules to this scenario's (a rule with the same id is replaced)">Add</button>
-      <button type="button" className="btn btn--small" disabled={!ready} onClick={() => setNaming(naming === null ? '' : null)} title="Keep this scenario's rules as a new preset">Save as…</button>
-      <button type="button" className="btn btn--small" disabled={!preset || !ready} onClick={() => preset && overwrite(preset)} title="Replace the selected preset with this scenario's rules">Update</button>
-      <button type="button" className="btn btn--small danger" disabled={!preset} onClick={() => preset && remove(preset)} title="Delete the selected preset">Delete</button>
+      <button type="button" className="btn btn--small primary" disabled={!preset || !ready} onClick={() => preset && load(preset)} title="Replace this scenario's rules with the preset and update 4D">Apply</button>
+      <span ref={menuRef} style={{ position: 'relative', display: 'inline-flex' }}>
+        <button type="button" className="btn btn--small" aria-haspopup="menu" aria-expanded={menu} onClick={() => setMenu(!menu)} title="More: add to the scenario's rules, save, update, restore, delete">⋯</button>
+        {menu && (
+          <div className="rule-presets__menu" role="menu">
+            {item('Add to this scenario', () => preset && add(preset), !preset || !ready, "Merge the preset into this scenario's rules (a rule with the same id is replaced)")}
+            {item('Save rules as…', () => setNaming(naming === null ? '' : null), !ready, "Keep this scenario's rules as a new preset")}
+            {item('Update preset from these rules', () => preset && overwrite(preset), !preset || !ready, "Replace the selected preset with this scenario's rules")}
+            {shipped && preset && item("Restore the app's version", () => restore(preset, shipped), !ready, 'Put the selected preset back to the one that ships with the app')}
+            {item('Delete preset', () => preset && remove(preset), !preset, 'Delete the selected preset', true)}
+          </div>
+        )}
+      </span>
+      <button type="button" className="btn btn--small primary" disabled={!ready || !!busy || !modelInfo?.hasSource} onClick={() => void updateFourD()} title="Regenerate the programme with these rules (about a second) and play it in 4D. Does not save the scenario.">Update 4D</button>
       {naming !== null && (
         <span className="rule-presets__name">
           <input autoFocus value={naming} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveNew(naming); if (e.key === 'Escape') setNaming(null); }} placeholder="Preset name" aria-label="Preset name" spellCheck={false} />
           <button type="button" className="btn btn--small primary" disabled={!naming.trim()} onClick={() => saveNew(naming)}>Save</button>
         </span>
       )}
-      {(preset?.note || note) && <div className="rule-presets__note scn-dim">{note || preset?.note}{!note && preset?.savedAt ? ` (saved ${preset.savedAt})` : ''}</div>}
+      {note && <div className="rule-presets__note scn-dim">{note}</div>}
     </div>
   );
 }
