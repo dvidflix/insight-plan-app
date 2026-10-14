@@ -41,17 +41,14 @@ import { ColorModeRow, ViewColorSettings, propertyColorer } from '../components/
 import { View3DPanel } from '../components/View3DPanel';
 import { NavisworksExport } from '../components/sequence/ExportPanel';
 import { MediaExport } from '../components/sequence/MediaExport';
-import { SidePane, type SidePaneTab } from '../components/SidePane';
-import { IconAddCircleOutline, IconDownload, IconSync, IconCamera, IconCube, IconList, IconSchema, IconSearch, IconTree, IconViewTable } from '../components/icons';
-import { DataTablePanel } from '../components/DataTablePanel';
+import { IconAddCircleOutline, IconDownload, IconSync } from '../components/icons';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { useDataTableStore } from '../state/dataTableStore';
-import { SearchSetsPanel } from '../components/SearchSetsPanel';
 import { TopicsPanel } from '../components/TopicsPanel';
 import { useTopicsStore } from '../state/topicsStore';
 import { CollapsibleSection, useOpenSections } from '../components/CollapsibleSection';
 import { useAppPrefsStore } from '../state/appPrefsStore';
-import { PropertiesTab, RelatedTab, SelectionTreeTab, ViewpointsPanel } from '../components/ModelConfigPanel';
+import { ModelDockPanels, ViewpointsPanel } from '../components/ModelConfigPanel';
 import { useViewSettingsStore } from '../state/viewSettingsStore';
 import { useColorModeStore, type ColorModeSettings } from '../state/colorModeStore';
 import type { ElementSummary } from '../viewer/types';
@@ -68,8 +65,6 @@ import type { Activity, ScheduleModel } from '../schedule/types';
 import { InfoTip } from '../components/InfoTip';
 import { JumpToDate } from '../components/sequence/JumpToDate';
 import { SkipDays } from '../components/sequence/SkipDays';
-
-type LinkTab = 'groups' | 'tree' | 'properties' | 'search' | 'datatable' | 'view3d' | 'models';
 
 /** A stage with an unset color/opacity falls back to the given bookend
     stage — e.g. leaving "Active start" blank inherits "Start" rather than
@@ -162,18 +157,19 @@ export function SequencePanel() {
     return () => { engine.onSecondaryChange.remove(onChange); };
   }, [engine]);
 
-  const [linkTab, setLinkTab] = useState<LinkTab>('groups');
   // Splitting the view brings up Views, to set the two views up.
-  useOnSplit(split, () => setLinkTab('view3d'));
-  useViewpointsToggle('sequence', () => linkTab === 'view3d', () => setLinkTab('view3d'));
-  // The data table's Configure button brings up its tab, as on the Models page.
+  useOnSplit(split);
+  useViewpointsToggle('sequence');
+  // The data table's Configure button brings up its setup panel, as on the Models page.
   const dataTableConfigRequest = useDataTableStore((s) => s.configRequest);
   useEffect(() => {
-    if (!dataTableConfigRequest) return;
-    setLinkTab('datatable');
-    useSidePaneStore.getState().setOpen(true);
-    useSidePaneStore.getState().setSettings(false);
+    if (dataTableConfigRequest) useDockStore.getState().reveal('tableSetup');
   }, [dataTableConfigRequest]);
+  // The Settings pane holds the 4D timeline settings while this page is up.
+  useEffect(() => {
+    useSidePaneStore.setState({ timelineSettings: true });
+    return () => { useSidePaneStore.setState({ timelineSettings: false }); };
+  }, []);
   const modelPanels = useSequenceUiStore((s) => s.modelPanels);
   const experimental = useAppPrefsStore((s) => s.experimental);
   const topicCount = useTopicsStore((s) => s.topics.length);
@@ -819,51 +815,37 @@ export function SequencePanel() {
   );
 
   if (!ready) {
-    // The side pane's tabs that need no programme still show (a model alone, or nothing loaded).
-    const emptyTabs = [
-      { id: 'models', label: '3D & Related', icon: <IconCube /> },
-      { id: 'properties', label: 'Properties', icon: <IconList /> },
-      { id: 'tree', label: 'Selection Tree', icon: <IconTree /> },
-      { id: 'search', label: 'Search sets', icon: <IconSearch /> },
-      { id: 'datatable', label: 'Data table', icon: <IconViewTable /> },
-    ] satisfies SidePaneTab<LinkTab>[];
-    const emptyActive = emptyTabs.some((t) => t.id === linkTab) ? linkTab : 'models';
+    // The panels that need no programme still show (a model alone, or nothing loaded).
     return (
       <>
         {dockPanels}
-        <SidePane timelineSettings tabs={emptyTabs} active={emptyActive} onSelect={setLinkTab} bodyClassName="config-panel__body model-config__body">
-          {emptyActive === 'models' && <RelatedTab page="sequence" />}
-          {emptyActive === 'tree' && <SelectionTreeTab />}
-          {emptyActive === 'search' && <SearchSetsPanel />}
-          {emptyActive === 'datatable' && <DataTablePanel />}
-          {emptyActive === 'properties' && <PropertiesTab />}
-        </SidePane>
+        <ModelDockPanels page="sequence" />
       </>
     );
   }
 
+  const viewsPanel = (() => {
+                // The Models page's Views panel, with this page's view settings as its
+                // second section and the exports (Output, Navisworks) at the end.
+                const settings = (
+                  <View3DPanel
+                    page="sequence"
+                    colorSection={(view) => <ViewColorSettings view={view} elements={allElements} />}
+                  />
+                );
+                const extra = [
+                  { label: 'Output', content: <MediaExport schedule={model} /> },
+                  ...(experimental.navisworks ? [{ label: 'Navisworks TimeLiner', content: <NavisworksExport schedule={model} models={models} basis={basis} /> }] : []),
+                ];
+                return modelPanels ? <ViewpointsPanel element={modelPanels.views} settings={settings} extra={extra} /> : settings;
+              })();
   return (
     <>
       {dockPanels}
-
-      <SidePane
-        timelineSettings
-        tabs={[
-          { id: 'models', label: '3D & Related', icon: <IconCube /> },
-          { id: 'properties', label: 'Properties', icon: <IconList /> },
-          { id: 'tree', label: 'Selection Tree', icon: <IconTree /> },
-          { id: 'search', label: 'Search sets', icon: <IconSearch /> },
-          { id: 'datatable', label: 'Data table', icon: <IconViewTable /> },
-          { id: 'view3d', label: 'Views', icon: <IconCamera /> },
-          { id: 'groups', label: '4D', icon: <IconSchema /> },
-        ] satisfies SidePaneTab<LinkTab>[]}
-        active={linkTab}
-        onSelect={setLinkTab}
-        bodyClassName={(linkTab === 'view3d' && modelPanels) || linkTab === 'models' || linkTab === 'tree' || linkTab === 'search' || linkTab === 'datatable' || linkTab === 'properties' || linkTab === 'groups' ? 'config-panel__body model-config__body' : undefined}
-      >
-              {linkTab === 'groups' && (
-                // Options (with Jump to date), Link Groups and Appearance Profiles, one collapsible section each.
-                <div>
+      <ModelDockPanels page="sequence" views={viewsPanel} />
+      <DockPanel id="fourD" label="4D">
+        <div className="config-panel__body model-config__body" style={{ flex: 1, minHeight: 0 }}>
+          <div>
                   <CollapsibleSection title="Options" open={fourD.isOpen('options')} onToggle={() => fourD.toggle('options')}>
                     <div className="disp vsp seq-options">
                       <JumpToDate />
@@ -956,28 +938,8 @@ export function SequencePanel() {
                   </CollapsibleSection>}
                   <LabelPanel />
                 </div>
-              )}
-              {linkTab === 'models' && <RelatedTab page="sequence" />}
-              {linkTab === 'tree' && <SelectionTreeTab />}
-              {linkTab === 'search' && <SearchSetsPanel />}
-              {linkTab === 'datatable' && <DataTablePanel />}
-              {linkTab === 'properties' && <PropertiesTab />}
-              {linkTab === 'view3d' && (() => {
-                // The Models page's Views panel, with this page's view settings as its
-                // second section and the exports (Output, Navisworks) at the end.
-                const settings = (
-                  <View3DPanel
-                    page="sequence"
-                    colorSection={(view) => <ViewColorSettings view={view} elements={allElements} />}
-                  />
-                );
-                const extra = [
-                  { label: 'Output', content: <MediaExport schedule={model} /> },
-                  ...(experimental.navisworks ? [{ label: 'Navisworks TimeLiner', content: <NavisworksExport schedule={model} models={models} basis={basis} /> }] : []),
-                ];
-                return modelPanels ? <ViewpointsPanel element={modelPanels.views} settings={settings} extra={extra} /> : settings;
-              })()}
-      </SidePane>
+        </div>
+      </DockPanel>
     </>
   );
 }

@@ -4,9 +4,8 @@ import { RecipesDock } from './scenarios/rules/RecipesEditor';
 import { BottomDock } from './BottomDock';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { usePersistedState } from '../utils/persistedState';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
-import { rerenderTables, type ModelPanelId } from '../viewer/viewerUI';
+import { rerenderTables } from '../viewer/viewerUI';
 import { MarkersPanel } from './MarkersPanel';
 import { ConstructionPlanesPanel } from './ConstructionPlanesPanel';
 import { SectionCutsPanel } from './SectionCutsPanel';
@@ -17,9 +16,7 @@ import { ModelsPanel } from './sequence/ModelsPanel';
 import { IfcTree } from './IfcTree';
 import { ModelsList } from './ModelsList';
 import { ClashResultsList } from './ContactsSection';
-import { SidePane, type SidePaneTab } from './SidePane';
 import { ModelImageExport } from './ModelImageExport';
-import { IconCamera, IconCube, IconList, IconPalette, IconSearch, IconTree, IconViewTable } from './icons';
 import { TopicsPanel } from './TopicsPanel';
 import { useTopicsStore } from '../state/topicsStore';
 import { ModelChecksPanel } from './ModelChecksPanel';
@@ -35,21 +32,9 @@ import { DataTablePanel } from './DataTablePanel';
 import { useDataTableStore } from '../state/dataTableStore';
 import { DockPanel } from './Dock';
 import { useDockStore } from '../state/dockStore';
-import { useOnSplit, useSidePaneStore, useViewpointsToggle } from '../state/sidePaneStore';
+import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
 import { useAppPrefsStore, useExperimental } from '../state/appPrefsStore';
 import { useViewSettingsStore } from '../state/viewSettingsStore';
-
-type TabId = ModelPanelId | 'models' | 'colour' | 'search' | 'datatable';
-
-const TABS: SidePaneTab<TabId>[] = [
-  { id: 'models', label: '3D & Related', icon: <IconCube /> },
-  { id: 'properties', label: 'Properties', icon: <IconList /> },
-  { id: 'tree', label: 'Selection Tree', icon: <IconTree /> },
-  { id: 'search', label: 'Search sets', icon: <IconSearch /> },
-  { id: 'datatable', label: 'Data table', icon: <IconViewTable /> },
-  { id: 'views', label: 'Views', icon: <IconCamera /> },
-  { id: 'colour', label: 'Colour', icon: <IconPalette /> },
-];
 
 /** The Models page's tools (Model checks, Compare models, Topics): dock panels beside / under the 3D view, like 4D
     Sequencing's Gantt, Tasks and Scenarios — each can sit left, bottom or right (the Panels menu), and panels on the
@@ -225,53 +210,49 @@ export function RelatedTab({ page }: { page: 'model' | 'sequence' }) {
   );
 }
 
-/** The Models page's tabs in the side pane — model browsing (tree,
-    properties, sets, views with the view settings and fly-through,
-    topics) and placement. */
-export function ModelConfigPanel() {
-  const panels = useSequenceUiStore((s) => s.modelPanels);
-  const [saved, setTab] = usePersistedState<TabId>('models.configTab', 'models');
-  // The Topics tab (BCF) is an experimental feature.
-  const tabs = TABS;
-  // A remembered tab that no longer exists (View settings and Fly-through
-  // are now sections of Views).
-  // Related is now part of 3D.
-  const tab: TabId = tabs.some((t) => t.id === saved) ? saved : ['view3d', 'flythrough'].includes(saved) ? 'views' : (saved as string) === 'related' ? 'models' : (saved as string) === 'sets' ? 'search' : 'tree';
-  // The data table's Configure button brings this pane up on its tab.
-  const configRequest = useDataTableStore((s) => s.configRequest);
-  useEffect(() => {
-    if (!configRequest) return;
-    setTab('datatable');
-    useSidePaneStore.getState().setOpen(true);
-    useSidePaneStore.getState().setSettings(false);
-  }, [configRequest, setTab]);
-  // Splitting the view brings up Views, to set the two views up.
-  const split = useViewSettingsStore((s) => s.pages.model.split);
-  useOnSplit(split, () => setTab('views'));
-  useViewpointsToggle('model', () => tab === 'views', () => setTab('views'));
+/** A panel's body: scrolls, with the padding the side pane's tabs had. */
+function PaneBody({ children }: { children: ReactNode }) {
+  return <div className="config-panel__body model-config__body" style={{ flex: 1, minHeight: 0 }}>{children}</div>;
+}
 
+/** The 3D view's tools as dock panels (3D & Related, Properties, Selection Tree, Search sets, Views, Data table
+    setup), the same in Models and in 4D Sequencing: each sits left, bottom or right like any other panel. `views`
+    is the Views panel's content (the page adds its own settings and exports to it). */
+export function ModelDockPanels({ page, views, colour }: { page: 'model' | 'sequence'; views?: ReactNode; colour?: boolean }) {
   return (
     <>
-    <ModelToolsPanel />
-    <SidePane tabs={tabs} active={tab} onSelect={setTab} bodyClassName="config-panel__body model-config__body">
-      {tab === 'models' ? (
-        <RelatedTab page="model" />
-      ) : tab === 'tree' ? (
-        <SelectionTreeTab />
-      ) : tab === 'properties' ? (
-        <PropertiesTab />
-      ) : tab === 'colour' ? (
-        <ModelColorPanel />
-      ) : tab === 'search' ? (
-        <SearchSetsPanel player />
-      ) : tab === 'datatable' ? (
-        <DataTablePanel />
-      ) : panels && tab === 'views' ? (
-        <ViewpointsPanel key={tab} element={panels.views} settings={<View3DPanel page="model" />} extra={[{ label: 'Output', content: <ModelImageExport /> }]} />
-      ) : (
-        <div className="flt__hint">Starting viewer…</div>
-      )}
-    </SidePane>
+      <DockPanel id="related" label="3D & Related"><PaneBody><RelatedTab page={page} /></PaneBody></DockPanel>
+      <DockPanel id="tree" label="Selection Tree"><PaneBody><SelectionTreeTab /></PaneBody></DockPanel>
+      <DockPanel id="properties" label="Properties"><PaneBody><PropertiesTab /></PaneBody></DockPanel>
+      <DockPanel id="search" label="Search sets"><PaneBody><SearchSetsPanel player={page === 'model'} /></PaneBody></DockPanel>
+      {views !== undefined && <DockPanel id="views" label="Views"><PaneBody>{views}</PaneBody></DockPanel>}
+      {colour && <DockPanel id="colour" label="Colour"><PaneBody><ModelColorPanel /></PaneBody></DockPanel>}
+      <DockPanel id="tableSetup" label="Data table setup"><PaneBody><DataTablePanel /></PaneBody></DockPanel>
+    </>
+  );
+}
+
+/** The Models page's panels: model browsing (tree, properties, sets, views with the view settings and fly-through,
+    colour) and placement, as dock panels. */
+export function ModelConfigPanel() {
+  const panels = useSequenceUiStore((s) => s.modelPanels);
+  // The data table's Configure button brings its setup panel up.
+  const configRequest = useDataTableStore((s) => s.configRequest);
+  useEffect(() => {
+    if (configRequest) useDockStore.getState().reveal('tableSetup');
+  }, [configRequest]);
+  // Splitting the view brings up Views, to set the two views up.
+  const split = useViewSettingsStore((s) => s.pages.model.split);
+  useOnSplit(split);
+  useViewpointsToggle('model');
+  return (
+    <>
+      <ModelToolsPanel />
+      <ModelDockPanels
+        page="model"
+        colour
+        views={panels ? <ViewpointsPanel element={panels.views} settings={<View3DPanel page="model" />} extra={[{ label: 'Output', content: <ModelImageExport /> }]} /> : <div className="flt__hint">Starting viewer…</div>}
+      />
     </>
   );
 }

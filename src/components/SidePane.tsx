@@ -20,6 +20,7 @@ export interface SidePaneTab<Id extends string = string> {
     <SidePane>; with none showing, it holds Settings alone. */
 export function SidePaneHost() {
   const claims = useSidePaneStore((s) => s.claims);
+  const timelineSettings = useSidePaneStore((s) => s.timelineSettings);
   // A page without tabs (Inputs) keeps the pane hidden until asked for.
   const open = useSidePaneStore((s) => (s.claims === 0 ? s.bareOpen : s.open));
   const setOpen = useSidePaneStore((s) => s.setOpen);
@@ -61,7 +62,7 @@ export function SidePaneHost() {
       <ResizeHandle onMouseDown={width.startDrag(true)} />
       <aside className="config-panel side-pane" style={{ width: width.width }} ref={paneRef}>
         <div className="side-pane__main" ref={(el) => { if (useSidePaneStore.getState().host !== el) useSidePaneStore.setState({ host: el }); }}>
-          {claims === 0 && <PaneContent tabs={[]} active="" onSelect={() => {}} />}
+          {claims === 0 && <PaneContent tabs={[]} active="" onSelect={() => {}} timelineSettings={timelineSettings} />}
         </div>
         {dockClaims > 0 && <div className="side-pane__split" role="separator" aria-orientation="horizontal" aria-label="Resize the docked panel" tabIndex={0} onMouseDown={startSplit} />}
         <div

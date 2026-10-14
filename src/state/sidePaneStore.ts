@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { activeOn, useDockStore } from './dockStore';
 
 interface SidePaneState {
   /** The full-height side pane is shown (else only its reveal strip) on
@@ -22,46 +23,38 @@ interface SidePaneState {
       SidePaneHost), and how many pages are showing one. */
   dockHost: HTMLElement | null;
   dockClaims: number;
+  /** The Settings pane also holds the 4D timeline settings (4D Sequencing is showing). */
+  timelineSettings: boolean;
   /** Ctrl+Alt+9: show Viewpoints on this page (hide the pane when already showing them). */
   viewpointsRequest: { page: 'model' | 'sequence'; n: number } | null;
   requestViewpoints: (page: 'model' | 'sequence') => void;
 }
 
-/** Runs fn on each Ctrl+Alt+9 aimed at `page`, with whether the pane already shows Viewpoints
-    (the page says so with `showing`): hide it then, else bring Viewpoints up. */
-export function useViewpointsToggle(page: 'model' | 'sequence', showing: () => boolean, show: () => void) {
+/** Runs on each Ctrl+Alt+9 aimed at `page`: hides the Views panel when it is the tab showing in its dock, else brings it up. */
+export function useViewpointsToggle(page: 'model' | 'sequence') {
   const request = useSidePaneStore((s) => s.viewpointsRequest);
   const seen = useRef(request);
   useEffect(() => {
     if (!request || request === seen.current) return;
     seen.current = request;
     if (request.page !== page) return;
-    const pane = useSidePaneStore.getState();
-    if (pane.open && !pane.settings && showing()) {
-      pane.setOpen(false);
+    const dock = useDockStore.getState();
+    const side = dock.sideOf('views');
+    if (side !== 'closed' && !dock.folded[side] && activeOn(dock, side) === 'views') {
+      dock.setFolded(side, true);
       return;
     }
-    show();
-    pane.setOpen(true);
-    pane.setSettings(false);
-    // showing / show read the page's current tab.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [request]);
+    dock.reveal('views');
+  }, [request, page]);
 }
 
-/** Calls fn when the view is split (not when it loads split): the side pane
-    opens on the page's Views tab, where the split view is set up. */
-export function useOnSplit(split: boolean, fn: () => void) {
+/** Calls fn when the view is split (not when it loads split): the Views panel comes up,
+    where the split view is set up. */
+export function useOnSplit(split: boolean) {
   const prev = useRef(split);
   useEffect(() => {
-    if (split && !prev.current) {
-      fn();
-      useSidePaneStore.getState().setOpen(true);
-      useSidePaneStore.getState().setSettings(false);
-    }
+    if (split && !prev.current) useDockStore.getState().reveal('views');
     prev.current = split;
-    // fn only acts when split turns on.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [split]);
 }
 
@@ -83,6 +76,7 @@ export const useSidePaneStore = create<SidePaneState>()(
       claims: 0,
       dockHost: null,
       dockClaims: 0,
+      timelineSettings: false,
       viewpointsRequest: null,
       requestViewpoints: (page) => set((s) => ({ viewpointsRequest: { page, n: (s.viewpointsRequest?.n ?? 0) + 1 } })),
     }),

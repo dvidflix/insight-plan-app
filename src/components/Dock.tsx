@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
 import { activeOn, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning } from './icons';
+import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
 const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -24,6 +24,14 @@ const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   successors: IconSplit,
   progGantt: IconGantt,
   progTable: IconViewTable,
+  related: IconCube,
+  tree: IconTree,
+  properties: IconList,
+  search: IconSearch,
+  views: IconCamera,
+  colour: IconPalette,
+  tableSetup: IconViewTable,
+  fourD: IconSchema,
 };
 
 /** A panel that lives in one of the three docks around the 3D view (left, bottom, right). Mount it wherever its state
