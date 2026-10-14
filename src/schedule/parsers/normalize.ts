@@ -9,6 +9,7 @@ import type {
   ResourceAssignment,
   ResourceInfo,
   ScheduleModel,
+  UdfTypeDef,
   WbsNode,
 } from '../types';
 import { dayNumberIso, type CalendarDay, type CalendarException, type ScheduleCalendar } from '../calendar';
@@ -139,6 +140,7 @@ export function normalizeXer(tables: XerTables, fileName: string, projectId?: st
 
   const udfDefs = (tables.UDFTYPE ?? []).filter((r) => r.table_name === 'TASK');
   const udfLabelById = new Map(udfDefs.map((r) => [r.udf_type_id, r.udf_type_label || r.udf_type_name || r.udf_type_id]));
+  const udfTypes: UdfTypeDef[] = udfDefs.map((r) => ({ id: r.udf_type_id, label: r.udf_type_label || r.udf_type_name || r.udf_type_id, dataType: /FLOAT|INT|DOUBLE|NUMBER|COST|DECIMAL/i.test(r.logical_data_type ?? '') ? 'number' : 'text' }));
   const udfByTask = new Map<string, Record<string, string | number>>();
   for (const row of tables.UDFVALUE ?? []) {
     if (!udfLabelById.has(row.udf_type_id)) continue;
@@ -237,6 +239,7 @@ export function normalizeXer(tables: XerTables, fileName: string, projectId?: st
     activityCodeCatalog,
     resourceNames: [...rsrcNames.values()],
     resourceCatalog: xerResourceCatalog(tables, rsrcNames),
+    udfTypes,
     calendars,
     computedFloat: false,
   };
@@ -245,7 +248,9 @@ export function normalizeXer(tables: XerTables, fileName: string, projectId?: st
 /** RSRC rows with type, and capacity from their latest RSRCRATE max_qty_per_hr (labour). */
 function xerResourceCatalog(tables: XerTables, names: Map<string, string>): ResourceInfo[] {
   const maxById = new Map<string, { date: string; units: number }>();
+  const costById = new Map<string, number>();
   for (const row of tables.RSRCRATE ?? []) {
+    if (num(row.cost_per_qty) > 0) costById.set(row.rsrc_id, num(row.cost_per_qty));
     const units = num(row.max_qty_per_hr);
     const prev = maxById.get(row.rsrc_id);
     const date = row.start_date ?? '';
@@ -254,7 +259,8 @@ function xerResourceCatalog(tables: XerTables, names: Map<string, string>): Reso
   return (tables.RSRC ?? []).map((row) => {
     const type = RSRC_TYPE_MAP[row.rsrc_type] ?? 'other';
     const units = maxById.get(row.rsrc_id)?.units ?? null;
-    return { id: row.rsrc_id, name: names.get(row.rsrc_id) ?? row.rsrc_id, type, capacity: type === 'labor' || type === 'equipment' || (type === 'material' && (units ?? 0) >= 1) ? units : null };
+    const cost = costById.get(row.rsrc_id);
+    return { id: row.rsrc_id, name: names.get(row.rsrc_id) ?? row.rsrc_id, type, capacity: type === 'labor' || type === 'equipment' || (type === 'material' && (units ?? 0) >= 1) ? units : null, ...(cost ? { costPerUnit: cost } : {}) };
   });
 }
 

@@ -37,6 +37,8 @@ export interface ResourceInfo {
   capacity: number | null;
   /** App-only resource (see virtualResources.ts). */
   virtual?: boolean;
+  /** Cost of one unit of it (P6's price per unit); absent when unset. */
+  costPerUnit?: number;
 }
 
 export interface Activity {
@@ -88,6 +90,13 @@ export interface Activity {
   longestPath?: boolean;
   /** Place among the activities of its WBS node, as the planner orders them (kept in the project database only; not in an XER). */
   seq?: number;
+}
+
+/** A user field of activities (P6 UDFTYPE for TASK). */
+export interface UdfTypeDef {
+  id: string;
+  label: string;
+  dataType: 'text' | 'number';
 }
 
 export interface ActivityCodeValue {
@@ -148,6 +157,8 @@ export interface ScheduleModel {
   /** Resources with type and capacity. Optional so schedules saved before
       this existed still load. */
   resourceCatalog?: ResourceInfo[];
+  /** The user fields (UDFs) of activities: what they are called and hold. Optional, as the others. */
+  udfTypes?: UdfTypeDef[];
   calendars: ScheduleCalendar[];
   /** True once total float/critical path have been algorithmically recomputed
       (via cpm.ts) rather than read straight from the source file — used to

@@ -263,7 +263,7 @@ export interface RowOp {
 }
 
 /** The P6 tables the app edits in place. */
-const EDITABLE_TABLES = new Set(['TASK', 'TASKPRED', 'PROJWBS', 'TASKRSRC', 'TASKACTV', 'CALENDAR', 'PROJECT']);
+const EDITABLE_TABLES = new Set(['TASK', 'TASKPRED', 'PROJWBS', 'TASKRSRC', 'TASKACTV', 'CALENDAR', 'PROJECT', 'RSRC', 'RSRCRATE', 'ACTVTYPE', 'ACTVCODE', 'UDFTYPE', 'UDFVALUE']);
 
 const TASK_COLUMNS = [
   'task_id', 'proj_id', 'wbs_id', 'clndr_id', 'phys_complete_pct', 'rev_fdbk_flag', 'lock_plan_flag', 'auto_compute_act_flag', 'complete_pct_type', 'task_type',

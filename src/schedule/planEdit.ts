@@ -14,13 +14,29 @@ export const hoursPerDayOfCalendar = (m: ScheduleModel, calendarId: string | nul
 
 const round4 = (n: number) => Math.round(n * 4) / 4;
 
+/** The user field that says the duration follows quantity and productivity (see planResources.ts). */
+export const DRIVEN_LABEL = 'Duration from productivity';
+
+/** The quantity of the crew resources (labour, equipment) follows the duration: the crew working at once × the hours. */
+function resyncAssignments(a: Activity, patch: Partial<Activity>): Partial<Activity> {
+  if (patch.resources || (patch.durationHours === undefined && patch.remainingDurationHours === undefined)) return patch;
+  if (!a.resources.some((r) => r.unitsPerTime)) return patch;
+  const duration = patch.durationHours ?? a.durationHours;
+  const remaining = patch.remainingDurationHours ?? a.remainingDurationHours;
+  return {
+    ...patch,
+    resources: a.resources.map((r) => (r.unitsPerTime && !r.virtual ? { ...r, targetQty: round4(r.unitsPerTime * duration), remainQty: round4(r.unitsPerTime * remaining) } : r)),
+  };
+}
+
 /** Applies field changes to activities (by id). */
 export function patchActivities(m: ScheduleModel, patches: Map<string, Partial<Activity>>): Result<{ changed: number }> {
   let changed = 0;
   let drives = false;
   const activities = m.activities.map((a) => {
-    const patch = patches.get(a.id);
-    if (!patch) return a;
+    const given = patches.get(a.id);
+    if (!given) return a;
+    const patch = resyncAssignments(a, given);
     const keys = Object.keys(patch) as (keyof Activity)[];
     if (keys.every((k) => a[k] === patch[k])) return a;
     changed++;
@@ -40,6 +56,8 @@ export function setDurationDays(m: ScheduleModel, id: string, days: number): Res
   if (a.type !== 'task' && a.type !== 'loe') return { error: 'A milestone has no duration.' };
   const hours = round4(days * hoursPerDayOfCalendar(m, a.calendarId));
   const patch: Partial<Activity> = { durationHours: hours };
+  // A duration typed here is the planner's own: it no longer follows quantity and productivity.
+  if (a.udf[DRIVEN_LABEL] === 1) { const { [DRIVEN_LABEL]: _off, ...udf } = a.udf; patch.udf = udf; }
   if (a.status === 'not-started') patch.remainingDurationHours = hours;
   else if (a.status === 'in-progress') patch.remainingDurationHours = Math.max(0, round4(hours * (1 - a.percentComplete / 100)));
   return patchActivities(m, new Map([[id, patch]]));

@@ -2,14 +2,16 @@ import type { Activity, ActivityStatus, ActivityType, Relationship, ScheduleMode
 import type { ScheduleCalendar } from './calendar';
 import { calendarData, weekHours } from './calendarData';
 import type { DbRowOp } from '../db/api';
+import { codeOps, resourceOps, udfOps } from './nativeOpsExtra';
 
 /** A programme edited in place lives in the project database as P6's own tables (see ProjectDbBase.applyOps). This turns the
     difference between two states of its model into the row changes that bring the tables from the one to the other, so every
     edit, an undo and a redo too, reaches the database the same way. Only what changed is written: a column the app does not model,
     or a field nobody touched, keeps the value the file had.
 
-    What is written: activities (TASK), links (TASKPRED), WBS nodes (PROJWBS) and the project's dates (PROJECT). Not yet: activity
-    codes (TASKACTV), resource assignments (TASKRSRC), user fields (UDFVALUE) and calendars; they are never touched here. */
+    What is written: activities (TASK), links (TASKPRED), WBS nodes (PROJWBS), calendars, the project's dates (PROJECT), resources
+    (RSRC, RSRCRATE) and their assignments (TASKRSRC), activity codes (ACTVTYPE, ACTVCODE) and their assignments (TASKACTV), user
+    fields (UDFTYPE) and their values (UDFVALUE); see nativeOpsExtra.ts. */
 
 type Cell = string | number | null;
 
@@ -181,6 +183,11 @@ export function programmeRowOps(before: ScheduleModel, after: ScheduleModel): Db
   if (!sameValue(before.project.dataDate, after.project.dataDate)) projectSet.last_recalc_date = xerDate(after.project.dataDate);
   if (!sameValue(before.project.planStart, after.project.planStart)) projectSet.plan_start_date = xerDate(after.project.planStart);
   if (Object.keys(projectSet).length) made.push({ table: 'PROJECT', op: 'upsert', key: { column: 'proj_id', value: idValue(after.project.id) }, set: projectSet });
+
+  // Resources and their assignments, activity codes and their assignments, user fields and their values.
+  resourceOps(before, after, gone, made);
+  codeOps(before, after, gone, made);
+  udfOps(before, after, gone, made);
 
   return [...gone, ...made];
 }
