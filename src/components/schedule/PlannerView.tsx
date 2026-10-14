@@ -4,6 +4,8 @@ import { addActivity, addWbs, deleteActivities, deleteWbs, nextCode, renameWbs, 
 import { duplicateActivities, indentRows, moveRows, moveRowsToEnd, outdentRows, placeTaskAfter, placeWbsAfter, planRows, type PlanRef, type PlanRow } from '../../schedule/planOrder';
 import { hoursPerDayOfCalendar, parsePredecessors, patchActivities, predecessorText, setDateConstraint, setDurationDays, setPercent, setPredecessors, setWbsCode } from '../../schedule/planEdit';
 import { recomputeCpm } from '../../schedule/cpm';
+import { productivityOf, resourcesText, setProductivity, setResourcesText } from '../../schedule/planResources';
+import { assignCode } from '../../schedule/planCodes';
 import { setDataDate } from '../../schedule/programmeCommands';
 import { applyLinkShortcut, type LinkKind } from '../../schedule/linkShortcuts';
 import { editStructure } from '../../state/programmeEdits';
@@ -11,6 +13,7 @@ import { commit } from '../../state/programmeHistory';
 import { programmeKey } from '../../state/unloadedWbsStore';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { usePersistedState } from '../../utils/persistedState';
+import { useDockStore } from '../../state/dockStore';
 
 /** The planner: the programme as a tree to build and edit, in the way of P6 and Synchro: WBS nodes as summary rows with their
     activities under them, every cell typed in place, rows moved (Alt+↑ ↓), indented (Tab) and outdented (Shift+Tab) with the
@@ -19,7 +22,8 @@ import { usePersistedState } from '../../utils/persistedState';
 const ROW_H = 26;
 const DAY = 86400000;
 
-type ColumnId = 'code' | 'name' | 'duration' | 'start' | 'finish' | 'pred' | 'percent' | 'calendar' | 'float';
+/** A column: the fixed ones, and `code:<type>` for each activity code type of the programme. */
+type ColumnId = string;
 
 interface Column {
   id: ColumnId;
@@ -32,13 +36,16 @@ interface Column {
 /** The first two columns stay in view when the grid scrolls sideways. */
 const STICKY: Partial<Record<ColumnId, number>> = { code: 0, name: 90 };
 
-const COLUMNS: Column[] = [
+const BASE_COLUMNS: Column[] = [
   { id: 'code', label: 'ID', width: 90, title: 'Activity ID (a WBS node: its code)' },
   { id: 'name', label: 'Name', width: 300 },
   { id: 'duration', label: 'Dur (d)', width: 64, align: 'right', title: 'Duration in working days of the activity’s calendar' },
   { id: 'start', label: 'Start', width: 94, title: 'Start. Typing a date holds the activity to start on or after it (a constraint)' },
   { id: 'finish', label: 'Finish', width: 94, title: 'Finish. Typing a date holds the activity to finish on or after it (a constraint)' },
   { id: 'pred', label: 'Predecessors', width: 170, title: 'Type the IDs: A1000, A1010SS+2 (type FS SS FF SF, then the lag in days)' },
+  { id: 'qty', label: 'Quantity', width: 96, align: 'right', title: 'Quantity of work and its unit, like 240 m2. With the productivity it can make the duration (Resources & codes panel)' },
+  { id: 'prod', label: 'Prod / day', width: 76, align: 'right', title: 'Output per day for each person or machine of the crew' },
+  { id: 'res', label: 'Resources', width: 190, title: 'Type the resources: Gang A x4 (crew at once), Concrete 120 (a quantity). They come from the Dictionary panel' },
   { id: 'percent', label: '%', width: 48, align: 'right', title: 'Progress, percent of the duration' },
   { id: 'calendar', label: 'Calendar', width: 110 },
   { id: 'float', label: 'Float (d)', width: 64, align: 'right', title: 'Total float in working days (a critical activity has none)' },
@@ -67,6 +74,9 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
   const [collapsed, setCollapsed] = usePersistedState<string[]>(`planner.collapsed.${key}`, []);
   const collapsedSet = useMemo(() => new Set(collapsed), [collapsed]);
   const rows = useMemo(() => planRows(model, collapsedSet), [model, collapsedSet]);
+  // The fixed columns, then one for each activity code type.
+  const codeTypes = model.activityCodeCatalog ?? [];
+  const COLUMNS = useMemo<Column[]>(() => [...BASE_COLUMNS, ...codeTypes.map((t): Column => ({ id: `code:${t.name}`, label: t.name, width: 110, title: `Activity code “${t.name}”` }))], [codeTypes]);
   const [pxPerDay, setPxPerDay] = usePersistedState('planner.pxPerDay', 6);
   const [linkKind, setLinkKind] = useState<LinkKind>('FS');
 
@@ -156,7 +166,12 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
       case 'percent': return r.kind === 'wbs' ? `${Math.round(r.summary?.percent ?? 0)}` : `${Math.round(a!.percentComplete)}`;
       case 'calendar': return cal?.name ?? '';
       case 'float': return a?.totalFloatHours != null ? num2(a.totalFloatHours / perDay) : '';
+      case 'qty': { if (!a) return ''; const p = productivityOf(a); return p.quantity === null ? '' : `${p.quantity}${p.unit ? ` ${p.unit}` : ''}`; }
+      case 'prod': { const p = a ? productivityOf(a).perDay : null; return p === null || p === undefined ? '' : String(p); }
+      case 'res': return a ? resourcesText(a) : '';
     }
+    if (col.startsWith('code:')) return a?.activityCodes[col.slice(5)] ?? '';
+    return '';
   };
 
   const editText = (r: PlanRow, col: ColumnId): string => {
@@ -211,6 +226,13 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
         if ('error' in parsed) { onNote(parsed.error); return false; }
         return run('Set the predecessors', (m) => setPredecessors(m, act.id, parsed.entries)) !== null;
       }
+      case 'qty': {
+        const m = /^\s*(-?\d+(?:[.,]\d+)?)?\s*(.*)$/.exec(value);
+        const q = m?.[1] ? Number(m[1].replace(',', '.')) : null;
+        return run('Set the quantity', (mm) => setProductivity(mm, act.id, { quantity: value === '' ? null : q, unit: m?.[2] ?? '' })) !== null;
+      }
+      case 'prod': return run('Set the productivity', (m) => setProductivity(m, act.id, { perDay: value === '' ? null : Number(value.replace(',', '.')) })) !== null;
+      case 'res': return run('Set the resources', (m) => setResourcesText(m, act.id, value)) !== null;
       case 'percent': return run('Set the progress', (m) => setPercent(m, act.id, Number(value.replace(',', '.')))) !== null;
       case 'calendar': {
         const cal = model.calendars.find((c) => c.name.toLowerCase() === value.toLowerCase() || c.id === value);
@@ -218,6 +240,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
         return run('Set the calendar', (m) => patchActivities(m, new Map([[act.id, { calendarId: cal.id }]]))) !== null;
       }
     }
+    if (col.startsWith('code:')) return run('Set the activity code', (m) => assignCode(m, [act.id], col.slice(5), value === '' ? null : value)) !== null;
     return false;
   };
 
@@ -498,6 +521,8 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
           <button type="button" className="btn btn--small" onClick={expandAll} title="Open every WBS node">Expand</button>
           <button type="button" className="btn btn--small" onClick={collapseAll} title="Close every WBS node">Collapse</button>
           <button type="button" className="btn btn--small" onClick={schedule} title="Calculate the dates and float again (F9)">Schedule F9</button>
+          <button type="button" className="btn btn--small" onClick={() => useDockStore.getState().reveal('planning')} title="Quantity, productivity, resources and codes of the picked activities">Resources &amp; codes</button>
+          <button type="button" className="btn btn--small" onClick={() => useDockStore.getState().reveal('dictionary')} title="The programme's resources and activity code types and values">Dictionary</button>
         </span>
         <span className="planner__group">
           <label className="planner__zoom" title="The data date: progress is as of this day. What is not started cannot start before it.">Data date <input type="date" value={toInput(dataDate0)} onChange={(e) => changeDataDate(e.target.value)} /></label>

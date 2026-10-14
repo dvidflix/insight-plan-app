@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { addResource, assignResource, crewOf, daysFromProductivity, deleteResource, productivityOf, setAssignment, setProductivity, unassignResource, updateResource } from '../../src/schedule/planResources';
+import { addResource, assignResource, resourcesText, setResourcesText, crewOf, daysFromProductivity, deleteResource, productivityOf, setAssignment, setProductivity, unassignResource, updateResource } from '../../src/schedule/planResources';
 import { addCodeType, addCodeValue, assignCode, deleteCodeValue, renameCodeType, renameCodeValue } from '../../src/schedule/planCodes';
 import { setDurationDays, parsePredecessors, predecessorText, setPredecessors, type PredecessorEntry } from '../../src/schedule/planEdit';
 import { programmeRowOps } from '../../src/schedule/nativeOps';
@@ -146,5 +146,18 @@ describe('saving resources, codes and user fields', () => {
     expect(programmeRowOps(m, after).map((o) => [o.table, o.op])).toEqual([['TASKRSRC', 'delete']]);
     const gone = ok(deleteResource(m, '1')).model;
     expect(programmeRowOps(m, gone).map((o) => [o.table, o.op])).toEqual(expect.arrayContaining([['TASKRSRC', 'delete'], ['RSRC', 'delete'], ['RSRCRATE', 'delete']]));
+  });
+});
+
+describe('resources as text', () => {
+  it('reads "Gang A x4, Concrete 120", keeps what it can and says which resource is missing', () => {
+    let m = ok(addResource(base(), { name: 'Gang A', type: 'labor' })).model;
+    m = ok(addResource(m, { name: 'Concrete', type: 'material' })).model;
+    m = ok(setResourcesText(m, '1', 'Gang A x4, Concrete 120')).model;
+    expect(resourcesText(m.activities[0])).toBe('Gang A x4, Concrete 120');
+    expect(m.activities[0].resources.find((r) => r.resourceName === 'Gang A')).toMatchObject({ unitsPerTime: 4, targetQty: 320 });
+    m = ok(setResourcesText(m, '1', 'Gang A x2')).model;
+    expect(resourcesText(m.activities[0])).toBe('Gang A x2');
+    expect(setResourcesText(m, '1', 'Crane')).toEqual({ error: 'There is no resource called “Crane”: add it in the Dictionary panel first.' });
   });
 });

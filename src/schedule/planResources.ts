@@ -203,3 +203,40 @@ export function followProductivity(m: ScheduleModel, ids: string[]): ScheduleMod
   const done = patchActivities(m, patches);
   return 'error' in done ? m : done.model;
 }
+
+// ---- Resources as text ----
+
+/** "Gang A x4, Concrete 120": the crew resources with their units at once, the others with their quantity. */
+export function resourcesText(a: Activity): string {
+  return a.resources.filter((r) => !r.virtual).map((r) => (isCrew(r.resourceType) ? `${r.resourceName}${(r.unitsPerTime ?? 1) === 1 ? '' : ` x${r.unitsPerTime}`}` : `${r.resourceName} ${r.targetQty}`)).join(', ');
+}
+
+/** Makes the activity's resources these: the ones not listed come off, new ones go on, the units or quantity of the others change. */
+export function setResourcesText(m: ScheduleModel, id: string, text: string): Result {
+  const a = m.activities.find((x) => x.id === id);
+  if (!a) return { error: 'That activity is not in the programme.' };
+  const wanted: { info: ResourceInfo; units?: number; qty?: number }[] = [];
+  for (const part of text.split(/[,;\n]+/).map((p) => p.trim()).filter(Boolean)) {
+    const match = /^(.*?)(?:\s*[x×]\s*(\d+(?:[.,]\d+)?)|\s+(\d+(?:[.,]\d+)?))?$/i.exec(part);
+    const name = (match?.[1] ?? part).trim();
+    const info = catalogOf(m).find((r) => r.name.toLowerCase() === name.toLowerCase()) ?? catalogOf(m).find((r) => r.name.toLowerCase() === part.toLowerCase());
+    if (!info) return { error: `There is no resource called “${name}”: add it in the Dictionary panel first.` };
+    const given = match?.[2] ?? match?.[3];
+    const value = given === undefined || info.name.toLowerCase() === part.toLowerCase() ? undefined : Number(given.replace(',', '.'));
+    wanted.push(isCrew(info.type) ? { info, units: value ?? 1 } : { info, qty: value ?? 0 });
+  }
+  let model = m;
+  for (const r of a.resources.filter((x) => !x.virtual)) {
+    if (wanted.some((w) => w.info.id === r.resourceId)) continue;
+    const done = unassignResource(model, [id], r.resourceId);
+    if ('error' in done) return done;
+    model = done.model;
+  }
+  for (const w of wanted) {
+    const has = model.activities.find((x) => x.id === id)!.resources.some((r) => r.resourceId === w.info.id);
+    const done = has ? setAssignment(model, id, w.info.id, w.units !== undefined ? { units: w.units } : { qty: w.qty ?? 0 }) : assignResource(model, [id], w.info.id, { units: w.units, qty: w.qty });
+    if ('error' in done) return done;
+    model = done.model;
+  }
+  return { model };
+}
