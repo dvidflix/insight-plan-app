@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
-import { activeOn, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning } from './icons';
+import { activeOn, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
+import { IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
 const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -17,18 +17,25 @@ const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   checks: IconChecklist,
   compare: IconTwoPane,
   datatable: IconViewTable,
+  layouts: IconBookmark,
+  details: IconList,
+  links: IconSplit,
+  predecessors: IconSplit,
+  successors: IconSplit,
 };
 
 /** A panel that lives in one of the three docks around the 3D view (left, bottom, right). Mount it wherever its state
     lives; its content is drawn into the dock it is placed in, when it is that dock's tab showing. `shown` / `setShown`
     are for a panel with a switch of its own (the data table). */
-export function DockPanel({ id, label, shown, setShown, children }: { id: DockPanelId; label: string; shown?: boolean; setShown?: (v: boolean) => void; children: ReactNode }) {
+export function DockPanel({ id, label, shown, setShown, host = 'viewer', children }: { id: DockPanelId; label: string; shown?: boolean; setShown?: (v: boolean) => void; host?: DockHost; children: ReactNode }) {
+  // A panel of a page that is not showing stays out of the docks (and the Panels menu).
+  const mine = useDockStore((s) => s.host === host);
   useEffect(() => {
-    useDockStore.getState().register({ id, label, shown, setShown });
-  }, [id, label, shown, setShown]);
-  useEffect(() => () => useDockStore.getState().unregister(id), [id]);
+    if (mine) useDockStore.getState().register({ id, label, shown, setShown });
+  }, [mine, id, label, shown, setShown]);
+  useEffect(() => () => { if (mine) useDockStore.getState().unregister(id); }, [mine, id]);
   const target = useDockStore((s) => {
-    if (s.entries[id]?.shown === false) return null;
+    if (!mine || s.entries[id]?.shown === false) return null;
     const side = s.placement[id] ?? DOCK_DEFAULTS[id];
     if (side === 'closed' || s.folded[side] || activeOn(s, side) !== id) return null;
     return s.bodies[side];
@@ -50,7 +57,8 @@ function SideIcon({ side, size = 16 }: { side: DockSide; size?: number }) {
 const LIMITS: Record<DockSide, [number, number]> = { left: [260, 1100], right: [260, 1100], bottom: [140, 720] };
 
 /** One dock: its tabs, a move / close menu, and the body its panels are drawn into. Nothing when it holds no panel. */
-export function DockSideView({ side }: { side: DockSide }) {
+export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?: DockHost }) {
+  const mine = useDockStore((s) => s.host === host);
   const entries = useDockStore((s) => s.entries);
   const placement = useDockStore((s) => s.placement);
   const activeRaw = useDockStore((s) => s.active);
@@ -98,10 +106,10 @@ export function DockSideView({ side }: { side: DockSide }) {
   });
 
   useEffect(() => {
-    if (tabs.length === 0 || folded) setBody(side, null);
-  }, [tabs.length, folded, side, setBody]);
+    if (mine && (tabs.length === 0 || folded)) setBody(side, null);
+  }, [mine, tabs.length, folded, side, setBody]);
 
-  if (tabs.length === 0) return null;
+  if (!mine || tabs.length === 0) return null;
   const store = useDockStore.getState;
   const horizontal = side === 'bottom';
   const [min, max] = LIMITS[side];

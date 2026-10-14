@@ -1,6 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { IconBookmark, IconChevronDown, IconChevronRight, IconClose, IconFolder, IconPencil, IconSync, IconRemove } from '../icons';
-import { ResizeHandle, useResizableWidth } from '../ResizeHandle';
+import { IconChevronDown, IconChevronRight, IconFolder, IconPencil, IconSync, IconRemove } from '../icons';
 import { usePersistedState } from '../../utils/persistedState';
 import { decodePlf, plfToLayout } from '../../schedule/plfLayout';
 import type { ColumnDef } from '../../schedule/columns';
@@ -36,7 +35,7 @@ type Drop =
     between layouts. Layouts can be filed in folders, and dragged to reorder:
     onto another layout (before / after it), onto a folder (into it) or
     onto "No folder"; folders are dragged by their header to reorder. */
-export function LayoutsDock({ filters, tab, importContext, onClose }: { filters: ViewFilters; /** The Programmes view that is open (saved with the layout). */ tab: string; /** The schedule's columns and filter fields, for importing P6 layouts (null: no schedule loaded). */ importContext: { catalog: ColumnDef[]; filterFields: FilterFieldDef[] } | null; onClose: () => void }) {
+export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilters; /** The Programmes view that is open (saved with the layout). */ tab: string; /** The schedule's columns and filter fields, for importing P6 layouts (null: no schedule loaded). */ importContext: { catalog: ColumnDef[]; filterFields: FilterFieldDef[] } | null }) {
   const layouts = useScheduleLayoutsStore((s) => s.layouts);
   const folders = useScheduleLayoutsStore((s) => s.folders);
   const currentId = useScheduleLayoutsStore((s) => s.currentId);
@@ -50,7 +49,6 @@ export function LayoutsDock({ filters, tab, importContext, onClose }: { filters:
   const [dragFolder, setDragFolder] = useState<string | null>(null);
   const [drop, setDrop] = useState<Drop | null>(null);
   // Drag its left edge to resize (remembered).
-  const dock = useResizableWidth('programmes.layoutsDockWidth', 300, 240, 600);
   const taken = layouts.some((l) => l.name.toLowerCase() === name.trim().toLowerCase());
 
   const inFolder = (f: string) => layouts.filter((l) => l.folder === f);
@@ -215,17 +213,7 @@ export function LayoutsDock({ filters, tab, importContext, onClose }: { filters:
   };
 
   return (
-    <>
-    <ResizeHandle onMouseDown={dock.startDrag(true)} />
-    <aside className="config-panel scn-dock layouts-dock" aria-label="Layouts" style={{ width: dock.width }}>
-      <div className="side-pane__bar scn-dock__bar">
-        <span className="layouts-dock__title">
-          <IconBookmark /> Layouts
-        </span>
-        <button type="button" className="side-pane__hide layouts-dock__close" title="Close Layouts" aria-label="Close Layouts" onClick={onClose}>
-          <IconClose />
-        </button>
-      </div>
+    <div className="scn-dock layouts-dock" aria-label="Layouts" style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0 }}>
       <div className="scn-panel scn-panel__body scn-dock__body">
         <section className="scn-card">
           <div className="scn-card__title" title="Columns, filters, grouping, sorting, colours, zoom and Gantt options, under a name to come back to">Save the current view</div>
@@ -318,7 +306,6 @@ export function LayoutsDock({ filters, tab, importContext, onClose }: { filters:
           </div>
         </section>
       </div>
-    </aside>
-    </>
+    </div>
   );
 }

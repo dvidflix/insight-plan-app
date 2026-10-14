@@ -166,6 +166,8 @@ export default function App() {
   useEffect(() => { setVisited((v) => (v.has(page) ? v : new Set(v).add(page))); }, [page]);
   const pageRef = useRef(page);
   pageRef.current = page;
+  // Which page's docks (panels around the 3D view, or around the programme views) are showing.
+  useEffect(() => { useDockStore.getState().setHost(page === 'model' || page === 'sequence' ? 'viewer' : page === 'schedule' ? 'programme' : null); }, [page]);
   const setPage = (next: PageId | ((current: PageId) => PageId)) => {
     const from = pageRef.current;
     const to = typeof next === 'function' ? next(from) : next;

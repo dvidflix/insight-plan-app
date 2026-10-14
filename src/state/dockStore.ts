@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 /** The panels that can be docked around the 3D view (Models and 4D Sequencing pages): each sits on the left, at the
     bottom or on the right of it. Panels on the same side share it as tabs; panels on different sides show together. */
 export type DockSide = 'left' | 'bottom' | 'right';
-export type DockPanelId = 'datatable' | 'gantt' | 'tasks' | 'resources' | 'scenarios' | 'recipes' | 'rules' | 'clash' | 'topics' | 'viewpoints' | 'checks' | 'compare';
+export type DockPanelId = 'datatable' | 'gantt' | 'tasks' | 'resources' | 'scenarios' | 'recipes' | 'rules' | 'clash' | 'topics' | 'viewpoints' | 'checks' | 'compare' | 'layouts' | 'details' | 'links' | 'predecessors' | 'successors';
 
 export const DOCK_SIDES: DockSide[] = ['left', 'bottom', 'right'];
 export const SIDE_LABEL: Record<DockSide, string> = { left: 'Left', bottom: 'Bottom', right: 'Right' };
@@ -23,8 +23,17 @@ export const DOCK_DEFAULTS: Record<DockPanelId, DockSide> = {
   viewpoints: 'right',
   checks: 'right',
   compare: 'right',
+  layouts: 'right',
+  details: 'right',
+  links: 'bottom',
+  predecessors: 'bottom',
+  successors: 'bottom',
 };
-const ORDER: DockPanelId[] = ['gantt', 'tasks', 'resources', 'scenarios', 'recipes', 'rules', 'clash', 'topics', 'viewpoints', 'checks', 'compare', 'datatable'];
+const ORDER: DockPanelId[] = ['gantt', 'tasks', 'resources', 'scenarios', 'recipes', 'rules', 'clash', 'topics', 'viewpoints', 'checks', 'compare', 'datatable', 'layouts', 'details', 'links', 'predecessors', 'successors'];
+
+/** Which page's docks the panels belong to: the 3D view's (Models, 4D Sequencing) or the Programmes page's. Only the
+    host that is showing registers its panels and draws its docks. */
+export type DockHost = 'viewer' | 'programme';
 
 export interface DockEntry {
   id: DockPanelId;
@@ -36,6 +45,9 @@ export interface DockEntry {
 }
 
 interface DockState {
+  /** The host showing now (null: a page without docks). Not remembered. */
+  host: DockHost | null;
+  setHost: (host: DockHost | null) => void;
   /** Where the user put each panel (absent: its default). 'closed' = not shown. */
   placement: Partial<Record<DockPanelId, DockSide | 'closed'>>;
   /** The tab showing on each side. */
@@ -64,6 +76,8 @@ interface DockState {
 export const useDockStore = create<DockState>()(
   persist(
     (set, get) => ({
+      host: null,
+      setHost: (host) => set((s) => (s.host === host ? s : { host, bodies: { left: null, bottom: null, right: null } })),
       placement: {},
       active: {},
       size: { left: 520, bottom: 300, right: 560 },

@@ -4,7 +4,7 @@ import { useSelectionStore } from '../../state/selectionStore';
 import { usePropertyQueueStore } from '../../state/propertyQueueStore';
 import type { Activity, ResourceAssignment, ScheduleModel } from '../../schedule/types';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
-import { IconClose, IconList, IconPencil, IconRoadSurface } from '../icons';
+import { IconList, IconPencil, IconRoadSurface } from '../icons';
 import { applyVirtualResources } from '../../schedule/virtualResources';
 import { ActivityNote } from './ActivityNote';
 import { relationDetail, sharedContactIndex } from '../../schedule/activityRelation';
@@ -77,13 +77,12 @@ const days = (hours: number, perDay = 8) => Math.round((hours / perDay) * 10) / 
 /** The buttons under Details share one height. */
 const DETAIL_BTN = { display: 'inline-flex', alignItems: 'center', justifyContent: 'center', boxSizing: 'border-box', height: 30, verticalAlign: 'top' } as const;
 
-export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarget, onSelect, onClose }: {
+export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarget, onSelect }: {
   activity: Activity;
   model: ScheduleModel;
   drivingTarget: string | null;
   onDrivingTarget: (id: string | null) => void;
   onSelect: (activity: Activity) => void;
-  onClose: () => void;
 }) {
   const sections = useOpenSections<SectionId>('schedule.detailSections3', DEFAULT_OPEN);
   // The objects each activity is linked to (Link Groups), and the contacts found between objects (Clashes & contacts).
@@ -287,9 +286,6 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           onClick={() => (editing ? setEditing(false) : startEdit())}
         >
           <IconPencil />
-        </button>
-        <button type="button" className="side-pane__hide layouts-dock__close" title="Close activity details" aria-label="Close activity details" onClick={onClose}>
-          <IconClose />
         </button>
       </div>
 

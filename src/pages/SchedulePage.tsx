@@ -25,7 +25,6 @@ import { DEFAULT_WBS_PALETTE } from '../schedule/wbsPalette';
 import { type GroupRule } from '../components/schedule/GroupPanel';
 import { type SortRule } from '../components/schedule/SortPanel';
 import { ConfigPanel } from '../components/schedule/ConfigPanel';
-import { ResizeHandle, ResizeHandleH, useResizableHeight, useResizableWidth } from '../components/ResizeHandle';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { activitySearchText, matchesSearchTokens, searchTokens } from '../schedule/search';
 import { exportGanttXlsx } from '../schedule/exportGanttXlsx';
@@ -49,6 +48,7 @@ import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
 import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel, IconUndo, IconRedo } from '../components/icons';
+import { DockMenu, DockPanel, DockSideView } from '../components/Dock';
 import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditableStatus } from '../components/schedule/EditableStatus';
 import { EditTools } from '../components/schedule/EditTools';
@@ -229,6 +229,10 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const [error] = useState<string | null>(null);
   // The Activity pane opens from its toolbar button, not by selecting an activity.
   const [detailsOpen, setDetailsOpen] = usePersistedState('programmes.detailsOpen', false);
+  // Predecessors and Successors: together (as the Activity pane used to bring them) or each in a panel of its own.
+  const [linksOpen, setLinksOpen] = usePersistedState('programmes.linksOpen', legacy('programmes.detailsOpen', false));
+  const [predsOpen, setPredsOpen] = usePersistedState('programmes.predecessorsOpen', false);
+  const [succsOpen, setSuccsOpen] = usePersistedState('programmes.successorsOpen', false);
   const [zoom, setZoom] = usePersistedState<Zoom>('schedule.zoom', 'week');
   const [ganttSettingsOpen, setGanttSettingsOpen] = useState(false);
   const [showGanttLinks, setShowGanttLinks] = usePersistedState('schedule.showGanttLinks', false);
@@ -261,8 +265,6 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const tableColumns = useMemo(() => resolveColumns(catalog, tableColumnIds), [catalog, tableColumnIds]);
   const ganttColumns = useMemo(() => resolveColumns(catalog, ganttColumnIds), [catalog, ganttColumnIds]);
   const [dayFilter, setDayFilter] = useState<DayFilter | null>(null);
-  const detailsWidth = useResizableWidth('schedule.detailsWidth', 300, 240, 600);
-  const linksHeight = useResizableHeight('schedule.linksHeight', 240, 120, 640);
 
   const viewFiltered = useMemo(() => {
     if (!model) return [];
@@ -288,7 +290,6 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const filtered = cfgView === 'gantt' ? ganttFiltered : tableFiltered;
 
   const selected = filtered.find((a) => a.id === selectedId) ?? (tab === 'explorer' ? [...tableFiltered, ...ganttFiltered].find((a) => a.id === selectedId) : undefined) ?? (selectedId ? model?.activities.find((a) => a.id === selectedId) : undefined) ?? null;
-  const linksShown = detailsOpen && (tab === 'activities' || tab === 'gantt' || tab === 'explorer');
 
   const drivingIds = useMemo(() => (model && drivingTarget ? drivingPath(model, drivingTarget).ids : null), [model, drivingTarget]);
   // The curtain: every activity stays in the list; those the filters (or the driving path) leave out fade back.
@@ -531,18 +532,44 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
                 <span className="toolbar-button__icon"><IconBookmark /></span>
                 Layouts
               </button>
-              <button className={`btn layouts-toggle layouts-toggle--next${detailsOpen ? ' primary' : ''}`} type="button" aria-pressed={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)} title="Show the selected activity's details: fields and notes, with its predecessors and successors in a pane below">
+              <button className={`btn layouts-toggle layouts-toggle--next${detailsOpen ? ' primary' : ''}`} type="button" aria-pressed={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)} title="Show the selected activity's details (a panel: the Panels menu moves it, and shows Predecessors and Successors on their own)">
                 <span className="toolbar-button__icon"><IconSidePanel /></span>
                 Activity details
               </button>
+              <DockMenu />
             </div>
           )}
         </div>
       </div>
 
       <div className="page-body">
-        <div className="page-body__main" style={linksShown ? { display: 'flex', flexDirection: 'column', overflow: 'hidden' } : undefined}>
-          <div style={linksShown ? { flex: 1, minHeight: 0, overflow: 'auto' } : { display: 'contents' }}>
+        {/* Layouts, Activity details, Predecessors and Successors are panels: each sits left, bottom or right, as the Panels menu says. */}
+        {listTools && (
+          <>
+            <DockPanel host="programme" id="layouts" label="Layouts" shown={layoutsOpen} setShown={setLayoutsOpen}>
+              <LayoutsDock filters={filtersByView} tab={tab} importContext={model ? { catalog, filterFields } : null} />
+            </DockPanel>
+            <DockPanel host="programme" id="details" label="Activity" shown={detailsOpen} setShown={setDetailsOpen}>
+              {selected ? (
+                <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
+                  <ActivityDetails activity={selected} model={model} drivingTarget={drivingTarget} onDrivingTarget={setDrivingTarget} onSelect={handleSelect} />
+                </div>
+              ) : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its details.</div>}
+            </DockPanel>
+            <DockPanel host="programme" id="links" label="Predecessors & successors" shown={linksOpen} setShown={setLinksOpen}>
+              {selected ? <LinksPane activity={selected} model={model} onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its links.</div>}
+            </DockPanel>
+            <DockPanel host="programme" id="predecessors" label="Predecessors" shown={predsOpen} setShown={setPredsOpen}>
+              {selected ? <LinksPane activity={selected} model={model} kind="predecessor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its predecessors.</div>}
+            </DockPanel>
+            <DockPanel host="programme" id="successors" label="Successors" shown={succsOpen} setShown={setSuccsOpen}>
+              {selected ? <LinksPane activity={selected} model={model} kind="successor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its successors.</div>}
+            </DockPanel>
+          </>
+        )}
+        <DockSideView host="programme" side="left" />
+        <div className="page-body__main" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+          <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           {tab === 'activities' && activityTable}
           {tab === 'wbs' && <WbsView model={model} activities={filtered} wbsPalette={wbsPalette} />}
           {tab === 'gantt' && ganttChart}
@@ -584,38 +611,9 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
           {tab === 'compare' && <ComparePanel current={model} />}
           {tab === 'concrete' && <ConcreteComparison />}
           </div>
-          {linksShown && selected && (
-            <>
-              <ResizeHandleH onMouseDown={linksHeight.startDrag} />
-              <LinksPane activity={selected} model={model} height={linksHeight.height} onSelect={handleSelect} />
-            </>
-          )}
+          <DockSideView host="programme" side="bottom" />
         </div>
-        {detailsOpen && (tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
-          <>
-            <ResizeHandle onMouseDown={detailsWidth.startDrag(true)} />
-            <div className="panel" style={{ width: detailsWidth.width, flexShrink: 0 }}>
-              {selected ? (
-                <ActivityDetails
-                  activity={selected}
-                  model={model}
-                  drivingTarget={drivingTarget}
-                  onDrivingTarget={setDrivingTarget}
-                  onSelect={handleSelect}
-                  onClose={() => setDetailsOpen(false)}
-                />
-              ) : (
-                <div className="panel-section">
-                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                    <h3 style={{ margin: 0 }}>Activity</h3>
-                    <button type="button" className="btn btn--small" aria-label="Close activity details" onClick={() => setDetailsOpen(false)} style={{ padding: '4px 8px', minWidth: 'auto' }}>✕</button>
-                  </div>
-                  <div className="scn-dim" style={{ marginTop: 8 }}>Click an activity to see its details.</div>
-                </div>
-              )}
-            </div>
-          </>
-        )}
+        <DockSideView host="programme" side="right" />
         {active && (tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
           <>
             <ConfigPanel
@@ -642,7 +640,6 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
             />
           </>
         )}
-        {listTools && layoutsOpen && <LayoutsDock filters={filtersByView} tab={tab} importContext={model ? { catalog, filterFields } : null} onClose={() => setLayoutsOpen(false)} />}
       </div>
     </div>
       {statusSlot && createPortal(<>

@@ -76,10 +76,13 @@ function sortRows(rows: Row[], sort: Sort | null): Row[] {
 
 /** The selected activity's predecessors (left) and successors (right) in full, under the Gantt / table.
     Click a column to sort; the driver and ID columns stay put when scrolling sideways; drag the divider to resize. */
-export function LinksPane({ activity, model, height, onSelect }: {
+export function LinksPane({ activity, model, height, kind: only, onSelect }: {
   activity: Activity;
   model: ScheduleModel;
-  height: number;
+  /** Fixed height (px); absent: fills the panel it is in. */
+  height?: number;
+  /** Just the predecessors or just the successors (their own panel); absent: both, side by side. */
+  kind?: Kind;
   onSelect: (activity: Activity) => void;
 }) {
   const split = useResizableWidth('schedule.linksSplit', 820, 320, 2400);
@@ -193,7 +196,7 @@ export function LinksPane({ activity, model, height, onSelect }: {
       <div className="links-pane__half" style={style}>
         <div className="links-pane__title">
           {title} ({rows.length}) <span className="scn-dim" style={{ fontWeight: 400 }}>· {activity.code}</span>
-          {kind === 'successor' && (
+          {(only ? true : kind === 'successor') && (
             <span style={{ float: 'right', display: 'inline-flex', gap: 4, alignItems: 'center' }}>
               {note && editing && <span className="scn-dim" style={{ fontWeight: 400 }}>{note}</span>}
               {changed && editing && <button type="button" className="mini-btn" onClick={resetLinks} title="Put this activity's links back as in the imported or generated programme">Reset links</button>}
@@ -266,11 +269,15 @@ export function LinksPane({ activity, model, height, onSelect }: {
   };
 
   return (
-    <div className="links-pane" style={{ height }}>
+    <div className="links-pane" style={height === undefined ? { flex: 1, minHeight: 0, borderTop: 0 } : { height }}>
       <datalist id="links-pane-codes">{editing && model.activities.slice(0, 20000).map((a) => <option key={a.id} value={a.code}>{a.name}</option>)}</datalist>
-      {half('predecessor', 'Predecessors', { flex: '0 1 auto', width: split.width })}
-      <ResizeHandle onMouseDown={split.startDrag(false)} />
-      {half('successor', 'Successors', { flex: '1 1 0', minWidth: 200 })}
+      {only ? half(only, only === 'predecessor' ? 'Predecessors' : 'Successors', { flex: '1 1 0', minWidth: 0 }) : (
+        <>
+          {half('predecessor', 'Predecessors', { flex: '0 1 auto', width: split.width })}
+          <ResizeHandle onMouseDown={split.startDrag(false)} />
+          {half('successor', 'Successors', { flex: '1 1 0', minWidth: 200 })}
+        </>
+      )}
     </div>
   );
 }
