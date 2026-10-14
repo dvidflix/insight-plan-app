@@ -26,8 +26,8 @@ header.top .wrap { display: flex; align-items: center; justify-content: space-be
 .logo:hover { text-decoration: none; }
 .logo svg { width: 46px; height: 46px; flex: none; }
 .logo img { width: auto; display: block; }
-.logo__mark { height: 58px; margin-right: 18px; }
-.logo__name { height: 36px; position: relative; top: 5px; }
+.logo__mark { height: 40px; margin-right: 14px; }
+.logo__name { height: 30px; position: relative; top: 1px; }
 .logo b { font-weight: 700; }
 .logo i { font-style: normal; font-weight: 400; color: var(--muted); }
 nav { display: flex; align-items: center; gap: 34px; }
@@ -93,6 +93,7 @@ ul.ticks li::before { content: ""; position: absolute; left: 2px; top: .42em; wi
 
 /* Pricing tiers */
 .tiers { display: grid; gap: 20px; grid-template-columns: repeat(3, 1fr); align-items: stretch; }
+.tiers--two { grid-template-columns: repeat(2, 1fr); max-width: 900px; margin-inline: auto; }
 .tier { position: relative; background: var(--surface); border-radius: var(--radius); padding: 36px 30px; display: flex; flex-direction: column; border: 1px solid transparent; }
 .tier.featured { border-color: var(--brand); box-shadow: 0 0 0 1px var(--brand); }
 .tier .badge { position: absolute; top: -12px; left: 50%; transform: translateX(-50%); background: var(--brand); color: #fff; font-size: var(--fs-body); font-weight: 600; padding: 3px 12px; border-radius: 99px; }
@@ -121,8 +122,8 @@ footer strong { color: var(--ink); font-size: var(--fs-body); font-weight: 600; 
 footer a { color: var(--muted); }
 footer .logo { font-size: var(--fs-remark); }
 footer .logo svg { width: 34px; height: 34px; }
-footer .logo__mark { height: 44px; margin-right: 14px; }
-footer .logo__name { height: 27px; top: 4px; }
+footer .logo__mark { height: 32px; margin-right: 12px; }
+footer .logo__name { height: 23px; top: 1px; }
 footer .note { text-align: left; margin: 4px 0 0; }
 footer .foot > div.legal { display: block; grid-column: 1 / -1; border-top: 1px solid var(--line); padding-top: 16px; }
 
@@ -134,8 +135,8 @@ footer .foot > div.legal { display: block; grid-column: 1 / -1; border-top: 1px 
   nav a.btn { padding: 8px 16px; font-size: var(--fs-body); }
   header.top .wrap { height: auto; min-height: 72px; flex-wrap: wrap; justify-content: center; row-gap: 6px; padding-top: 8px; padding-bottom: 10px; }
   .logo svg { width: 40px; height: 40px; }
-  .logo__mark { height: 46px; margin-right: 10px; }
-  .logo__name { height: 29px; top: 4px; }
+  .logo__mark { height: 32px; margin-right: 10px; }
+  .logo__name { height: 24px; top: 1px; }
   nav a.btn { display: none; }
   .hero { padding-top: 56px; }
   section { padding: 60px 0; }
@@ -279,8 +280,8 @@ section.feature.flip .split > div:first-child { order: 2; }
   nav { gap: 18px; }
   nav a { font-size: var(--fs-body); }
   nav a.btn { padding: 9px 16px; font-size: var(--fs-body); }
-  .logo__mark { height: 50px; margin-right: 12px; }
-  .logo__name { height: 30px; }
+  .logo__mark { height: 36px; margin-right: 12px; }
+  .logo__name { height: 27px; }
 }
 
 /* One headline style for the home page and every other page, at every screen width. */
@@ -824,3 +825,52 @@ nav.sitefoot__cols a { font-size: var(--fs-body); font-weight: 400; opacity: 1; 
   header.top nav .menu__links { padding: 0 0 8px; }
   header.top nav .menu__panel--list .menu__title + .menu__links + .menu__title { margin-inline: 0; padding-inline: 4px; }
 }
+
+/* Home hero: the outcome line, and the second button sits quietly beside the main one. */
+.hero__outcome { margin: 0 0 14px; color: var(--ink, #16215f); }
+.hero__outcome b { font-weight: 650; }
+.hero .cta .btn--quote::after { content: none; }
+
+/* Compare: capability matrix */
+.cmp--grid { min-width: 1080px; font-size: var(--fs-remark); }
+.cmp--grid th, .cmp--grid td { padding: 12px 10px; }
+.cmp--grid thead th, .cmp--grid td { text-align: center; }
+.cmp--grid thead th:first-child { text-align: left; }
+.cmp--grid tbody th { width: 28%; }
+.cmp--grid .cmp-yes::before { content: "\2713"; }
+.cmp--grid .cmp-yes { font-size: 0; }
+.cmp--grid .cmp-yes::before { font-size: var(--fs-body); }
+
+/* Heading links: a small button after each h2 / h3 that copies the direct link */
+h2, h3 { scroll-margin-top: 90px; }
+.anchor { display: inline-flex; vertical-align: middle; margin-left: .45em; padding: 3px; border-radius: 6px; color: var(--muted); opacity: 0; text-decoration: none; transition: opacity .15s, color .15s; }
+h2:hover > .anchor, h3:hover > .anchor, .anchor:focus-visible { opacity: 1; }
+.anchor:hover { color: var(--brand); }
+@media (hover: none) { .anchor { opacity: .55; } }
+.anchor-tip { position: absolute; z-index: 30; transform: translate(-50%, -100%); padding: 5px 10px; border-radius: 6px; background: var(--ink); color: #fff; font-size: 13px; pointer-events: none; opacity: 0; transition: opacity .15s; white-space: nowrap; }
+.anchor-tip.on { opacity: 1; }
+
+/* Capability grid: collapsible groups (the app's section chevron: down when open, right when collapsed) and grid lines */
+.cmp--grid th, .cmp--grid td { border: 1px solid var(--hair); }
+.cmp--grid .cmp-toggle { display: flex; align-items: center; gap: 8px; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; letter-spacing: inherit; text-transform: inherit; cursor: pointer; text-align: left; }
+.cmp--grid .cmp-chev { flex-shrink: 0; transform: rotate(180deg); transition: transform .2s; }
+.cmp--grid .cmp-toggle[aria-expanded="false"] .cmp-chev { transform: rotate(90deg); }
+.cmp--grid tr[hidden] { display: none; }
+/* Capability grid: alternate the tool columns (the first, Insight Plan, keeps its own tint) */
+.cmp--grid tbody td:nth-child(odd):not(.cmp-us) { background: var(--soft); }
+
+/* Capability tables: collapsible groups, alternating rows */
+.cmp--matrix tbody tr.cmp-alt > th, .cmp--matrix tbody tr.cmp-alt > td, .cmp--grid tbody tr.cmp-alt > th, .cmp--grid tbody tr.cmp-alt > td { background: #f6f7fb; }
+.cmp--matrix tbody tr.cmp-alt > td.cmp-us, .cmp--grid tbody tr.cmp-alt > td.cmp-us { background: #e4eafd; }
+.cmp-group th[role="button"] { cursor: pointer; user-select: none; }
+.cmp-group th[role="button"]::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 10px; border-right: 2px solid currentColor; border-bottom: 2px solid currentColor; transform: translateY(-2px) rotate(45deg); transition: transform .15s; }
+.cmp-group th[role="button"][aria-expanded="false"]::before { transform: translateY(-1px) rotate(-45deg); }
+.cmp-group th[role="button"]:hover { background: #eceffa; }
+.cmp-group th[role="button"]:focus-visible { outline: 2px solid var(--brand); outline-offset: -2px; }
+.cmp tbody tr[hidden] { display: none; }
+
+/* Capability grid: the first column stays in view while the tool columns scroll sideways. */
+.cmp--grid { min-width: 1240px; }
+.cmp--grid thead th:first-child { position: sticky; left: 0; z-index: 3; background: var(--soft); }
+.cmp--grid tbody th:not([colspan]) { position: sticky; left: 0; z-index: 2; background: #fff; box-shadow: 1px 0 0 var(--hair); }
+.cmp--grid tbody tr.cmp-alt > th:not([colspan]) { background: #f6f7fb; }

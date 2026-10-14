@@ -138,3 +138,16 @@ export function clash() {
 <text x="290" y="20" font-size="12" fill="#5b6580">Architecture model against services model</text>
 <text x="290" y="160" font-size="12" fill="#5b6580">Within a model, or across models</text></g></svg>`;
 }
+
+// ---- A scorecard of checks: programme checks on the left, model checks on the right (generic figures, not a real project).
+export function checksViz() {
+  const bar = (x, y, label, pct, pass) => `<g transform="translate(${x} ${y})"><text y="12" font-size="13" fill="#3a4560">${label}</text><text x="190" y="12" text-anchor="end" font-size="13" font-weight="700" fill="${pass ? '#0d8f82' : '#b45309'}">${pct}% ${pass ? 'PASS' : 'FAIL'}</text><rect y="20" width="190" height="9" rx="4.500" fill="#e9edf6"/><rect y="20" width="${f(190 * pct / 100)}" height="9" rx="4.500" fill="${pass ? '#14b8a6' : '#f59e0b'}"/></g>`;
+  const left = [['Missing logic', 97, true], ['Hard constraints', 100, true], ['Relationship types', 71, false], ['Negative float', 100, true]];
+  const right = [['Required properties', 94, true], ['Classification', 88, false], ['Naming', 99, true], ['Clash-free pairs', 96, true]];
+  return `<svg viewBox="0 0 420 240" width="100%" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="A scorecard: programme checks and model checks, each with a score marked pass or fail" font-family="system-ui,sans-serif">
+<text x="10" y="22" font-size="14" font-weight="700" fill="#1a2238">Programme checks</text>
+<text x="220" y="22" font-size="14" font-weight="700" fill="#1a2238">Model checks</text>
+${left.map(([l, p, ok], i) => bar(10, 40 + i * 48, l, p, ok)).join('')}
+${right.map(([l, p, ok], i) => bar(220, 40 + i * 48, l, p, ok)).join('')}
+</svg>`;
+}

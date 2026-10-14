@@ -11,7 +11,7 @@
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="logo" href="index.html" aria-label="Insight Plan home"><img class="logo__mark" src="logo-mark.png" alt="" width="374" height="363"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="700" height="147"></a>
+    <a class="logo" href="index.html" aria-label="Insight Plan home"><img class="logo__mark" src="logo-mark.png" alt="" width="427" height="276"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="733" height="142"></a>
     <button type="button" class="navtoggle" aria-label="Menu" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="navtoggle__bars" d="M4 6.500h16M4 12h16M4 17.500h16"/><path class="navtoggle__x" d="M6 6l12 12M18 6L6 18"/></svg></button>
     <nav id="site-nav">
       <div class="menu"><button type="button" class="menu__btn" aria-expanded="false" aria-haspopup="true" aria-controls="menu-panel">Products<svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.500l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.800" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -27,7 +27,7 @@
       <div class="menu menu--list"><button type="button" class="menu__btn" aria-expanded="false" aria-haspopup="true">Resources<svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
     <div class="menu__panel menu__panel--list"><p class="menu__title">Learn</p><div class="menu__links"><a href="docs.html">Documentation</a><a href="resources.html">Questions and answers</a><a href="resources.html#requirements">System requirements</a><a href="resources.html#data">Data handling</a><a href="alternatives.html">Compare with other tools</a></div><p class="menu__title">Insight Plan</p><div class="menu__links"><a href="about.html">About us</a><a href="contact.html">Contact</a></div></div></div>
       <a href="contact.html">Contact</a>
-      <a class="btn" href="contact.html">Free trial</a>
+      <a class="btn" href="https://insightplan.app">Free edition</a>
     </nav>
   </div>
 </header>
@@ -36,24 +36,24 @@
 <aside class="docs__nav" aria-label="Documentation">
   <label class="docs__search"><span class="sr">Search the documentation</span><input type="search" placeholder="Search" id="docs-search" autocomplete="off"></label>
   <a class="docs__home" href="docs.html">Overview</a>
-  <div class="docs__group"><b>Start here</b><a href="docs-getting-started.html">Getting started</a><a href="docs-inputs.html" class="is-current" aria-current="page">Inputs</a><div class="docs__sub"><a href="#adding-files">Adding files</a><a href="#the-table-of-loaded-files">The table of loaded files</a><a href="#the-project-folder">The project folder</a></div></div><div class="docs__group"><b>Models</b><a href="docs-models.html">Models</a><a href="docs-models-side-pane.html">Models: the side pane</a></div><div class="docs__group"><b>Programmes</b><a href="docs-programmes.html">Programmes</a><a href="docs-planning-tools.html">Planning tools</a></div><div class="docs__group"><b>Programme and model together</b><a href="docs-4d-sequencing.html">4D Sequencing</a></div><div class="docs__group"><b>Reference</b><a href="docs-settings-and-tips.html">Settings and tips</a><a href="docs-your-data.html">Your data and saving</a></div>
+  <div class="docs__group"><b>Start here</b><a href="docs-getting-started.html">Getting started</a><a href="docs-inputs.html" class="is-current" aria-current="page">Inputs</a><div class="docs__sub"><a href="#adding-files">Adding files</a><a href="#the-table-of-loaded-files">The table of loaded files</a><a href="#the-project-folder">The project folder</a></div></div><div class="docs__group"><b>Models</b><a href="docs-models.html">Models</a><a href="docs-models-side-pane.html">Models: the side pane</a></div><div class="docs__group"><b>Programmes</b><a href="docs-programmes.html">Programmes</a><a href="docs-planning-tools.html">Planning tools</a></div><div class="docs__group"><b>Programme and model together</b><a href="docs-4d-sequencing.html">4D Sequencing</a></div><div class="docs__group"><b>Reference</b><a href="docs-settings-and-tips.html">Settings and tips</a><a href="docs-your-data.html">Your data and saving</a></div><div class="docs__group"><b>More</b><a href="docs-keyboard-shortcuts.html">Keyboard shortcuts</a></div>
 </aside>
 <article class="docs__main">
   <p class="docs__crumb"><a href="docs.html">Documentation</a> / Start here</p>
   <h1>Inputs</h1>
   <p>Everything you work with comes in here: models, programmes and the project folder.</p>
-<h2 id="adding-files">Adding files</h2>
+<h2 id="adding-files">Adding files<a class="anchor" href="#adding-files" aria-label="Copy link to this section" title="Copy link to this section"><svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.2-1.2"/></svg></a></h2>
 <p>Drop files on the drop zone, or click it to pick them. The app decides what each one is:</p>
 <div class="doc-table"><table><thead><tr><th>File</th><th>What happens</th></tr></thead><tbody><tr><td><strong>IFC</strong></td><td>Converted in your browser and shown in Models. Properties, the spatial tree and IFC layers are indexed for search. This can take a while for large models.</td></tr><tr><td><strong>FRAG</strong></td><td>A model already converted (faster to open).</td></tr><tr><td><strong>P6 <code>.xer</code> or <code>.xml</code></strong></td><td>Loaded as a programme. A file with several projects opens a picker: tick the projects you want. They load together as one programme, so links between them are kept.</td></tr><tr><td><strong>Excel programme</strong></td><td>Loaded as a programme if it follows the expected layout.</td></tr><tr><td><strong>glTF / GLB</strong></td><td>Site context such as terrain or surroundings. Shown in 3D only, with a <strong>Move</strong> control to line it up.</td></tr></tbody></table></div>
 <p>Large XER files are read in the background, so the app stays usable.</p>
-<h2 id="the-table-of-loaded-files">The table of loaded files</h2>
+<h2 id="the-table-of-loaded-files">The table of loaded files<a class="anchor" href="#the-table-of-loaded-files" aria-label="Copy link to this section" title="Copy link to this section"><svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.2-1.2"/></svg></a></h2>
 <p>Each row shows the file type, its elements (models) or activities (programmes), a model's lowest and highest X, Y and Z in metres, and the file size.</p>
 <ul><li>
 <strong>Turn a file off</strong> without removing it. It stays in memory but is left out everywhere.
 </li><li>
 <strong>Remove</strong> a file when you are finished with it.
 </li></ul>
-<h2 id="the-project-folder">The project folder</h2>
+<h2 id="the-project-folder">The project folder<a class="anchor" href="#the-project-folder" aria-label="Copy link to this section" title="Copy link to this section"><svg viewBox="0 0 24 24" aria-hidden="true" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.1 0l3-3a5 5 0 0 0-7.1-7.1l-1.2 1.2"/><path d="M14 11a5 5 0 0 0-7.1 0l-3 3A5 5 0 0 0 11 21.1l1.2-1.2"/></svg></a></h2>
 <p>On the right, the project panel shows the folder the project is kept in.</p>
 <ul><li>
 <strong>Choose folder…</strong> picks a folder on your computer or in OneDrive. Chrome or Edge only.
@@ -69,16 +69,18 @@
 </main>
 <footer class="sitefoot">
   <div class="wrap sitefoot__top">
-    <div class="sitefoot__brand"><a class="logo" href="index.html" aria-label="Insight Plan home"><img class="logo__mark" src="logo-mark.png" alt="" width="374" height="363"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="700" height="147"></a><p>4D planning for complex construction.<br>Works offline, and keeps your data on your machine.</p><div class="social" aria-label="Find us online"><a href="mailto:support@insight-plan.com" aria-label="Email us" title="Email us"><svg viewBox="0 0 24 24" class="social__line" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.500"/><path d="M3.500 7.500l8.500 6 8.500-6"/></svg></a></div></div>
+    <div class="sitefoot__brand"><a class="logo" href="index.html" aria-label="Insight Plan home"><img class="logo__mark" src="logo-mark.png" alt="" width="427" height="276"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="733" height="142"></a><p>4D planning for complex construction.<br>Works offline, and keeps your data on your machine.</p><div class="social" aria-label="Find us online"><a href="mailto:support@insight-plan.com" aria-label="Email us" title="Email us"><svg viewBox="0 0 24 24" class="social__line" aria-hidden="true"><rect x="3" y="5" width="18" height="14" rx="2.500"/><path d="M3.500 7.500l8.500 6 8.500-6"/></svg></a></div></div>
     <nav class="sitefoot__cols" aria-label="Footer">
       <div><strong>Product</strong><a href="features.html">Features</a><a href="examples.html">Examples</a><a href="solutions.html">Solutions</a><a href="alternatives.html">Compare</a><a href="pricing.html">Pricing</a></div>
       <div><strong>Resources</strong><a href="docs.html">Documentation</a><a href="resources.html">Questions and answers</a><a href="resources.html#requirements">System requirements</a><a href="resources.html#data">Data handling</a></div>
-      <div><strong>Company</strong><a href="about.html">About us</a><a href="contact.html">Contact</a><a href="contact.html">Start a free trial</a></div>
+      <div><strong>Company</strong><a href="about.html">About us</a><a href="contact.html">Contact</a><a href="https://insightplan.app">Open the free edition</a></div>
     </nav>
   </div>
   <div class="wrap sitefoot__bottom"><span>&copy; <span id="y">2026</span> Insight Plan</span><span>Primavera and P6 are trademarks of Oracle; Insight Plan is not affiliated with Oracle.</span></div>
 </footer>
 <script>(() => { const hdr = document.querySelector('header.top'), tg = hdr.querySelector('.navtoggle'); tg.addEventListener('click', () => { const o = !hdr.classList.contains('nav-open'); hdr.classList.toggle('nav-open', o); tg.setAttribute('aria-expanded', String(o)); }); const menus = [...document.querySelectorAll('.menu')]; const set = (m, o) => { m.classList.toggle('open', o); m.querySelector('.menu__btn').setAttribute('aria-expanded', String(o)); }; menus.forEach((m) => m.querySelector('.menu__btn').addEventListener('click', () => { const open = !m.classList.contains('open'); menus.forEach((x) => set(x, false)); set(m, open); })); document.addEventListener('click', (e) => menus.forEach((m) => { if (!m.contains(e.target)) set(m, false); })); document.addEventListener('keydown', (e) => { if (e.key === 'Escape') menus.forEach((m) => set(m, false)); }); })();</script>
+<script>(() => { const tip = document.createElement('div'); tip.className = 'anchor-tip'; tip.setAttribute('role', 'status'); document.body.appendChild(tip); let timer; const say = (a, text) => { const r = a.getBoundingClientRect(); tip.textContent = text; tip.style.left = (r.left + r.width / 2 + window.scrollX) + 'px'; tip.style.top = (r.top + window.scrollY - 8) + 'px'; tip.classList.add('on'); clearTimeout(timer); timer = setTimeout(() => tip.classList.remove('on'), 1600); }; document.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('a.anchor'); if (!a) return; e.preventDefault(); const url = location.origin + location.pathname + location.search + a.getAttribute('href'); history.replaceState(null, '', a.getAttribute('href')); const done = () => say(a, 'Link copied'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => say(a, 'Copy from the address bar')); else say(a, 'Copy from the address bar'); }); })();</script>
+<script>(() => { document.querySelectorAll('table.cmp--matrix, table.cmp--grid').forEach((t) => { let group = null; let n = 0; const rows = [...t.tBodies[0].rows]; rows.forEach((r) => { if (r.classList.contains('cmp-group')) { group = r; n = 0; const th = r.cells[0]; th.setAttribute('role', 'button'); th.setAttribute('tabindex', '0'); th.setAttribute('aria-expanded', 'true'); const flip = () => { const open = th.getAttribute('aria-expanded') !== 'true'; th.setAttribute('aria-expanded', String(open)); let x = r.nextElementSibling; while (x && !x.classList.contains('cmp-group')) { x.hidden = !open; x = x.nextElementSibling; } }; th.addEventListener('click', flip); th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } }); } else { r.classList.toggle('cmp-alt', n++ % 2 === 1); } }); }); })();</script>
 <script>document.getElementById('y').textContent = new Date().getFullYear();</script>
 
 </body>
