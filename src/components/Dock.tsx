@@ -22,6 +22,8 @@ const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   links: IconSplit,
   predecessors: IconSplit,
   successors: IconSplit,
+  progGantt: IconGantt,
+  progTable: IconViewTable,
 };
 
 /** A panel that lives in one of the three docks around the 3D view (left, bottom, right). Mount it wherever its state

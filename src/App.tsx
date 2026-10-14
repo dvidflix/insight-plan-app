@@ -167,7 +167,7 @@ export default function App() {
   const pageRef = useRef(page);
   pageRef.current = page;
   // Which page's docks (panels around the 3D view, or around the programme views) are showing.
-  useEffect(() => { useDockStore.getState().setHost(page === 'model' || page === 'sequence' ? 'viewer' : page === 'schedule' ? 'programme' : null); }, [page]);
+  useEffect(() => { useDockStore.getState().setHost(page === 'model' || page === 'sequence' || page === 'schedule' ? 'viewer' : null); }, [page]);
   const setPage = (next: PageId | ((current: PageId) => PageId)) => {
     const from = pageRef.current;
     const to = typeof next === 'function' ? next(from) : next;
@@ -249,7 +249,8 @@ export default function App() {
     const tab = takePendingTab();
     if (tab) setScheduleTab(tab as ScheduleTabId);
   }, [layoutRevision]);
-  const viewerVisible = page === 'model' || page === 'sequence';
+  // Models, 4D Sequencing and Programmes are one workspace: the 3D view's shell and docks, with the Programmes views taking the 3D view's place.
+  const viewerVisible = page === 'model' || page === 'sequence' || page === 'schedule';
 
   return (
     <ViewerEngineProvider>
@@ -299,15 +300,11 @@ export default function App() {
               paneActive={page === 'model'}
               panel={page === 'sequence' ? <SequencePanel /> : undefined}
               overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
+              center={page === 'schedule' || visited.has('schedule') ? <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} /> : undefined}
+              centerShown={page === 'schedule'}
             />
           </div>
           {page === 'inputs' && <InputsPage />}
-          {/* Stays mounted once opened, so its filters, selection and scroll are as left when coming back. */}
-          {(page === 'schedule' || visited.has('schedule')) && (
-            <div style={page === 'schedule' ? { display: 'contents' } : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none' }}>
-              <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} />
-            </div>
-          )}
           {page === 'scenarios' && <ScenariosPage />}
           {page === 'timelines' && <Suspense fallback={null}><TimelinesPage /></Suspense>}
           {page === 'wiki' && <Suspense fallback={null}><WikiPage /></Suspense>}

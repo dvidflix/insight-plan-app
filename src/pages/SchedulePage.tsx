@@ -48,7 +48,7 @@ import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
 import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel, IconUndo, IconRedo } from '../components/icons';
-import { DockMenu, DockPanel, DockSideView } from '../components/Dock';
+import { DockMenu, DockPanel } from '../components/Dock';
 import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditableStatus } from '../components/schedule/EditableStatus';
 import { EditTools } from '../components/schedule/EditTools';
@@ -233,6 +233,9 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const [linksOpen, setLinksOpen] = usePersistedState('programmes.linksOpen', legacy('programmes.detailsOpen', false));
   const [predsOpen, setPredsOpen] = usePersistedState('programmes.predecessorsOpen', false);
   const [succsOpen, setSuccsOpen] = usePersistedState('programmes.successorsOpen', false);
+  // The programme's Gantt and Table as panels, to sit beside the 3D view or the 4D Gantt.
+  const [ganttPanelOpen, setGanttPanelOpen] = usePersistedState('programmes.ganttPanelOpen', false);
+  const [tablePanelOpen, setTablePanelOpen] = usePersistedState('programmes.tablePanelOpen', false);
   const [zoom, setZoom] = usePersistedState<Zoom>('schedule.zoom', 'week');
   const [ganttSettingsOpen, setGanttSettingsOpen] = useState(false);
   const [showGanttLinks, setShowGanttLinks] = usePersistedState('schedule.showGanttLinks', false);
@@ -546,28 +549,29 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
         {/* Layouts, Activity details, Predecessors and Successors are panels: each sits left, bottom or right, as the Panels menu says. */}
         {listTools && (
           <>
-            <DockPanel host="programme" id="layouts" label="Layouts" shown={layoutsOpen} setShown={setLayoutsOpen}>
+            <DockPanel id="progGantt" label="Programme Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>{ganttPanelOpen && ganttChart}</DockPanel>
+            <DockPanel id="progTable" label="Programme table" shown={tablePanelOpen} setShown={setTablePanelOpen}>{tablePanelOpen && activityTable}</DockPanel>
+            <DockPanel id="layouts" label="Layouts" shown={layoutsOpen} setShown={setLayoutsOpen}>
               <LayoutsDock filters={filtersByView} tab={tab} importContext={model ? { catalog, filterFields } : null} />
             </DockPanel>
-            <DockPanel host="programme" id="details" label="Activity" shown={detailsOpen} setShown={setDetailsOpen}>
+            <DockPanel id="details" label="Activity" shown={detailsOpen} setShown={setDetailsOpen}>
               {selected ? (
                 <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}>
                   <ActivityDetails activity={selected} model={model} drivingTarget={drivingTarget} onDrivingTarget={setDrivingTarget} onSelect={handleSelect} />
                 </div>
               ) : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its details.</div>}
             </DockPanel>
-            <DockPanel host="programme" id="links" label="Predecessors & successors" shown={linksOpen} setShown={setLinksOpen}>
+            <DockPanel id="links" label="Predecessors & successors" shown={linksOpen} setShown={setLinksOpen}>
               {selected ? <LinksPane activity={selected} model={model} onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its links.</div>}
             </DockPanel>
-            <DockPanel host="programme" id="predecessors" label="Predecessors" shown={predsOpen} setShown={setPredsOpen}>
+            <DockPanel id="predecessors" label="Predecessors" shown={predsOpen} setShown={setPredsOpen}>
               {selected ? <LinksPane activity={selected} model={model} kind="predecessor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its predecessors.</div>}
             </DockPanel>
-            <DockPanel host="programme" id="successors" label="Successors" shown={succsOpen} setShown={setSuccsOpen}>
+            <DockPanel id="successors" label="Successors" shown={succsOpen} setShown={setSuccsOpen}>
               {selected ? <LinksPane activity={selected} model={model} kind="successor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its successors.</div>}
             </DockPanel>
           </>
         )}
-        <DockSideView host="programme" side="left" />
         <div className="page-body__main" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
           <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           {tab === 'activities' && activityTable}
@@ -611,9 +615,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
           {tab === 'compare' && <ComparePanel current={model} />}
           {tab === 'concrete' && <ConcreteComparison />}
           </div>
-          <DockSideView host="programme" side="bottom" />
         </div>
-        <DockSideView host="programme" side="right" />
         {active && (tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
           <>
             <ConfigPanel

@@ -24,7 +24,7 @@ import { useModelsStore } from '../state/modelsStore';
     for the app's whole lifetime — see App.tsx, which toggles CSS visibility
     rather than unmounting it when switching tabs. `paneActive`: the Models
     page is showing, so its tabs go in the side pane. */
-export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean }) {
+export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, centerShown }: { layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean; /** A view that takes the place of the 3D view (the Programmes views), with the same docks around it. */ center?: ReactNode; centerShown?: boolean }) {
   const engine = useViewerEngine();
   // The toolbar row grows when its tools wrap onto a second row: the docks' headers and the side pane's tab bar follow
   // it (--toolbar-row-h), so the bars along the top stay level. Hidden (another page showing): the default applies.
@@ -91,7 +91,7 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
         <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>
           <div className="schedule-toolbar__left">
-            <ViewerToolbar />
+            {!centerShown && <ViewerToolbar />}
           </div>
           <div className="schedule-toolbar__right">
             {inSequence && recPhase !== 'idle' && (
@@ -108,6 +108,12 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive }: { layout
           <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
             <ViewerCanvas layout={effectiveLayout} />
             {overlay}
+            {/* The 3D view keeps its size underneath (a hidden canvas would lose its aspect ratio). */}
+            {center !== undefined && (
+              <div style={centerShown ? { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', zIndex: 5 } : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
+                {center}
+              </div>
+            )}
             {/* Models > Colour: what each colour stands for. */}
             {!inSequence && paneActive && <ColourLegend />}
           </div>

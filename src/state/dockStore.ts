@@ -4,7 +4,7 @@ import { persist } from 'zustand/middleware';
 /** The panels that can be docked around the 3D view (Models and 4D Sequencing pages): each sits on the left, at the
     bottom or on the right of it. Panels on the same side share it as tabs; panels on different sides show together. */
 export type DockSide = 'left' | 'bottom' | 'right';
-export type DockPanelId = 'datatable' | 'gantt' | 'tasks' | 'resources' | 'scenarios' | 'recipes' | 'rules' | 'clash' | 'topics' | 'viewpoints' | 'checks' | 'compare' | 'layouts' | 'details' | 'links' | 'predecessors' | 'successors';
+export type DockPanelId = 'datatable' | 'gantt' | 'tasks' | 'resources' | 'scenarios' | 'recipes' | 'rules' | 'clash' | 'topics' | 'viewpoints' | 'checks' | 'compare' | 'layouts' | 'details' | 'links' | 'predecessors' | 'successors' | 'progGantt' | 'progTable';
 
 export const DOCK_SIDES: DockSide[] = ['left', 'bottom', 'right'];
 export const SIDE_LABEL: Record<DockSide, string> = { left: 'Left', bottom: 'Bottom', right: 'Right' };
@@ -28,8 +28,10 @@ export const DOCK_DEFAULTS: Record<DockPanelId, DockSide> = {
   links: 'bottom',
   predecessors: 'bottom',
   successors: 'bottom',
+  progGantt: 'bottom',
+  progTable: 'right',
 };
-const ORDER: DockPanelId[] = ['gantt', 'tasks', 'resources', 'scenarios', 'recipes', 'rules', 'clash', 'topics', 'viewpoints', 'checks', 'compare', 'datatable', 'layouts', 'details', 'links', 'predecessors', 'successors'];
+const ORDER: DockPanelId[] = ['gantt', 'tasks', 'resources', 'scenarios', 'recipes', 'rules', 'clash', 'topics', 'viewpoints', 'checks', 'compare', 'datatable', 'layouts', 'details', 'links', 'predecessors', 'successors', 'progGantt', 'progTable'];
 
 /** Which page's docks the panels belong to: the 3D view's (Models, 4D Sequencing) or the Programmes page's. Only the
     host that is showing registers its panels and draws its docks. */
