@@ -38,7 +38,7 @@ export interface SqlDb {
 }
 
 export const DB_FILE = 'insight-plan.db';
-export const SCHEMA_VERSION = '1';
+export const SCHEMA_VERSION = '3';
 
 export const APP_SCHEMA = `
 CREATE TABLE IF NOT EXISTS ip_meta (key TEXT PRIMARY KEY, value TEXT);
@@ -59,6 +59,10 @@ CREATE TABLE IF NOT EXISTS ip_programme (
   hidden INTEGER NOT NULL DEFAULT 0,
   activity_count INTEGER,
   xer_header TEXT,
+  -- 1: a programme of the app's own, edited in place (its rows change); 0: imported or generated, edited on top (overlay).
+  editable INTEGER NOT NULL DEFAULT 0,
+  -- A saved baseline of another programme (its id): a frozen copy of that programme, hidden until it is looked at.
+  baseline_of INTEGER,
   imported_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))
 );
 CREATE INDEX IF NOT EXISTS ix_ip_programme_scenario ON ip_programme (scenario, stem);
@@ -208,6 +212,10 @@ export interface ProgrammeRow {
   stem: string | null;
   hidden: boolean;
   activityCount: number | null;
+  /** Edited in place: the app changes its rows (see applyOps). */
+  editable: boolean;
+  /** A saved baseline of this programme (a frozen copy of it), or null. */
+  baselineOf: number | null;
   importedAt: string;
 }
 
@@ -235,6 +243,42 @@ export interface ImportMeta {
   projectIds: string[] | null;
 }
 
+
+/** The order P6 writes its tables in (what a table refers to comes first). A table not named here goes after these, in the order it was added. */
+const P6_TABLE_ORDER = [
+  'CURRTYPE', 'FINTMPL', 'MEMOTYPE', 'NONWORK', 'OBS', 'PHASE', 'RSRCCURVDATA', 'UDFTYPE', 'PCATTYPE', 'PCATVAL', 'PROJECT', 'CALENDAR', 'SCHEDOPTIONS',
+  'PROJWBS', 'RSRC', 'ACTVTYPE', 'RSRCRATE', 'TASK', 'ACTVCODE', 'TASKMEMO', 'TASKPRED', 'TASKRSRC', 'TASKACTV', 'UDFVALUE',
+];
+
+/** A change to one row of a programme edited in place (see ProjectDbBase.applyOps). */
+export interface RowOp {
+  table: string;
+  op: 'upsert' | 'delete';
+  /** The row's id column (task_id ...) and value; null on an upsert: a new row, given the next id. */
+  key: { column: string; value: string | number | null };
+  /** Finds the row by these columns instead of by the key's value (a link by its two activities, say). The key column is still
+      the row's id: a new row gets the next one. */
+  match?: Record<string, string | number>;
+  set?: Record<string, string | number | null>;
+}
+
+/** The P6 tables the app edits in place. */
+const EDITABLE_TABLES = new Set(['TASK', 'TASKPRED', 'PROJWBS', 'TASKRSRC', 'TASKACTV', 'CALENDAR', 'PROJECT']);
+
+const TASK_COLUMNS = [
+  'task_id', 'proj_id', 'wbs_id', 'clndr_id', 'phys_complete_pct', 'rev_fdbk_flag', 'lock_plan_flag', 'auto_compute_act_flag', 'complete_pct_type', 'task_type',
+  'duration_type', 'status_code', 'task_code', 'task_name', 'rsrc_id', 'total_float_hr_cnt', 'free_float_hr_cnt', 'remain_drtn_hr_cnt', 'act_work_qty',
+  'remain_work_qty', 'target_work_qty', 'target_drtn_hr_cnt', 'target_equip_qty', 'act_equip_qty', 'remain_equip_qty', 'cstr_date', 'act_start_date',
+  'act_end_date', 'late_start_date', 'late_end_date', 'expect_end_date', 'early_start_date', 'early_end_date', 'restart_date', 'reend_date',
+  'target_start_date', 'target_end_date', 'rem_late_start_date', 'rem_late_end_date', 'cstr_type', 'priority_type', 'suspend_date', 'resume_date',
+  'float_path', 'float_path_order', 'cstr_date2', 'cstr_type2', 'driving_path_flag', 'create_date', 'update_date',
+];
+
+/** P6's calendar text for a Monday-Friday week of 08:00-16:00 with no exceptions (day 1 is Sunday). */
+const BLANK_CALENDAR_DATA = '(0||CalendarData()((0||DaysOfWeek()('
+  + [1, 2, 3, 4, 5, 6, 7].map((d) => (d === 1 || d === 7 ? `(0||${d}()())` : `(0||${d}()((0||0(s|08:00|f|16:00)())))`)).join('')
+  + '))(0||Exceptions()())))';
+
 export const IDENT = /^[A-Za-z_][A-Za-z0-9_]*$/;
 export const q = (id: string) => `"${id.replace(/"/g, '""')}"`;
 export const now = () => new Date().toISOString();
@@ -248,6 +292,10 @@ export function affinity(col: string): string {
   if (/(_cnt|_qty|_cost|_pct|_num|_hr|_rate|_len|_number|_wt|_amt|_units)$/i.test(col)) return 'NUMERIC';
   return 'TEXT';
 }
+
+/** A value as it is stored in the column. A number put in a text column would come back as "10.0" (the driver binds it as a double):
+    it is stored as the text P6 writes. */
+export const bindValue = (column: string, v: string | number | null): string | number | null => (typeof v === 'number' && affinity(column) === 'TEXT' ? String(v) : v);
 
 export function tableColumns(db: SqlDb, table: string): string[] | null {
   const rows = db.prepare('SELECT name FROM pragma_table_info(?)').all(table) as { name: string }[];
@@ -348,6 +396,8 @@ export interface ProgrammeDbRow {
   stem: string | null;
   hidden: number;
   activity_count: number | null;
+  editable?: number;
+  baseline_of?: number | null;
   imported_at: string;
 }
 
@@ -372,6 +422,8 @@ export function toProgramme(r: ProgrammeDbRow): ProgrammeRow {
     stem: r.stem,
     hidden: !!r.hidden,
     activityCount: r.activity_count === null ? null : Number(r.activity_count),
+    editable: !!r.editable,
+    baselineOf: r.baseline_of === null || r.baseline_of === undefined ? null : Number(r.baseline_of),
     importedAt: r.imported_at,
   };
 }
@@ -384,7 +436,11 @@ export abstract class ProjectDbBase {
   /** Creates the app's tables on first use. Subclasses call it once the database is open. */
   protected init() {
     this.db.exec(APP_SCHEMA);
-    if (!this.meta('schema_version')) this.setMeta('schema_version', SCHEMA_VERSION);
+    // Version 2: programmes the app edits in place. A column added to a database made before it (nothing is rebuilt or rewritten).
+    if (!tableColumns(this.db, 'ip_programme')?.includes('editable')) this.db.exec('ALTER TABLE ip_programme ADD COLUMN editable INTEGER NOT NULL DEFAULT 0');
+    // Version 3: saved baselines.
+    if (!tableColumns(this.db, 'ip_programme')?.includes('baseline_of')) this.db.exec('ALTER TABLE ip_programme ADD COLUMN baseline_of INTEGER');
+    if (this.meta('schema_version') !== SCHEMA_VERSION) this.setMeta('schema_version', SCHEMA_VERSION);
   }
 
   close() {
@@ -472,14 +528,18 @@ export abstract class ProjectDbBase {
     // Tables may have been changed in another program since the last import.
     this.p6Tables.clear();
     const id = this.tx(() => {
+      let oldIds: number[] = [];
       if (meta.kind === 'scenario') {
         const old = this.db.prepare("SELECT id FROM ip_programme WHERE kind = 'scenario' AND scenario = ? AND stem = ?").all(meta.scenario, meta.stem) as { id: number }[];
+        oldIds = old.map((o) => Number(o.id));
         for (const o of old) this.deleteProgrammeRows(Number(o.id));
       }
       const res = this.db
         .prepare('INSERT INTO ip_programme (name, source_file, source_format, kind, scenario, stem) VALUES (?, ?, ?, ?, ?, ?)')
         .run(meta.name, meta.sourceFile, meta.sourceFormat, meta.kind, meta.scenario, meta.stem);
       const programmeId = Number(res.lastInsertRowid);
+      // The baselines saved of the programme this one replaces are now baselines of this one.
+      for (const old of oldIds) this.db.prepare('UPDATE ip_programme SET baseline_of = ? WHERE baseline_of = ?').run(programmeId, old);
       let header: string | null = null;
       let table: string | null = null;
       let insert: SqlStatement | null = null;
@@ -555,6 +615,31 @@ export abstract class ProjectDbBase {
     return { programme, tables: readP6Tables(this.db, { programmeId: id, projectIds: null }) };
   }
 
+  /** Everything of a programme as P6 tables, for writing it out as an XER: every table and column it has (not only the ones the app
+      reads), in the order the file had them, and the file's own header line. The rows of a programme edited in place are as the
+      app last wrote them. */
+  exportProgramme(id: number): { header: string | null; tables: Record<string, TableData> } {
+    const programme = this.programme(id);
+    if (!programme) throw new HttpError(404, `No programme ${id} in the project database.`);
+    if (programme.sourceFormat === 'p6db') throw new HttpError(400, `"${programme.name}" is read from a P6 Professional database: export it from P6.`);
+    const header = (this.db.prepare('SELECT xer_header FROM ip_programme WHERE id = ?').get(id) as { xer_header: string | null } | undefined)?.xer_header ?? null;
+    const tables: Record<string, TableData> = {};
+    const known = (name: string) => {
+      const i = P6_TABLE_ORDER.indexOf(name);
+      return i < 0 ? P6_TABLE_ORDER.length : i;
+    };
+    const names = (this.db.prepare('SELECT name FROM ip_p6_table ORDER BY rowid').all() as { name: string }[]).map((r) => r.name);
+    for (const name of [...names].sort((a, b) => known(a) - known(b))) {
+      const cols = tableColumns(this.db, name);
+      if (!cols) continue;
+      const columns = cols.filter((c) => c !== 'ip_programme_id');
+      const where = cols.some((c) => c.toLowerCase() === 'delete_session_id') ? ' AND delete_session_id IS NULL' : '';
+      const rows = (this.db.prepare(`SELECT ${columns.map(q).join(', ')} FROM ${q(name)} WHERE ip_programme_id = ?${where} ORDER BY rowid`).all(id) as Record<string, unknown>[]).map((r) => Object.values(r).map((v) => cell(v)));
+      if (rows.length) tables[name] = { columns, rows };
+    }
+    return { header, tables };
+  }
+
   /** A programme read live from a P6 Professional database (only where the file is reachable: the server). */
   protected linkedP6Tables(programme: ProgrammeRow): Record<string, TableData> {
     throw new HttpError(400, `"${programme.name}" is read from a P6 Professional database, which this edition cannot open.`);
@@ -571,8 +656,147 @@ export abstract class ProjectDbBase {
     this.tx(() => this.db.prepare('UPDATE ip_programme SET name = ? WHERE id = ?').run(name, id));
   }
 
+  /** Deletes a programme, and the baselines saved of it. */
   deleteProgramme(id: number) {
-    this.tx(() => this.deleteProgrammeRows(id));
+    this.tx(() => {
+      for (const b of this.db.prepare('SELECT id FROM ip_programme WHERE baseline_of = ?').all(id) as { id: number }[]) this.deleteProgrammeRows(Number(b.id));
+      this.deleteProgrammeRows(id);
+    });
+  }
+
+
+  // ---- programmes edited in place ----
+
+  /** A copy of a programme the app can edit in place: every P6 row of it (also the tables the app does not read), so nothing the file
+      carried is lost when it is handed back as an XER. A generated programme is copied as an import, so regenerating does not replace it. */
+  copyProgramme(id: number, name: string): ProgrammeRow {
+    return this.cloneProgramme(id, name, { editable: true });
+  }
+
+  /** The programme as it is now, kept under a name: a frozen copy of every P6 row of it, hidden (it loads when it is looked at). Its dates,
+      links and everything else can then be compared with the programme as it goes on changing. */
+  saveBaseline(id: number, name: string): ProgrammeRow {
+    const from = this.programme(id);
+    if (!from) throw new HttpError(404, `No programme ${id} in the project database.`);
+    if (from.baselineOf !== null) throw new HttpError(400, `"${from.name}" is a baseline already: save the baseline of the programme itself.`);
+    return this.cloneProgramme(id, name, { editable: false, hidden: true, baselineOf: id });
+  }
+
+  private cloneProgramme(id: number, name: string, o: { editable: boolean; hidden?: boolean; baselineOf?: number }): ProgrammeRow {
+    const from = this.programme(id);
+    if (!from) throw new HttpError(404, `No programme ${id} in the project database.`);
+    if (from.sourceFormat === 'p6db') throw new HttpError(400, `"${from.name}" is read from a P6 Professional database: export it as an XER file and load that to copy it.`);
+    const header = this.db.prepare('SELECT xer_header FROM ip_programme WHERE id = ?').get(id) as { xer_header: string | null } | undefined;
+    const copyId = this.tx(() => {
+      const res = this.db
+        .prepare("INSERT INTO ip_programme (name, source_file, source_format, project_ids, kind, activity_count, xer_header, editable, hidden, baseline_of) VALUES (?, ?, ?, ?, 'import', ?, ?, ?, ?, ?)")
+        .run(name, from.sourceFile, from.sourceFormat, JSON.stringify(from.projectIds), from.activityCount, header?.xer_header ?? null, o.editable ? 1 : 0, o.hidden ? 1 : 0, o.baselineOf ?? null);
+      const newId = Number(res.lastInsertRowid);
+      for (const { name: table } of this.db.prepare('SELECT name FROM ip_p6_table').all() as { name: string }[]) {
+        const cols = (tableColumns(this.db, table) ?? []).filter((c) => c !== 'ip_programme_id');
+        if (!cols.length) continue;
+        const list = cols.map(q).join(', ');
+        this.db.prepare(`INSERT INTO ${q(table)} (ip_programme_id, ${list}) SELECT ?, ${list} FROM ${q(table)} WHERE ip_programme_id = ?`).run(newId, id);
+      }
+      return newId;
+    });
+    return this.programme(copyId)!;
+  }
+
+  /** An empty programme to build from scratch: a project, its root WBS node and a Monday-Friday calendar. `start` is YYYY-MM-DD. */
+  blankProgramme(name: string, start: string): ProgrammeRow {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new HttpError(400, 'The start date must be YYYY-MM-DD.');
+    const day = `${start} 08:00`;
+    const today = new Date().toISOString().slice(0, 10) + ' 00:00';
+    const id = this.tx(() => {
+      const res = this.db
+        .prepare("INSERT INTO ip_programme (name, source_file, source_format, project_ids, kind, activity_count, editable) VALUES (?, NULL, 'xer', '[\"1\"]', 'import', 0, 1)")
+        .run(name);
+      const programmeId = Number(res.lastInsertRowid);
+      const put = (table: string, row: Record<string, string | number>) => {
+        const columns = this.ensureP6Table(table, Object.keys(row));
+        this.db.prepare(`INSERT INTO ${q(table)} (ip_programme_id${columns.map((c) => `, ${q(c)}`).join('')}) VALUES (?${', ?'.repeat(columns.length)})`).run(programmeId, ...columns.map((c) => bindValue(c, row[c])));
+      };
+      // The columns P6 writes for a project and its schedule options, with P6's own defaults, so what reads the XER finds what it expects.
+      put('PROJECT', {
+        proj_id: 1, fy_start_month_num: 1, rsrc_self_add_flag: 'Y', allow_complete_flag: 'Y', rsrc_multi_assign_flag: 'Y', checkout_flag: 'N', project_flag: 'Y',
+        step_complete_flag: 'N', cost_qty_recalc_flag: 'N', batch_sum_flag: 'Y', name_sep_char: '.', def_complete_pct_type: 'CP_Drtn', proj_short_name: name.slice(0, 20),
+        clndr_id: 1, task_code_base: 1000, task_code_step: 10, priority_num: 10, wbs_max_sum_level: 2, strgy_priority_num: 500, critical_drtn_hr_cnt: 0,
+        def_cost_per_qty: 0, last_recalc_date: day, plan_start_date: day, plan_end_date: '', scd_end_date: day, add_date: today, def_duration_type: 'DT_FixedDUR2', task_code_prefix: 'A',
+        def_qty_type: 'QT_Hour', add_by_name: 'Insight Plan', def_rate_type: 'COST_PER_QTY', add_act_remain_flag: 'N', act_this_per_link_flag: 'Y', def_task_type: 'TT_Task',
+        act_pct_link_flag: 'Y', critical_path_type: 'CT_TotFloat', task_code_prefix_flag: 'Y', def_rollup_dates_flag: 'Y', use_project_baseline_flag: 'Y',
+        rem_target_link_flag: 'Y', reset_planned_flag: 'Y', allow_neg_act_flag: 'N', sum_assign_level: 'SL_Taskrsrc', export_flag: 'Y',
+      });
+      put('CALENDAR', { clndr_id: 1, default_flag: 'Y', clndr_name: 'Standard 5 Day Workweek', proj_id: '', base_clndr_id: '', last_chng_date: today, clndr_type: 'CA_Base', day_hr_cnt: 8, week_hr_cnt: 40, month_hr_cnt: 172, year_hr_cnt: 2000, rsrc_private: 'N', clndr_data: BLANK_CALENDAR_DATA });
+      put('SCHEDOPTIONS', {
+        schedoptions_id: 1, proj_id: 1, sched_outer_depend_type: 'SD_None', sched_open_critical_flag: 'N', sched_lag_early_start_flag: 'Y', sched_retained_logic: 'Y',
+        sched_setplantoforecast: 'N', sched_float_type: 'FT_FF', sched_calendar_on_relationship_lag: 'rcal_Predecessor', sched_use_expect_end_flag: 'N',
+        sched_progress_override: 'N', level_float_thrs_cnt: 0, level_outer_assign_flag: 'N', level_outer_assign_priority: 5, level_over_alloc_pct: 25,
+        level_within_float_flag: 'N', level_keep_sched_date_flag: 'Y', level_all_rsrc_flag: 'Y', sched_use_project_end_date_for_float: 'Y',
+        enable_multiple_longest_path_calc: 'N', limit_multiple_longest_path_calc: 'Y', max_multiple_longest_path: 10, use_total_float_multiple_longest_paths: 'Y',
+      });
+      put('PROJWBS', { wbs_id: 1, proj_id: 1, obs_id: '', seq_num: 0, proj_node_flag: 'Y', sum_data_flag: 'N', status_code: 'WS_Open', wbs_short_name: name.slice(0, 20), wbs_name: name, parent_wbs_id: '' });
+      // The task tables, empty, so the first activity only has to be added.
+      this.ensureP6Table('TASK', TASK_COLUMNS);
+      this.ensureP6Table('TASKPRED', ['task_pred_id', 'task_id', 'pred_task_id', 'proj_id', 'pred_proj_id', 'pred_type', 'lag_hr_cnt', 'comments', 'float_path', 'aref', 'arls']);
+      this.db.prepare('UPDATE ip_programme SET xer_header = ? WHERE id = ?').run(`ERMHDR\t19.12\t${today.slice(0, 10)}\tProject\tadmin\tadmin\tdbxDatabaseNoName\tProject Management\tUSD`, programmeId);
+      return programmeId;
+    });
+    return this.programme(id)!;
+  }
+
+  /** Changes rows of a programme that is edited in place, all or none. A row is found by `key` (a P6 id column and its value) and made
+      with `set` (column -> value; columns the table lacks are added). A key value of null on an upsert is a new row: it is given the
+      next id of the table. Returns the ids given, by op number. */
+  applyOps(id: number, ops: RowOp[]): { applied: number; assigned: Record<number, number> } {
+    const programme = this.programme(id);
+    if (!programme) throw new HttpError(404, `No programme ${id} in the project database.`);
+    if (!programme.editable) throw new HttpError(400, `"${programme.name}" is not edited in place: make an editable copy of it first.`);
+    const assigned: Record<number, number> = {};
+    this.tx(() => {
+      const next = new Map<string, number>();
+      ops.forEach((op, i) => {
+        if (!EDITABLE_TABLES.has(op.table)) throw new HttpError(400, `The table ${op.table} cannot be edited.`);
+        const column = op.key?.column;
+        if (!column || !IDENT.test(column) || column === 'ip_programme_id') throw new HttpError(400, `Not an id column: ${column}`);
+        // Deleting from a table the programme has not got is nothing to do (and must not create the table).
+        if (op.op === 'delete' && !tableColumns(this.db, op.table)) return;
+        const set = op.set ?? {};
+        for (const c of Object.keys(set)) if (!IDENT.test(c) || c === 'ip_programme_id') throw new HttpError(400, `Not a column: ${c}`);
+        const columns = this.ensureP6Table(op.table, [column, ...Object.keys(set), ...Object.keys(op.match ?? {})]);
+        if (!columns.includes(column)) throw new HttpError(400, `Not an id column: ${column}`);
+        const match = op.match ? Object.entries(op.match) : null;
+        for (const [c] of match ?? []) if (!IDENT.test(c) || c === 'ip_programme_id') throw new HttpError(400, `Not a column: ${c}`);
+        // The row is found by the match columns when given, else by the key.
+        const where = match ? match.map(([c]) => `${q(c)} = ?`).join(' AND ') : `${q(column)} = ?`;
+        const whereArgs = match ? match.map(([, v]) => v) : [op.key.value];
+        if (op.op === 'delete') {
+          if (!match && op.key.value === null) throw new HttpError(400, 'A delete needs the id of the row.');
+          this.db.prepare(`DELETE FROM ${q(op.table)} WHERE ip_programme_id = ? AND ${where}`).run(id, ...whereArgs);
+          return;
+        }
+        const keys = Object.keys(set);
+        const exists = this.db.prepare(`SELECT ${q(column)} AS k FROM ${q(op.table)} WHERE ip_programme_id = ? AND ${where}`).get(id, ...whereArgs);
+        if (exists) {
+          if (keys.length) this.db.prepare(`UPDATE ${q(op.table)} SET ${keys.map((c) => `${q(c)} = ?`).join(', ')} WHERE ip_programme_id = ? AND ${where}`).run(...keys.map((c) => bindValue(c, set[c] ?? null)), id, ...whereArgs);
+          return;
+        }
+        let value = op.key.value;
+        if (value === null) {
+          const k = `${op.table}.${column}`;
+          if (!next.has(k)) next.set(k, Number((this.db.prepare(`SELECT COALESCE(MAX(${q(column)}), 0) AS m FROM ${q(op.table)} WHERE ip_programme_id = ?`).get(id) as { m: number }).m) + 1);
+          value = next.get(k)!;
+          next.set(k, value + 1);
+          assigned[i] = value;
+        }
+        const extra = match ? match.filter(([c]) => c !== column && !keys.includes(c)) : [];
+        const names = [column, ...extra.map(([c]) => c), ...keys];
+        this.db.prepare(`INSERT INTO ${q(op.table)} (ip_programme_id${names.map((c) => `, ${q(c)}`).join('')}) VALUES (?${', ?'.repeat(names.length)})`)
+          .run(id, value, ...extra.map(([c, v]) => bindValue(c, v)), ...keys.map((c) => bindValue(c, set[c] ?? null)));
+      });
+      this.db.prepare('UPDATE ip_programme SET activity_count = (SELECT COUNT(*) FROM TASK WHERE ip_programme_id = ?) WHERE id = ?').run(id, id);
+    });
+    return { applied: ops.length, assigned };
   }
 
   // ---- scenarios ----

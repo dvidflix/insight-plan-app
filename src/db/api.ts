@@ -15,6 +15,10 @@ export interface DbProgramme {
   stem: string | null;
   hidden: boolean;
   activityCount: number | null;
+  /** Edited in place: its rows change (applyProgrammeOps), as against an import, edited on top. */
+  editable: boolean;
+  /** A saved baseline of the programme with this id (a frozen copy of it). */
+  baselineOf: number | null;
   importedAt: string;
 }
 
@@ -51,8 +55,8 @@ const qs = (params: Record<string, string | number | null | undefined>) =>
 const post = <T>(path: string, body: unknown) =>
   call<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
 
-/** Writes the export files of Settings > Import / Export into the project folder. */
-export const writeExportFiles = (root: string, files: { name: string; content: string }[]) => post<{ folder: string; written: string[] }>('export-files', { root, files });
+/** Writes the export files of Settings > Import / Export into a subfolder of the project folder (settings). */
+export const writeExportFiles = (root: string, files: { name: string; content: string }[], dir = 'settings') => post<{ folder: string; written: string[] }>('export-files', { root, files, dir });
 export const openDb = (root: string) => post<{ root: string; file: string; changes: number }>('open', { root });
 /** Folders of an earlier layout (1-input-ifc, fixed-models, 7-scenarios) still in the project. */
 export const fetchLegacyFolders = (root: string) => call<{ legacy: string[] }>(`layout?${qs({ root })}`).then((r) => r.legacy);
@@ -60,8 +64,22 @@ export const migrateFolderLayout = (root: string) => post<{ renamed: string[]; s
 export const fetchChanges = (root: string) => call<{ changes: number }>(`changes?${qs({ root })}`).then((r) => r.changes);
 
 export const fetchProgrammes = (root: string) => call<{ programmes: DbProgramme[] }>(`programmes?${qs({ root })}`).then((r) => r.programmes);
+export const programmeExportUrl = (root: string, id: number) => `/api/db/programmes/export?${qs({ root, id })}`;
 export const programmeTablesUrl = (root: string, id: number) => `/api/db/programmes/tables?${qs({ root, id })}`;
 export const setProgrammesHidden = (root: string, hidden: Record<number, boolean>) => post('programmes/hidden', { root, hidden });
+export const copyProgramme = (root: string, id: number, name: string) => post<{ programme: DbProgramme }>('programmes/copy', { root, id, name }).then((r) => r.programme);
+export const saveBaseline = (root: string, id: number, name: string) => post<{ programme: DbProgramme }>('programmes/baseline', { root, id, name }).then((r) => r.programme);
+export const blankProgramme = (root: string, name: string, start: string) => post<{ programme: DbProgramme }>('programmes/blank', { root, name, start }).then((r) => r.programme);
+export interface DbRowOp {
+  table: string;
+  op: 'upsert' | 'delete';
+  key: { column: string; value: string | number | null };
+  match?: Record<string, string | number>;
+  set?: Record<string, string | number | null>;
+}
+/** Changes rows of an editable programme in one transaction; the ids given to new rows (null key) come back by op number. */
+export const applyProgrammeOps = (root: string, id: number, ops: DbRowOp[]) => post<{ applied: number; assigned: Record<number, number> }>('programmes/ops', { root, id, ops });
+export const renameProgramme = (root: string, id: number, name: string) => post('programmes/rename', { root, id, name });
 export const deleteProgramme = (root: string, id: number) => post('programmes/delete', { root, id });
 
 export interface ImportOptions {

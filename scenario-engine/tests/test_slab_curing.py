@@ -61,9 +61,8 @@ def test_a_raft_is_cured_too():
 
 
 @pytest.mark.parametrize("pour_type", ["WALL", "LANDING", "COLUMN"])
-def test_other_in_situ_pours_are_cured_for_seven_days(pour_type):
-    acts = gen.create_activities(rec(pour_type), FakeWbs())
-    assert phases(acts)[-1] == "Curing" and acts[-1]["duration_days"] == 7
+def test_other_in_situ_pours_have_no_curing(pour_type):
+    assert "Curing" not in phases(gen.create_activities(rec(pour_type), FakeWbs()))
 
 
 def test_a_raft_is_cured_for_as_long_as_a_slab():
@@ -107,8 +106,8 @@ def test_heavy_precast_curing_is_not_a_slab_curing(monkeypatch):
 
 def test_a_landing_is_decking_rebar_concrete_chained_in_order():
     acts = gen.create_activities(rec("LANDING", lg1="Landing"), FakeWbs())
-    assert phases(acts) == ["Decking", "Rebar", "Concrete", "Curing"]
-    assert [a["task_name"].rsplit(" - ", 1)[1] for a in acts] == ["Decking", "Rebar and EP/AP", "Concrete", "Curing"]
+    assert phases(acts) == ["Decking", "Rebar", "Concrete"]
+    assert [a["task_name"].rsplit(" - ", 1)[1] for a in acts] == ["Decking", "Rebar and EP/AP", "Concrete"]
     edges = xml_builder._build_intra_pour_predecessors(acts)
     assert edges["P1-R"] == ["P1-DK"] and edges["P1-C"] == ["P1-R"]
 
@@ -120,12 +119,12 @@ def test_a_slab_starts_with_decking_and_without_rules_has_the_default_chain():
 
 
 def test_a_curing_is_looked_through_when_finding_the_open_ended_pours(monkeypatch):
-    """A wall's Concrete is open-ended when only its own Curing follows it (the Curing is then not what the slab above waits for), but not when
+    """A slab's Concrete is open-ended when only its own Curing follows it (the Curing is then not what the slab above waits for), but not when
     something else follows it; and the Curing is the open end when it holds back what follows."""
-    acts = gen.create_activities(rec("WALL", lg1="Wall"), FakeWbs())
+    acts = gen.create_activities(rec("SLAB"), FakeWbs())
     by = {a["phase"]: a["task_id"] for a in acts}
     monkeypatch.setattr(xml_builder, "SLAB_CURING_GATES_SUCCESSORS", False)
-    only_curing = {by["Rebar"]: {by["Formwork"]}, by["Formwork"]: {by["Concrete"]}, by["Concrete"]: {by["Curing"]}}
+    only_curing = {t: {by["Concrete"]} for p, t in by.items() if p not in ("Concrete", "Curing")} | {by["Concrete"]: {by["Curing"]}}
     assert xml_builder._open_ended_tasks(acts, only_curing) == {by["Concrete"]}
     with_other = {**only_curing, by["Concrete"]: {by["Curing"], "SOMETHING-ELSE"}}
     assert xml_builder._open_ended_tasks(acts, with_other) == set()  # the pour is not open: the Curing just runs alongside

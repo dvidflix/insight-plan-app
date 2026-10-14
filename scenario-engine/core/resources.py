@@ -88,6 +88,17 @@ def pools():
     return _rules.active().pools()
 
 
+def crew_pool_resource_id(code):
+    """The P6 resource of a crew pool: <project>-G-<crew id> (a count of crews, non-labour so it does not add to the people)."""
+    return f"{PROJECT_SHORT}-G-{code}"
+
+
+def crew_pool_for(phase, rec):
+    """(resource id, 1) when the crew of this activity is a named crew with a number of crews available, else None: the activity holds one crew."""
+    pool = _rules.active().crew_pool_for(phase, rec)
+    return (crew_pool_resource_id(pool["id"]), 1.0) if pool else None
+
+
 def uses_for(phase, rec):
     """[(resource id, count)] the recipes give this activity: its equipment, cranes and materials (those whose pool the scenario defines)."""
     known = {(p["kind"], p["id"].upper()): p["id"] for p in pools()}

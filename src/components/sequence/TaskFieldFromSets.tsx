@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react';
 import { useViewerEngine } from '../../viewer/ViewerEngineContext';
 import { useSearchSetsStore } from '../../state/searchSetsStore';
 import { useScheduleStore, useVisibleSchedules } from '../../state/scheduleStore';
+import { commit } from '../../state/programmeHistory';
 import { runSearchSet } from '../../viewer/searchSets';
 import type { GroupLinkResult } from '../../schedule/linkGroups';
 import { DEFAULT_METHODS_FIELD, SET_MATCH_OPTIONS, planSetNames, type SetMatch } from '../../schedule/setNamesToField';
@@ -54,7 +55,7 @@ export function TaskFieldFromSets({ results }: { results: { modelId: string; lin
       if (!o) continue;
       (bySchedule.get(o.scheduleId) ?? bySchedule.set(o.scheduleId, new Map()).get(o.scheduleId)!).set(o.id, value);
     }
-    setActivityField(name, bySchedule);
+    commit(`Write “${name}”`, () => setActivityField(name, bySchedule));
     setMessage({
       kind: 'ok',
       text: `“${name}” written to ${plan.values.size} of ${plan.linkedTasks} linked tasks${plan.joined ? ` (${plan.joined} matched several sets and list them all)` : ''}. Show it in Tasks / Gantt: Columns › User Fields. It is kept in the app: export the programme to keep it.`,

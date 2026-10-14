@@ -14,6 +14,8 @@
     and the first version of scenes kept snapshots in the list itself: they are moved to IndexedDB at start-up.
     A scene from an old layout profile has no `data`: opening it leaves the lists alone. */
 
+import { FREE_MODE } from '../licence/freeMode';
+
 export const SCENE_KIND = 'insight-plan-scene';
 const OLD_PROFILE_KIND = 'insight-plan-layout-profile';
 const VERSION = 2;
@@ -369,6 +371,7 @@ async function prepare() {
 
 /** Runs first, from main.tsx: from then on the active scene follows every change to the browser's keys. */
 export function startScenes() {
+  if (FREE_MODE) return; // saved arrangements are part of the licensed edition
   try {
     // The list is rewritten without snapshots at once when it is short of space; the move itself is async.
     ready = prepare().catch(() => undefined);

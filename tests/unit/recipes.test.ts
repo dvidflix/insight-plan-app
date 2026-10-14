@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
 import { ENGINE_AND_STRUCTURE } from '../../src/prs/presets';
-import { compileRecipes, edgesFromFollows, followsText, normalizeRecipes, parseUses, recipeLosses, recipesFromRules, usesText } from '../../src/prs/recipes';
+import { applyTasksPaste, compileRecipes, edgesFromFollows, parseTasksPaste, tasksToTsv, followsText, normalizeRecipes, parseUses, recipeLosses, recipesFromRules, usesText } from '../../src/prs/recipes';
 import { splitRecipes, withOwn, withRecipes } from '../../src/prs/recipeRules';
 import { normalizeRules } from '../../src/prs/rules';
 
@@ -63,6 +63,37 @@ describe('recipes', () => {
   });
 });
 
+describe('the tasks of a recipe as text for a spreadsheet', () => {
+  const slab = recipesFromRules(rules).recipes.find((r) => r.id === 'C-SLAB')!;
+  const wall = recipesFromRules(rules).recipes.find((r) => r.id === 'T-WALL-EXT')!;
+
+  it('come back as the same tasks and links', () => {
+    const back = parseTasksPaste(tasksToTsv(slab));
+    expect(back.tasks.map((t) => ({ ...t }))).toEqual(slab.tasks.map(({ x: _x, y: _y, ...t }) => t));
+    expect(back.edges).toEqual(slab.edges);
+    expect(parseTasksPaste(tasksToTsv(wall)).tasks).toEqual(wall.tasks);
+  });
+
+  it('are added or updated by phase, keeping where a task sits and its links to other recipes', () => {
+    const base = { ...slab, tasks: slab.tasks.map((t) => (t.phase === 'Rebar' ? { ...t, x: 40, y: 50, links: [{ recipe: 'B', phase: 'Rebar' }] } : t)) };
+    const text = ['Phase', 'Rebar', 'Lifting'].map((phase, i) => (i === 0 ? `${phase}\tName` : `${phase}\t${phase === 'Rebar' ? 'Steel' : 'Crane lift'}`)).join('\n');
+    const next = applyTasksPaste(base, parseTasksPaste(text), false);
+    const rebar = next.tasks.find((t) => t.phase === 'Rebar')!;
+    expect(rebar).toMatchObject({ name: 'Steel', x: 40, y: 50, links: [{ recipe: 'B', phase: 'Rebar' }] });
+    expect(next.tasks.map((t) => t.phase)).toEqual([...slab.tasks.map((t) => t.phase), 'Lifting']);
+    expect((next.edges ?? []).some((e) => e.to === 'Rebar')).toBe(false); // its links are the pasted ones (none)
+    expect((next.edges ?? []).some((e) => e.to === 'Concrete')).toBe(true);
+  });
+
+  it('can replace every task, and read semicolons when there is no tab', () => {
+    const text = ['Rebar;Rebar;-R;rebar;;3', 'Concrete;Concrete;-C;concrete;Rebar@50;1'].join('\n');
+    const next = applyTasksPaste(slab, parseTasksPaste(text), true);
+    expect(next.tasks.map((t) => t.phase)).toEqual(['Rebar', 'Concrete']);
+    expect(next.tasks[0]).toMatchObject({ material: 'rebar', days: 3 });
+    expect(next.edges).toEqual([{ from: 'Rebar', to: 'Concrete', sharePct: 50 }]);
+  });
+});
+
 describe('equipment, cranes and materials', () => {
   it('are written as text and read back', () => {
     expect(parseUses('TC1, PUMP 2, FWSET x3')).toEqual([{ type: 'TC1' }, { type: 'PUMP', count: 2 }, { type: 'FWSET', count: 3 }]);
@@ -81,6 +112,11 @@ describe('equipment, cranes and materials', () => {
   it('keep the links to other recipes through the recipes file', () => {
     const file = normalizeRecipes({ recipes: [{ id: 'A', group: '', tasks: [{ phase: 'Install', links: [{ recipe: 'B', phase: 'Dismantle', direction: 'after', scope: 'building' }] }] }] });
     expect(file.recipes[0].tasks[0].links).toEqual([{ recipe: 'B', phase: 'Dismantle', direction: 'after', scope: 'building' }]);
+  });
+
+  it('keep the subcontractor and the number of crews of a named crew', () => {
+    const r = normalizeRules({ version: 1, crewTemplates: [{ id: 'CARP', subcontractor: 'Concrete Sub', available: 3, trades: [{ trade: 'CP', size: 4 }] }] });
+    expect(r.crewTemplates[0]).toMatchObject({ id: 'CARP', subcontractor: 'Concrete Sub', available: 3 });
   });
 
   it('survive the recipes file', () => {
@@ -147,5 +183,16 @@ describe('the preset as recipes, the file the engine parity test reads', () => {
   it('is the preset', () => {
     if (process.env.UPDATE_PRESET_FIXTURE) fs.writeFileSync(target, current);
     expect(fs.readFileSync(target, 'utf8')).toBe(current);
+  });
+});
+
+describe('an extra moved into a recipe', () => {
+  it('starts and finishes with the Concrete: two edges, written as SS and FF', () => {
+    const recipe: Recipe = {
+      id: 'SLAB', group: 'SLABS',
+      tasks: [{ phase: 'Concrete', material: 'concrete' }, { phase: 'Survey', name: 'Survey', suffix: '-0001', days: 1 }],
+      edges: [{ from: 'Concrete', to: 'Survey', type: 'SS', lagHours: 0 }, { from: 'Concrete', to: 'Survey', type: 'FF', lagHours: 0 }],
+    };
+    expect(followsText(recipe, 'Survey')).toBe('Concrete:SS+0, Concrete:FF+0');
   });
 });

@@ -1,3 +1,4 @@
+import { hoursPerDayOf } from '../../schedule/hoursPerDay';
 import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useSelectionStore } from '../../state/selectionStore';
 import { usePropertyQueueStore } from '../../state/propertyQueueStore';
@@ -22,6 +23,8 @@ import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { useVisibleSchedules } from '../../state/scheduleStore';
 import { programmeKey } from '../../state/unloadedWbsStore';
 import { useActivityOverridesStore } from '../../state/activityOverridesStore';
+import { commit } from '../../state/programmeHistory';
+import { resetEdits as resetProgrammeEdits, setEdits } from '../../state/programmeEdits';
 
 type SectionId = 'details' | 'dates' | 'cpm' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
 const DEFAULT_OPEN: SectionId[] = ['details', 'dates', 'cpm', 'notes', 'suggested', 'codes', 'udf', 'resources'];
@@ -33,6 +36,21 @@ function unitOf(r: ResourceAssignment): string {
   return r.resourceType === 'material' || r.resourceType === 'other' ? '' : ' h';
 }
 const fmtQty = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+
+const pad2 = (n: number) => String(n).padStart(2, '0');
+/** A date as an <input type="date"> holds it, and back (8 o'clock: the start of the working day). */
+const toInput = (d: Date | null | undefined) => (d ? `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` : '');
+const fromInput = (v: string): Date | null => {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(v);
+  return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), 8, 0) : null;
+};
+const STATUS_OPTIONS: [Activity['status'], string][] = [['not-started', 'Not started'], ['in-progress', 'In progress'], ['completed', 'Completed']];
+/** The constraints P6 has (its codes), as the editor offers them. */
+const CONSTRAINT_OPTIONS: [string, string][] = [
+  ['', 'None'], ['CS_MSOA', 'Start on or after'], ['CS_MSOB', 'Start on or before'], ['CS_MSO', 'Start on'],
+  ['CS_MEOA', 'Finish on or after'], ['CS_MEOB', 'Finish on or before'], ['CS_MEO', 'Finish on'],
+  ['CS_MANDSTART', 'Mandatory start'], ['CS_MANDFIN', 'Mandatory finish'], ['CS_ALAP', 'As late as possible'],
+];
 
 const fmtDate = (d: Date | null) => (d ? d.toLocaleDateString('en-GB', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '—');
 
@@ -51,7 +69,8 @@ const DURATION_TYPE: Record<string, string> = {
 const PCT_TYPE: Record<string, string> = { CP_Phys: 'Physical', CP_Drtn: 'Duration', CP_Units: 'Units' };
 const nice = (map: Record<string, string>, v?: string | null) => (v ? map[v] ?? v : '—');
 
-const days = (hours: number) => Math.round((hours / 8) * 10) / 10;
+/** Days from hours; a day is as long as the activity's calendar says (8 h when it does not). */
+const days = (hours: number, perDay = 8) => Math.round((hours / perDay) * 10) / 10;
 
 /** The Activity pane of the Table and Gantt: the activity's fields in collapsible
     sections (remembered); its predecessors and successors are in the pane under the Gantt / table. */
@@ -164,11 +183,18 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
     return own ? programmeKey(own) : null;
   }, [visible, activity.id]);
   const edited = origin !== null && !!overrides[origin]?.[activity.code.trim().toUpperCase()];
+  const calendarsById = useMemo(() => new Map(model.calendars.map((c) => [c.id, c])), [model.calendars]);
+  const perDayOf = (calendarId: string | null) => hoursPerDayOf(calendarId, calendarsById);
+  const perDay = perDayOf(activity.calendarId);
   const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState({ name: '', days: '', calendarId: '' });
+  const [draft, setDraft] = useState({ name: '', days: '', calendarId: '', status: 'not-started' as Activity['status'], actualStart: '', actualFinish: '', remainingDays: '', constraintType: '', constraintDate: '' });
   useEffect(() => setEditing(false), [activity.id]);
   const startEdit = () => {
-    setDraft({ name: activity.name, days: String(days(activity.durationHours)), calendarId: activity.calendarId ?? '' });
+    setDraft({
+      name: activity.name, days: String(days(activity.durationHours, perDay)), calendarId: activity.calendarId ?? '',
+      status: activity.status, actualStart: toInput(activity.actualStart), actualFinish: toInput(activity.actualFinish),
+      remainingDays: String(days(activity.remainingDurationHours, perDay)), constraintType: activity.constraintType ?? '', constraintDate: toInput(activity.constraintDate),
+    });
     setEditing(true);
   };
   const saveEdit = () => {
@@ -177,7 +203,7 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
     if (draft.name.trim() && draft.name !== activity.name) patch.name = draft.name.trim();
     const d = Number(draft.days);
     if (draft.days.trim() !== '' && Number.isFinite(d) && d >= 0) {
-      const hours = Math.round(d * 8 * 4) / 4;
+      const hours = Math.round(d * perDayOf(draft.calendarId || activity.calendarId) * 4) / 4;
       if (hours !== activity.durationHours) {
         patch.durationHours = hours;
         // Work still to do follows; a started activity keeps its remaining duration.
@@ -185,11 +211,43 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
       }
     }
     if (draft.calendarId && draft.calendarId !== (activity.calendarId ?? '')) patch.calendarId = draft.calendarId;
-    if (Object.keys(patch).length) useActivityOverridesStore.getState().set(origin, new Map([[activity.code, patch]]));
+
+    // Progress: the status, the actual dates and what is left to do. Only when one of them was changed.
+    const progressTouched = draft.status !== activity.status || draft.actualStart !== toInput(activity.actualStart) || draft.actualFinish !== toInput(activity.actualFinish)
+      || (draft.status === 'in-progress' && draft.remainingDays !== String(days(activity.remainingDurationHours, perDay)));
+    if (progressTouched) {
+      const total = patch.durationHours ?? activity.durationHours;
+      patch.status = draft.status;
+      if (draft.status === 'not-started') {
+        patch.actualStart = null;
+        patch.actualFinish = null;
+        patch.remainingDurationHours = total;
+        patch.percentComplete = 0;
+      } else {
+        patch.actualStart = fromInput(draft.actualStart) ?? activity.actualStart ?? activity.earlyStart ?? model.project.dataDate ?? null;
+        if (draft.status === 'completed') {
+          patch.actualFinish = fromInput(draft.actualFinish) ?? activity.actualFinish ?? model.project.dataDate ?? patch.actualStart;
+          patch.remainingDurationHours = 0;
+          patch.percentComplete = 100;
+        } else {
+          patch.actualFinish = null;
+          const left = Number(draft.remainingDays);
+          const remaining = draft.remainingDays.trim() !== '' && Number.isFinite(left) && left >= 0 ? Math.round(left * perDayOf(draft.calendarId || activity.calendarId) * 4) / 4 : activity.remainingDurationHours;
+          patch.remainingDurationHours = remaining;
+          patch.percentComplete = total > 0 ? Math.max(0, Math.min(99, Math.round(100 * (1 - remaining / total)))) : 0;
+        }
+      }
+    }
+    // Constraint: its kind and its date.
+    if (draft.constraintType !== (activity.constraintType ?? '') || draft.constraintDate !== toInput(activity.constraintDate)) {
+      patch.constraintType = draft.constraintType || null;
+      patch.constraintDate = draft.constraintType ? fromInput(draft.constraintDate) ?? activity.constraintDate : null;
+    }
+    if (Object.keys(patch).length) commit(`Edit ${activity.code}`, () => setEdits(origin, new Map([[activity.code, patch]])));
     setEditing(false);
   };
   const resetEdits = () => {
-    if (origin !== null) useActivityOverridesStore.getState().reset(origin, [activity.code]);
+    if (origin !== null) commit(`Reset ${activity.code}`, () => resetProgrammeEdits(origin, [activity.code]));
     setEditing(false);
   };
 
@@ -240,7 +298,17 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Code', activity.code],
           ['Name', editing ? <input className="ad-edit" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} aria-label="Name" /> : activity.name],
           ['Activity type', TYPE_LABEL[activity.type] ?? activity.type],
-          ['Status', activity.status],
+          ['Status', editing
+            ? (
+              <select className="ad-edit" value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as Activity['status'] })} aria-label="Status">
+                {STATUS_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+            )
+            : activity.status],
+          ...((editing && draft.status !== 'not-started' ? [
+            ['Actual start', <input key="as" className="ad-edit" type="date" value={draft.actualStart} onChange={(e) => setDraft({ ...draft, actualStart: e.target.value })} aria-label="Actual start" />],
+            ...(draft.status === 'completed' ? [['Actual finish', <input key="af" className="ad-edit" type="date" value={draft.actualFinish} onChange={(e) => setDraft({ ...draft, actualFinish: e.target.value })} aria-label="Actual finish" />]] : []),
+          ] : []) as [string, ReactNode][]),
           ['WBS', activity.wbsPath || '—'],
           ['Calendar', editing
             ? (
@@ -252,9 +320,20 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
             : activity.calendarId ? (model.calendars.find((c) => c.id === activity.calendarId)?.name || activity.calendarId) : '—'],
           ['Original duration (d)', editing
             ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.days} onChange={(e) => setDraft({ ...draft, days: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }} aria-label="Original duration in days" />
-            : days(activity.durationHours)],
-          ['Remaining duration (d)', days(activity.remainingDurationHours)],
-          ['Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours) : '—'],
+            : days(activity.durationHours, perDay)],
+          ['Remaining duration (d)', editing && draft.status === 'in-progress'
+            ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.remainingDays} onChange={(e) => setDraft({ ...draft, remainingDays: e.target.value })} aria-label="Remaining duration in days" />
+            : days(activity.remainingDurationHours, perDay)],
+          ...((editing ? [['Constraint', (
+            <span key="cs" style={{ display: 'inline-flex', gap: 3 }}>
+              <select className="ad-edit" value={draft.constraintType} onChange={(e) => setDraft({ ...draft, constraintType: e.target.value })} aria-label="Constraint">
+                {draft.constraintType && !CONSTRAINT_OPTIONS.some(([id]) => id === draft.constraintType) && <option value={draft.constraintType}>{constraintName(draft.constraintType)}</option>}
+                {CONSTRAINT_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
+              </select>
+              {draft.constraintType && draft.constraintType !== 'CS_ALAP' && <input className="ad-edit" type="date" value={draft.constraintDate} onChange={(e) => setDraft({ ...draft, constraintDate: e.target.value })} aria-label="Constraint date" />}
+            </span>
+          )]] : []) as [string, ReactNode][]),
+          ['Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours, perDay) : '—'],
           ['% Complete', `${activity.percentComplete}%`],
           ['% Complete type', nice(PCT_TYPE, activity.percentCompleteType)],
           ['Physical %', activity.physicalPercentComplete != null ? `${activity.physicalPercentComplete}%` : '—'],
@@ -335,8 +414,8 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Early Finish', fmtDate(activity.earlyFinish)],
           ['Late Start', fmtDate(activity.lateStart)],
           ['Late Finish', fmtDate(activity.lateFinish)],
-          ['Total Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours) : '—'],
-          ['Free Float (d)', activity.freeFloatHours !== null ? days(activity.freeFloatHours) : '—'],
+          ['Total Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours, perDay) : '—'],
+          ['Free Float (d)', activity.freeFloatHours !== null ? days(activity.freeFloatHours, perDay) : '—'],
           ['Longest path', activity.longestPath ? 'Yes' : 'No'],
         ])}
       </CollapsibleSection>

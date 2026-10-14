@@ -7,6 +7,9 @@ import { IconSectionChevron } from './icons';
 import { InfoTip } from './InfoTip';
 import { ATTRIBUTES, ATTRIBUTE_NAMES } from '../viewer/bimTables';
 import { queryMatcher } from '../schedule/search';
+import { FEATURES } from '../features';
+import { writeBackBytes } from '../ids/writeBack';
+import { runIfcTool } from '../ifcTools/client';
 
 /** Models page > Properties > Show / hide properties: tick which property
     sets, and which properties inside them, the Properties table shows.
@@ -19,6 +22,8 @@ export function PropertyVisibilityPanel() {
   const [open, setOpen] = useState<Set<string>>(new Set());
   // The per-model indexes fill in after load; rebuild the list then.
   const [tick, setTick] = useState(0);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState<{ kind: 'ok' | 'error'; text: string } | null>(null);
   useEffect(() => {
     const bump = () => setTick((t) => t + 1);
     engine.onSetsReady.add(bump);
@@ -43,6 +48,29 @@ export function PropertyVisibilityPanel() {
     return psets.size || engine.getIndexes().size ? [{ pset: ATTRIBUTES, props: ATTRIBUTE_NAMES }, ...sets] : sets;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, models, tick]);
+
+  /** Writes every loaded model again without the hidden property sets and properties (a _FIXED copy; the original is kept). */
+  const applyPermanently = async () => {
+    const targets = useModelsStore.getState().models;
+    setBusy(true);
+    setMessage(null);
+    const lines: string[] = [];
+    try {
+      for (const m of targets) {
+        lines.push(await writeBackBytes(engine, m.modelId, async (file) => {
+          const out = await runIfcTool('strip', { hiddenPsets, hiddenProps }, [file]);
+          const r = out.result;
+          if (!r.removedSets && !r.removedProps) return null;
+          return { bytes: out.parts[0].bytes, summary: `${r.removedSets} property sets and ${r.removedProps} single properties removed from ${r.objects} objects`, log: { operation: 'remove-hidden-properties', hiddenPsets, hiddenProps, ...r } };
+        }, {}));
+      }
+      setMessage({ kind: 'ok', text: lines.join(' ') });
+    } catch (e) {
+      setMessage({ kind: 'error', text: [...lines, e instanceof Error ? e.message : String(e)].join(' ') });
+    } finally {
+      setBusy(false);
+    }
+  };
 
   const hiddenSetNames = new Set(hiddenPsets);
   const hiddenPropKeys = new Set(hiddenProps);
@@ -77,6 +105,14 @@ export function PropertyVisibilityPanel() {
         <button type="button" className="btn btn--small" onClick={() => setAll(catalog.map((c) => c.pset), hiddenProps)}>Hide all</button>
         <span className="pvis__count">{hiddenPsets.length} sets · {hiddenProps.length} properties hidden</span>
       </div>
+      {FEATURES.serverFiles && (
+        <div className="related__actions">
+          <button type="button" className="btn btn--small primary" disabled={busy || (!hiddenPsets.some((x) => x !== ATTRIBUTES) && !hiddenProps.length)} onClick={() => void applyPermanently()} title="Write the loaded models again without the hidden property sets and properties, as _FIXED copies (IfcOpenShell). The originals are kept.">
+            {busy ? 'Writing…' : 'Apply changes permanently to IFC'}
+          </button>
+        </div>
+      )}
+      {message && <div className={`model-checks__msg model-checks__msg--${message.kind}`}>{message.text}</div>}
       <ul className="pvis">
         {shown.map(({ pset, props }) => {
           const setHidden = hiddenSetNames.has(pset);

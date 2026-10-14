@@ -53,7 +53,7 @@ export interface DurationRow extends Row {
 
 /** Where a productivity row takes its quantity from: tonnes of rebar (the object's concrete volume x the rebar rate), m3 of concrete, or a
     number the model carries (a property or quantity set and a name, times a factor). */
-export type QuantityBasis = 'rebar' | 'concrete' | 'property';
+export type QuantityBasis = 'rebar' | 'concrete' | 'footprint' | 'sides' | 'property';
 /** What to use for a object that lacks the model property: the rebar tonnes, the concrete volume, or nothing (the row then does not apply). */
 export type QuantityFallback = 'rebar' | 'concrete' | 'none';
 
@@ -125,6 +125,10 @@ export interface RateRow extends Row {
 /** A named crew: trades and people per day, defined once and linked to many groups by Assignments. */
 export interface CrewTemplate extends Row {
   trades: { trade: string; size: number }[];
+  /** The company the crew belongs to (shown with it: "Concrete Sub · CARP"). */
+  subcontractor?: string;
+  /** How many crews of this kind there are: the most that can work at once. Empty or 0: not limited, and no resource. Written to P6 as a resource. */
+  available?: number;
 }
 
 /** The link table: one row per group and phase. Its rate, crew and calendar (any may be empty) apply to the objects of the group; `days` is a fixed
@@ -307,6 +311,9 @@ export interface LevelLink extends Row {
   lagHours?: number;
   /** toTask: the activity precedes the task (FF: the task finishes with it). fromTask: the task precedes the activity. */
   direction?: 'toTask' | 'fromTask';
+  /** Extras only: a select:{...} of the pours' activities (such as `type=SLAB; phase=Concrete`). When set, an extra is linked to those of its own building and
+      level instead of to the level tasks (a tag's level task still limits it to that kind: Slabs, Walls). */
+  pours?: string;
 }
 
 export type SettingValue = number | boolean | string[] | undefined;

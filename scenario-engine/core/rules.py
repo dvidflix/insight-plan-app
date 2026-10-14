@@ -407,7 +407,7 @@ class Rules:
                 self.rebar.append({**base, "tonnesPerM3": density.get("tonnesPerM3")})
             crew = crews.get(str(a.get("crew", "") or "").strip().upper())
             if crew is not None and phase:
-                self.crews.append({**base, "phase": phase, "trades": [t for t in crew.get("trades") or [] if isinstance(t, dict)]})
+                self.crews.append({**base, "phase": phase, "crewId": str(crew.get("id", "")).strip(), "trades": [t for t in crew.get("trades") or [] if isinstance(t, dict)]})
             calendar = str(a.get("calendar", "") or "").strip()
             if calendar:
                 self.calendar_rules.append({**base, "phase": phase or None, "calendar": calendar})
@@ -523,6 +523,16 @@ class Rules:
             except (TypeError, ValueError):
                 return 0.0
         basis = str(row.get("basis") or "rebar").strip().lower()
+        if basis in ("footprint", "sides"):
+            # Measured from the geometry, summed over the objects joined into this one.
+            from core.helpers import get_measured_area
+            total, found = 0.0, False
+            for r in [rec, *(rec.get("joined") or [])]:
+                element = r.get("element")
+                area = get_measured_area(element, basis) if element is not None else None
+                if area is not None:
+                    total, found = total + area, True
+            return total if found else None
         if basis == "property":
             value = quantities.property_value(rec, row.get("pset"), row.get("property"))
             if value is not None:
@@ -574,6 +584,28 @@ class Rules:
             if trade and size and size > 0:
                 crew.append((trade, size))
         return crew
+
+    def crew_pool_for(self, phase, rec):
+        """{id, name, quantity} of the crew pool of the named crew this activity of this pour gets (a Crew with crews available), or None."""
+        phase = str(phase or "").strip()
+        row = self.best(self.crews, rec, lambda r: str(r.get("phase", "")).strip() == phase)
+        crew_id = str((row or {}).get("crewId") or "").strip().upper()
+        return next((p for p in self.crew_pools() if p["id"].upper() == crew_id), None) if crew_id else None
+
+    def crew_pools(self):
+        """[{id, name, quantity}] the named crews that have a number of crews available (the scenario's pool of that crew, by its subcontractor):
+        one resource each. "Maximize resource availability": no limit (0)."""
+        out = []
+        for c in self.crew_templates:
+            if c.get("enabled") is False:
+                continue
+            available = _number(c.get("available"), 0.0) or 0.0
+            if available <= 0:
+                continue
+            code = str(c["id"]).strip()
+            sub = str(c.get("subcontractor") or "").strip()
+            out.append({"id": code, "name": f"{sub} \u00b7 {code}" if sub else code, "quantity": 0.0 if _maximize() else available})
+        return out
 
     def trades(self):
         """{code: {name, capacity}} of the rules' Trade rows (a row switched off is left out). The capacity is the site's people per
@@ -693,11 +725,24 @@ def _maximize():
     return bool(getattr(config, "MAXIMIZE_RESOURCES", False))
 
 
+_FOLLOW_EXPLICIT = None
+
+
 def _parse_follows(value):
     """"Decking@80, Under Slab" -> [("Decking", 80.0), ("Under Slab", 100.0)]: the phases an activity follows and how far along each must be
     (100 = it has finished). Empty: the activity before it in the chain, at 100."""
     out = []
+    import re
+    global _FOLLOW_EXPLICIT
+    if _FOLLOW_EXPLICIT is None:
+        _FOLLOW_EXPLICIT = re.compile(r"^(.*?)\s*:\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*h?$", re.IGNORECASE)
     for part in str(value or "").replace(";", ",").split(","):
+        explicit = _FOLLOW_EXPLICIT.match(part.strip())
+        if explicit and explicit.group(1).strip():
+            # "Rebar:SS+16" = start-to-start, 16 hours after; "Rebar:FS-8" = finish-to-start, 8 hours before (an overlap); "Rebar:FF"
+            lag = float((explicit.group(3) or "0").replace(" ", ""))
+            out.append((explicit.group(1).strip(), 100.0, explicit.group(2).upper(), lag))
+            continue
         name, _, pct = part.partition("@")
         name = name.strip()
         if name:

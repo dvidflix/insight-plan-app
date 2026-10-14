@@ -3,7 +3,7 @@ import type { ColumnDef } from '../../schedule/columns';
 import { buildColumnContext } from '../../schedule/columns';
 import { COMPUTED_DURATION, calcColumnDefs, compileFormula, numericColumns, useCalcColumnsStore, type CalcColumn } from '../../schedule/calculatedColumns';
 import { useActiveSchedule } from '../../state/scheduleStore';
-import { IconPencil } from '../icons';
+import { IconPencil, IconRemove } from '../icons';
 import { InfoTip } from '../InfoTip';
 
 const EXAMPLE: Omit<CalcColumn, 'id'> = { name: 'Rebar t/h', formula: '[Rebar (t) (units)] / [Original Duration (h)]', unit: 't/h', decimals: 2 };
@@ -76,7 +76,7 @@ export function CalcColumnsEditor({ catalog }: { catalog: ColumnDef[] }) {
                 aria-label={`Delete ${c.name}`}
                 title="Delete"
               >
-                ✕
+                <IconRemove />
               </button>
             </div>
           ))}

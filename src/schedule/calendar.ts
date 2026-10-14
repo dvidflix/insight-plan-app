@@ -1,6 +1,15 @@
+/** One run of work in a day ("08:00" to "12:00"). */
+export interface CalendarSpan {
+  start: string;
+  finish: string;
+}
+
 export interface CalendarDay {
   working: boolean;
+  /** First start to last finish, for showing. */
   range?: string;
+  /** Every run of work of the day (a lunch break splits it in two). Absent on a calendar saved before they were read. */
+  spans?: CalendarSpan[];
 }
 
 /** A dated override of the weekly pattern: a holiday (working: false) or
@@ -9,6 +18,7 @@ export interface CalendarException {
   date: string; // YYYY-MM-DD
   working: boolean;
   range?: string;
+  spans?: CalendarSpan[];
 }
 
 export interface ScheduleCalendar {

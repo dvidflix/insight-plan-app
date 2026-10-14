@@ -83,6 +83,30 @@ export function projectDbPlugin(): Plugin {
             projectDb(body.root).renameProgramme(numberParam(body.id, 'programme id'), name);
             return send(res, 200, { ok: true });
           }
+          if (get && route === 'programmes/export') return send(res, 200, projectDb(q.get('root')).exportProgramme(numberParam(q.get('id'), 'programme id')));
+          if (req.method === 'POST' && route === 'programmes/copy') {
+            const body = await readBody(req);
+            const name = String(body.name ?? '').trim();
+            if (!name) throw new HttpError(400, 'No name given.');
+            return send(res, 200, { programme: projectDb(body.root).copyProgramme(numberParam(body.id, 'programme id'), name) });
+          }
+          if (req.method === 'POST' && route === 'programmes/baseline') {
+            const body = await readBody(req);
+            const name = String(body.name ?? '').trim();
+            if (!name) throw new HttpError(400, 'No name given.');
+            return send(res, 200, { programme: projectDb(body.root).saveBaseline(numberParam(body.id, 'programme id'), name) });
+          }
+          if (req.method === 'POST' && route === 'programmes/blank') {
+            const body = await readBody(req);
+            const name = String(body.name ?? '').trim();
+            if (!name) throw new HttpError(400, 'No name given.');
+            return send(res, 200, { programme: projectDb(body.root).blankProgramme(name, String(body.start ?? '')) });
+          }
+          if (req.method === 'POST' && route === 'programmes/ops') {
+            const body = await readBody(req);
+            if (!Array.isArray(body.ops)) throw new HttpError(400, 'No changes given.');
+            return send(res, 200, projectDb(body.root).applyOps(numberParam(body.id, 'programme id'), body.ops));
+          }
           if (req.method === 'POST' && route === 'programmes/delete') {
             const body = await readBody(req);
             projectDb(body.root).deleteProgramme(numberParam(body.id, 'programme id'));
@@ -127,7 +151,10 @@ export function projectDbPlugin(): Plugin {
           // ---- Settings > Import / Export: "Export all" writes the export files into the project folder ----
           if (req.method === 'POST' && route === 'export-files') {
             const body = await readBody(req);
-            const folder = projectDb(body.root).root;
+            const dir = String(body.dir ?? '');
+            if (!/^[a-z]*$/.test(dir)) throw new HttpError(400, `Not a folder name: ${dir}`);
+            const folder = path.join(projectDb(body.root).root, dir);
+            fs.mkdirSync(folder, { recursive: true });
             const files = Array.isArray(body.files) ? body.files : [];
             const written: string[] = [];
             for (const f of files) {

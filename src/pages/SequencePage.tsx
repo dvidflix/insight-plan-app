@@ -1,6 +1,7 @@
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
 import { ScenarioDock, ScenarioTabContent } from '../components/scenarios/ScenarioDock';
+import { RecipesDock } from '../components/scenarios/rules/RecipesEditor';
 import { ScenarioRulesDock } from '../components/scenarios/ScenarioRules';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule } from '../state/scheduleStore';
@@ -808,7 +809,8 @@ export function SequencePanel() {
       <DockPanel id="resources" label="Resources">
         {ready && model ? <SequenceResources model={model} /> : needProgramme}
       </DockPanel>
-      {experimental.scenarios && <DockPanel id="scenarios" label="Scenarios"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
+      {experimental.scenarios && <DockPanel id="scenarios" label="Sequence"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
+      {experimental.scenarios && <DockPanel id="recipes" label="Recipes"><RecipesDock /></DockPanel>}
       {experimental.scenarios && <DockPanel id="rules" label="Rules"><ScenarioRulesDock /></DockPanel>}
       {experimental.bcf && <DockPanel id="topics" label={`Topics${topicCount ? ` (${topicCount})` : ''}`}><div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div></DockPanel>}
       {experimental.scenarios && scenariosShowing && isSettingsOpen(settingsTarget, 'scenarios') && <ScenarioDock />}

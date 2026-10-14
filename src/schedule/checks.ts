@@ -1,4 +1,6 @@
+import { hoursPerDayOf } from './hoursPerDay';
 import { buildNetwork, cloneNetwork, computeCPM } from './network';
+import type { ScheduleCalendar } from './calendar';
 import type { Activity, ScheduleModel } from './types';
 
 export type CheckSeverity = 'high' | 'medium' | 'low' | 'info';
@@ -69,19 +71,25 @@ export interface ChecksScore {
 
 const HIGH_FLOAT_DAYS = 44; // standard DCMA threshold (working days)
 const HIGH_DURATION_DAYS = 44; // standard DCMA threshold (~2 working months)
-const HOURS_PER_DAY = 8;
+/** Working days in an activity's hours: a day is as long as its calendar says. */
+const calendarsOf = new WeakMap<ScheduleModel, Map<string, ScheduleCalendar>>();
+function hoursPerDay(a: Activity, model: ScheduleModel): number {
+  let calendars = calendarsOf.get(model);
+  if (!calendars) calendarsOf.set(model, (calendars = new Map(model.calendars.map((c) => [c.id, c]))));
+  return hoursPerDayOf(a.calendarId, calendars);
+}
 const LAG_RISK_FLOAT_DAYS = 45;
 /** Zero-tolerance checks are Green only while nothing at all is flagged. */
 const NONE_ALLOWED = 0.01;
 
-function durationDays(a: Activity): number {
-  return a.durationHours / HOURS_PER_DAY;
+function durationDays(a: Activity, model: ScheduleModel): number {
+  return a.durationHours / hoursPerDay(a, model);
 }
-function floatDays(a: Activity): number | null {
-  return a.totalFloatHours === null ? null : a.totalFloatHours / HOURS_PER_DAY;
+function floatDays(a: Activity, model: ScheduleModel): number | null {
+  return a.totalFloatHours === null ? null : a.totalFloatHours / hoursPerDay(a, model);
 }
-function remainingDurationDays(a: Activity): number {
-  return a.remainingDurationHours / HOURS_PER_DAY;
+function remainingDurationDays(a: Activity, model: ScheduleModel): number {
+  return a.remainingDurationHours / hoursPerDay(a, model);
 }
 
 export function isHardConstraint(type: string | null): boolean {
@@ -183,21 +191,21 @@ const DEFS: CheckDef[] = [
     description: `Activities with total float of at least ${HIGH_FLOAT_DAYS} working days, often a sign of missing logic. Should not exceed 5%.`,
     risk: 'Widespread large float undermines critical path reliability and suggests errors or missing relationships.',
     action: 'Review the logic of all flagged activities. Add missing relationships and constraints so float reflects real flexibility.',
-    run: (_c, pool) => ({ flagged: pool.filter((a) => { const f = floatDays(a); return f !== null && f >= HIGH_FLOAT_DAYS; }) }),
+    run: (c, pool) => ({ flagged: pool.filter((a) => { const f = floatDays(a, c.model); return f !== null && f >= HIGH_FLOAT_DAYS; }) }),
   },
   {
     id: 'DCMA07', num: 7, name: 'Negative Float', severity: 'high', scoped: true, green: NONE_ALLOWED, amber: NONE_ALLOWED, scope: { excludeCompleted: true },
     description: 'Activities with total (downstream) float less than 0 working days — the schedule cannot meet its own constraints as logic-linked. There should be none.',
     risk: 'Negative float means the plan cannot achieve a required date; the forecast is already late against its own constraints.',
     action: 'Identify the cause on the driving path, then recover with resequencing, resource changes or an agreed revision to the constraint.',
-    run: (_c, pool) => ({ flagged: pool.filter((a) => { const f = floatDays(a); return f !== null && f < 0; }) }),
+    run: (c, pool) => ({ flagged: pool.filter((a) => { const f = floatDays(a, c.model); return f !== null && f < 0; }) }),
   },
   {
     id: 'DCMA08', num: 8, name: `High Duration (≥ ${HIGH_DURATION_DAYS}d)`, severity: 'medium', scoped: true, green: 5, amber: 10, scope: { excludeCompleted: true, includeLoe: false },
     description: `Activities with a duration of at least ${HIGH_DURATION_DAYS} working days (~2 months) — usually a sign the work should be broken down further. Should not exceed 5%.`,
     risk: 'Long activities lack the granularity needed for progress tracking, cost control and early warning.',
     action: 'Decompose flagged activities into shorter tasks. Where that is not feasible, add interim milestones.',
-    run: (_c, pool) => ({ flagged: pool.filter((a) => durationDays(a) >= HIGH_DURATION_DAYS) }),
+    run: (c, pool) => ({ flagged: pool.filter((a) => durationDays(a, c.model) >= HIGH_DURATION_DAYS) }),
   },
   {
     id: 'DCMA09', num: 9, name: 'Invalid Dates', severity: 'high', scoped: true, green: NONE_ALLOWED, amber: NONE_ALLOWED,
@@ -265,7 +273,7 @@ const DEFS: CheckDef[] = [
     description: 'Non-milestone activities with a duration of zero — usually should be milestones instead.',
     risk: 'Zero-duration tasks carry no work, so they mislead progress measurement.',
     action: 'Convert each to a milestone, or give it a realistic duration if it represents work.',
-    run: (_c, pool) => ({ flagged: pool.filter((a) => durationDays(a) === 0) }),
+    run: (c, pool) => ({ flagged: pool.filter((a) => durationDays(a, c.model) === 0) }),
   },
   {
     id: 'ADD04', num: null, name: 'Lag > Remaining Duration & TF < 45d', severity: 'high', scoped: true, green: NONE_ALLOWED, amber: NONE_ALLOWED, points: [5, 4],
@@ -387,11 +395,11 @@ export function runChecks(model: ScheduleModel, overrides: CheckSettingsMap = {}
     if (r.type === 'FS') fs.fs++;
     else nonFsActivities.push(succ);
     if (r.type === 'SF') sets.sf.add(succ.id);
-    const lagDays = r.lagHours / HOURS_PER_DAY;
+    const lagDays = r.lagHours / hoursPerDay(succ, model);
     if (lagDays > 0) {
       sets.lag.add(succ.id);
-      const remDur = remainingDurationDays(succ) || 0;
-      const tf = floatDays(succ);
+      const remDur = remainingDurationDays(succ, model) || 0;
+      const tf = floatDays(succ, model);
       if (tf === null) continue;
       if (lagDays > remDur) {
         if (tf < LAG_RISK_FLOAT_DAYS) sets.sch15.add(succ.id);

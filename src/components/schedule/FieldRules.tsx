@@ -9,7 +9,7 @@ export interface PickField {
   label: string;
   group?: string;
 }
-import { IconSectionChevron } from '../icons';
+import { IconSectionChevron, IconRemove } from '../icons';
 import { queryMatcher } from '../../schedule/search';
 
 /** Every field of the schedule, searchable and grouped the way the Columns
@@ -118,7 +118,7 @@ export function RuleRows<T extends { id: string }>({ rules, onChange, children, 
           <div className="rule-item__body">{children(r, i)}</div>
           <button type="button" className="cols__icon" disabled={i === 0} onClick={() => move(i, i - 1)} title="Move up" aria-label="Move up">↑</button>
           <button type="button" className="cols__icon" disabled={i === rules.length - 1} onClick={() => move(i, i + 1)} title="Move down" aria-label="Move down">↓</button>
-          <button type="button" className="cols__icon cols__icon--remove" onClick={() => onChange(rules.filter((x) => x.id !== r.id))} title="Remove" aria-label="Remove">✕</button>
+          <button type="button" className="cols__icon cols__icon--remove" onClick={() => onChange(rules.filter((x) => x.id !== r.id))} title="Remove" aria-label="Remove"><IconRemove /></button>
         </div>
       ))}
     </div>

@@ -1,3 +1,4 @@
+import { IconRemove } from '../icons';
 import { useMemo } from 'react';
 import { HexColorInput } from '../HexColorInput';
 import type { ElementSummary } from '../../viewer/types';
@@ -88,7 +89,7 @@ export function ViewColorSettings({ view, elements }: { view: ViewId; elements: 
                 <HexColorInput value={r.color} onChange={(hex) => update(r.id, { color: hex })} />
                 <input className="cm__value" value={r.value} onChange={(e) => update(r.id, { value: e.target.value })} placeholder="value" />
                 <span className="flt__n" title="Elements with this value">{counts.get(r.value.trim().toLowerCase()) ?? 0}</span>
-                <button type="button" className="cols__icon cols__icon--remove" onClick={() => patch({ rules: rules.filter((x) => x.id !== r.id) })} aria-label={`Remove rule ${r.value}`} title="Remove rule">✕</button>
+                <button type="button" className="cols__icon cols__icon--remove" onClick={() => patch({ rules: rules.filter((x) => x.id !== r.id) })} aria-label={`Remove rule ${r.value}`} title="Remove rule"><IconRemove /></button>
               </div>
             ))}
           </div>

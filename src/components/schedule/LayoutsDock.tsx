@@ -1,5 +1,5 @@
 import { useRef, useState, type DragEvent } from 'react';
-import { IconBookmark, IconChevronDown, IconChevronRight, IconClose, IconFolder, IconPencil, IconSync, IconTrash } from '../icons';
+import { IconBookmark, IconChevronDown, IconChevronRight, IconClose, IconFolder, IconPencil, IconSync, IconRemove } from '../icons';
 import { ResizeHandle, useResizableWidth } from '../ResizeHandle';
 import { usePersistedState } from '../../utils/persistedState';
 import { decodePlf, plfToLayout } from '../../schedule/plfLayout';
@@ -142,7 +142,7 @@ export function LayoutsDock({ filters, tab, importContext, onClose }: { filters:
             title="Delete this layout"
             aria-label={`Delete ${l.name}`}
           >
-            <IconTrash />
+            <IconRemove />
           </button>
         </div>
       </div>
@@ -207,7 +207,7 @@ export function LayoutsDock({ filters, tab, importContext, onClose }: { filters:
             aria-label={`Delete folder ${f}`}
             onClick={() => window.confirm(`Delete the folder "${f}"? Its ${count} layout${count === 1 ? '' : 's'} stay, without a folder.`) && deleteFolder(f)}
           >
-            <IconTrash width={14} height={14} />
+            <IconRemove />
           </button>
         </span>
       </div>

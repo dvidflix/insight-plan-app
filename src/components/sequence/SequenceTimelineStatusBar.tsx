@@ -5,6 +5,7 @@ import { actualCoverage, limitRange, scheduleRange, type DateRange } from '../..
 import { addUnit, alignDown, nextBoundary } from '../../schedule/period';
 import { skipOver, skipPredicate, stepFrom } from '../../schedule/skipDays';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../../state/timelineSettingsStore';
+import { registerTimelineScroller, useTimelineSpanStore } from '../../state/timelineSpanStore';
 import { usePersistedState } from '../../utils/persistedState';
 import { IconFirstPage, IconLastPage, IconPauseCircle, IconPlayCircle, IconRewind, IconStopCircle } from '../icons';
 
@@ -259,6 +260,14 @@ export function SequenceTimelineStatusBar() {
   }, [showMonthRow, showWeekRow, tl.showYears, weekly]);
   const trackRef = useRef<HTMLDivElement>(null);
   const innerRef = useRef<HTMLDivElement>(null);
+  // The resources chart draws on this bar's dates and scrolls with it.
+  useEffect(() => {
+    useTimelineSpanStore.getState().set(range?.min ?? null, range?.max ?? null);
+  }, [range]);
+  useEffect(() => {
+    const scroller = trackRef.current;
+    return scroller ? registerTimelineScroller(scroller) : undefined;
+  }, [model, range, date === null]);
   const [trackWidth, setTrackWidth] = useState(0);
   const ready = !!model && !!range && date !== null;
   useEffect(() => {

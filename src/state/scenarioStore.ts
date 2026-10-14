@@ -36,7 +36,13 @@ import { filterXmlText } from '../schedule/exportFilter';
 import { DEFAULT_SCN_TABLE, type ScnTableConfig } from '../scenarios/tableView';
 import type { ScnConfigTab } from '../components/scenarios/ScenarioTableConfig';
 import { getWbsOrder } from './wbsOrder';
-import { NO_RULES, normalizeRules, type EngineDefaults, type ScenarioRules } from '../prs/rules';
+import { NO_RULES, isEmptyRules, normalizeRules, type EngineDefaults, type ScenarioRules } from '../prs/rules';
+import { convertLegacyRules, legacyCount } from '../prs/convert';
+import { useRecipeStore } from './recipeStore';
+import { forGenerator } from '../prs/recipeRules';
+import { useSearchSetsStore } from './searchSetsStore';
+import { duplicateSets, groupsWithSets, setsForGroups, staleSets, uniqueGroups } from '../prs/groupSets';
+import { calendarsFromProgrammes, syncCalendars } from '../prs/calendarsFromProgramme';
 
 /** The Scenarios work in progress — project, scenario, pour order, unsaved
     edits, undo/redo, selection, table view — in one store, so the Scenarios
@@ -351,7 +357,7 @@ async function loadOrderNow(stem: string | null) {
       savedCrews: own.crews ?? NO_CREWS,
       extras: own.extras ?? NO_EXTRAS,
       savedExtras: own.extras ?? NO_EXTRAS,
-      rules: normalizeRules(own.rules),
+      rules: withLibrary(groupsIntoSets(migrateOldRules(normalizeRules(own.rules)))),
       savedRules: normalizeRules(own.rules),
       engineDefaults: own.defaults ?? get().engineDefaults,
       flags: flagsOf(own.flags),
@@ -501,7 +507,7 @@ export const updateFourD = () =>
   run('Updating 4D…', async () => {
     const { rows, scenario, startDate, loaded, relations, crews, extras, rules, flags } = get();
     const stem = loaded!.stem;
-    const res = await updateScenario({ ...request(), startDate: startDate || null });
+    const res = await updateScenario({ ...request(), rules: forGenerator(rules), startDate: startDate || null });
     xmlCache.set(`${scenario}|${stem}`, res.xml);
     await loadIntoInputs(res.xml, stem, scenario!);
     set((s) => ({
@@ -747,6 +753,68 @@ export function pickStem(stem: string) {
   if (stem === currentStem() || !confirmDiscard()) return;
   set({ pickedStem: stem, loaded: null });
 }
+
+/** Rules in the old form (Duration, Productivity, Rebar rate, Crew rule, Calendar rule rows) are turned into groups, rates, crews and assignments
+    when a scenario opens: the panel no longer edits them, and the generator makes the same programme. */
+function migrateOldRules(rules: ScenarioRules): ScenarioRules {
+  return legacyCount(rules) > 0 ? convertLegacyRules(rules).rules : rules;
+}
+
+/** The scenario's rules with the recipe library's recipes and pools. A library with nothing in it takes the scenario's own first (a scenario
+    saved before the library existed keeps its recipes). */
+/** The groups of a scenario that a search set can say exactly become sets of the "Recipes sets" folder, when it opens: the sets are the groups. */
+function groupsIntoSets(rules: ScenarioRules): ScenarioRules {
+  const store = useSearchSetsStore.getState();
+  for (const set of [...staleSets(rules.groups, store.sets), ...duplicateSets(store.sets)]) store.remove(set.id);
+  for (const set of setsForGroups(rules.groups, useSearchSetsStore.getState().sets)) store.save(set);
+  return rules;
+}
+
+function withLibrary(rules: ScenarioRules): ScenarioRules {
+  const groups = groupsWithSets(uniqueGroups(rules.groups), useSearchSetsStore.getState().sets);
+  const calendars = syncCalendars(rules.calendars, calendarsFromProgrammes(useScheduleStore.getState().schedules.flatMap((m) => m.calendars)));
+  const synced = groups === rules.groups && calendars === rules.calendars ? rules : { ...rules, groups, calendars };
+  return withRecipeLibrary(synced);
+}
+
+function withRecipeLibrary(rules: ScenarioRules): ScenarioRules {
+  const lib = useRecipeStore.getState();
+  if (!lib.recipes.length && !lib.pools.length) {
+    if (rules.recipes.length) lib.setRecipes(rules.recipes);
+    if (rules.resourcePools.length) lib.setPools(rules.resourcePools);
+    return rules;
+  }
+  if (rules.recipes === lib.recipes && rules.resourcePools === lib.pools) return rules;
+  const next = { ...rules, recipes: lib.recipes, resourcePools: lib.pools };
+  return isEmptyRules(next) ? NO_RULES : next;
+}
+
+// A change in the recipe library goes into the open scenario's rules (so it is saved with it, and Update 4D sees it).
+useRecipeStore.subscribe((lib, prev) => {
+  if (lib.recipes === prev.recipes && lib.pools === prev.pools) return;
+  const s = useScenarioStore.getState();
+  if (!s.loaded) return;
+  const next = withLibrary(s.rules);
+  if (next !== s.rules) set({ rules: next });
+});
+
+// So are the calendars of the loaded programmes (the only place for calendars is Programmes > Calendars).
+useScheduleStore.subscribe((st, prev) => {
+  if (st.schedules === prev.schedules) return;
+  const s = useScenarioStore.getState();
+  if (!s.loaded) return;
+  const next = withLibrary(s.rules);
+  if (next !== s.rules) set({ rules: next });
+});
+
+// So are the sets of the "Recipes sets" folder: they are the groups the recipes name.
+useSearchSetsStore.subscribe((st, prev) => {
+  if (st.sets === prev.sets) return;
+  const s = useScenarioStore.getState();
+  if (!s.loaded) return;
+  const next = withLibrary(s.rules);
+  if (next !== s.rules) set({ rules: next });
+});
 
 // Joined objects are shown with their main object's activities in 4D.
 useScenarioStore.subscribe((s, prev) => {

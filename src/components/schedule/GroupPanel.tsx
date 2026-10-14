@@ -1,4 +1,6 @@
 import { DirectionToggle, FieldPicker, RuleRows, newRuleId, type PickField } from './FieldRules';
+import { PresetBar, type PresetItem } from './PresetBar';
+import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
 import { InfoTip } from '../InfoTip';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 
@@ -43,17 +45,22 @@ export function GroupPanel({ fields, rules, onChange, onClose, onCollapseAll, on
   };
 
   const presets = offered.filter((p) => p.fields.every((f) => byId.has(f)));
+  const saved = useUserPresetsStore((st) => st.presets).filter((p) => p.kind === 'group' && (p.data as string[]).every((f) => byId.has(f)));
+  const groupItems: PresetItem[] = [...presets.map((p) => ({ id: p.label, label: p.label })), ...saved.map((p) => ({ id: p.id, label: p.name, user: true }))];
 
   const body = (
     <div className="cols">
-      {presets.length > 0 && (
-        <div className="cols__presets">
-          <span className="cols__hint">Presets</span>
-          {presets.map((p) => (
-            <button key={p.label} type="button" onClick={() => onChange(p.fields.map((field) => ({ id: newRuleId('group'), field, direction: 'up' as const })))}>{p.label}</button>
-          ))}
-        </div>
-      )}
+      <PresetBar
+        noun="grouping"
+        items={groupItems}
+        saveDisabled={rules.length === 0}
+        onApply={(id) => {
+          const fieldIds = groupItems.find((i) => i.id === id)?.user ? (saved.find((p) => p.id === id)?.data as string[] | undefined) : presets.find((p) => p.label === id)?.fields;
+          if (fieldIds) onChange(fieldIds.map((field) => ({ id: newRuleId('group'), field, direction: 'up' as const })));
+        }}
+        onSave={(name) => saveUserPreset('group', name, rules.map((r) => r.field))}
+        onDelete={removeUserPreset}
+      />
 
       {onToggleGroupByWbs && (
         <div className="disp__row">

@@ -1,7 +1,9 @@
+import { IconRemove } from '../icons';
 import { useMemo, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { DEFAULT_RENUMBER, planRenumber, parsePourMap, usableEntries, type RenumberOptions } from '../../schedule/renumber';
 import { useScheduleStore, useVisibleSchedules } from '../../state/scheduleStore';
+import { commit, undo as undoLast, useProgrammeHistory } from '../../state/programmeHistory';
 import { usePourMapStore } from '../../state/pourMapStore';
 import { usePersistedState } from '../../utils/persistedState';
 import { downloadCsv } from '../../utils/csv';
@@ -18,11 +20,10 @@ const PREVIEW_ROWS = 100;
 export function RenumberView({ model }: { model: ScheduleModel }) {
   const visible = useVisibleSchedules();
   const patchActivities = useScheduleStore((s) => s.patchActivities);
-  const restoreActivities = useScheduleStore((s) => s.restoreActivities);
   const entries = usePourMapStore((s) => s.entries);
   const setEntries = usePourMapStore((s) => s.setEntries);
   const [opts, setOpts] = usePersistedState<RenumberOptions>('schedule.renumberOptions', DEFAULT_RENUMBER);
-  const [undo, setUndo] = useState<Map<string, Activity[]> | null>(null);
+  const canUndo = useProgrammeHistory((h) => h.undos.length > 0);
   const [message, setMessage] = useState<string | null>(null);
   const [filter, setFilter] = useState('');
 
@@ -44,15 +45,11 @@ export function RenumberView({ model }: { model: ScheduleModel }) {
       if (!o) continue;
       (bySchedule.get(o.scheduleId) ?? bySchedule.set(o.scheduleId, new Map()).get(o.scheduleId)!).set(o.id, c.patch);
     }
-    // Remember the activities as they are now, to undo.
-    setUndo(new Map([...bySchedule.keys()].map((id) => [id, visible.find((v) => v.id === id)!.activities])));
-    patchActivities(bySchedule);
+    commit('Renumber', () => patchActivities(bySchedule));
     setMessage(`Renumbered ${plan.changes.length} activities. Undo puts them back.`);
   };
   const revert = () => {
-    if (!undo) return;
-    restoreActivities(undo);
-    setUndo(null);
+    if (!undoLast()) return;
     setMessage('Back as it was before the renumbering.');
   };
 
@@ -108,7 +105,7 @@ export function RenumberView({ model }: { model: ScheduleModel }) {
                         <tr key={i}>
                           <td><input type="text" value={e.oldPour} onChange={(ev) => setEntries(entries.map((x, k) => (k === i ? { ...x, oldPour: ev.target.value } : x)))} /></td>
                           <td><input type="text" value={e.newPour} onChange={(ev) => setEntries(entries.map((x, k) => (k === i ? { ...x, newPour: ev.target.value } : x)))} /></td>
-                          <td><button type="button" className="report-toggle" aria-label="Remove the pair" onClick={() => setEntries(entries.filter((_, k) => k !== i))}>✕</button></td>
+                          <td><button type="button" className="report-toggle" aria-label="Remove the pair" onClick={() => setEntries(entries.filter((_, k) => k !== i))}><IconRemove /></button></td>
                         </tr>
                       ))}
                     </tbody>
@@ -148,7 +145,7 @@ export function RenumberView({ model }: { model: ScheduleModel }) {
             )}
             <div className="report-filters" style={{ alignItems: 'center' }}>
               <button type="button" className="report-toggle active" disabled={plan.changes.length === 0} onClick={apply}>Renumber {plan.changes.length} activities</button>
-              <button type="button" className="report-toggle" disabled={!undo} onClick={revert}>Undo the last renumbering</button>
+              <button type="button" className="report-toggle" disabled={!canUndo} onClick={revert}>Undo the last renumbering</button>
               {message && <span className="report-filters__summary">{message}</span>}
             </div>
             <div className="report-table">

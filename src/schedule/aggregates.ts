@@ -33,8 +33,10 @@ export function aggOptions(c: ColumnDef) {
   return t === 'num' ? NUMBER_AGGS : t === 'date' ? DATE_AGGS : [];
 }
 
-/** Summable columns (units, cost) add up unless set otherwise. */
+/** Summable columns (units, cost) add up unless set otherwise; a group's Start and Finish are its earliest start and latest finish, as in P6. */
 export function defaultAgg(c: ColumnDef): AggKind {
+  if (c.id === 'start') return 'earliest';
+  if (c.id === 'finish') return 'latest';
   return c.summable ? 'sum' : 'none';
 }
 
@@ -78,3 +80,6 @@ export function aggregate(c: ColumnDef, kind: AggKind, acts: Activity[], ctx: Co
   }
   return '';
 }
+
+/** Group rows always show their dates (Start / Finish); the other subtotals need Σ Totals. */
+export const isGroupDate = (c: ColumnDef): boolean => c.id === 'start' || c.id === 'finish';

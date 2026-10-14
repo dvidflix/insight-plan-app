@@ -1,3 +1,4 @@
+import { IconRemove } from '../icons';
 import { useMemo, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { buildColumnContext } from '../../schedule/columns';
@@ -7,6 +8,8 @@ import { exportScheduleXlsx } from '../../schedule/exportXlsx';
 import { useVisibleSchedules } from '../../state/scheduleStore';
 import { programmeKey } from '../../state/unloadedWbsStore';
 import { overrideCount, useActivityOverridesStore } from '../../state/activityOverridesStore';
+import { commit, undo, useProgrammeHistory } from '../../state/programmeHistory';
+import { resetEdits, setEdits } from '../../state/programmeEdits';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { newId } from '../../schedule/linkGroups';
 import { Section, Tiles } from '../reports/ReportParts';
@@ -54,7 +57,7 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
   const [conType, setConType] = useState('CS_MSOA');
   const [conDate, setConDate] = useState('');
   const [calendarId, setCalendarId] = useState('');
-  const [undo, setUndo] = useState<ReturnType<typeof useActivityOverridesStore.getState>['byProgramme'] | null>(null);
+  const canUndo = useProgrammeHistory((h) => h.undos.length > 0);
   const [message, setMessage] = useState<string | null>(null);
 
   const action: BulkAction =
@@ -89,24 +92,18 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
       const key = programmeKey(m);
       (bySchedule.get(key) ?? bySchedule.set(key, new Map()).get(key)!).set(c.code, c.patch);
     }
-    // Remember the edits as they are now, to undo.
-    setUndo(useActivityOverridesStore.getState().byProgramme);
-    for (const [key, edits] of bySchedule) useActivityOverridesStore.getState().set(key, edits);
+    commit('Bulk edit', () => { for (const [key, edits] of bySchedule) setEdits(key, edits); });
     setMessage(`Changed ${plan.changes.length} activities, kept with the project. Undo puts them back; Reset all edits clears every edit of this programme.`);
   };
 
   const revert = () => {
-    if (!undo) return;
-    useActivityOverridesStore.setState({ byProgramme: undo });
-    setUndo(null);
-    setMessage('Back as it was before the last bulk edit.');
+    if (undo()) setMessage('Back as it was before the last edit.');
   };
 
   const editCount = visible.reduce((n, m) => n + overrideCount(overrides, programmeKey(m)), 0);
   const resetAll = () => {
     if (!window.confirm(`Remove all ${editCount} edited activities of ${visible.length === 1 ? 'this programme' : 'these programmes'}? Their original values come back.`)) return;
-    setUndo(useActivityOverridesStore.getState().byProgramme);
-    for (const m of visible) useActivityOverridesStore.getState().reset(programmeKey(m));
+    commit('Reset all edits', () => { for (const m of visible) resetEdits(programmeKey(m)); });
     setMessage('All edits removed: the programme is as it was imported or generated.');
   };
 
@@ -157,7 +154,7 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
                 {RULE_OPS.find((o) => o.op === r.op)?.needsValue && (
                   <input type="text" value={r.value} placeholder="value" onChange={(e) => setRule(r.id, { value: e.target.value })} />
                 )}
-                {rules.length > 1 && <button type="button" className="report-toggle" onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))} aria-label="Remove the rule">✕</button>}
+                {rules.length > 1 && <button type="button" className="report-toggle" onClick={() => setRules((rs) => rs.filter((x) => x.id !== r.id))} aria-label="Remove the rule"><IconRemove /></button>}
               </div>
             ))}</>}
           </Section>
@@ -245,7 +242,7 @@ export function BulkEditView({ model }: { model: ScheduleModel }) {
             ]} />
             <div className="report-filters" style={{ alignItems: 'center' }}>
               <button type="button" className="report-toggle active" disabled={plan.changes.length === 0} onClick={apply}>Apply to {plan.changes.length} activities</button>
-              <button type="button" className="report-toggle" disabled={!undo} onClick={revert}>Undo the last edit</button>
+              <button type="button" className="report-toggle" disabled={!canUndo} onClick={revert}>Undo the last edit</button>
               <button type="button" className="report-toggle" disabled={editCount === 0} onClick={resetAll}>Reset all edits ({editCount})</button>
               {message && <span className="report-filters__summary">{message}</span>}
             </div>

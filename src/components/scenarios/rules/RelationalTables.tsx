@@ -1,10 +1,10 @@
 import { useMemo, useState, type ReactNode } from 'react';
 import { useScenarioStore } from '../../../state/scenarioStore';
-import { ACTIVITY_PHASES, COMPONENT_PHASES, assignmentKey, chainKey, type Assignment, type ChainRow, type CrewTemplate, type RateRow } from '../../../prs/rules';
+import { ACTIVITY_PHASES, COMPONENT_PHASES, assignmentKey, chainKey, type Assignment, type ChainRow, type CrewTemplate, type RateRow, type TradeRow } from '../../../prs/rules';
 import {
-  assignmentProblems, assignmentsToTsv, chainsToTsv, crewText, parseChainsPaste, crewsToTsv, parseAssignmentsPaste, parseCrewText, parseCrewsPaste, parseRatesPaste, ratesToTsv,
+  assignmentProblems, assignmentsToTsv, chainsToTsv, crewText, parseChainsPaste, crewsToTsv, parseAssignmentsPaste, parseCrewText, parseCrewsPaste, parseRatesPaste, ratesToTsv, parseTradesPaste, tradesToTsv,
 } from '../../../prs/relational';
-import { IconTrash } from '../../icons';
+import { IconRemove } from '../../icons';
 import { RuleCard, useTrades, type RuleContext } from './RuleParts';
 import type { RuleKind } from './kinds';
 
@@ -109,7 +109,7 @@ function GridCard<T extends { id: string; enabled?: boolean }>({
                 <tr key={i} className={`${r.enabled === false ? 'is-off' : ''}${own.length ? ' has-problem' : ''}`} title={own.join('\n') || undefined}>
                   <td><input type="checkbox" checked={r.enabled !== false} onChange={(e) => update({ enabled: e.target.checked ? undefined : false } as Partial<T>)} aria-label="Row on" /></td>
                   {columns.map((c) => <td key={c.label}>{c.render(r, update)}</td>)}
-                  <td><button type="button" className="mini-btn" onClick={() => onRows(rows.filter((_, j) => j !== i))} aria-label="Delete row"><IconTrash /></button></td>
+                  <td><button type="button" className="cols__icon cols__icon--remove" onClick={() => onRows(rows.filter((_, j) => j !== i))} aria-label="Delete row"><IconRemove /></button></td>
                 </tr>
               );
             })}
@@ -139,10 +139,12 @@ export function RatesTableCard({ ctx }: { ctx: RuleContext }) {
     ) },
     { label: 'Days', render: (r, u) => (r.type === 'days' ? <Cell type="number" value={r.days} onChange={(v) => u({ days: num(v) })} width={64} /> : null) },
     { label: 'Tonnes per m³', render: (r, u) => (r.type === 'rebar' ? <Cell type="number" value={r.tonnesPerM3} onChange={(v) => u({ tonnesPerM3: num(v) })} width={72} /> : null) },
-    { label: 'Quantity', tip: 'Productivity: tonnes of rebar, m³ of concrete, or a number the model carries', render: (r, u) => P(r) ? (
+    { label: 'Quantity', tip: 'Productivity: tonnes of rebar, m³ of concrete, the footprint area (m², a slab\'s deck), the side faces area (m², a wall\'s formwork), or a number the model carries. Areas are measured from the model\'s geometry.', render: (r, u) => P(r) ? (
       <select className="rel-cell" value={r.basis ?? 'rebar'} onChange={(e) => u({ basis: e.target.value as RateRow['basis'] })}>
         <option value="rebar">rebar t</option>
         <option value="concrete">concrete m³</option>
+        <option value="footprint">footprint m²</option>
+        <option value="sides">side faces m²</option>
         <option value="property">model property</option>
       </select>
     ) : null },
@@ -184,6 +186,28 @@ export function RatesTableCard({ ctx }: { ctx: RuleContext }) {
   );
 }
 
+// ---------------------------------------------------------------- Trades
+
+export function TradesTableCard({ ctx }: { ctx: RuleContext }) {
+  const rows = ctx.rules.trades;
+  const set = (next: TradeRow[]) => ctx.change((r) => ({ ...r, trades: next }));
+  const used = (code: string) => ctx.rules.crewTemplates.filter((c) => c.trades.some((x) => x.trade.toUpperCase() === code.toUpperCase())).length;
+  return (
+    <GridCard
+      kind="tradeTable" rows={rows} onRows={set} toTsv={tradesToTsv} parse={parseTradesPaste}
+      keyOf={(r) => r.id.trim().toUpperCase()} blank={(): TradeRow => ({ id: `TR${rows.length + 1}`, name: '', capacity: 0 })}
+      columns={[
+        { label: 'Code', tip: "The trade's code in crews (SF, CP ...)", render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id: id.toUpperCase() })} width={70} /> },
+        { label: 'Name', render: (r, u) => <Cell value={r.name} onChange={(name) => u({ name })} width={200} placeholder="Steel fixers" /> },
+        { label: 'People per day', tip: "The site's capacity of this trade: written to P6 as the resource's max units per time, and the limit the programme is levelled to", render: (r, u) => <Cell type="number" value={r.capacity} onChange={(v) => u({ capacity: num(v) ?? 0 })} width={80} /> },
+        { label: 'Crews', tip: 'How many crews use this trade', render: (r) => <span className="scn-dim">{used(r.id) || ''}</span> },
+      ]}
+      problems={(r) => [...(!r.id.trim() ? ['A code is needed'] : [])]}
+      help="The labour trades the crews are made of. The code is the trade in crews (SF 6, CP 4); the resource in P6 is the project code, -L-, and this code. A trade here replaces the generator's own of the same code; one switched off is taken out."
+    />
+  );
+}
+
 // ---------------------------------------------------------------- Crews
 
 function CrewCell({ row, update }: { row: CrewTemplate; update: (p: Partial<CrewTemplate>) => void }) {
@@ -204,13 +228,20 @@ export function CrewsTableCard({ ctx }: { ctx: RuleContext }) {
   const trades = useTrades();
   const codes = new Set(trades.map((t) => t.code.toUpperCase()));
   const set = (next: CrewTemplate[]) => ctx.change((r) => ({ ...r, crewTemplates: next }));
+  // (the pasted text has the ID and the crew only: a crew that is pasted over keeps its subcontractor and its number of crews)
+  const parseKeeping = (text: string) => parseCrewsPaste(text).map((p) => {
+    const had = rows.find((r) => r.id.trim().toUpperCase() === p.id.trim().toUpperCase());
+    return had ? { ...p, ...(had.subcontractor ? { subcontractor: had.subcontractor } : {}), ...(had.available !== undefined ? { available: had.available } : {}) } : p;
+  });
   return (
     <GridCard
-      kind="crewTable" rows={rows} onRows={set} toTsv={crewsToTsv} parse={parseCrewsPaste}
+      kind="crewTable" rows={rows} onRows={set} toTsv={crewsToTsv} parse={parseKeeping}
       keyOf={(r) => r.id.trim().toUpperCase()} blank={(): CrewTemplate => ({ id: `CREW-${rows.length + 1}`, trades: [] })}
       columns={[
         { label: 'ID', render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id })} width={150} /> },
         { label: 'Crew', tip: 'Trade code and people per day, separated by commas', render: (r, u) => <CrewCell row={r} update={u} /> },
+        { label: 'Subcontractor', tip: 'The company the crew belongs to: it is part of the name of the crew resource in the programme', render: (r, u) => <Cell value={r.subcontractor} onChange={(subcontractor) => u({ subcontractor: subcontractor || undefined })} width={150} placeholder="Concrete Sub" /> },
+        { label: 'Crews available', tip: 'How many crews of this kind there are (the most that can work at once). Empty: not limited. The programme gets a resource for it, with this count as its limit: the Equipment tab of Resources shows the days over it.', render: (r, u) => <Cell type="number" value={r.available} onChange={(v) => u({ available: num(v) })} width={72} /> },
       ]}
       problems={(r) => [
         ...(!r.id.trim() ? ['An ID is needed'] : []),

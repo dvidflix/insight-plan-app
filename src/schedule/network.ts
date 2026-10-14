@@ -1,7 +1,7 @@
 import { addWorkingDays, getCalendar, workingDaysBetween, type ScheduleCalendar, type WorkingCalendar } from './calendar';
 import type { Activity, RelationType, ScheduleModel } from './types';
 
-const HOURS_PER_DAY = 8;
+import { hoursPerDayOf } from './hoursPerDay';
 
 export interface NetworkNode {
   id: string;
@@ -45,8 +45,8 @@ export function buildNetwork(model: ScheduleModel): ScheduleNetwork {
       name: a.name,
       type: a.type,
       status: a.status,
-      durationDays: a.durationHours / HOURS_PER_DAY,
-      remainingDurationDays: a.remainingDurationHours != null ? a.remainingDurationHours / HOURS_PER_DAY : null,
+      durationDays: a.durationHours / hoursPerDayOf(a.calendarId, calendarsById),
+      remainingDurationDays: a.remainingDurationHours != null ? a.remainingDurationHours / hoursPerDayOf(a.calendarId, calendarsById) : null,
       percentComplete: a.percentComplete,
       actualStart: a.actualStart,
       actualFinish: a.actualFinish,
@@ -64,7 +64,7 @@ export function buildNetwork(model: ScheduleModel): ScheduleNetwork {
 
   for (const r of model.relationships) {
     if (!nodes.has(r.predId) || !nodes.has(r.succId)) continue;
-    const lagDays = r.lagHours / HOURS_PER_DAY;
+    const lagDays = r.lagHours / hoursPerDayOf(nodes.get(r.succId)!.calendarId, calendarsById);
     succs.get(r.predId)!.push({ otherId: r.succId, type: r.type, lagDays });
     preds.get(r.succId)!.push({ otherId: r.predId, type: r.type, lagDays });
   }

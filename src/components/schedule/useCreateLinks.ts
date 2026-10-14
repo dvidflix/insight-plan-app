@@ -2,6 +2,7 @@ import type { Relationship, ScheduleModel } from '../../schedule/types';
 import { toRelationships, type ProposedLink } from '../../schedule/generateLinks';
 import { useGeneratedLinksStore } from '../../state/generatedLinksStore';
 import { useScheduleStore, useVisibleSchedules } from '../../state/scheduleStore';
+import { commit } from '../../state/programmeHistory';
 
 /** Adds generated links to the programme (kept in the app) and undoes the last batch. A combined
     view holds several schedules (ids "scheduleId:activityId"): each link goes to its own schedule. */
@@ -26,7 +27,7 @@ export function useCreateLinks(model: ScheduleModel) {
     for (const [id, added] of perSchedule) {
       const schedule = visible.find((v) => v.id === id)!;
       undo.set(id, schedule.relationships);
-      setRelationships(id, [...schedule.relationships, ...added]);
+      commit('Add links', () => setRelationships(id, [...schedule.relationships, ...added]));
       count += added.length;
     }
     setLast({ count, undo, links: links.map((l) => ({ pred: l.pred.code, succ: l.succ.code })) });
@@ -34,7 +35,7 @@ export function useCreateLinks(model: ScheduleModel) {
 
   const revert = () => {
     if (!last) return;
-    for (const [id, rels] of last.undo) setRelationships(id, rels);
+    commit('Undo added links', () => { for (const [id, rels] of last.undo) setRelationships(id, rels); });
     setLast(null);
   };
 

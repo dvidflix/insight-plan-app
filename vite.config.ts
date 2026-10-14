@@ -7,6 +7,7 @@ import { modelsPlugin } from './vite-plugins/modelsPlugin';
 import { appUpdatePlugin } from './vite-plugins/appUpdate';
 import { wikiPlugin } from './vite-plugins/wiki';
 import { idsPlugin } from './vite-plugins/ids';
+import { ifcToolsPlugin } from './vite-plugins/ifcTools';
 import { seatablePlugin } from './vite-plugins/seatablePlugin';
 import { externalPlugin } from './vite-plugins/externalPlugin';
 import { offlineAppPlugin } from './vite-plugins/offlineApp';
@@ -20,6 +21,7 @@ export default defineConfig(({ mode }) => {
     ...(internal ? [appUpdatePlugin()] : []),
     wikiPlugin(),
     idsPlugin(),
+    ifcToolsPlugin(),
     ...(internal ? [seatablePlugin(), externalPlugin()] : []),
     ...(mode === 'web' ? [offlineAppPlugin()] : []),
     projectDbPlugin(),

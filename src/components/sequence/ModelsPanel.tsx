@@ -1,3 +1,4 @@
+import { IconRemove } from '../icons';
 import { useEffect, useState } from 'react';
 import * as THREE from 'three';
 import { useViewerEngine } from '../../viewer/ViewerEngineContext';
@@ -6,6 +7,9 @@ import { useModelPlacementStore, ZERO_OFFSET, type Offset, type Rotation } from 
 import type { ViewPage } from '../../state/viewSettingsStore';
 import { ViewStoreySlide } from '../View3DPanel';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
+import { FEATURES } from '../../features';
+import { writeBackBytes } from '../../ids/writeBack';
+import { runIfcTool } from '../../ifcTools/client';
 
 const fmt = (n: number) => (Math.round(n * 100) / 100).toString();
 
@@ -37,6 +41,8 @@ export function ModelsPanel({ page }: { page: ViewPage }) {
   const [mode, setMode] = useState<'relative' | 'absolute'>('relative');
   const [amount, setAmount] = useState<Offset>(ZERO_OFFSET);
   const [presetId, setPresetId] = useState<string | null>(null);
+  const [applyBusy, setApplyBusy] = useState(false);
+  const [applyMessage, setApplyMessage] = useState<string | null>(null);
   const [turn, setTurn] = useState<Rotation>({ deg: 0, px: 0, py: 0, pz: 0 });
   // Starts collapsed (a new key: it used to start open), then remembered.
   const sections = useOpenSections<'placement'>(`${page}.modelsPanel.sections.v2`, []);
@@ -68,6 +74,23 @@ export function ModelsPanel({ page }: { page: ViewPage }) {
     const c = box.getCenter(new THREE.Vector3());
     const g = engine.globalOffset();
     setTurn({ ...turn, px: Math.round((c.x + g.x) * 1000) / 1000, py: Math.round((-c.z + g.y) * 1000) / 1000, pz: Math.round((box.min.y + g.z) * 1000) / 1000 });
+  };
+  /** Bakes the model's current move and turn into the IFC's object placements (a _FIXED copy that loads in place, with no offset). */
+  const applyPermanently = async () => {
+    const m = models.find((x) => x.name === modelName);
+    if (!m) return;
+    setApplyBusy(true);
+    setApplyMessage(null);
+    try {
+      setApplyMessage(await writeBackBytes(engine, m.modelId, async (file) => {
+        const out = await runIfcTool('translate', { x: current.x, y: current.y, z: current.z, rot: current.rot ?? null }, [file]);
+        return { bytes: out.parts[0].bytes, summary: `moved by X ${fmt(current.x)}, Y ${fmt(current.y)}, Z ${fmt(current.z)} m${current.rot ? `, turned ${fmt(current.rot.deg)}°` : ''}`, log: { operation: 'translate', offset: current } };
+      }, {}, { keepPlacement: false }));
+    } catch (e) {
+      setApplyMessage(e instanceof Error ? e.message : String(e));
+    } finally {
+      setApplyBusy(false);
+    }
   };
   const rotate = () => modelName && setOffset(modelName, { x: current.x, y: current.y, z: current.z, rot: turn.deg ? { ...turn } : undefined });
 
@@ -123,13 +146,25 @@ export function ModelsPanel({ page }: { page: ViewPage }) {
         </div>
         <button type="button" className="btn primary" onClick={translate}>Translate</button>
 
+        {FEATURES.serverFiles && (
+          <>
+            <div className="cols__heading"><span>Save into the IFC</span></div>
+            <div className="mp__row">
+              <button type="button" className="btn btn--small primary" onClick={() => void applyPermanently()} disabled={applyBusy || (!current.x && !current.y && !current.z && !current.rot)} title="Write this model's current move and turn into its IFC placements (IfcOpenShell), as a _FIXED copy that replaces it here. The original file is kept.">
+                {applyBusy ? 'Writing…' : 'Apply changes permanently to IFC'}
+              </button>
+            </div>
+            {applyMessage && <div className="flt__hint">{applyMessage}</div>}
+          </>
+        )}
+
         <div className="cols__heading"><span>Presets</span></div>
         <div className="mp__presets">
           {presets.length === 0 && <div className="flt__hint">No presets. + saves the rotation and translate values above as a preset.</div>}
           {presets.map((p) => (
             <div key={p.id} className={`mp__preset${p.id === presetId ? ' selected' : ''}`} onClick={() => setPresetId(p.id)}>
               {p.rot ? `Rotate ${fmt(p.rot.deg)}° about (${fmt(p.rot.px)}, ${fmt(p.rot.py)}, ${fmt(p.rot.pz)}), then ` : ''}X={fmt(p.x)}, Y={fmt(p.y)}, Z={fmt(p.z)}
-              <button type="button" className="mp__x" title="Remove preset" onClick={(e) => { e.stopPropagation(); removePreset(p.id); if (presetId === p.id) setPresetId(null); }}>{'✕'}</button>
+              <button type="button" className="cols__icon cols__icon--remove" title="Remove preset" onClick={(e) => { e.stopPropagation(); removePreset(p.id); if (presetId === p.id) setPresetId(null); }}><IconRemove /></button>
             </div>
           ))}
         </div>

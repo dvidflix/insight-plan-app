@@ -7,7 +7,8 @@ import { useViewSettingsStore } from '../state/viewSettingsStore';
 import { useSavedViewAttrsStore } from '../state/savedViewAttrsStore';
 import { usePersistedState } from '../utils/persistedState';
 import { InfoTip } from './InfoTip';
-import { IconCameraPhotoAdd, IconFolderNew, IconImage, IconPencil, IconSync, IconTrash } from './icons';
+import { SavedViewAttrsPanel } from './SavedViewAttrsPanel';
+import { IconCameraPhotoAdd, IconFolderNew, IconGear, IconImage, IconPencil, IconSync, IconRemove } from './icons';
 import { RowButtonsChooser, useRowButtons, type RowButtonDef } from './RowButtonsChooser';
 
 const VP_BUTTONS = [
@@ -23,6 +24,44 @@ type VpButton = (typeof VP_BUTTONS)[number]['id'];
 /** The section header's "New viewpoint" / "New folder" buttons ask the list (always mounted) to do it; it reports when it is busy. */
 const useViewpointsUiStore = create<{ newViewpoint: number; newFolder: number; saving: boolean }>(() => ({ newViewpoint: 0, newFolder: 0, saving: false }));
 
+/** The gear in the Viewpoints header: what a new viewpoint saves (Viewpoint attributes), in a menu that closes on a click outside it. */
+function ViewpointAttrsMenu({ rb }: { rb: ReturnType<typeof useRowButtons<VpButton>> }) {
+  const page = useViewSettingsStore((st) => st.activePage);
+  const withTimeline = useSavedViewAttrsStore((st) => st.attrs.timeline);
+  const toggleAttr = useSavedViewAttrsStore((st) => st.toggle);
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!ref.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  return (
+    <span ref={ref} style={{ position: 'relative', display: 'inline-flex' }}>
+      <button type="button" className="mini-btn mini-btn--icon" aria-expanded={open} onClick={() => setOpen(!open)} title="Viewpoint attributes: what a new viewpoint saves" aria-label="Viewpoint attributes">
+        <IconGear width={18} height={18} />
+      </button>
+      {open && (
+        <div style={{ position: 'absolute', top: '110%', right: 0, zIndex: 30, width: 300, background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 10, boxShadow: '0 4px 14px rgba(0,0,0,0.18)' }}>
+          {page === 'sequence' && (
+            <div className="vp__bar" style={{ padding: '0 0 8px' }}>
+              <label className="vp__opt" title="Remember the date the timeline is at, and jump to it when the viewpoint is opened">
+                <input type="checkbox" checked={withTimeline} onChange={() => toggleAttr('timeline')} />
+                Remember timeline date
+              </label>
+            </div>
+          )}
+          <SavedViewAttrsPanel />
+          <RowButtonsChooser buttons={VP_BUTTONS} rb={rb} inline />
+        </div>
+      )}
+    </span>
+  );
+}
+
 /** The icons at the right end of the Viewpoints section's header. */
 export function ViewpointsHeaderActions() {
   const saving = useViewpointsUiStore((s) => s.saving);
@@ -30,7 +69,7 @@ export function ViewpointsHeaderActions() {
   const bump = (k: 'newViewpoint' | 'newFolder') => useViewpointsUiStore.setState((s) => ({ [k]: s[k] + 1 }));
   return (
     <span className="config-section__actions">
-      <RowButtonsChooser buttons={VP_BUTTONS} rb={rb} title="Choose which buttons show on each viewpoint" compact />
+      <ViewpointAttrsMenu rb={rb} />
       <button type="button" className="mini-btn mini-btn--icon" onClick={() => bump('newFolder')} title="New folder" aria-label="New folder">
         <IconFolderNew width={18} height={18} />
       </button>
@@ -50,8 +89,6 @@ export function ViewpointsList({ layout = 'list', actions = false }: { /** cards
   const list = useViewpoints(engine);
   const page = useViewSettingsStore((s) => s.activePage);
   const rb = useRowButtons<VpButton>('viewpoints.hiddenButtons');
-  const withTimeline = useSavedViewAttrsStore((s) => s.attrs.timeline);
-  const toggleAttr = useSavedViewAttrsStore((s) => s.toggle);
   const [busy, setBusy] = useState<string | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -189,7 +226,7 @@ export function ViewpointsList({ layout = 'list', actions = false }: { /** cards
           )}
           {rb.shown('update') && <button type="button" className="vp__icon" title="Update: re-take it from the view as it is now" aria-label="Update" disabled={busy !== null} onClick={() => void run(vp.guid, () => updateViewpoint(engine, vp))}><IconSync /></button>}
           {rb.shown('rename') && <button type="button" className="vp__icon" title="Rename" aria-label="Rename" onClick={() => setEditing(vp.guid)}><IconPencil /></button>}
-          {rb.shown('delete') && <button type="button" className="vp__icon vp__icon--danger" title="Delete" aria-label="Delete" onClick={() => deleteViewpoint(engine, vp)}><IconTrash /></button>}
+          {rb.shown('delete') && <button type="button" className="vp__icon vp__icon--danger" title="Delete" aria-label="Delete" onClick={() => deleteViewpoint(engine, vp)}><IconRemove /></button>}
         </div>
       </div>
     );
@@ -204,7 +241,7 @@ export function ViewpointsList({ layout = 'list', actions = false }: { /** cards
         ) : <span className="vp__folder-name">{label}</span>}<span className="vp__folder-count">{count}</span></button>
         {key && <span className="vp__actions">
           <button type="button" className="vp__icon" title="Rename the folder" aria-label="Rename the folder" onClick={() => setRenamingFolder(key)}><IconPencil /></button>
-          <button type="button" className="vp__icon vp__icon--danger" title="Delete the folder (its viewpoints are kept)" aria-label="Delete the folder" onClick={() => { deleteFolder(key); if (cardFolder === key) setCardFolder(null); }}><IconTrash /></button>
+          <button type="button" className="vp__icon vp__icon--danger" title="Delete the folder (its viewpoints are kept)" aria-label="Delete the folder" onClick={() => { deleteFolder(key); if (cardFolder === key) setCardFolder(null); }}><IconRemove /></button>
         </span>}
       </div>
     );
@@ -214,14 +251,6 @@ export function ViewpointsList({ layout = 'list', actions = false }: { /** cards
           <div className="vp__side-actions"><InfoTip>
           Saves the camera plus what is ticked in Viewpoint attributes (hidden objects, selection, sections, style, display, placement{page === 'sequence' ? ', timeline position' : ''}). Click a viewpoint to open it; the icons update it from the view as it is now, rename it or delete it. Drag a viewpoint onto a folder to file it.
         </InfoTip><ViewpointsHeaderActions /></div>
-          <div className="vp__bar">
-        {page === 'sequence' && (
-          <label className="vp__opt" title="Remember the date the timeline is at, and jump to it when the viewpoint is opened">
-            <input type="checkbox" checked={withTimeline} onChange={() => toggleAttr('timeline')} />
-            Remember timeline date
-          </label>
-        )}
-          </div>
           {nav(null, 'All', list.length)}
           {folders.map((f) => nav(f, f, list.filter((vp) => folderOf(vp) === f).length))}
           {folders.length > 0 && nav('', 'No folder', unfiled.length)}
@@ -237,18 +266,12 @@ export function ViewpointsList({ layout = 'list', actions = false }: { /** cards
 
   return (
     <div className="vp" ref={root}>
-      <div className="vp__bar">
-        {page === 'sequence' && (
-          <label className="vp__opt" title="Remember the date the timeline is at, and jump to it when the viewpoint is opened">
-            <input type="checkbox" checked={withTimeline} onChange={() => toggleAttr('timeline')} />
-            Remember timeline date
-          </label>
-        )}
+      {actions && <div className="vp__bar">
         <InfoTip>
           Saves the camera plus what is ticked in Viewpoint attributes (hidden objects, selection, sections, style, display, placement{page === 'sequence' ? ', timeline position' : ''}). Click a viewpoint to open it; the icons update it from the view as it is now, rename it or delete it. Drag a viewpoint onto a folder to file it.
         </InfoTip>
-        {actions && <><span className="vp__spacer" /><ViewpointsHeaderActions /></>}
-      </div>
+        <span className="vp__spacer" /><ViewpointsHeaderActions />
+      </div>}
       {error && <div className="flt__hint" style={{ color: 'var(--danger)' }}>{error}</div>}
       {list.length === 0 && folders.length === 0 ? (
         <div className="flt__hint">No viewpoints yet. Set the view up, then press New viewpoint.</div>
@@ -279,7 +302,7 @@ export function ViewpointsList({ layout = 'list', actions = false }: { /** cards
                   </button>
                   <div className="vp__actions">
                     <button type="button" className="vp__icon" title="Rename the folder" aria-label="Rename the folder" onClick={() => setRenamingFolder(f)}><IconPencil /></button>
-                    <button type="button" className="vp__icon vp__icon--danger" title="Delete the folder (its viewpoints are kept)" aria-label="Delete the folder" onClick={() => deleteFolder(f)}><IconTrash /></button>
+                    <button type="button" className="vp__icon vp__icon--danger" title="Delete the folder (its viewpoints are kept)" aria-label="Delete the folder" onClick={() => deleteFolder(f)}><IconRemove /></button>
                   </div>
                 </div>
                 {open && inside.map(renderRow)}

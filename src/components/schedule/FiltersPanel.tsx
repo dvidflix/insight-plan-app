@@ -10,6 +10,9 @@ import { SearchRow } from '../SearchRow';
 import { useCalcFilterFields } from '../../schedule/calculatedColumns';
 import { queryMatcher } from '../../schedule/search';
 import { IconExpander } from '../icons';
+import { PresetBar } from './PresetBar';
+import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
+import { deserializeFilters, serializeFilters, type SerializedFilters } from '../../state/scheduleLayoutsStore';
 
 type SetState = (next: FieldFilterState | ((prev: FieldFilterState) => FieldFilterState)) => void;
 
@@ -118,6 +121,7 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
       : { ...prev, ranges: { ...prev.ranges, [qf.fieldId]: { ...qf.range! } } });
   };
   const quick = QUICK.filter((qf) => visibleFields.some((f) => f.id === qf.fieldId));
+  const saved = useUserPresetsStore((st) => st.presets).filter((p) => p.kind === 'filters');
 
   return (
     <div className="cols flt flt--groups">
@@ -138,6 +142,18 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
           ))}
         </div>
       )}
+
+      <PresetBar
+        noun="filter"
+        items={saved.map((p) => ({ id: p.id, label: p.name, user: true }))}
+        saveDisabled={activeFields.length === 0}
+        onApply={(id) => {
+          const kept = saved.find((p) => p.id === id)?.data as SerializedFilters | undefined;
+          if (kept) onChange(deserializeFilters(kept));
+        }}
+        onSave={(name) => saveUserPreset('filters', name, serializeFilters(state))}
+        onDelete={removeUserPreset}
+      />
 
       {activeFields.length > 0 && (
         <>

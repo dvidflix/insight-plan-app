@@ -139,7 +139,7 @@ def _pours(req, session, input_path: Path, scenario_dir: Path):
             str(rec.get("building_zone", "") or ""),
             "Yes" if str(rec.get("include", "NO")).upper() == "YES" else "No",
         ])
-    phases = sorted({c["phase"] for c in _config.DEFAULT_CHAIN + _config.DEFAULT_PRECAST_CHAIN})
+    phases = sorted({c["phase"] for c in _config.DEFAULT_CHAIN + _config.DEFAULT_PRECAST_CHAIN + _config.DEFAULT_HEAVY_PRECAST_CHAIN})
     session["pours"] = {
         "headers": headers,
         "rows": rows,

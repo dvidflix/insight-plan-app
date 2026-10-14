@@ -1,3 +1,4 @@
+import { IconRemove } from './icons';
 import { useEffect, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useFlythroughStore } from '../state/flythroughStore';
@@ -98,7 +99,7 @@ export function FlythroughPanel() {
               <button type="button" className="fly__icon" title="Move up" disabled={i === 0} onClick={() => move(i, -1)}>↑</button>
               <button type="button" className="fly__icon" title="Move down" disabled={i === keys.length - 1} onClick={() => move(i, 1)}>↓</button>
               <button type="button" className="fly__icon" title="Replace with the current view" onClick={() => replace(i)}>⟳</button>
-              <button type="button" className="fly__icon" title="Remove" onClick={() => remove(i)}>✕</button>
+              <button type="button" className="fly__icon" title="Remove" onClick={() => remove(i)}><IconRemove /></button>
             </li>
           ))}
         </ol>

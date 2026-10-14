@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { useProjectDbStore } from '../state/projectDbStore';
 import { useWebFolderStore } from './folderStore';
+import { FREE_MODE } from '../licence/freeMode';
 import { WebFolderChooser } from '../components/ProjectDbPanel';
 
 /** The browser edition starts here until a project folder is open, so work is never kept only in memory by accident.
@@ -9,7 +10,7 @@ export function ProjectGate({ children }: { children: ReactNode }) {
   const root = useProjectDbStore((s) => s.root);
   const remembered = useWebFolderStore((s) => s.remembered);
   const [withoutSaving, setWithoutSaving] = useState(false);
-  if (root || withoutSaving) return <>{children}</>;
+  if (FREE_MODE || root || withoutSaving) return <>{children}</>;
   return (
     <main style={{ maxWidth: 560, margin: '12vh auto', padding: '0 16px', fontFamily: 'system-ui, sans-serif' }}>
       <h1 style={{ fontSize: 22 }}>Open your project</h1>

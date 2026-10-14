@@ -88,7 +88,7 @@ export function serializeOverlay(o: RulesOverlay, title: string): string {
     .map((x) => `    <chain${x.enabled === false ? ' enabled="false"' : ''}${a('note', x.note)} group="${esc(x.group)}" order="${esc(x.order)}" phase="${esc(x.phase)}"${a('suffix', x.suffix)}${a('label', x.label)}${a('material', x.material)}${a('follows', x.follows)}${x.finishAfter ? ' finishAfter="true"' : ''}${x.gates ? ' gates="true"' : ''}${a('priority', x.priority)}/>`)
     .join('\n');
   const levelLinks = rules.levelLinks
-    .map((l) => `    <levelLink ${rowHead(l)}${a('name', l.name)} activities="${esc(l.activities)}"${a('select', l.select)} tasks="${esc(l.tasks.join(' '))}"${a('type', l.type)}${a('lagHours', l.lagHours)}${a('direction', l.direction)}/>`)
+    .map((l) => `    <levelLink ${rowHead(l)}${a('name', l.name)} activities="${esc(l.activities)}"${a('select', l.select)}${a('pours', l.pours)} tasks="${esc(l.tasks.join(' '))}"${a('type', l.type)}${a('lagHours', l.lagHours)}${a('direction', l.direction)}/>`)
     .join('\n');
 
   const rates = [durations && `    <durations>\n${durations}\n    </durations>`, productivity && `    <productivity>\n${productivity}\n    </productivity>`, rebar && `    <rebar>\n${rebar}\n    </rebar>`, crewRules && `    <crewRules>\n${crewRules}\n    </crewRules>`].filter(Boolean).join('\n');
@@ -155,7 +155,7 @@ function readRules(doc: Document): ScenarioRules {
     ...readRow(r),
     when: readWhen(r, 'when'),
     phase: attr(r, 'phase'),
-    basis: (['concrete', 'property'].includes(attr(r, 'basis')) ? attr(r, 'basis') : 'rebar') as ProductivityRow['basis'],
+    basis: (['concrete', 'footprint', 'sides', 'property'].includes(attr(r, 'basis')) ? attr(r, 'basis') : 'rebar') as ProductivityRow['basis'],
     ...(attr(r, 'basis') === 'property'
       ? {
           ...(attr(r, 'pset') ? { pset: attr(r, 'pset') } : {}),
@@ -217,6 +217,7 @@ function readRules(doc: Document): ScenarioRules {
     ...(attr(l, 'name') ? { name: attr(l, 'name') } : {}),
     activities: (['extras', 'open', 'select'].includes(attr(l, 'activities')) ? attr(l, 'activities') : 'extras') as LevelLink['activities'],
     ...(attr(l, 'select') ? { select: attr(l, 'select') } : {}),
+    ...(attr(l, 'pours') ? { pours: attr(l, 'pours') } : {}),
     tasks: words(attr(l, 'tasks')),
     ...(relType(attr(l, 'type')) ? { type: relType(attr(l, 'type')) } : {}),
     ...(has(l, 'lagHours') ? { lagHours: num(l, 'lagHours') } : {}),

@@ -3,7 +3,7 @@ import { groupInstances, previewSequence } from '../../../prs/match';
 import { FAMILIES } from '../../../prs/rules';
 import { FILTER_OPS, freshId, type GroupFilter, type FilterOp, type LevelLink, type LevelTask, type RelType, type RuleGroup, type RuleSequence } from '../../../prs/rules';
 import { CellPick } from '../../CellPick';
-import { IconSectionChevron } from '../../icons';
+import { IconSectionChevron, IconRemove } from '../../icons';
 import { Field, NumberInput, RuleCard, type RuleContext } from './RuleParts';
 
 /** Rule types Group, Level task, Sequence and Level link (rows of the Rules list). Groups are named selections of objects that
@@ -63,7 +63,7 @@ function GroupFilters({ ctx, filters, onChange }: { ctx: RuleContext; filters: G
                   <button type="button" className={`tags__chip${c.caseSensitive ? ' active' : ''}`} aria-pressed={!!c.caseSensitive} title="Case-sensitive (for model properties)" onClick={() => set(c.id, { caseSensitive: !c.caseSensitive || undefined })}>Aa</button>
                   <button type="button" className={`tags__chip${c.ignore ? ' active' : ''}`} aria-pressed={!!c.ignore} title="Ignore this condition" onClick={() => set(c.id, { ignore: !c.ignore || undefined })}>Ign</button>
                 </span>
-                <button type="button" className="ge-x" title="Remove" aria-label="Remove" onClick={() => onChange(filters.filter((x) => x.id !== c.id))}>{'✕'}</button>
+                <button type="button" className="cols__icon cols__icon--remove" title="Remove" aria-label="Remove" onClick={() => onChange(filters.filter((x) => x.id !== c.id))}><IconRemove /></button>
               </div>
             ))}
             {counted === 0 && <div className="ge-none">No condition with a value: the group holds no objects{filters.length === 0 ? '' : ' yet'}.</div>}
@@ -279,7 +279,7 @@ export function SequenceRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
             </label>
             <button type="button" className="mini-btn" onClick={() => moveStep(k, -1)} disabled={k === 0} aria-label="Move step up">↑</button>
             <button type="button" className="mini-btn" onClick={() => moveStep(k, 1)} disabled={k === s.steps.length - 1} aria-label="Move step down">↓</button>
-            <button type="button" className="mini-btn danger" onClick={() => update({ steps: s.steps.filter((_, j) => j !== k) })} aria-label="Remove step">✕</button>
+            <button type="button" className="cols__icon cols__icon--remove" onClick={() => update({ steps: s.steps.filter((_, j) => j !== k) })} aria-label="Remove step"><IconRemove /></button>
           </div>
         ))}
         <button type="button" className="mini-btn" onClick={() => update({ steps: [...s.steps, { group: rules.groups[0]?.id ?? '' }] })}>+ step</button>
@@ -334,6 +334,11 @@ export function LevelLinkRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
             <input value={l.select ?? ''} onChange={(e) => update({ select: e.target.value })} placeholder="select:{family=column; phase=Concrete}" spellCheck={false} />
           </Field>
         )}
+        {l.activities === 'extras' && (
+          <Field label="To the pours (optional)" wide>
+            <input value={l.pours ?? ''} onChange={(e) => update({ pours: e.target.value || undefined })} placeholder="select:{type=SLAB; phase=Concrete}" spellCheck={false} />
+          </Field>
+        )}
         <Field label="Link">
           <select value={l.type ?? 'FF'} onChange={(e) => update({ type: e.target.value as RelType })}>
             {REL_TYPES.map((t) => <option key={t} value={t}>{REL_LABEL[t]}</option>)}
@@ -341,14 +346,14 @@ export function LevelLinkRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
         </Field>
         <Field label="Direction">
           <select value={l.direction ?? 'toTask'} onChange={(e) => update({ direction: e.target.value as LevelLink['direction'] })}>
-            <option value="toTask">activity → level task</option>
-            <option value="fromTask">level task → activity</option>
+            <option value="toTask">{l.pours ? 'activity → pour' : 'activity → level task'}</option>
+            <option value="fromTask">{l.pours ? 'pour → activity' : 'level task → activity'}</option>
           </select>
         </Field>
         <Field label="Lag (hours)"><NumberInput value={l.lagHours ?? 0} min={-9999} onChange={(v) => update({ lagHours: num(v) })} /></Field>
       </div>
       <div className="rule-when">
-        <span className="rule-when__label">To the level tasks</span>
+        <span className="rule-when__label">{l.pours ? 'Only extras tagged with' : 'To the level tasks'}</span>
 <div className="rule-when__items">
         {rules.levelTasks.map((t) => {
           const on = l.tasks.includes(t.id);
@@ -361,7 +366,7 @@ export function LevelLinkRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
         })}
 </div>
       </div>
-      <div className="scn-dim scn-editor__help">Ties activities to the level tasks of their own building and level. <strong>Extra activities</strong> need a building and level. <strong>Open-ended activities</strong> are the ones left with no successor; linking them here takes the place of their close-out link. Finish → Finish to a level task means the task finishes with the activity.</div>
+      <div className="scn-dim scn-editor__help">Ties activities to the level tasks of their own building and level. With <strong>To the pours</strong> filled in, an extra is tied to those pours of its own building and level instead (for example <code>select:{'{'}type=SLAB; phase=Concrete{'}'}</code>: the Concrete of the slabs; add a second link, with Start → Start, for both). <strong>Extra activities</strong> need a building and level. <strong>Open-ended activities</strong> are the ones left with no successor; linking them here takes the place of their close-out link. Finish → Finish to a level task means the task finishes with the activity.</div>
     </RuleCard>
   );
 }

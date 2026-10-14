@@ -58,6 +58,8 @@ export interface RecipeTask {
   /** Where the task sits in the graph editor (not used by the generator); empty: where Auto Layout puts it. */
   x?: number;
   y?: number;
+  /** The width of its card in the graph editor; empty: fitted to what it shows. */
+  w?: number;
 }
 
 /** `to` starts when `from` is `sharePct` done (100 when empty: finished). A task with no edge into it follows the task before it, finished. */
@@ -65,6 +67,9 @@ export interface RecipeEdge {
   from: string;
   to: string;
   sharePct?: number;
+  /** An explicit link type, with a lag in hours (negative: an overlap). Without them: finish-to-start, or start-to-start at `sharePct`. Several edges may join the same two tasks (SS and FS). */
+  type?: 'FS' | 'SS' | 'FF' | 'SF';
+  lagHours?: number;
 }
 
 export interface Recipe {
@@ -79,6 +84,12 @@ export interface Recipe {
   chain?: boolean;
   tasks: RecipeTask[];
   edges?: RecipeEdge[];
+  /** Where the "Previous Elements" and "Next Elements" boxes sit in the graph editor; empty: where Auto Layout puts them. */
+  startAt?: { x: number; y: number };
+  endAt?: { x: number; y: number };
+  /** The widths of those two boxes. */
+  startW?: number;
+  endW?: number;
   enabled?: boolean;
   note?: string;
 }
@@ -115,7 +126,11 @@ const rowId = (group: string, phase: string) => `${group}|${phase}`.toUpperCase(
 export function followsText(recipe: Pick<Recipe, 'edges'>, phase: string): string {
   return (recipe.edges ?? [])
     .filter((e) => upper(e.to) === upper(phase))
-    .map((e) => (e.sharePct !== undefined && e.sharePct < 100 ? `${e.from}@${e.sharePct}` : e.from))
+    .map((e) => {
+      const lag = e.lagHours ?? 0;
+      if ((e.type && e.type !== 'FS') || lag) return `${e.from}:${e.type ?? 'FS'}${lag < 0 ? '-' : '+'}${Math.abs(lag)}`; // "Rebar:SS+16": start-to-start, 16 hours later
+      return e.sharePct !== undefined && e.sharePct < 100 ? `${e.from}@${e.sharePct}` : e.from;
+    })
     .join(', ');
 }
 
@@ -123,6 +138,12 @@ export function followsText(recipe: Pick<Recipe, 'edges'>, phase: string): strin
 export function edgesFromFollows(follows: string | undefined, to: string): RecipeEdge[] {
   const out: RecipeEdge[] = [];
   for (const part of String(follows ?? '').replace(/;/g, ',').split(',')) {
+    const explicit = /^(.*?)\s*:\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*h?$/i.exec(part.trim());
+    if (explicit && explicit[1].trim()) {
+      const lag = Number((explicit[3] ?? '0').replace(/\s/g, ''));
+      out.push({ from: explicit[1].trim(), to, type: explicit[2].toUpperCase() as RecipeEdge['type'], ...(lag ? { lagHours: lag } : {}) });
+      continue;
+    }
     const [name, pct] = part.split('@');
     if (!name.trim()) continue;
     const n = pct === undefined ? NaN : Number(pct.trim().replace(/%$/, ''));
@@ -284,4 +305,71 @@ export function recipeLosses(rules: Pick<ScenarioRules, 'chains' | 'assignments'
   compare('Chains', rules.chains, back.chains, true);
   compare('Assignments', rules.assignments, back.assignments, false);
   return out;
+}
+
+// ---------------------------------------------------------------- the tasks of a recipe as text for a spreadsheet and back
+
+export const TASK_HEAD = ['Phase', 'Name', 'Suffix', 'Material', 'Follows', 'Days', 'Rate', 'Rebar rate', 'Crew', 'Calendar', 'Equipment', 'Cranes', 'Materials', 'Priority', 'Finish after', 'Gates'];
+
+const out = (v: unknown) => (v === undefined || v === null ? '' : String(v));
+const yes = (v: string) => /^(y|true|1|x)/i.test(v.trim());
+const number = (v: string): number | undefined => {
+  const t = v.trim().replace(',', '.');
+  return t === '' || !Number.isFinite(Number(t)) ? undefined : Number(t);
+};
+
+/** The tasks of a recipe, one row each, with the columns of TASK_HEAD (what a task follows as text: "Decking@80, Under Slab"). */
+export function tasksToTsv(recipe: Pick<Recipe, 'tasks' | 'edges'>): string {
+  return [
+    TASK_HEAD.join('\t'),
+    ...recipe.tasks.map((t) =>
+      [t.phase, out(t.name), out(t.suffix), out(t.material), followsText(recipe, t.phase), out(t.days), out(t.rate), out(t.density), out(t.crew), out(t.calendar), usesText(t.equipment), usesText(t.cranes), usesText(t.materials), out(t.priority), t.finishAfter ? 'yes' : '', t.gates ? 'yes' : ''].join('\t'),
+    ),
+  ].join('\n');
+}
+
+/** Rows pasted from a spreadsheet (tab separated; ";" when a line has no tab; a first row of headings is skipped) as tasks and the links between them. */
+export function parseTasksPaste(text: string): { tasks: RecipeTask[]; edges: RecipeEdge[] } {
+  const tasks: RecipeTask[] = [];
+  const edges: RecipeEdge[] = [];
+  for (const line of text.split(/\r?\n/)) {
+    if (line.trim() === '') continue;
+    const c = (line.includes('\t') ? line.split('\t') : line.split(';')).map((x) => x.trim());
+    if (!c[0] || /^phase$/i.test(c[0])) continue;
+    const t: RecipeTask = { phase: c[0] };
+    if (c[1]) t.name = c[1];
+    if (c[2]) t.suffix = c[2];
+    if (/^reb/i.test(c[3] ?? '')) t.material = 'rebar';
+    else if (/^conc/i.test(c[3] ?? '')) t.material = 'concrete';
+    if (number(c[5] ?? '') !== undefined) t.days = number(c[5]!);
+    if (c[6]) t.rate = c[6];
+    if (c[7]) t.density = c[7];
+    if (c[8]) t.crew = c[8];
+    if (c[9]) t.calendar = c[9];
+    for (const [i, key] of [[10, 'equipment'], [11, 'cranes'], [12, 'materials']] as const) {
+      const list = parseUses(c[i] ?? '');
+      if (list.length) t[key] = list;
+    }
+    if (number(c[13] ?? '') !== undefined) t.priority = number(c[13]!);
+    if (yes(c[14] ?? '')) t.finishAfter = true;
+    if (yes(c[15] ?? '')) t.gates = true;
+    tasks.push(t);
+    edges.push(...edgesFromFollows(c[4], c[0]));
+  }
+  return { tasks, edges };
+}
+
+/** Pasted tasks put into a recipe: the same phase is replaced (keeping its place in the graph and its links to other recipes), the others are added;
+    or, with `replaceAll`, the recipe has exactly the pasted tasks. The links into a pasted task are the pasted ones. */
+export function applyTasksPaste(recipe: Recipe, pasted: { tasks: RecipeTask[]; edges: RecipeEdge[] }, replaceAll: boolean): Recipe {
+  if (replaceAll) return { ...recipe, tasks: pasted.tasks, edges: pasted.edges.length ? pasted.edges : undefined };
+  const phases = new Set(pasted.tasks.map((t) => t.phase.trim().toUpperCase()));
+  const had = new Map(recipe.tasks.map((t) => [t.phase.trim().toUpperCase(), t]));
+  const tasks = recipe.tasks.map((t) => {
+    const p = pasted.tasks.find((x) => x.phase.trim().toUpperCase() === t.phase.trim().toUpperCase());
+    return p ? { ...p, ...(t.x !== undefined ? { x: t.x, y: t.y } : {}), ...(t.w ? { w: t.w } : {}), ...(t.links ? { links: t.links } : {}), ...(t.enabled === false ? { enabled: false } : {}), ...(t.note ? { note: t.note } : {}) } : t;
+  });
+  for (const p of pasted.tasks) if (!had.has(p.phase.trim().toUpperCase())) tasks.push(p);
+  const edges = [...(recipe.edges ?? []).filter((e) => !phases.has(e.to.trim().toUpperCase())), ...pasted.edges];
+  return { ...recipe, tasks, edges: edges.length ? edges : undefined };
 }

@@ -5,9 +5,7 @@ import { validateRules } from '../../prs/match';
 import { addRebarRate } from '../../prs/convert';
 import { RuleList } from './rules/RuleList';
 import { RulePresets } from './rules/RulePresets';
-import { RecipesEditor } from './rules/RecipesEditor';
-import { usePersistedState } from '../../utils/persistedState';
-import { SECTION_KIND, type RuleKind } from './rules/kinds';
+import { GENERATOR_KINDS, SECTION_KIND, type RuleKind } from './rules/kinds';
 
 /** Scenario panel > Rules: everything a scenario adds to the generator's own programme, in one list of rules (extra activities, manual
     links, crews, rates, settings, groups, level tasks, sequences, level links, contact links), each with its type. Saved with the
@@ -23,8 +21,6 @@ export function ScenarioRulesEditor() {
   const problems = useMemo(() => validateRules(rules, extras.map((e) => e.TaskID)), [rules, extras]);
 
   const [focus, setFocus] = useState<{ kind: RuleKind; id: string; n: number } | null>(null);
-  const [tab, setTab] = usePersistedState<'rules' | 'recipes'>('scenarios.rulesTab', 'rules');
-  const recipeCount = rules.recipes.length;
 
   return (
     <div className="scn-rules">
@@ -45,7 +41,7 @@ export function ScenarioRulesEditor() {
         <ul className="scn-rules__problems">
           {problems.map((p, i) => (
             <li key={i}>
-              <button type="button" className="link-btn" onClick={() => setFocus({ kind: SECTION_KIND[p.section] ?? 'duration', id: p.id, n: Date.now() })}>{p.id || p.section}</button> {p.text}
+              <button type="button" className="link-btn" onClick={() => setFocus({ kind: SECTION_KIND[p.section] ?? 'group', id: p.id, n: Date.now() })}>{p.id || p.section}</button> {p.text}
               {p.fix === 'rebarRate' && (
                 <button type="button" className="btn btn--small primary" style={{ marginLeft: 8 }} title="Adds a Rebar rate of 0.25 t per m³ of concrete (change it in Rates) and puts it on the Rebar phase of every object"
                   onClick={() => { setRules(addRebarRate(useScenarioStore.getState().rules)); setNote({ ok: true, text: 'Added the rebar rate REBAR-0.25 (0.25 t per m³) to the Rates and to the Rebar phase of every object. Save, then Update 4D.' }); }}>Fix: add rebar rate 0.25 t/m³</button>
@@ -54,18 +50,8 @@ export function ScenarioRulesEditor() {
           ))}
         </ul>
       )}
-      <div className="scn-rules__tabs" role="tablist">
-        <button type="button" role="tab" aria-selected={tab === 'rules'} className={tab === 'rules' ? 'is-active' : ''} onClick={() => setTab('rules')}>Rules</button>
-        <button type="button" role="tab" aria-selected={tab === 'recipes'} className={tab === 'recipes' ? 'is-active' : ''} onClick={() => setTab('recipes')} title="How each kind of object is built: tasks, days, crews, links">Recipes{recipeCount ? ` (${recipeCount})` : ''}</button>
-      </div>
-      {tab === 'recipes' ? (
-        <RecipesEditor />
-      ) : (
-        <>
-          <RulePresets />
-          <RuleList focus={focus} />
-        </>
-      )}
+      <RulePresets />
+      <RuleList focus={focus} only={GENERATOR_KINDS} storeKey="scenarios.generatorKinds" />
     </div>
   );
 }

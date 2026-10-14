@@ -1,9 +1,11 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { ScheduleModel } from '../../schedule/types';
 import { aggregate, bucketsOf, buildLoading, dateOfDay, dayIndex, type Metric, type Period, type ResourceLoading } from '../../schedule/resourceLoading';
 import { applyVirtualResources, virtualCatalog } from '../../schedule/virtualResources';
 import { useTradeCapacityStore } from '../../state/tradeCapacityStore';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
+import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../../state/timelineSettingsStore';
+import { registerTimelineScroller, syncTimelineScroll, useTimelineSpanStore } from '../../state/timelineSpanStore';
 import { usePersistedState } from '../../utils/persistedState';
 import { OTHER_COLOR, SERIES_COLORS, fmtNum } from '../schedule/ResourceCharts';
 
@@ -16,11 +18,13 @@ const PERIODS: { id: Period; label: string }[] = [
   { id: 'day', label: 'Day' },
   { id: 'week', label: 'Week' },
   { id: 'month', label: 'Month' },
+  { id: 'year', label: 'Year' },
 ];
 /** "Rebar (t)" -> "t"; no unit -> "". */
 const unitOf = (name: string) => /\(([^)]+)\)\s*$/.exec(name)?.[1] ?? '';
 const HEIGHT = 190;
-const PAD = { left: 40, right: 8, top: 10, bottom: 18 };
+const PAD = { left: 0, right: 0, top: 10, bottom: 18 };
+const AXIS_W = 40; // the value labels at the left edge, which stay put while the chart scrolls
 const fmtDate = (d: Date) => d.toLocaleDateString(undefined, { day: 'numeric', month: 'short', year: 'numeric' });
 
 /** Planned and current loading on one day 0, so their periods line up. */
@@ -47,6 +51,11 @@ export function SequenceResources({ model }: { model: ScheduleModel }) {
   const capOverrides = useTradeCapacityStore((s) => s.capacities);
   const { current, planned } = useMemo(() => loadings(model), [model]);
   const dayCount = Math.max(current.dayCount, planned.dayCount);
+  const lastFinish = useMemo(() => {
+    let last: Date | null = null;
+    for (const a of model.activities) { const f = a.earlyFinish ?? a.targetFinish; if (f && (!last || f > last)) last = f; }
+    return last;
+  }, [model]);
 
   const labour = useMemo(() => {
     const seen = new Map<string, number | null>();
@@ -93,16 +102,47 @@ export function SequenceResources({ model }: { model: ScheduleModel }) {
     }));
   }, [isMat, materials, current, planned, dayCount, buckets]);
 
-  // The chart's width follows its panel.
+  // The chart is the 4D timeline bar's twin: the same dates along its width, the same zoom, scrolled together with it.
+  const zoom = useTimelineSettingsStore((st) => st.zoom);
+  const spanMin = useTimelineSpanStore((st) => st.min);
+  const spanMax = useTimelineSpanStore((st) => st.max);
+  const t0 = spanMin ?? current.origin.getTime();
+  const t1 = spanMax !== null && spanMax > t0 ? spanMax : dateOfDay(current.origin, dayCount).getTime();
   const host = useRef<HTMLDivElement>(null);
-  const [width, setWidth] = useState(480);
+  const scroller = useRef<HTMLDivElement>(null);
+  const [viewW, setViewW] = useState(480);
   useEffect(() => {
     const el = host.current;
     if (!el) return;
-    const ro = new ResizeObserver(() => setWidth(Math.max(240, el.clientWidth)));
+    const ro = new ResizeObserver(() => setViewW(Math.max(240, el.clientWidth)));
     ro.observe(el);
-    setWidth(Math.max(240, el.clientWidth));
+    setViewW(Math.max(240, el.clientWidth));
     return () => ro.disconnect();
+  }, []);
+  const width = Math.round(viewW * zoom);
+  useEffect(() => {
+    const el = scroller.current;
+    return el ? registerTimelineScroller(el) : undefined;
+  }, []);
+  useLayoutEffect(() => {
+    if (scroller.current) syncTimelineScroll(scroller.current);
+  }, [width]);
+  // Ctrl + wheel zooms the timeline (and so this chart) around the pointer, as it does on the bar.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      e.preventDefault();
+      const store = useTimelineSettingsStore.getState();
+      const next = Math.min(MAX_TIMELINE_ZOOM, Math.max(1, store.zoom * (e.deltaY < 0 ? 1.25 : 0.8)));
+      const x = e.clientX - el.getBoundingClientRect().left;
+      const frac = (el.scrollLeft + x) / el.scrollWidth;
+      store.patch({ zoom: Math.round(next * 100) / 100 });
+      requestAnimationFrame(() => { el.scrollLeft = Math.max(0, frac * el.scrollWidth - x); });
+    };
+    el.addEventListener('wheel', onWheel, { passive: false });
+    return () => el.removeEventListener('wheel', onWheel);
   }, []);
 
   const n = buckets.length;
@@ -110,18 +150,21 @@ export function SequenceResources({ model }: { model: ScheduleModel }) {
   const plotH = HEIGHT - PAD.top - PAD.bottom;
   const max = Math.max(1e-9, ...cur.map((f) => f.total), ...plan.map((f) => f.total), shownMetric === 'hours' || isMat ? 0 : capTotal);
   const yMax = niceMax(max);
-  const x0 = (i: number) => PAD.left + (i / Math.max(n, 1)) * plotW;
-  const bw = Math.max(1, plotW / Math.max(n, 1) - (n > 120 ? 0 : 1));
+  const xOf = (ms: number) => PAD.left + Math.min(1, Math.max(0, (ms - t0) / (t1 - t0))) * plotW;
+  const bx = (i: number) => xOf(dateOfDay(current.origin, buckets[i].from).getTime());
+  const bEnd = (i: number) => xOf(dateOfDay(current.origin, buckets[i].to + 1).getTime());
+  const bw = (i: number) => Math.max(1, bEnd(i) - bx(i) - (n > 120 ? 0 : 1));
   const y = (v: number) => PAD.top + plotH - (v / yMax) * plotH;
 
   // Where the timeline sits.
   const today = date === null ? -1 : dayIndex(current.origin, new Date(date));
   const at = buckets.findIndex((b) => today >= b.from && today <= b.to);
-  const cursorX = at >= 0 ? x0(at) + bw / 2 : null;
+  const cursorX = date === null ? null : xOf(date);
   const setFromX = (clientX: number, svg: SVGSVGElement) => {
     const rect = svg.getBoundingClientRect();
-    const i = Math.min(n - 1, Math.max(0, Math.floor(((clientX - rect.left - PAD.left) / plotW) * n)));
-    const b = buckets[i];
+    const ms = t0 + Math.min(1, Math.max(0, (clientX - rect.left - PAD.left) / plotW)) * (t1 - t0);
+    const picked = dayIndex(current.origin, new Date(ms));
+    const b = buckets.find((k) => picked >= k.from && picked <= k.to);
     if (!b) return;
     const day = Math.min(Math.max(b.from, 0), dayCount - 1);
     useSequenceTimelineStore.getState().setPlaying(false);
@@ -161,9 +204,14 @@ export function SequenceResources({ model }: { model: ScheduleModel }) {
           : <select value={metric} onChange={(e) => setMetric(e.target.value as Metric)} aria-label="Measure">{METRICS.map((m) => <option key={m.id} value={m.id}>{m.label}</option>)}</select>}
         <select value={period} onChange={(e) => setPeriod(e.target.value as Period)} aria-label="Period">{PERIODS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}</select>
         <span className="seqres__legend"><i className="seqres__key seqres__key--plan" /> Planned (target dates)</span>
+        <span className="seqres__legend" title="The programme this chart is built from: its name, its place in the project database and the date its last activity finishes">{model.sourceFileName}{model.dbProgrammeId !== undefined ? ` (#${model.dbProgrammeId})` : ''} · {model.activities.length} activities · ends {lastFinish ? fmtDate(lastFinish) : '—'}</span>
         {capTotal > 0 && shownMetric !== 'hours' && <span className="seqres__legend"><i className="seqres__key seqres__key--cap" /> Capacity</span>}
       </div>
       <div className="seqres__chart" ref={host}>
+        <div className="seqres__yaxis" style={{ width: AXIS_W, height: HEIGHT }} aria-hidden="true">
+          {yTicks.map((v) => <span key={v} style={{ top: y(v) - 7 }}>{fmtNum(v)}</span>)}
+        </div>
+        <div className="seqres__scroll" ref={scroller} style={{ overflowX: zoom > 1 ? 'auto' : 'hidden' }}>
         <svg
           width={width}
           height={HEIGHT}
@@ -177,7 +225,6 @@ export function SequenceResources({ model }: { model: ScheduleModel }) {
           {yTicks.map((v) => (
             <g key={v}>
               <line x1={PAD.left} x2={width - PAD.right} y1={y(v)} y2={y(v)} stroke="var(--border)" strokeWidth={1} />
-              <text x={PAD.left - 5} y={y(v) + 3} textAnchor="end" fontSize={10} fill="var(--text-dim)">{fmtNum(v)}</text>
             </g>
           ))}
           {buckets.map((b, i) => {
@@ -190,16 +237,17 @@ export function SequenceResources({ model }: { model: ScheduleModel }) {
                   const top = y(acc + v);
                   const h = y(acc) - top;
                   acc += v;
-                  return <rect key={t} x={x0(i)} y={top} width={bw} height={Math.max(0, h)} fill={colorOf(t)} opacity={at === i ? 1 : 0.82} />;
+                  return <rect key={t} x={bx(i)} y={top} width={bw(i)} height={Math.max(0, h)} fill={colorOf(t)} opacity={at === i ? 1 : 0.82} />;
                 })}
-                {i % step === 0 && <text x={x0(i)} y={HEIGHT - 4} fontSize={10} fill="var(--text-dim)">{b.label}</text>}
+                {i % step === 0 && <text x={bx(i) + 2} y={HEIGHT - 4} fontSize={10} fill="var(--text-dim)">{b.label}</text>}
               </g>
             );
           })}
-          <polyline fill="none" stroke="#202426" strokeWidth={1.5} strokeDasharray="4 3" points={plan.map((f, i) => `${x0(i) + bw / 2},${y(f.total)}`).join(' ')} />
+          <polyline fill="none" stroke="#202426" strokeWidth={1.5} strokeDasharray="4 3" points={plan.map((f, i) => `${bx(i) + bw(i) / 2},${y(f.total)}`).join(' ')} />
           {capTotal > 0 && shownMetric !== 'hours' && <line x1={PAD.left} x2={width - PAD.right} y1={y(capTotal)} y2={y(capTotal)} stroke="#d03b3b" strokeWidth={1.2} strokeDasharray="2 3" />}
           {cursorX !== null && <line x1={cursorX} x2={cursorX} y1={PAD.top - 4} y2={PAD.top + plotH} stroke="var(--accent-strong, #1b7f4b)" strokeWidth={2} />}
         </svg>
+        </div>
       </div>
 
       {row !== null ? (

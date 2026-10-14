@@ -87,9 +87,21 @@ def phases(r):
     return [a["phase"] for a in gen.create_activities(r, FakeWbs())]
 
 
-def test_without_a_chain_an_in_situ_pour_has_rebar_formwork_concrete_and_a_precast_one_installation():
+def test_without_a_chain_an_in_situ_pour_has_rebar_formwork_concrete_and_a_precast_one_installation_and_stitching():
     assert phases(rec("W1", "WALL")) == ["Rebar", "Formwork", "Concrete"]
-    assert phases(rec("P1", "PRECAST_WALL", conc_stage="PRECAST")) == ["Installation"]
+    assert phases(rec("P1", "PRECAST_WALL", conc_stage="PRECAST")) == ["Installation", "Stitching"]
+
+
+def test_without_a_chain_heavy_precast_is_propped_stitched_cured_and_unpropped():
+    acts = gen.create_activities(rec("H1", "HEAVY_PRECAST", conc_stage="PRECAST"), FakeWbs())
+    assert [(a["phase"], a["duration_days"]) for a in acts] == [("Propping", 1), ("Installation", 1), ("Stitching", 2), ("Curing", 28), ("Propping Removal", 1)]
+    assert [a["task_id"] for a in acts] == ["P-H1-PR", "P-H1-I", "P-H1-S", "P-H1-CU", "P-H1-RP"]
+
+
+def test_a_rule_still_sets_the_days_of_the_default_precast_phases():
+    rules.activate({"assignments": [{"id": "A", "group": "", "phase": "Curing", "days": 14, "priority": 0}]})
+    acts = gen.create_activities(rec("H1", "HEAVY_PRECAST", conc_stage="PRECAST"), FakeWbs())
+    assert {a["phase"]: a["duration_days"] for a in acts}["Curing"] == 14
 
 
 def test_a_chain_is_the_phases_of_a_group_in_order_with_its_own_ids_and_names():

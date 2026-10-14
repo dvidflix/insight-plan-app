@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { IconSectionChevron } from './icons';
+import { IconSectionChevron, IconRemove } from './icons';
 import { FACET_FIELDS, FACET_LABEL, FACET_TYPES, IFC_VERSIONS, newFacet, newSpec, parseIds, serializeIds, type Cardinality, type Facet, type FacetType, type IdsDoc, type IdsValue, type Spec } from '../ids/idsDoc';
 
 type Mode = IdsValue['kind'];
@@ -50,7 +50,7 @@ function FacetRow({ facet, requirement, onChange, onRemove }: { facet: Facet; re
         {facet.type === 'property' && <input className="ids-facet__small" value={facet.dataType} onChange={(e) => onChange({ ...facet, dataType: e.target.value.toUpperCase() })} placeholder="IFC data type" title="IFC data type of the value (IFCLABEL, IFCINTEGER, ...)" />}
         {facet.type === 'partOf' && <input className="ids-facet__small" value={facet.relation} onChange={(e) => onChange({ ...facet, relation: e.target.value.toUpperCase() })} placeholder="IFC relation" title="IFCRELAGGREGATES, IFCRELCONTAINEDINSPATIALSTRUCTURE, ..." />}
         <input className="ids-facet__note" value={facet.instructions} onChange={(e) => onChange({ ...facet, instructions: e.target.value })} placeholder="Instructions (optional)" />
-        <button type="button" className="ge-x" onClick={onRemove} title="Remove" aria-label="Remove">{'✕'}</button>
+        <button type="button" className="cols__icon cols__icon--remove" onClick={onRemove} title="Remove" aria-label="Remove"><IconRemove /></button>
       </div>
       <div className="ids-facet__fields">
         {FACET_FIELDS[facet.type].map((f) => (
@@ -88,7 +88,7 @@ function SpecEditor({ spec, open, onToggle, onChange, onRemove }: { spec: Spec; 
         <button type="button" className="ids-spec__toggle" onClick={onToggle} aria-expanded={open} aria-label={open ? 'Collapse' : 'Expand'}><IconSectionChevron className="section-chevron" /></button>
         <input className="ids-spec__name" value={spec.name} onChange={(e) => onChange({ ...spec, name: e.target.value })} placeholder="Specification name" aria-label="Specification name" />
         <span className="ids-spec__count">{spec.applicability.length} applies · {spec.requirements.length} requires</span>
-        <button type="button" className="ge-x" onClick={() => { if (window.confirm(`Remove "${spec.name}"?`)) onRemove(); }} title="Remove the specification" aria-label="Remove the specification">{'✕'}</button>
+        <button type="button" className="cols__icon cols__icon--remove" onClick={() => { if (window.confirm(`Remove "${spec.name}"?`)) onRemove(); }} title="Remove the specification" aria-label="Remove the specification"><IconRemove /></button>
       </div>
       {open && (
         <div className="ids-spec__body">

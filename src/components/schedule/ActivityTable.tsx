@@ -1,3 +1,4 @@
+import { scrollDoubleWithCtrl } from '../../utils/wheelScroll';
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Activity } from '../../schedule/types';
 import { downloadCsv } from '../../utils/csv';
@@ -9,7 +10,7 @@ import type { ColumnCtx, ColumnDef } from '../../schedule/columns';
 import { useTableStyleStore } from '../../state/tableStyleStore';
 import type { GroupRule } from './GroupPanel';
 import { useAggregateStore } from '../../state/aggregateStore';
-import { aggregate, aggType, defaultAgg, type AggKind } from '../../schedule/aggregates';
+import { aggregate, aggType, defaultAgg, isGroupDate, type AggKind } from '../../schedule/aggregates';
 import { AggCell } from './AggCell';
 import { IconExpander } from '../icons';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
@@ -209,7 +210,9 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
   }, [rows, groupBy, isWbsGroup, wbsTree, ruleTree, collapsedGroups, catalog, columnCtx]);
 
   // Every group's activities (all levels below it), for the subtotals.
-  const subtotalsOn = aggregatable && aggShow && !!groupItems;
+  const subtotalsOn = aggregatable && !!groupItems;
+  // Without Σ Totals a group row still shows its dates.
+  const groupKindOf = (c: ColumnDef): AggKind => (aggShow || isGroupDate(c) ? kindOf(c) : 'none');
   const groupActs = useMemo(() => {
     const m = new Map<string, Activity[]>();
     if (!subtotalsOn) return m;
@@ -286,6 +289,10 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
     );
   };
 
+  // Ctrl + wheel scrolls the table twice as far.
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => (scrollRef.current ? scrollDoubleWithCtrl(scrollRef.current) : undefined), []);
+
   useImperativeHandle(ref, () => ({
     download: () => {
       downloadCsv(
@@ -299,7 +306,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div className="activity-table-shell">
-        <div className="activity-table-scroll">
+        <div className="activity-table-scroll" ref={scrollRef}>
           <table className={`data-table no-resize${wrapHeaders ? ' wrap-headers' : ''}`}>
             <thead>
               <tr ref={headRowRef}>
@@ -353,7 +360,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
                     const isCollapsed = collapsedGroups.has(item.path);
                     const { bg, fg } = isWbsGroup ? wbsGroupColors(item.path, wbsPalette) : { bg: undefined, fg: undefined };
                     // Subtotals: the label spans up to the first summarised column.
-                    const firstAgg = subtotalsOn ? columns.findIndex((c) => kindOf(c) !== 'none') : -1;
+                    const firstAgg = subtotalsOn ? columns.findIndex((c) => groupKindOf(c) !== 'none') : -1;
                     const labelSpan = firstAgg <= 0 ? Math.max(1, firstAgg === 0 ? 1 : columns.length) : firstAgg;
                     const groupRows = groupActs.get(item.path) ?? [];
                     return (
@@ -368,7 +375,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
                         </td>
                         {firstAgg >= 0 && columns.slice(labelSpan).map((c) => (
                           <td key={c.id} className="group-subtotal" style={{ textAlign: c.align }}>
-                            {kindOf(c) !== 'none' ? aggregate(c, kindOf(c), groupRows, columnCtx) : ''}
+                            {groupKindOf(c) !== 'none' ? aggregate(c, groupKindOf(c), groupRows, columnCtx) : ''}
                           </td>
                         ))}
                       </tr>

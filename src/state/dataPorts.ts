@@ -16,6 +16,7 @@ import { fetchSequence, saveScenario, type SequenceSheet } from '../scenarios/ap
 import { isDirty, refreshProject, setCrews, setExtras, setRelations, setRules, useScenarioStore } from './scenarioStore';
 import { parseOverlay } from '../prs/overlay';
 import { withJoins } from '../prs/joins';
+import { useRecipeStore } from './recipeStore';
 import { isEmptyRules, mergeRules, normalizeRules, totalRules } from '../prs/rules';
 
 /** One kind of thing that can be exported to a file and imported back, on its own: the Import / Export list in
@@ -23,7 +24,7 @@ import { isEmptyRules, mergeRules, normalizeRules, totalRules } from '../prs/rul
     without choosing the row first. Importing adds what is new and replaces what has the same id (name for the
     data table presets), and never removes anything. */
 export interface DataPort {
-  id: 'options' | 'sets' | 'viewpoints' | 'datatable' | 'layouts' | 'decorators' | 'linkgroups' | 'appearance' | 'tags' | 'scenarios' | 'rules';
+  id: 'options' | 'sets' | 'viewpoints' | 'datatable' | 'layouts' | 'decorators' | 'linkgroups' | 'appearance' | 'tags' | 'scenarios' | 'recipes' | 'rules';
   label: string;
   hint: string;
   /** How many items there are now. */
@@ -202,15 +203,40 @@ export const DATA_PORTS: DataPort[] = [
   },
   {
     id: 'scenarios',
-    label: 'Scenarios',
+    label: 'Sequence',
     hint: "The project's saved scenarios, each with its order, joined objects, manual links, crews, extra activities, review flags and rules. A scenario of the same name (for the same model) is replaced; a scenario open with unsaved changes is skipped.",
     count: () => savedScenarios().length,
     collect: async () => (await readScenarios()).map((s) => ({ scenario: s.scenario, stem: s.stem, sequence: s.sequence, relations: s.relations, crews: s.crews, extras: s.extras, flags: s.flags, rules: s.rules })),
     apply: async (data) => writeScenarios(list<ScenarioFile>(data, 'scenarios'), false),
   },
   {
+    id: 'recipes',
+    label: 'Recipes',
+    hint: 'The recipes (how each kind of object is built) and the equipment, crane and material pools they name. A recipe with the same ID is replaced; nothing is removed.',
+    count: () => useRecipeStore.getState().recipes.length,
+    collect: () => ({ recipes: useRecipeStore.getState().recipes, pools: useRecipeStore.getState().pools }),
+    apply: (data) => {
+      const d = (data && typeof data === 'object' ? data : {}) as { recipes?: unknown; pools?: unknown };
+      if (!Array.isArray(d.recipes) && !Array.isArray(d.pools)) throw new Error('The file has no recipes.');
+      const incoming = normalizeRules({ recipes: d.recipes, resourcePools: d.pools });
+      const store = useRecipeStore.getState();
+      // A file marked "replace" is the whole library: what it does not have is removed (a renamed recipe does not stay under its old name).
+      if ((data as { replace?: unknown }).replace === true) {
+        const before = store.recipes.length;
+        store.setRecipes(incoming.recipes);
+        if (Array.isArray(d.pools)) store.setPools(incoming.resourcePools);
+        return { added: incoming.recipes.length, updated: 0, note: `The library now has ${incoming.recipes.length} recipes (it had ${before}).` };
+      }
+      const r = mergeById(store.recipes, incoming.recipes, (x) => x.id.toUpperCase());
+      const p = mergeById(store.pools, incoming.resourcePools, (x) => `${x.kind}|${x.id.toUpperCase()}`);
+      store.setRecipes(r.next);
+      store.setPools(p.next);
+      return { added: r.added + p.added, updated: r.updated + p.updated };
+    },
+  },
+  {
     id: 'rules',
-    label: 'Rules',
+    label: 'Generator rules',
     hint: "The rules of every saved scenario (durations, chains, curing, groups, settings...), without its joined objects. Importing sets the rules of the scenario of the same name and model and keeps its order, joins and everything else; a scenario that is not in the project is skipped. A Programme Rules file (.prs.xml) is added to the scenario that is open instead.",
     count: () => savedScenarios().filter((s) => s.rules > 0).length,
     collect: async () => (await readScenarios()).filter((s) => Object.keys(s.rules as object).length).map((s) => ({ scenario: s.scenario, stem: s.stem, rules: withJoins(normalizeRules(s.rules), []) })),
@@ -347,9 +373,14 @@ const portFile = async (port: DataPort) => ({
   content: JSON.stringify({ kind: `${KIND_PREFIX}${port.id}`, version: FILE_VERSION, exportedAt: new Date().toISOString(), data: await port.collect() }, null, 2),
 });
 
-/** Every list as its export file, written into the project folder (the files "Export" would download). Resolves to the folder and the file names. */
+/** Every list as its export file, written into the settings subfolder of the project folder (the files "Export" would download). Resolves to the folder and the file names. */
 export async function exportAllToProject(root: string): Promise<{ folder: string; written: string[] }> {
   return writeExportFiles(root, await Promise.all(DATA_PORTS.map(portFile)));
+}
+
+/** One list as its export file, written into the project folder's settings subfolder. */
+export async function exportPortToProject(root: string, port: DataPort): Promise<{ folder: string; written: string[] }> {
+  return writeExportFiles(root, [await portFile(port)]);
 }
 
 export async function exportPort(port: DataPort) {

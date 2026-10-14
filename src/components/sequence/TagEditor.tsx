@@ -1,3 +1,4 @@
+import { IconDelete } from '../icons';
 import { useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useModelsStore } from '../../state/modelsStore';
@@ -66,7 +67,7 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
     <div className="tags__item">
       <div className="tags__row">
         <input value={tag.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Tag name" style={{ flex: 1 }} />
-        {onDelete && <button type="button" className="btn btn--small" onClick={onDelete} title="Delete tag">{'✕'}</button>}
+        {onDelete && <button type="button" className="cols__icon cols__icon--remove" onClick={onDelete} title="Delete tag"><IconDelete /></button>}
       </div>
       <div className="segmented-choice" title="Where this tag shows in the 3D view">
         <button type="button" className={placement === 'corner' ? 'active' : ''} onClick={() => onChange({ placement: 'corner' })}>Bottom corner</button>

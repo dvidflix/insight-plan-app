@@ -1,5 +1,4 @@
-import { useLicenceModules } from './licence/modulesStore';
-import { pageLicensed } from './licence/licence';
+import { resolveTheme, useThemeStore } from './state/themeStore';
 import { DuplicateTabButton, DuplicateTabSync } from './components/DuplicateTab';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
@@ -28,7 +27,7 @@ import { hasMadeChoice, useProgrammeChoiceStore } from './state/programmeChoiceS
 import { programmeKey } from './state/unloadedWbsStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
-import { IconSidePanel, IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData } from './components/icons';
+import { IconSidePanel, IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData, IconRemove } from './components/icons';
 import { FileDrop } from './components/FileDrop';
 import { SCHEDULE_ACCEPT, buildScheduleModel, parseScheduleFile, xmlScheduleTables } from './schedule/loadSchedule';
 import { buildXerSchedule, indexXerFile, isXer, type ImportProgress, type XerIndex } from './schedule/importSchedule';
@@ -58,9 +57,10 @@ import { RowButtonsChooser, useRowButtons, type RowButtonDef } from './component
 import { fetchXml } from './scenarios/api';
 import { storeLoadedIfc } from './viewer/modelStore';
 import { useModelStoreState } from './state/modelStoreState';
-import { dbRoot, importIntoDb, removeProgramme, toggleHidden, useProjectDbStore } from './state/projectDbStore';
-import { programmeTablesUrl, type DbProgramme } from './db/api';
-import { tablesToXer } from './schedule/exportXer';
+import { dbRoot, flushEditable, importIntoDb, makeEditableCopy, newProgramme, removeProgramme, toggleHidden, useProjectDbStore } from './state/projectDbStore';
+import { programmeExportUrl, programmeTablesUrl, type DbProgramme } from './db/api';
+import { encodeXer, tablesToXer } from './schedule/exportXer';
+import { summariseIssues, validateXer } from './schedule/xerValidate';
 import { exportScheduleXlsx } from './schedule/exportXlsx';
 import { downloadBlob } from './utils/download';
 import type { ScheduleModel } from './schedule/types';
@@ -94,7 +94,7 @@ const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
 function ThemeSync() {
   const engine = useViewerEngine();
   useEffect(() => {
-    document.documentElement.dataset.theme = 'light';
+    document.documentElement.dataset.theme = resolveTheme(useThemeStore.getState().choice);
   }, [engine]);
   return null;
 }
@@ -329,6 +329,7 @@ const INPUT_BUTTONS = [
   { id: 'open', glyph: '☑', label: 'Open a model of the project database' },
   { id: 'export', glyph: '⤓', label: 'Export IFC (models of the project database)' },
   { id: 'hide', glyph: '👁', label: 'Hide / show (unload without removing)' },
+  { id: 'edit', glyph: '✎', label: 'Make an editable copy (programmes of the project database)' },
   { id: 'sync', glyph: '⟳', label: 'Sync: show this in the other tabs' },
   { id: 'remove', glyph: '✕', label: 'Remove / delete' },
   { id: 'versions', glyph: '#', label: 'Number of earlier IFC versions' },
@@ -651,10 +652,23 @@ function InputsPage() {
       } else if (p.db) {
         const root = dbRoot();
         if (!root) throw new Error('Open the project folder first.');
+        if (p.db.editable) {
+          // A programme edited in place goes out whole: every table and column it has, under the header of the file it came from.
+          await flushEditable();
+          const res = await fetch(programmeExportUrl(root, p.db.id));
+          if (!res.ok) throw new Error(`Could not read the programme from the project database (${res.status}).`);
+          const { header, tables } = (await res.json()) as { header: string | null; tables: Record<string, { columns: string[]; rows: string[][] }> };
+          const text = tablesToXer(filterXerTables(tables), header);
+          // What P6 would refuse is said before the file is written, not after P6 has.
+          const problems = validateXer(text).filter((i) => i.severity === 'error');
+          if (problems.length && !window.confirm(`P6 may not import this file: ${summariseIssues(validateXer(text))}\n\nDownload it anyway?`)) return;
+          downloadBlob(`${base}.xer`, new Blob([encodeXer(text)], { type: 'text/plain' }));
+          return;
+        }
         const res = await fetch(programmeTablesUrl(root, p.db.id));
         if (!res.ok) throw new Error(`Could not read the programme from the project database (${res.status}).`);
         const { tables } = (await res.json()) as { tables: Record<string, { columns: string[]; rows: string[][] }> };
-        downloadBlob(`${base}.xer`, new Blob([tablesToXer(filterXerTables(tables))], { type: 'text/plain' }));
+        downloadBlob(`${base}.xer`, new Blob([encodeXer(tablesToXer(filterXerTables(tables)))], { type: 'text/plain' }));
       } else if (p.schedule) {
         exportScheduleXlsx(p.schedule, `${base}.xlsx`);
       }
@@ -789,6 +803,21 @@ function InputsPage() {
         <span>Models and programmes</span>
         <span className="inputs-panel__count">{rows.length}</span>
         <span className="inputs-panel__spacer" />
+        {dbOpen && (
+          <button
+            type="button"
+            className="mini-btn"
+            onClick={() => {
+              const name = window.prompt('Name for the new programme:')?.trim();
+              if (!name) return;
+              const start = window.prompt('Start date (YYYY-MM-DD):', new Date().toISOString().slice(0, 10))?.trim();
+              if (start) void newProgramme(name, start);
+            }}
+            title="Start an empty programme to build in the app, saved to the project database"
+          >
+            New programme
+          </button>
+        )}
         {rows.length > 0 && (
           <>
             <button className="mini-btn mini-btn--icon" onClick={syncAll} title="Sync all" aria-label="Sync all"><IconSync /></button>
@@ -900,6 +929,8 @@ function InputsPage() {
                         </td>);
                         case 'name': return (<td key={col}>
                           {row.name}
+                          {db?.baselineOf != null && <span className="source-chip" title="A baseline saved of another programme: the programme as it was when it was saved. Choose it in the Baselines menu of Programmes to see what moved.">Baseline</span>}
+                          {db?.editable && <span className="source-chip" title="Edited in place: your changes are saved to the project database as you make them, and the programme can be exported as an XER.">Editable</span>}
                           {row.context && (
                             <span className="source-chip" title="Site context mesh: not part of 4D. Move it (metres, project axes) to line it up with the models.">
                               glTF
@@ -960,7 +991,7 @@ function InputsPage() {
                                 {inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
                                   <IconDownloadFile width={16} height={16} />
                                 </button>}
-                                {inputBtns.shown('remove') && <button type="button" className="mini-btn danger" onClick={() => void storedActions.remove(row.stored!)} title="Remove from the project database's model store" aria-label="Remove from the model store">✕</button>}
+                                {inputBtns.shown('remove') && <button type="button" className="cols__icon cols__icon--remove" onClick={() => void storedActions.remove(row.stored!)} title="Remove from the project database's model store" aria-label="Remove from the model store"><IconRemove /></button>}
                               </>
                             ) : (<>
                             {row.stored && inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
@@ -969,6 +1000,18 @@ function InputsPage() {
                             {inputBtns.shown('download') && (p ? (
                               <ProgrammeDownload canXml={!!p.db?.scenario && !!p.db?.stem} disabled={!p.db && !p.schedule} onDownload={(f) => void downloadProgramme(p, f)} />
                             ) : <span style={{ width: 44 }} aria-hidden />)}
+                            {inputBtns.shown('edit') && db && !db.editable && db.sourceFormat !== 'p6db' && <button
+                              type="button"
+                              className="mini-btn"
+                              onClick={() => {
+                                const name = window.prompt('Name for the editable copy:', `${db.name} (editable)`)?.trim();
+                                if (name) void makeEditableCopy(db, name);
+                              }}
+                              title="Make a copy of this programme that you can edit in place: add, change and link activities, saved to the project database and exported to P6 as an XER. This one stays as it is."
+                              aria-label="Make an editable copy"
+                            >
+                              Edit copy
+                            </button>}
                             {inputBtns.shown('sync') && <button
                               className="mini-btn mini-btn--icon"
                               disabled={row.context ? true : p ? !p.schedule : false}
@@ -979,7 +1022,7 @@ function InputsPage() {
                               <IconSync />
                             </button>}
                             {inputBtns.shown('remove') && <button
-                              className="mini-btn danger"
+                              className="cols__icon cols__icon--remove"
                               onClick={() => {
                                 const what = db ? `Delete "${row.name}" from the project database? This cannot be undone.` : `Remove "${row.name}" from the app?`;
                                 if (!window.confirm(what)) return;
@@ -990,7 +1033,7 @@ function InputsPage() {
                               title={db ? 'Delete from the project database' : 'Remove from the app'}
                               aria-label={db ? 'Delete' : 'Remove'}
                             >
-                              ✕
+                              <IconRemove />
                             </button>}
                             </>)}
                           </div>
@@ -1082,6 +1125,7 @@ function StatusBar({ page }: { page: PageId }) {
           Data date: <strong>{scheduleModel.project.dataDate?.toLocaleDateString() ?? '—'}</strong>
         </span>
         {scheduleModel.computedFloat && <span>Float: recomputed (calendar-aware)</span>}
+        <span id="schedule-statusbar-tools" className="app-statusbar__tools" />
         <DbStatusChip />
       </footer>
     );

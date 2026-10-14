@@ -1,3 +1,4 @@
+import { IconRemove } from './icons';
 import { useEffect, useMemo, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useSelectionStore } from '../state/selectionStore';
@@ -182,8 +183,8 @@ export function PropertyEditorPanel() {
             <span>
               <b>{q.pset}</b> / {q.name} = <b>{q.value === '' ? '(empty)' : q.value}</b> <small>({typeLabel(q.valueType)}) · {count(q)} object{count(q) === 1 ? '' : 's'}</small>
             </span>
-            <button type="button" className="icon-btn" title="Remove" aria-label="Remove" onClick={() => remove(q.id)}>
-              ✕
+            <button type="button" className="cols__icon cols__icon--remove" title="Remove" aria-label="Remove" onClick={() => remove(q.id)}>
+              <IconRemove />
             </button>
           </div>
         ))}

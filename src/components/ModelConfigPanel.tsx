@@ -1,5 +1,6 @@
 import { FEATURES } from '../features';
 import { PropertiesGrid } from './PropertiesGrid';
+import { RecipesDock } from './scenarios/rules/RecipesEditor';
 import { BottomDock } from './BottomDock';
 import { useEffect, useMemo, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -25,9 +26,9 @@ import { ModelChecksPanel } from './ModelChecksPanel';
 import { ModelComparePanel } from './ModelComparePanel';
 import { PropertyEditorPanel } from './PropertyEditorPanel';
 import { FlythroughPanel } from './FlythroughPanel';
-import { SavedViewAttrsPanel } from './SavedViewAttrsPanel';
 import { RelatedPanel } from './RelatedPanel';
 import { PropertyVisibilityPanel } from './PropertyVisibilityPanel';
+import { IfcToolsPanel } from './sequence/IfcToolsPanel';
 import { ModelColorPanel } from './ModelColorPanel';
 import { SearchSetsPanel } from './SearchSetsPanel';
 import { DataTablePanel } from './DataTablePanel';
@@ -57,6 +58,8 @@ export function ModelToolsPanel() {
   const panels = useSequenceUiStore((s) => s.modelPanels);
   // The Topics tool (BCF) is an experimental feature.
   const bcf = useAppPrefsStore((s) => s.experimental.bcf);
+  // Recipes (the library) are shown here too: they do not need a scenario.
+  const scenarios = useAppPrefsStore((s) => s.experimental.scenarios);
   // A topic marker clicked in 3D brings the Topics tool up.
   const openRequest = useTopicsStore((st) => st.openRequest);
   const seen = useRef(openRequest);
@@ -69,6 +72,7 @@ export function ModelToolsPanel() {
     <>
       <DockPanel id="checks" label="Model checks"><ModelChecksPanel /></DockPanel>
       <DockPanel id="compare" label="Compare models"><ModelComparePanel /></DockPanel>
+      {scenarios && <DockPanel id="recipes" label="Recipes"><RecipesDock /></DockPanel>}
       {bcf && <DockPanel id="topics" label="Topics">{panels ? <div className="tpc-pad"><TopicsPanel /></div> : <div className="flt__hint">Starting viewer…</div>}</DockPanel>}
     </>
   );
@@ -167,7 +171,7 @@ export function ViewpointsPanel({ element, settings, extra = [] }: { element: HT
   // Section cuts is an experimental feature: no section while it is switched off (Settings › Experimental features).
   const cutsOn = useExperimental('sectionCuts');
   return (
-    <BottomDock title="Viewpoint attributes" storageKey="savedViewAttrs" dock={<SavedViewAttrsPanel />}>
+    <div className="model-config__split"><div className="model-config__split-top">
       <LitPanel element={element} />
       <LitSection panel={element} label="Fly-through" leading defaultOpen><FlythroughPanel /></LitSection>
       <LitSection panel={element} label="Decorators"><div className="disp vsp"><MarkersPanel /><ConstructionPlanesPanel /></div></LitSection>
@@ -176,7 +180,7 @@ export function ViewpointsPanel({ element, settings, extra = [] }: { element: HT
         <LitSection key={x.label} panel={element} label={x.label}>{x.content}</LitSection>
       ))}
       <LitSection panel={element} label="View settings" headerAction={<ViewSettingsFoldButton />}>{settings}</LitSection>
-    </BottomDock>
+    </div></div>
   );
 }
 
@@ -214,6 +218,7 @@ export function RelatedTab({ page }: { page: 'model' | 'sequence' }) {
         <RelatedPanel />
         {/* Placement is set once and rarely touched: last, collapsed. */}
         <ModelsPanel page={page} />
+        {FEATURES.serverFiles && <IfcToolsPanel page={page} />}
       </div>
       <ClashResultsList />
     </div>

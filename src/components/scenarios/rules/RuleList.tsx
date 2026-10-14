@@ -3,16 +3,15 @@ import { setCrews, setExtras, setRelations, setRules, useScenarioStore } from '.
 import { addPreset, DEFAULT_PRESETS } from '../../../prs/presets';
 import { SETTINGS_META } from '../../../prs/rules';
 import { IconSectionChevron } from '../../icons';
+import { useSearchSetsStore } from '../../../state/searchSetsStore';
+import { RECIPE_SETS_FOLDER } from '../../../prs/groupSets';
 import { useScenarioActivities } from '../ScenarioLinksCrews';
 import { SuggestedGroups } from '../SuggestedGroups';
-import { CrewRuleRowCard, DurationRowCard, ProductivityRowCard, RebarRowCard, addCrewRule, addDuration, addProductivity, addRebar } from './RatesEditor';
 import { LevelLinkRowCard, LevelTaskRowCard, RuleGroupRowCard, SequenceRowCard, addStarterScope, addGroup, addLevelLink, addLevelTask, addSequence, addStarterGroups, addStarterLevelTasks } from './GroupsEditors';
 import { ContactRowCard, SLABS_ON_BELOW, addContact } from './ContactsEditor';
 import { SettingsRowCard } from './SettingsEditor';
-import { convertLegacyRules, legacyCount } from '../../../prs/convert';
-import { AssignmentsTableCard, ChainsTableCard, CrewsTableCard, RatesTableCard } from './RelationalTables';
-import { TradeRowCard, addTrade } from './ResourcesEditor';
-import { CalendarImport, CalendarRowCard, CalendarRuleRowCard, addCalendar, addCalendarRule } from './CalendarsEditor';
+import { AssignmentsTableCard, ChainsTableCard, CrewsTableCard, RatesTableCard, TradesTableCard } from './RelationalTables';
+import { CalendarImport, CalendarRowCard, addCalendar } from './CalendarsEditor';
 import { CrewOverrideRowCard, ExtrasTableCard, LinkRowCard, addCrewOverride, addExtra, addLink } from './ManualRows';
 import { EntryKeyContext, FreshEntryContext, useRuleContext } from './RuleParts';
 import { KINDS, KIND_BY_ID, KIND_ORDER, type RuleKind } from './kinds';
@@ -31,10 +30,9 @@ interface Entry {
   settingKey?: string;
 }
 
-const STORE_KEY = 'scenarios.rulesKinds';
-const loadKinds = (): Set<RuleKind> => {
+const loadKinds = (storeKey: string): Set<RuleKind> => {
   try {
-    const v = JSON.parse(localStorage.getItem(STORE_KEY) ?? '[]') as string[];
+    const v = JSON.parse(localStorage.getItem(storeKey) ?? '[]') as string[];
     return new Set(v.filter((k): k is RuleKind => k in KIND_BY_ID));
   } catch {
     return new Set();
@@ -45,16 +43,16 @@ const text = (v: unknown) => JSON.stringify(v ?? '').toLowerCase();
 
 /** Whether the rules give any phase its days: a Duration or Productivity row, or an assignment with days or a rate. */
 const hasDurations = (r: ReturnType<typeof useRuleContext>['rules']) =>
-  r.durations.some((d) => d.enabled !== false) || r.productivity.some((d) => d.enabled !== false) || r.assignments.some((a) => a.enabled !== false && (a.days !== undefined || !!a.rate));
+  r.assignments.some((a) => a.enabled !== false && (a.days !== undefined || !!a.rate)) || r.recipes.some((x) => x.enabled !== false && x.tasks.some((t) => t.days !== undefined || !!t.rate));
 
-export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: number } | null }) {
+export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { focus: { kind: RuleKind; id: string; n: number } | null; only?: RuleKind[]; storeKey?: string }) {
   const ctx = useRuleContext();
   const { rules } = ctx;
   const extras = useScenarioStore((s) => s.extras);
   const relations = useScenarioStore((s) => s.relations);
   const crews = useScenarioStore((s) => s.crews);
   const { source, byCode } = useScenarioActivities();
-  const [kinds, setKindsState] = useState<Set<RuleKind>>(loadKinds);
+  const [kinds, setKindsState] = useState<Set<RuleKind>>(() => loadKinds(storeKey));
   const [q, setQ] = useState('');
   const [picker, setPicker] = useState(false);
   const [fresh, setFresh] = useState<string | null>(null);
@@ -66,7 +64,7 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
 
   const setKinds = (next: Set<RuleKind>) => {
     setKindsState(next);
-    try { localStorage.setItem(STORE_KEY, JSON.stringify([...next])); } catch { /* not remembered */ }
+    try { localStorage.setItem(storeKey, JSON.stringify([...next])); } catch { /* not remembered */ }
   };
   useEffect(() => {
     if (!focus) return;
@@ -75,6 +73,8 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [focus?.n]);
 
+  const allSets = useSearchSetsStore((s) => s.sets);
+  const setNames = useMemo(() => new Set(allSets.filter((s) => s.group === RECIPE_SETS_FOLDER).map((s) => s.name.toUpperCase())), [allSets]);
   const entries = useMemo<Entry[]>(() => {
     const out: Entry[] = [];
     const push = (kind: RuleKind, rows: unknown[]) => rows.forEach((row, i) => out.push({ kind, i, key: `${kind}:${i}`, text: text(row) }));
@@ -85,24 +85,20 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
     if (rules.assignments.length || tablesPinned.has('assignmentTable')) out.push({ kind: 'assignmentTable', i: 0, key: 'assignmentTable:all', text: `assignments ${text(rules.assignments)}`.toLowerCase() });
     if (rules.rates.length || tablesPinned.has('rateTable')) out.push({ kind: 'rateTable', i: 0, key: 'rateTable:all', text: `rates ${text(rules.rates)}`.toLowerCase() });
     if (rules.crewTemplates.length || tablesPinned.has('crewTable')) out.push({ kind: 'crewTable', i: 0, key: 'crewTable:all', text: `crews ${text(rules.crewTemplates)}`.toLowerCase() });
-    push('duration', rules.durations);
-    push('productivity', rules.productivity);
-    push('rebar', rules.rebar);
-    push('crew', rules.crews);
-    push('trade', rules.trades);
+    if (rules.trades.length || tablesPinned.has('tradeTable')) out.push({ kind: 'tradeTable', i: 0, key: 'tradeTable:all', text: `trades ${text(rules.trades)}`.toLowerCase() });
     push('calendar', rules.calendars);
-    push('calendarRule', rules.calendarRules);
     // All the settings are one rule: it is there once any is set here (or it has been added).
     if (settingsPinned || SETTINGS_META.some((m) => rules.settings[m.key] !== undefined)) {
       out.push({ kind: 'setting', i: 0, key: 'setting:all', text: `settings ${SETTINGS_META.map((m) => `${m.key} ${m.label} ${m.group}`).join(' ')} ${text(rules.settings)}`.toLowerCase() });
     }
-    push('group', rules.groups);
+    // A group that is a set of the "Recipes sets" folder is edited there (Models > Search sets): only the others are listed.
+    rules.groups.forEach((g, i) => { if (!setNames.has(g.id.toUpperCase())) out.push({ kind: 'group', i, key: `group:${i}`, text: text(g) }); });
     push('levelTask', rules.levelTasks);
     push('sequence', rules.sequences);
     push('levelLink', rules.levelLinks);
     push('contact', rules.contacts);
-    return out.sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.i - b.i);
-  }, [rules, extras, relations, crews, settingsPinned, extrasPinned, tablesPinned]);
+    return out.filter((e) => !only || only.includes(e.kind)).sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.i - b.i);
+  }, [rules, extras, relations, crews, settingsPinned, extrasPinned, tablesPinned, only, setNames]);
 
   const counts = useMemo(() => {
     const c = new Map<RuleKind, number>();
@@ -118,26 +114,19 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
     if (needs === 'groups' && rules.groups.length === 0) return 'Add a group first';
     if (needs === 'levelTasks' && rules.levelTasks.length === 0) return 'Add a level task first';
     if (needs === 'calendars' && rules.calendars.length === 0) return 'Add a calendar first';
-    if (kind === 'crew' || kind === 'crewOverride') return useScenarioStore.getState().crewOptions ? null : 'Load a scenario first';
+    if (kind === 'crewOverride') return useScenarioStore.getState().crewOptions ? null : 'Load a scenario first';
     return null;
   };
 
   /** Starts a rule of this type, opens it, and makes sure the filter shows it. */
   const start = (kind: RuleKind) => {
-    const options = useScenarioStore.getState().crewOptions;
     const n = counts.get(kind) ?? 0;
     switch (kind) {
       case 'extra': setExtrasPinned(true); if (!extras.length) addExtra(); break;
       case 'link': addLink(); break;
       case 'crewOverride': addCrewOverride(); break;
-      case 'duration': addDuration(ctx); break;
-      case 'productivity': addProductivity(ctx); break;
-      case 'rebar': addRebar(ctx); break;
-      case 'crew': addCrewRule(ctx, options?.phases[0] ?? '', options?.trades[0]?.code ?? ''); break;
-      case 'chainTable': case 'assignmentTable': case 'rateTable': case 'crewTable': setTablesPinned(new Set([...tablesPinned, kind])); break;
-      case 'trade': addTrade(ctx); break;
+      case 'chainTable': case 'assignmentTable': case 'rateTable': case 'crewTable': case 'tradeTable': setTablesPinned(new Set([...tablesPinned, kind])); break;
       case 'calendar': addCalendar(ctx); break;
-      case 'calendarRule': addCalendarRule(ctx); break;
       case 'setting': setSettingsPinned(true); break;
       case 'group': addGroup(ctx); break;
       case 'levelTask': addLevelTask(ctx); break;
@@ -145,7 +134,7 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
       case 'levelLink': addLevelLink(ctx); break;
       case 'contact': addContact(ctx); break;
     }
-    setFresh(kind === 'setting' ? 'setting:all' : kind === 'extra' ? 'extra:all' : kind === 'chainTable' || kind === 'assignmentTable' || kind === 'rateTable' || kind === 'crewTable' ? `${kind}:all` : `${kind}:${n}`);
+    setFresh(kind === 'setting' ? 'setting:all' : kind === 'extra' ? 'extra:all' : kind === 'chainTable' || kind === 'assignmentTable' || kind === 'rateTable' || kind === 'crewTable' || kind === 'tradeTable' ? `${kind}:all` : `${kind}:${n}`);
     if (kinds.size && !kinds.has(kind)) setKinds(new Set([...kinds, kind]));
     setQ('');
     setPicker(false);
@@ -156,17 +145,12 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
       case 'extra': return <ExtrasTableCard ctx={ctx} byCode={byCode} />;
       case 'link': return <LinkRowCard i={e.i} byCode={byCode} />;
       case 'crewOverride': return <CrewOverrideRowCard i={e.i} />;
-      case 'duration': return <DurationRowCard ctx={ctx} i={e.i} />;
-      case 'productivity': return <ProductivityRowCard ctx={ctx} i={e.i} />;
-      case 'rebar': return <RebarRowCard ctx={ctx} i={e.i} />;
-      case 'crew': return <CrewRuleRowCard ctx={ctx} i={e.i} />;
       case 'chainTable': return <ChainsTableCard ctx={ctx} />;
       case 'assignmentTable': return <AssignmentsTableCard ctx={ctx} />;
       case 'rateTable': return <RatesTableCard ctx={ctx} />;
       case 'crewTable': return <CrewsTableCard ctx={ctx} />;
-      case 'trade': return <TradeRowCard ctx={ctx} i={e.i} />;
+      case 'tradeTable': return <TradesTableCard ctx={ctx} />;
       case 'calendar': return <CalendarRowCard ctx={ctx} i={e.i} />;
-      case 'calendarRule': return <CalendarRuleRowCard ctx={ctx} i={e.i} />;
       case 'setting': return <SettingsRowCard ctx={ctx} />;
       case 'group': return <RuleGroupRowCard ctx={ctx} i={e.i} />;
       case 'levelTask': return <LevelTaskRowCard ctx={ctx} i={e.i} />;
@@ -182,7 +166,9 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
     else next.add(k);
     setKinds(next);
   };
-  const chips = KINDS.filter((k) => counts.get(k.id) || kinds.has(k.id));
+  const offered = KINDS.filter((k) => k.id !== 'group' && (!only || only.includes(k.id)));
+  const chips = offered.filter((k) => counts.get(k.id) || kinds.has(k.id));
+  const hasGroups = !only || only.includes('group');
 
   return (
     <div className="rule-list-panel">
@@ -191,23 +177,9 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
         <button type="button" className={`btn${picker ? '' : ' primary'}`} aria-expanded={picker} onClick={() => setPicker(!picker)}>{picker ? 'Close' : '+ Add rule'}</button>
       </div>
 
-      {legacyCount(rules) > 0 && (
+      {hasGroups && ctx.facts.length > 0 && !hasDurations(rules) && (
         <div className="rule-legacy" role="status">
-          <span>{legacyCount(rules)} rule{legacyCount(rules) === 1 ? '' : 's'} in the old form (Duration, Productivity, Rebar rate, Crew rule, Calendar rule), each with its own conditions.</span>
-          <button
-            type="button" className="btn btn--small primary"
-            title="Turns them into groups, rates, crews and assignments (the generator makes the same programme). Rows that cannot be a group stay as they are."
-            onClick={() => {
-              const result = convertLegacyRules(useScenarioStore.getState().rules);
-              ctx.change(() => result.rules);
-              setConverted(`Converted ${result.converted} rule${result.converted === 1 ? '' : 's'} into ${result.groups} new group${result.groups === 1 ? '' : 's'}, ${result.rates} rate${result.rates === 1 ? '' : 's'}, ${result.crews} crew${result.crews === 1 ? '' : 's'} and ${result.assignments} assignment${result.assignments === 1 ? '' : 's'}${result.kept ? `; ${result.kept} left as they were (a group together with other conditions)` : ''}. Save to keep it.`);
-            }}
-          >Convert to tables</button>
-        </div>
-      )}
-      {ctx.facts.length > 0 && !hasDurations(rules) && (
-        <div className="rule-legacy" role="status">
-          <span>This scenario has no durations: every phase takes 1 day and there is no rebar quantity (the generator has no table of its own). Add the durations, crews and chains of a preset, or fill the Assignments table.</span>
+          <span>This scenario has no durations: every phase takes 1 day and there is no rebar quantity (the generator has no table of its own). Add the durations, crews and chains of a preset, fill the Assignments table, or give the Recipes their days.</span>
           <button
             type="button" className="btn btn--small primary"
             title="Adds the 1HDAB_TOC preset to this scenario: a rule with the same id is replaced, the others stay"
@@ -224,7 +196,7 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
 
       {picker && (
         <div className="rule-picker" role="menu" aria-label="Add a rule">
-          {KINDS.filter((k) => !k.legacy).map((k) => {
+          {offered.map((k) => {
             const why = unavailable(k.id);
             return (
               <div key={k.id} className={`rule-picker__item rule-picker__item--${k.family}${why ? ' is-off' : ''}`}>
@@ -262,7 +234,7 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
         <div className="rule-rows">
           {entries.length === 0 && (
             <div className="scn-dim rule-empty">
-              No rules: every phase takes 1 day and there is no rebar quantity. Add rules above (durations, rebar rates, crews ...), or load a preset (1HDAB_TOC holds this project's as rules).
+              No rules: every phase takes 1 day and there is no rebar quantity. Add rules above (groups, rates, crews ...), give the Recipes their days, or load a preset (1HDAB_TOC holds this project's as rules).
             </div>
           )}
           {entries.length > 0 && shown.length === 0 && <div className="scn-dim rule-empty">No rule matches.{' '}<button type="button" className="link-btn" onClick={() => { setQ(''); setKinds(new Set()); }}>Show all</button></div>}
@@ -274,7 +246,7 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
         </div>
       </FreshEntryContext.Provider>
 
-      <div className="rule-footer">
+      {hasGroups && <div className="rule-footer">
         <button type="button" className="rule-footer__toggle" aria-expanded={tools} onClick={() => setTools(!tools)}>
           <IconSectionChevron className="section-chevron" />
           Generator defaults and tools
@@ -285,7 +257,7 @@ export function RuleList({ focus }: { focus: { kind: RuleKind; id: string; n: nu
             <SuggestedGroups source={source} />
           </div>
         )}
-      </div>
+      </div>}
     </div>
   );
 }

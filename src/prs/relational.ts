@@ -1,4 +1,4 @@
-import type { Assignment, ChainRow, CrewTemplate, RateRow } from './rules';
+import type { Assignment, ChainRow, CrewTemplate, RateRow, TradeRow } from './rules';
 import { assignmentKey } from './rules';
 
 /** The relational tables of the rules (Rates, Crews, Assignments) as text for a spreadsheet and back: the same columns both ways, a first row of
@@ -31,12 +31,22 @@ export function parseCrewsPaste(text: string): CrewTemplate[] {
   return lines(text).map(cells).filter((c) => c[0] && !/^(id|name)$/i.test(c[0])).map((c) => ({ id: c[0], trades: parseCrewText(c.slice(1).join(', ')) }));
 }
 
+// ---------------------------------------------------------------- trades
+
+export const TRADE_HEAD = ['Code', 'Name', 'People per day'];
+
+export const tradesToTsv = (rows: TradeRow[]) => [TRADE_HEAD.join('\t'), ...rows.map((t) => [t.id, t.name, String(t.capacity)].join('\t'))].join('\n');
+
+export function parseTradesPaste(text: string): TradeRow[] {
+  return lines(text).map(cells).filter((c) => c[0] && !/^(code|id)$/i.test(c[0])).map((c): TradeRow => ({ id: c[0].toUpperCase(), name: c[1] ?? '', capacity: Number.isFinite(Number(c[2])) && c[2] !== '' ? Number(c[2]) : 0 }));
+}
+
 // ---------------------------------------------------------------- rates
 
 export const RATE_HEAD = ['ID', 'Type', 'Days', 'Tonnes per m3', 'Basis', 'Property set', 'Property', 'Multiply by', 'If none', 'Man-hours per unit', 'People', 'Shifts', 'Hours per shift', 'Round', 'At least (days)'];
 
 const typeOf = (t: string): RateRow['type'] => (/^prod/i.test(t) ? 'productivity' : /^rebar|density/i.test(t) ? 'rebar' : 'days');
-const basisOf = (t: string): RateRow['basis'] | undefined => (/^prop/i.test(t) ? 'property' : /^conc/i.test(t) ? 'concrete' : /^reb/i.test(t) ? 'rebar' : undefined);
+const basisOf = (t: string): RateRow['basis'] | undefined => (/^prop/i.test(t) ? 'property' : /^conc/i.test(t) ? 'concrete' : /^foot|^plan|^deck/i.test(t) ? 'footprint' : /^side|^wall/i.test(t) ? 'sides' : /^reb/i.test(t) ? 'rebar' : undefined);
 const fallbackOf = (t: string): RateRow['fallback'] | undefined => (/^none|^leave/i.test(t) ? 'none' : /^conc/i.test(t) ? 'concrete' : /^reb/i.test(t) ? 'rebar' : undefined);
 const roundOf = (t: string): RateRow['rounding'] | undefined => (/^up|^ceil/i.test(t) ? 'ceil' : /^near|^round/i.test(t) ? 'round' : /^no/i.test(t) ? 'none' : undefined);
 

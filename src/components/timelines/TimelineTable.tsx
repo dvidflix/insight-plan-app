@@ -1,3 +1,4 @@
+import { IconRemove } from '../icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PALETTE, newId, shortName, useTimelinesStore, type Person, type Timeline, type TimelineRow } from '../../state/timelinesStore';
 import { editSpan } from './shared';
@@ -367,7 +368,7 @@ export function TimelineTable({ timeline, people, selectedRow, onSelect, addRow,
     });
     cells.push(
       <div key={`d:${row.id}`} className={`tl-gcell tl-gcell--del${sel}`} style={{ gridRow, gridColumn: lastCol }}>
-        <button type="button" className="tl-rowdel" title="Delete the row" aria-label="Delete row" onClick={() => removeRow(row.id)}>✕</button>
+        <button type="button" className="tl-rowdel" title="Delete the row" aria-label="Delete row" onClick={() => removeRow(row.id)}><IconRemove /></button>
       </div>,
     );
     gridRow++;

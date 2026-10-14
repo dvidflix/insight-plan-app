@@ -38,7 +38,8 @@ const NAV = [
 ];
 
 // The supplied logo: the mark (logo-mark.png, from appLogo.jpg) and the name (logo-name.png, from AppName.jpg), both with transparent backgrounds.
-const LOGO = '<img class="logo__mark" src="logo-mark.png" alt="" width="427" height="276"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="733" height="142">';
+const LOGO = '<img class="logo__mark" src="logo-mark.png" alt="" width="854" height="560"><img class="logo__name" src="logo-name.png" alt="Insight Plan" width="733" height="142">';
+const LOGO_HEADER = LOGO.replace("logo-name.png", "logo-name-white.png");
 
 const icon = (d) => `<div class="ico"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${d}</svg></div>`;
 const ICONS = {
@@ -78,7 +79,7 @@ const menu = (file) => `<div class="menu"><button type="button" class="menu__btn
     </div></div>`;
 // The Resources menu: where to learn, and who we are.
 const RESOURCES_MENU = [
-  ['Learn', [['docs.html', 'Documentation'], ['resources.html', 'Questions and answers'], ['resources.html#requirements', 'System requirements'], ['resources.html#data', 'Data handling'], ['alternatives.html', 'Compare with other tools']]],
+  ['Learn', [['tutorials.html', 'Tutorials'], ['docs.html', 'Documentation'], ['resources.html', 'Questions and answers'], ['resources.html#requirements', 'System requirements'], ['resources.html#data', 'Data handling'], ['alternatives.html', 'Compare with other tools']]],
   [SITE, [['about.html', 'About us'], ['contact.html', 'Contact']]],
 ];
 const resourcesMenu = () => `<div class="menu menu--list"><button type="button" class="menu__btn" aria-expanded="false" aria-haspopup="true">Resources<svg viewBox="0 0 12 8" aria-hidden="true"><path d="M1 1.5l5 5 5-5" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -114,7 +115,7 @@ function anchored(body) {
     return `<h${lvl}${attrs}>${inner}<a class="anchor" href="#${id}" aria-label="Copy link to this section" title="Copy link to this section">${LINK_ICON}</a></h${lvl}>`;
   });
 }
-const TABLE_SCRIPT = `<script>(() => { document.querySelectorAll('table.cmp--matrix, table.cmp--grid').forEach((t) => { let group = null; let n = 0; const rows = [...t.tBodies[0].rows]; rows.forEach((r) => { if (r.classList.contains('cmp-group')) { group = r; n = 0; const th = r.cells[0]; th.setAttribute('role', 'button'); th.setAttribute('tabindex', '0'); th.setAttribute('aria-expanded', 'true'); const flip = () => { const open = th.getAttribute('aria-expanded') !== 'true'; th.setAttribute('aria-expanded', String(open)); let x = r.nextElementSibling; while (x && !x.classList.contains('cmp-group')) { x.hidden = !open; x = x.nextElementSibling; } }; th.addEventListener('click', flip); th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } }); } else { r.classList.toggle('cmp-alt', n++ % 2 === 1); } }); }); })();</script>`;
+const TABLE_SCRIPT = `<script>(() => { document.querySelectorAll('table.cmp--matrix').forEach((t) => { let group = null; let n = 0; const rows = [...t.tBodies[0].rows]; rows.forEach((r) => { if (r.classList.contains('cmp-group')) { group = r; n = 0; const th = r.cells[0]; th.setAttribute('role', 'button'); th.setAttribute('tabindex', '0'); th.setAttribute('aria-expanded', 'true'); const flip = () => { const open = th.getAttribute('aria-expanded') !== 'true'; th.setAttribute('aria-expanded', String(open)); let x = r.nextElementSibling; while (x && !x.classList.contains('cmp-group')) { x.hidden = !open; x = x.nextElementSibling; } }; th.addEventListener('click', flip); th.addEventListener('keydown', (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); flip(); } }); } else { r.classList.toggle('cmp-alt', n++ % 2 === 1); } }); }); })();</script>`;
 const ANCHOR_SCRIPT = `<script>(() => { const tip = document.createElement('div'); tip.className = 'anchor-tip'; tip.setAttribute('role', 'status'); document.body.appendChild(tip); let timer; const say = (a, text) => { const r = a.getBoundingClientRect(); tip.textContent = text; tip.style.left = (r.left + r.width / 2 + window.scrollX) + 'px'; tip.style.top = (r.top + window.scrollY - 8) + 'px'; tip.classList.add('on'); clearTimeout(timer); timer = setTimeout(() => tip.classList.remove('on'), 1600); }; document.addEventListener('click', (e) => { const a = e.target.closest && e.target.closest('a.anchor'); if (!a) return; e.preventDefault(); const url = location.origin + location.pathname + location.search + a.getAttribute('href'); history.replaceState(null, '', a.getAttribute('href')); const done = () => say(a, 'Link copied'); if (navigator.clipboard && navigator.clipboard.writeText) navigator.clipboard.writeText(url).then(done, () => say(a, 'Copy from the address bar')); else say(a, 'Copy from the address bar'); }); })();</script>`;
 
 const page = ({ file, title, description, body }) => `<!doctype html>
@@ -130,14 +131,12 @@ const page = ({ file, title, description, body }) => `<!doctype html>
 <body>
 <header class="top">
   <div class="wrap">
-    <a class="logo" href="index.html" aria-label="Insight Plan home">${LOGO}</a>
+    <a class="logo" href="index.html" aria-label="Insight Plan home">${LOGO_HEADER}</a>
     <button type="button" class="navtoggle" aria-label="Menu" aria-expanded="false" aria-controls="site-nav"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="navtoggle__bars" d="M4 6.500h16M4 12h16M4 17.500h16"/><path class="navtoggle__x" d="M6 6l12 12M18 6L6 18"/></svg></button>
     <nav id="site-nav">
-      ${menu(file)}
-      ${NAV.filter(([href]) => href !== 'resources.html').map(([href, label]) => `<a href="${href}"${href === file ? ' aria-current="page"' : ''}>${label}</a>`).join('\n      ')}
+      ${NAV.filter(([href]) => href !== 'resources.html' && href !== 'alternatives.html').map(([href, label]) => `<a href="${href}"${href === file ? ' aria-current="page"' : ''}>${label}</a>`).join('\n      ')}
       ${resourcesMenu()}
-      <a href="contact.html"${file === 'contact.html' ? ' aria-current="page"' : ''}>Contact</a>
-      <a class="btn" href="${APP_URL}">Free edition</a>
+      <a class="btn btn--sm" href="contact.html">Get a Demo</a>
     </nav>
   </div>
 </header>
@@ -146,14 +145,14 @@ ${anchored(body)}
 </main>
 <footer class="sitefoot">
   <div class="wrap sitefoot__top">
-    <div class="sitefoot__brand"><a class="logo" href="index.html" aria-label="Insight Plan home">${LOGO}</a><p>4D planning for complex construction.<br>Works offline, and keeps your data on your machine.</p>${social()}</div>
+    <div class="sitefoot__brand"><a class="logo" href="index.html" aria-label="Insight Plan home">${LOGO_HEADER.replace("logo-mark.png", "logo-mark-blend.png")}</a><p>4D planning for complex construction.<br>Works offline, and keeps your data on your machine.</p>${social()}</div>
     <nav class="sitefoot__cols" aria-label="Footer">
       <div><strong>Product</strong><a href="features.html">Features</a><a href="examples.html">Examples</a><a href="solutions.html">Solutions</a><a href="alternatives.html">Compare</a><a href="pricing.html">Pricing</a></div>
       <div><strong>Resources</strong><a href="docs.html">Documentation</a><a href="resources.html">Questions and answers</a><a href="resources.html#requirements">System requirements</a><a href="resources.html#data">Data handling</a></div>
       <div><strong>Company</strong><a href="about.html">About us</a><a href="contact.html">Contact</a><a href="${APP_URL}">Open the free edition</a></div>
     </nav>
   </div>
-  <div class="wrap sitefoot__bottom"><span>&copy; <span id="y">2026</span> ${SITE}</span><span>Primavera and P6 are trademarks of Oracle; ${SITE} is not affiliated with Oracle.</span></div>
+  <div class="sitefoot__band"><div class="wrap sitefoot__bottom"><span>&copy; <span id="y">2026</span> ${SITE}</span><span>Primavera and P6 are trademarks of Oracle; ${SITE} is not affiliated with Oracle.</span></div></div>
 </footer>
 ${MENU_SCRIPT}
 ${ANCHOR_SCRIPT}
@@ -165,7 +164,7 @@ ${CHAT_SCRIPT ? `<script src="${CHAT_SCRIPT}" async></script>` : ''}
 `;
 
 const head = (tag, h1, lead) => `<div class="wrap pagehead">${tag ? `<span class="tag">${tag}</span>` : ''}<h1>${h1}</h1><p class="lead">${lead}</p></div>`;
-const cta = `<section class="contact"><div class="wrap"><h2>Your programme. Your model. Your computer.</h2><p class="sub">Open the free edition and bring a live programme and its model. Ask for a quote when you want your work kept.</p><a class="btn" href="${APP_URL}">Open the free edition</a> <a class="btn btn--line" href="contact.html">Ask for a quote</a></div></section>`;
+const cta = '';
 
 
 const card = (ic, h, p, extra = '') => `<div class="card">${icon(ICONS[ic])}<h3>${h}${extra}</h3><p>${p}</p></div>`;
@@ -278,7 +277,6 @@ const COMPARE_ROWS = [
   ['Runs offline, data stays on your machine', YES, 'Desktop edition: yes', YES, 'Cloud service'],
   ['Programme and model in one view', YES, 'Programme only', 'Programme imported into the timeline', 'Models and documents'],
   ['Programme analysis: DCMA checks, float, what-if', YES, YES, 'Not its focus', 'Not its focus'],
-  ['Risk (Monte Carlo) finish dates', YES, 'Separate risk product', 'Not its focus', 'Not its focus'],
   ['4D playback of the build', YES, 'Not included', YES, 'Not its focus'],
   ['Clash detection within and between models', YES, 'Not included', YES, 'Depends on plan'],
   ['Rules that re-link activities after each revision', YES, 'Not included', 'Rules by selection set name', 'Not its focus'],
@@ -609,8 +607,7 @@ ${bigger()}
     <details><summary>What if a colleague only needs to look at results?</summary><p>Viewer-only access is planned. Tell us if it matters to you.</p></details>
     <details><summary>What support is included?</summary><p>Updates for the licence term, the in-app guide, and email support. Priority support and onboarding are available for larger roll-outs.</p></details>
   </div>
-</div></section>
-<section class="contact"><div class="wrap"><h2>Now let's see it on your project.</h2><p class="sub">Bring a programme and a model. That's it.</p><a class="btn" href="contact.html">Open the free edition</a> <a class="btn btn--line" href="contact.html">Ask for a quote</a></div></section>`,
+</div></section>`,
 });
 
 // ---------------------------------------------------------------- Compare (alternatives)
@@ -691,11 +688,23 @@ const GRID = [
   ['Photoreal, VR or rendered presentation', '.Y..YY.....'],
   ['Many people editing one live project in the cloud', '.....Y...YY'],
 ];
-const gridTable = () => `<div class="cmp-wrap"><table class="cmp cmp--grid">
+const GRID_DEFAULT = ['SYNCHRO 4D', 'Navisworks', 'Primavera P6'];
+const GRID_MAX = 3;
+const gridTable = () => `<div class="cmp-pick" role="group" aria-label="Choose up to ${GRID_MAX} tools to compare with ${SITE}">
+    <span class="cmp-pick__label">Compare with <b id="cmp-count">${GRID_DEFAULT.length} of ${GRID_MAX}</b></span>
+    ${GRID_TOOLS.slice(1).map((t, i) => `<button type="button" class="cmp-chip" data-col="${i + 1}" aria-pressed="${GRID_DEFAULT.includes(t)}">${t}</button>`).join('')}
+  </div>
+  <div class="cmp-wrap"><table class="cmp cmp--grid">
     <thead><tr><th scope="col">Capability</th>${GRID_TOOLS.map((t, i) => `<th scope="col"${i === 0 ? ' class="cmp-us"' : ''}>${t}</th>`).join('')}</tr></thead>
     <tbody>${GRID.map(([what, row]) => row === undefined ? `<tr class="cmp-group"><th colspan="${GRID_TOOLS.length + 1}" scope="colgroup"><button type="button" class="cmp-toggle" aria-expanded="true"><svg class="cmp-chev" viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor" d="M12 8l-6 6 1.41 1.41L12 10.83l4.59 4.58L18 14z"/></svg>${what}</button></th></tr>` : `<tr><th scope="row">${what}</th>${[...row].map((c, i) => `<td${i === 0 ? ' class="cmp-us"' : ''}>${c === 'Y' ? '<span class="cmp-yes">Yes</span>' : '<span class="cmp-no">&ndash;</span>'}</td>`).join('')}</tr>`).join('')}</tbody>
   </table></div>
-  <script>(() => { document.querySelectorAll('.cmp--grid .cmp-toggle').forEach((b) => b.addEventListener('click', () => { const open = b.getAttribute('aria-expanded') !== 'true'; b.setAttribute('aria-expanded', String(open)); for (let r = b.closest('tr').nextElementSibling; r && !r.classList.contains('cmp-group'); r = r.nextElementSibling) r.hidden = !open; })); })();</script>`;
+  <script>(() => { const t = document.querySelector('.cmp--grid'), chips = [...document.querySelectorAll('.cmp-chip')], MAX = ${GRID_MAX}; const count = document.getElementById('cmp-count');
+    const apply = () => { const on = new Set(chips.filter((c) => c.getAttribute('aria-pressed') === 'true').map((c) => +c.dataset.col)); count.textContent = on.size + ' of ' + MAX;
+      chips.forEach((c) => { c.disabled = on.size >= MAX && c.getAttribute('aria-pressed') !== 'true'; });
+      const shown = [...Array(${GRID_TOOLS.length + 1}).keys()].filter((i) => i <= 1 || on.has(i - 1));
+      t.querySelectorAll('tr').forEach((r) => { if (r.classList.contains('cmp-group')) { r.cells[0].colSpan = shown.length; return; } [...r.cells].forEach((c, i) => { const show = i <= 1 || on.has(i - 1); c.hidden = !show; c.classList.toggle('cmp-tint', show && i > 1 && (shown.indexOf(i) % 2 === 0)); }); }); };
+    chips.forEach((c) => c.addEventListener('click', () => { c.setAttribute('aria-pressed', String(c.getAttribute('aria-pressed') !== 'true')); apply(); })); apply();
+    document.querySelectorAll('.cmp--grid .cmp-toggle').forEach((b) => b.addEventListener('click', () => { const open = b.getAttribute('aria-expanded') !== 'true'; b.setAttribute('aria-expanded', String(open)); for (let r = b.closest('tr').nextElementSibling; r && !r.classList.contains('cmp-group'); r = r.nextElementSibling) r.hidden = !open; })); })();</script>`;
 const BETTER = [
   ['You build and control the programme', 'Primavera P6 or MS Project. Insight Plan reads and writes the files, it does not replace them.'],
   ['You need photoreal visuals, VR or crane animation for a bid', 'Fuzor, SYNCHRO or a rendering tool. Insight Plan plays the sequence, with images and video, but it is built for checking, not for show.'],
@@ -782,6 +791,53 @@ pages.push({
     <details><summary>Will there be a multi-user, cloud version?</summary><p>The weekly planning module for site teams is in development and is designed for tablets and several users at once. The planning workbench stays offline.</p></details>
   </div>
 </div></section>
+${cta}`,
+});
+
+// ---------------------------------------------------------------- Tutorials
+const TUTORIALS = [
+  ['first-project', 'Set up your first project', 'About 5 minutes', 'getting-started', [
+    'Open the app in Chrome or Edge and paste your licence key, then press <b>Activate</b>. It is checked on your computer, so you only enter it once.',
+    'Press <b>Choose folder…</b> and pick a folder on your computer or in OneDrive. The browser asks permission once. Your project is kept there as ordinary files.',
+    'Go to <b>Inputs</b> and drop in an IFC model and a P6 programme (<code>.xer</code> or <code>.xml</code>).',
+    'Optionally press <b>Install</b> in the address bar, so the app opens from your desktop and works offline.']],
+  ['check-programme', 'Check a programme', 'About 10 minutes', 'programmes', [
+    'Load the programme on <b>Inputs</b>, then open the <b>Programmes</b> tab.',
+    'Switch between the table, Gantt and the other views to see the same activities in different ways.',
+    'Use <b>Filters</b>, <b>Group</b>, <b>Sort</b> and <b>Colour</b> in the side pane to find what you are after. Click an activity to open its details on the right.',
+    'Look at float and the critical path. They come from the file when it has them, and are calculated from the programme\'s calendars when it does not.',
+    'Open <b>Resources</b> to see labour demand against capacity, and click a bar to see the activities behind a peak.']],
+  ['lookahead', 'Plan the next few weeks', 'About 5 minutes', 'planning-tools', [
+    'On the Programmes page, choose <b>Lookahead</b> from the <b>Views</b> list.',
+    'Pick the first day (it starts on the data date) and the length, from 1 to 12 weeks.',
+    'Read the list: every unfinished activity that starts, finishes or runs through the window, plus everything already late. A tag says why each is listed.',
+    'Press <b>Export (CSV)</b> to save the list, or <b>Set 4D date</b> to move the 4D timeline to the first day.']],
+  ['link-4d', 'Link a programme to a model and play it in 4D', 'About 15 minutes', '4d-sequencing', [
+    'Load the model and the programme on <b>Inputs</b>.',
+    'Open <b>4D Sequencing</b> and make a <b>link group</b>. Pick the tasks with task filters, and the objects with object filters.',
+    'Add a <b>match rule</b> that pairs a task field with an object property, for example the task\'s <i>Zone</i> with the object\'s <i>Level</i>. Check the counts: a group that links nothing shows zero.',
+    'Set an <b>appearance profile</b>: whether objects install, are removed or are maintained, and their colour and opacity before, during and after the task.',
+    'Press <b>play</b> on the timeline, or step and scrub by day, week or month. Choose planned or actual dates.',
+    'Use <b>Export</b> to save the sequence as PNG images or an MP4 video made in your browser.']],
+  ['bulk-edit', 'Change many activities at once', 'About 5 minutes', 'planning-tools', [
+    'Choose <b>Bulk edit</b> from the <b>Views</b> list on the Programmes page.',
+    'Under <b>Which activities</b>, add rules on any column (contains, equals, starts with, is empty…).',
+    'Under <b>What to change</b>, choose the edit: set a user field, find and replace in names, shift dates, change durations, set a constraint or set the calendar.',
+    'Read the preview, then press <b>Apply</b>. <b>Undo the last edit</b> puts them back, and <b>Download Excel</b> keeps the result.']],
+];
+pages.push({
+  file: 'tutorials.html',
+  title: `Tutorials | ${SITE}`,
+  description: 'Step-by-step tutorials for Insight Plan: set up a project, check a programme, plan the lookahead, link to a model for 4D and edit in bulk.',
+  body: `${head('Tutorials', 'Learn it by doing', 'Short, step-by-step guides for the jobs you will do most. Each links to the full documentation for more.')}
+<section class="alt"><div class="wrap">
+  <div class="grid">${TUTORIALS.map(([id, t, time]) => `<a class="card docs__card" href="#${id}"><b class="card__t">${t}</b><p>${time}</p></a>`).join('')}</div>
+</div></section>
+${TUTORIALS.map(([id, t, time, doc, items], i) => `<section${i % 2 ? ' class="alt"' : ''}><div class="wrap">
+  <h2 id="${id}">${t}</h2>
+  <p class="sub">${time}. The full text is in <a href="${docUrl(doc)}">the documentation</a>.</p>
+  <ol class="tutorial">${items.map((x) => `<li>${x}</li>`).join('')}</ol>
+</div></section>`).join('\n')}
 ${cta}`,
 });
 

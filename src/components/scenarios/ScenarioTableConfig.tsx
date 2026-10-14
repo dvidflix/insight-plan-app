@@ -1,3 +1,4 @@
+import { IconRemove } from '../icons';
 import { useFocusStore, type FocusColourMode } from '../../state/focusStore';
 import { GroupPanel } from '../schedule/GroupPanel';
 import { SortPanel } from '../schedule/SortPanel';
@@ -133,7 +134,7 @@ function RulesTab({
         const needsValue = SCN_OPS.find((o) => o.id === r.op)?.needsValue;
         return (
           <div className="scn-rule" key={r.id}>
-            <button className="rule-row__remove" type="button" onClick={() => onChange(rules.filter((x) => x.id !== r.id))} title="Remove">✕</button>
+            <button className="rule-row__remove" type="button" onClick={() => onChange(rules.filter((x) => x.id !== r.id))} title="Remove"><IconRemove /></button>
             <select value={r.field} onChange={(e) => update(r.id, { field: e.target.value })}>
               {fields.map((f) => (
                 <option key={f.id} value={f.id}>{f.label}</option>

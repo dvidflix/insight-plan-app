@@ -11,7 +11,7 @@ import {
 } from '../viewer/searchSets';
 import { FieldPicker, RuleRows, newRuleId, type PickField } from './schedule/FieldRules';
 import { useFieldValues, useIndexTick, useModelFields } from './modelFields';
-import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTextInputShort, IconUpload } from './icons';
+import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTextInputShort, IconUpload, IconRemove } from './icons';
 import { RowButtonsChooser, useRowButtons } from './RowButtonsChooser';
 import { InfoTip } from './InfoTip';
 import { queryMatcher } from '../schedule/search';
@@ -424,7 +424,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                     }}
                     title="Delete this folder and its sets"
                     aria-label={`Delete folder ${g}`}
-                  >✕</button>
+                  ><IconRemove /></button>
                 )}
               </div>
             )}
@@ -463,7 +463,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                       {shownBtn('eye') && eye(ids, `“${s.name}”`)}
                       {shownBtn('edit') && <button type="button" className="cols__icon" onClick={() => onEdit(s)} title="Edit" aria-label={`Edit ${s.name}`}>✎</button>}
                       {shownBtn('dup') && <button type="button" className="cols__icon" onClick={() => duplicate(s)} title="Duplicate" aria-label={`Duplicate ${s.name}`}>⧉</button>}
-                      {shownBtn('del') && <button type="button" className="cols__icon cols__icon--remove" onClick={() => { if (window.confirm(`Delete the ${saved ? 'selection' : 'search'} set “${s.name}”?`)) remove(s.id); }} title="Delete" aria-label={`Delete ${s.name}`}>✕</button>}
+                      {shownBtn('del') && <button type="button" className="cols__icon cols__icon--remove" onClick={() => { if (window.confirm(`Delete the ${saved ? 'selection' : 'search'} set “${s.name}”?`)) remove(s.id); }} title="Delete" aria-label={`Delete ${s.name}`}><IconRemove /></button>}
                     </div>
                   );
                 })}
@@ -678,7 +678,7 @@ function SelectionSetEditor({ initial, isNew, onClose, onConvert }: { initial: S
             <span className="cols__label" title={name}>{name}</span>
             {!loadedNames.has(name) && <span className="cols__hint">not loaded</span>}
             <span className="ss__count">{count.toLocaleString()}</span>
-            <button type="button" className="cols__icon cols__icon--remove" onClick={() => patch({ items: items.filter((i) => i.model !== name) })} title={`Remove this model's ${count} objects from the set`} aria-label={`Remove ${name}`}>✕</button>
+            <button type="button" className="cols__icon cols__icon--remove" onClick={() => patch({ items: items.filter((i) => i.model !== name) })} title={`Remove this model's ${count} objects from the set`} aria-label={`Remove ${name}`}><IconRemove /></button>
           </div>
         ))}
       </div>
@@ -708,7 +708,7 @@ function SelectionSetEditor({ initial, isNew, onClose, onConvert }: { initial: S
             {convFields.map((f) => (
               <div className="cols__row" key={f}>
                 <span className="cols__label" title={f}>{fieldLabel(f)}</span>
-                <button type="button" className="cols__icon cols__icon--remove" onClick={() => setConvFields(convFields.filter((x) => x !== f))} title="Remove this property" aria-label={`Remove ${fieldLabel(f)}`}>✕</button>
+                <button type="button" className="cols__icon cols__icon--remove" onClick={() => setConvFields(convFields.filter((x) => x !== f))} title="Remove this property" aria-label={`Remove ${fieldLabel(f)}`}><IconRemove /></button>
               </div>
             ))}
           </div>
@@ -885,7 +885,7 @@ function BulkConvert({ ids, onDone }: { ids: string[]; onDone: () => void }) {
         {fields.map((f) => (
           <div className="cols__row" key={f}>
             <span className="cols__label" title={f}>{label(f)}</span>
-            <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFields(fields.filter((x) => x !== f))} aria-label={`Remove ${label(f)}`}>✕</button>
+            <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFields(fields.filter((x) => x !== f))} aria-label={`Remove ${label(f)}`}><IconRemove /></button>
           </div>
         ))}
       </div>

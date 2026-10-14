@@ -12,7 +12,7 @@ from copy import deepcopy
 
 from core.helpers import title_case, get_plan_footprint
 from core.clash_position import classify_vertical_position, DEFINITELY_BELOW, MAJORITY_BELOW, DEFINITELY_ABOVE, MAJORITY_ABOVE
-from core.resources import POOL_P6_TYPE, crews_for, labour_resource_id, labour_trades, pool_resource_id, pools, rebar_tonnes, uses_for
+from core.resources import POOL_P6_TYPE, crew_pool_for, crew_pool_resource_id, crews_for, labour_resource_id, labour_trades, pool_resource_id, pools, rebar_tonnes, uses_for
 from core import calendars as _calendars
 from core import rules as _rules_module
 from core.rates_info import rate_fields
@@ -64,6 +64,8 @@ OPEN_END_MAX_DISTANCE_M = getattr(_config, "OPEN_END_MAX_DISTANCE_M", 0.3)
 # No slab within that reach (a wall whose top stops short of the soffit, or beside the slab's edge): precede the
 # nearest slab above it instead, so only pours with no slab above them at all (the roof) end on the completion milestone.
 OPEN_END_NEAREST_SLAB_FALLBACK = getattr(_config, "OPEN_END_NEAREST_SLAB_FALLBACK", True)
+# How far a pour may be sunk into the raft below it and still stand on it (m).
+RAFT_EMBEDMENT_TOLERANCE_M = getattr(_config, "RAFT_EMBEDMENT_TOLERANCE_M", 0.30)
 
 
 def _concrete_done_task(task_map):
@@ -242,16 +244,20 @@ def _build_intra_pour_predecessors(activities, sequence_order=None):
         by_phase = {str(a.get("phase", "")).strip().upper(): a for a in ordered}
         for index, act in enumerate(ordered):
             curr = act["task_id"]
-            edges = {}
-            for name, pct in act.get("follows") or []:
-                pred = by_phase.get(name.strip().upper())
+            edges, explicit = {}, {}
+            for entry in act.get("follows") or []:
+                pred = by_phase.get(entry[0].strip().upper())
                 if pred is not None and pred["task_id"] != curr:
-                    edges[pred["task_id"]] = pct
-            if not edges and index > 0 and ordered[index - 1]["task_id"] != curr:
+                    if len(entry) > 2:  # an explicit type and lag ("Rebar:SS+16"): several may join the same two activities
+                        explicit.setdefault(pred["task_id"], []).append((entry[2], entry[3]))
+                    else:
+                        edges[pred["task_id"]] = entry[1]
+            if not edges and not explicit and index > 0 and ordered[index - 1]["task_id"] != curr:
                 edges[ordered[index - 1]["task_id"]] = 100.0
-            for pred_id, pct in edges.items():
+            for pred_id in list(edges) + [p for p in explicit if p not in edges]:
                 predecessors[curr].append(pred_id)
             act["intra_edges"] = edges
+            act["intra_links"] = explicit
 
     return predecessors
 
@@ -360,6 +366,15 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
 
         return False
 
+    def _rests_on_raft(lower_rec, upper_rec):
+        if "RAFT" not in _normalized_pour_type(lower_rec) or "RAFT" in _normalized_pour_type(upper_rec):
+            return False
+        l_min, l_max = _safe_float(lower_rec.get("min_elevation"), None), _safe_float(lower_rec.get("max_elevation"), None)
+        u_min, u_max = _safe_float(upper_rec.get("min_elevation"), None), _safe_float(upper_rec.get("max_elevation"), None)
+        if None in (l_min, l_max, u_min, u_max):
+            return False
+        return l_min < u_min - 0.05 and u_min < l_max + 0.05 and l_max - u_min <= RAFT_EMBEDMENT_TOLERANCE_M and u_max > l_max + 0.05
+
     def _vertical_relation(rec_a, rec_b):
         """
         Returns:
@@ -375,6 +390,13 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
         if a_max is not None and b_min is not None and a_max <= b_min - 0.05:
             return -1
         if b_max is not None and a_min is not None and b_max <= a_min - 0.05:
+            return 1
+
+        # Walls and columns are modelled sunk into the raft they stand on (by 10 cm in the model this was found in), so their heights overlap
+        # the raft's top: a pour that starts in the raft's top and rises above it stands on the raft.
+        if _rests_on_raft(rec_a, rec_b):
+            return -1
+        if _rests_on_raft(rec_b, rec_a):
             return 1
 
         a_z = _safe_float(rec_a.get("coord_z"), None)
@@ -1262,6 +1284,9 @@ def add_resources(root):
     # The scenario's equipment, cranes and materials (recipes): the count of each is its max units.
     for pool in pools():
         specs.append((pool_resource_id(pool["kind"], pool["id"]), pool["name"], POOL_P6_TYPE[pool["kind"]], pool["quantity"]))
+    # The named crews with a number of crews available (by subcontractor): one resource each, the count its max units.
+    for pool in _rules_active().crew_pools():
+        specs.append((crew_pool_resource_id(pool["id"]), pool["name"], "Nonlabor", pool["quantity"]))
 
     ids = {}
     for oid, (rid, name, rtype, max_units) in enumerate(specs, start=1):
@@ -2211,6 +2236,10 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         if rec:
             for trade_code, crew in crews_for(act_data.get("phase", ""), rec, crew_table):
                 _assign_resource_to_activity(act_counter, labour_resource_id(trade_code), crew * duration_hours, units_per_time=crew)
+            # The crew pool: the activity holds one crew of its named crew for all its days.
+            held = crew_pool_for(act_data.get("phase", ""), rec)
+            if held:
+                _assign_resource_to_activity(act_counter, held[0], held[1] * max(duration_days, 1), units_per_time=held[1])
             # Equipment, cranes and materials of the recipe's task: held for the whole activity (units x its days, so the app's
             # daily demand is the count).
             for resource_id, count in uses_for(act_data.get("phase", ""), rec):
@@ -2255,6 +2284,11 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             continue
         succ_act = activity_by_task.get(succ_id) or {}
         for p_id in pred_list:
+            explicit_links = (succ_act.get("intra_links") or {}).get(p_id)
+            if explicit_links:
+                for link_type, link_lag in explicit_links:
+                    _emit_relationship(p_id, succ_id, {"FS": "FinishToStart", "SS": "StartToStart", "FF": "FinishToFinish", "SF": "StartToFinish"}[link_type], link_lag, source="intra")
+                continue
             pct = (succ_act.get("intra_edges") or {}).get(p_id, 100.0)
             pred_act = activity_by_task.get(p_id)
             if pct < 100.0 and pred_act is not None:

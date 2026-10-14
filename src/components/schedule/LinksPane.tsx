@@ -1,3 +1,4 @@
+import { hoursPerDayOf } from '../../schedule/hoursPerDay';
 import { useMemo, useState } from 'react';
 import type { Activity, Relationship, ScheduleModel } from '../../schedule/types';
 import { POSITION_LABEL, reachByContacts, relationDetail, sharedContactIndex, summariseRelation, viaRelation, type ViaRelation } from '../../schedule/activityRelation';
@@ -11,10 +12,12 @@ import { IconDriver, IconPencil } from '../icons';
 import { useVisibleSchedules } from '../../state/scheduleStore';
 import { programmeKey } from '../../state/unloadedWbsStore';
 import { useActivityOverridesStore } from '../../state/activityOverridesStore';
+import { commit } from '../../state/programmeHistory';
+import { resetLinkOps, setLinkOp } from '../../state/programmeEdits';
 import { reaches } from '../../schedule/linkShortcuts';
 import { ResizeHandle, useResizableWidth } from '../ResizeHandle';
 
-const days = (hours: number) => Math.round((hours / 8) * 10) / 10;
+const days = (hours: number, perDay = 8) => Math.round((hours / perDay) * 10) / 10;
 
 type Kind = 'predecessor' | 'successor';
 const REL_TYPES = ['FS', 'SS', 'FF', 'SF'] as const;
@@ -95,13 +98,16 @@ export function LinksPane({ activity, model, height, onSelect }: {
     predecessor: { code: '', type: 'FS', lag: '0' },
     successor: { code: '', type: 'FS', lag: '0' },
   });
+  const byId = useMemo(() => new Map(model.activities.map((a) => [a.id, a])), [model.activities]);
+  const calendarsById = useMemo(() => new Map(model.calendars.map((c) => [c.id, c])), [model.calendars]);
+  const perDayOf = (calendarId: string | null) => hoursPerDayOf(calendarId, calendarsById);
   const codeOf = (id: string) => model.activities.find((a) => a.id === id)?.code ?? id;
   const changed = origin !== null && (linkEdits[origin] ?? []).some((o) => o.pred === activity.code.toUpperCase() || o.succ === activity.code.toUpperCase());
   const setLink = (rel: Relationship, patch: { type?: Relationship['type']; lagHours?: number }) => {
-    if (origin !== null) useActivityOverridesStore.getState().setLink(origin, { op: 'set', pred: codeOf(rel.predId), succ: codeOf(rel.succId), ...patch });
+    if (origin !== null) commit('Edit link', () => setLinkOp(origin, { op: 'set', pred: codeOf(rel.predId), succ: codeOf(rel.succId), ...patch }), { merge: `link:${rel.predId}>${rel.succId}` });
   };
   const removeLink = (rel: Relationship) => {
-    if (origin !== null) useActivityOverridesStore.getState().setLink(origin, { op: 'remove', pred: codeOf(rel.predId), succ: codeOf(rel.succId) });
+    if (origin !== null) commit('Remove link', () => setLinkOp(origin, { op: 'remove', pred: codeOf(rel.predId), succ: codeOf(rel.succId) }));
   };
   const addLink = (kind: Kind) => {
     const d = add[kind];
@@ -112,12 +118,12 @@ export function LinksPane({ activity, model, height, onSelect }: {
     const succ = kind === 'predecessor' ? activity : other;
     if (reaches(model, succ.id, pred.id, [])) return setNote(`${pred.code} → ${succ.code} would make a loop (${succ.code} already leads to ${pred.code}).`);
     const lag = Number(d.lag);
-    useActivityOverridesStore.getState().setLink(origin, { op: 'add', pred: pred.code, succ: succ.code, type: d.type, lagHours: Number.isFinite(lag) ? Math.round(lag * 8 * 4) / 4 : 0 });
+    commit('Add link', () => setLinkOp(origin, { op: 'add', pred: pred.code, succ: succ.code, type: d.type, lagHours: Number.isFinite(lag) ? Math.round(lag * perDayOf(succ.calendarId) * 4) / 4 : 0 }));
     setAdd((s) => ({ ...s, [kind]: { ...s[kind], code: '' } }));
     setNote(`Linked ${pred.code} → ${succ.code} (${d.type}).`);
   };
   const resetLinks = () => {
-    if (origin !== null) useActivityOverridesStore.getState().resetLinks(origin, [activity.code]);
+    if (origin !== null) commit('Reset links', () => resetLinkOps(origin, [activity.code]));
     setNote('The links of this activity are back as in the imported or generated programme.');
   };
   const [sorts, setSorts] = useState<Record<Kind, Sort | null>>({ predecessor: null, successor: null });
@@ -212,8 +218,11 @@ export function LinksPane({ activity, model, height, onSelect }: {
               </thead>
               <tbody>
                 {rows.map((r, ri) => {
-                  const lag = days(r.rel.lagHours);
                   const other = r.other;
+                  // A lag is counted in the days of the later activity's calendar, as the schedule is calculated.
+                  const lagPerDay = perDayOf(byId.get(r.rel.succId)?.calendarId ?? null);
+                  const lag = days(r.rel.lagHours, lagPerDay);
+                  const perDayOther = other ? perDayOf(other.calendarId) : 8;
                   return (
                     <tr key={`${r.rel.predId}>${r.rel.succId}:${r.rel.type}:${r.rel.lagHours}:${ri}`}>
                       {editing && <td><button type="button" className="cols__icon cols__icon--remove" onClick={() => removeLink(r.rel)} aria-label="Take this link out" title="Take this link out">✕</button></td>}
@@ -225,15 +234,15 @@ export function LinksPane({ activity, model, height, onSelect }: {
                             <select className="lp-edit" value={r.rel.type} onChange={(e) => setLink(r.rel, { type: e.target.value as Relationship['type'] })} aria-label="Link type">
                               {REL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
                             </select>
-                            <input className="lp-edit lp-edit--lag" type="number" step="0.25" defaultValue={lag} key={`${r.rel.lagHours}`} onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && Math.round(v * 8 * 4) / 4 !== r.rel.lagHours) setLink(r.rel, { lagHours: Math.round(v * 8 * 4) / 4 }); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label="Lag in days" title="Lag in days" />
+                            <input className="lp-edit lp-edit--lag" type="number" step="0.25" defaultValue={lag} key={`${r.rel.lagHours}`} onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && Math.round(v * lagPerDay * 4) / 4 !== r.rel.lagHours) setLink(r.rel, { lagHours: Math.round(v * lagPerDay * 4) / 4 }); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label="Lag in days" title="Lag in days" />
                           </span>
                         ) : `${r.rel.type}${lag ? ` ${lag > 0 ? '+' : ''}${lag}d` : ''}`}
                       </td>
                       <td className="links-pane__name" title={other?.name}>{other?.name ?? ''}</td>
                       <td>{fmtDate(other?.earlyStart ?? other?.targetStart)}</td>
                       <td>{fmtDate(other?.earlyFinish ?? other?.targetFinish)}</td>
-                      <td className="num">{other ? days(other.durationHours) : ''}</td>
-                      <td className="num">{other?.totalFloatHours != null ? days(other.totalFloatHours) : ''}</td>
+                      <td className="num">{other ? days(other.durationHours, perDayOther) : ''}</td>
+                      <td className="num">{other?.totalFloatHours != null ? days(other.totalFloatHours, perDayOther) : ''}</td>
                       <td>{relationCell(r, kind)}</td>
                     </tr>
                   );

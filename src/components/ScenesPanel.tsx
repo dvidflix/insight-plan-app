@@ -1,16 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { queryMatcher } from '../schedule/search';
 import { scenes, START_PAGE_KEY, type Scene } from '../state/scenes';
+import { FREE_MODE } from '../licence/freeMode';
 import { InfoTip } from './InfoTip';
 import { RowButtonsChooser, useRowButtons } from './RowButtonsChooser';
-import { IconDownload, IconFolderOpen, IconPencil, IconPlus, IconTrash, IconUpload } from './icons';
+import { IconDownload, IconFolderOpen, IconPencil, IconPlus, IconUpload, IconRemove } from './icons';
 
 /** The buttons on each scene that can be hidden. */
 const SCENE_BUTTONS = [
   { id: 'open', glyph: <IconFolderOpen width={14} height={14} />, label: 'Open' },
   { id: 'rename', glyph: <IconPencil width={14} height={14} />, label: 'Rename' },
   { id: 'export', glyph: <IconDownload width={14} height={14} />, label: 'Download' },
-  { id: 'delete', glyph: <IconTrash width={14} height={14} />, label: 'Delete' },
+  { id: 'delete', glyph: <IconRemove />, label: 'Delete' },
 ] as const;
 type SceneButton = (typeof SCENE_BUTTONS)[number]['id'];
 
@@ -123,10 +124,12 @@ export function ScenesPanel() {
       {rb.shown('rename') && <button type="button" className="mini-btn mini-btn--icon" onClick={() => setRenaming(s.id)} title="Rename" aria-label={`Rename ${s.name}`}><IconPencil width={14} height={14} /></button>}
       {rb.shown('export') && <button type="button" className="mini-btn mini-btn--icon" onClick={() => void attempt('The scene was not exported', () => scenes.exportScene(s.id))} title="Download as a JSON file, with its viewpoints and topics" aria-label={`Export ${s.name}`}><IconDownload width={14} height={14} /></button>}
       {rb.shown('delete') && store.scenes.length > 1 && (
-        <button type="button" className="mini-btn mini-btn--icon danger" onClick={() => remove(s, isCurrent)} title="Delete this scene" aria-label={`Delete ${s.name}`}><IconTrash width={14} height={14} /></button>
+        <button type="button" className="cols__icon cols__icon--remove" onClick={() => remove(s, isCurrent)} title="Delete this scene" aria-label={`Delete ${s.name}`}><IconRemove /></button>
       )}
     </div>
   );
+
+  if (FREE_MODE) return <p style={{ padding: 12 }}>Scenes keep your arrangement and lists between visits. The free edition keeps nothing when you close the page, so they come with a licence.</p>;
 
   return (
     <div className="flt scenes">

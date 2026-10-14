@@ -119,6 +119,25 @@ def test_a_duration_can_come_from_a_quantity():
     assert days(gen.create_activities(tiny, FakeWbs()))["Rebar"] == 1  # never under the minimum
 
 
+def test_a_duration_can_come_from_the_measured_footprint_and_side_areas(monkeypatch):
+    from core import helpers
+    from types import SimpleNamespace
+    s1, s2 = SimpleNamespace(GlobalId="S1"), SimpleNamespace(GlobalId="S2")
+    areas = {("footprint", "S1"): 480.0, ("footprint", "S2"): 120.0, ("sides", "S1"): 300.0}
+    monkeypatch.setattr(helpers, "get_measured_area", lambda element, basis: areas.get((basis, element.GlobalId)))
+    row = {"when": {"family": "slab"}, "phase": "Rebar", "basis": "footprint", "manhoursPerUnit": 0.1, "crew": 6, "shifts": 1,
+           "hoursPerShift": 8, "rounding": "ceil", "minDays": 1}
+    rules.activate({"productivity": [row]})
+    # 480 m2 x 0.1 Mh/m2 / (6 x 8) = 1 day; the joined 120 m2 makes 600 -> 1.25 -> 2 days
+    one = rec("S1", "SLAB", element=s1)
+    assert days(gen.create_activities(one, FakeWbs()))["Rebar"] == 1
+    one["joined"] = [rec("S2", "SLAB", element=s2)]
+    assert days(gen.create_activities(one, FakeWbs()))["Rebar"] == 2
+    rules.activate({"productivity": [{**row, "basis": "sides", "manhoursPerUnit": 0.5}]})
+    # 300 m2 x 0.5 / 48 = 3.1 -> 4 days
+    assert days(gen.create_activities(rec("S1", "SLAB", element=s1), FakeWbs()))["Rebar"] == 4
+
+
 def test_a_duration_can_come_from_a_property_of_the_model():
     from core import quantities
     row = {"when": {"family": "slab"}, "phase": "Rebar", "basis": "property", "pset": "Qto_SlabBaseQuantities", "property": "RebarWeightKg",
@@ -309,6 +328,23 @@ def test_extras_link_to_the_level_task_of_their_level():
     assert {(x["pred"], x["succ"], x["type"]) for x in early} == {
         ("HLP-1", f"{config.PROJECT_SHORT}-B1-L2-WALLS", "FF"), ("HLP-1", f"{config.PROJECT_SHORT}-B1-L2-SLABS", "FF"),
     }
+
+
+def test_an_extra_links_ss_and_ff_to_the_concrete_of_the_pours_on_its_level():
+    acts = [
+        {"task_id": "S1-C", "phase": "Concrete", "rec": {"building": "1HDAB", "level_code": "L2", "pour_type": "SLAB"}},
+        {"task_id": "S1-R", "phase": "Rebar", "rec": {"building": "1HDAB", "level_code": "L2", "pour_type": "SLAB"}},
+        {"task_id": "W1-C", "phase": "Concrete", "rec": {"building": "1HDAB", "level_code": "L2", "pour_type": "WALL"}},
+        {"task_id": "S2-C", "phase": "Concrete", "rec": {"building": "1HDAB", "level_code": "L3", "pour_type": "SLAB"}},
+    ]
+    sel = "select:{type=SLAB; phase=Concrete}"
+    r = rules.activate({"levelLinks": [
+        {"id": "SS", "activities": "extras", "pours": sel, "tasks": [], "type": "SS", "direction": "fromTask"},
+        {"id": "FF", "activities": "extras", "pours": sel, "tasks": [], "type": "FF", "direction": "fromTask"},
+    ], "extraTags": {"E1": {"building": "1HDAB", "level": "L2"}}})
+    early, _late, msgs = rule_logic.build_level_links(r, None, [{"task_id": "E1"}], [], acts + [{"task_id": "E1", "extra": True}], "1HDAB")
+    assert {(x["pred"], x["succ"], x["type"]) for x in early} == {("S1-C", "E1", "SS"), ("S1-C", "E1", "FF")}
+    assert sum("1 link(s) to pours" in m for m in msgs) == 2
 
 
 def test_open_ended_activities_link_to_their_level_task():

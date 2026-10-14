@@ -9,6 +9,7 @@ const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   tasks: IconList,
   resources: IconLineGraph,
   scenarios: IconSplit,
+  recipes: IconList,
   rules: IconTune,
   clash: IconWarning,
   topics: IconChat,

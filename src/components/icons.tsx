@@ -31,7 +31,8 @@ import twoPaneSvg from '../icons/two-pane.svg?raw';
 import singlePaneSvg from '../icons/single-pane.svg?raw';
 import launchSvg from '../icons/launch.svg?raw';
 import searchSvg from '../icons/search.svg?raw';
-import deleteSvg from '../icons/delete.svg?raw';
+import cancelOutlineSvg from '../icons/cancel-outline.svg?raw';
+import removeOutlineSvg from '../icons/remove-outline.svg?raw';
 import updateSvg from '../icons/update.svg?raw';
 import locationPointSvg from '../icons/location-point.svg?raw';
 import boxSelectSvg from '../icons/box-select.svg?raw';
@@ -171,7 +172,12 @@ export const IconTwoPane = svgIcon(twoPaneSvg);
 export const IconSinglePane = svgIcon(singlePaneSvg);
 export const IconLaunch = svgIcon(launchSvg);
 export const IconSearch = svgIcon(searchSvg);
-export const IconTrash = svgIcon(deleteSvg);
+/** Deletes an item that is not a row of a list (a panel or window is closed with IconClose). */
+const RawDelete = svgIcon(cancelOutlineSvg);
+export const IconDelete = (p: SVGProps<SVGSVGElement>) => <RawDelete {...p} className={`ip-del ${p.className ?? ''}`.trim()} />;
+/** Removes a row or an item of a list or table. */
+const RawRemove = svgIcon(removeOutlineSvg);
+export const IconRemove = (p: SVGProps<SVGSVGElement>) => <RawRemove {...p} className={`ip-del ${p.className ?? ''}`.trim()} />;
 export const IconSync = svgIcon(updateSvg);
 export const IconLocationPoint = svgIcon(locationPointSvg);
 export const IconSelectionSet = svgIcon(boxSelectSvg);

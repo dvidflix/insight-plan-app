@@ -3,6 +3,8 @@ import type { Activity } from '../../schedule/types';
 import { WBS_PALETTES, wbsPaletteFor } from '../../schedule/wbsPalette';
 import { FieldPicker, RuleRows, newRuleId, type PickField } from './FieldRules';
 import { InfoTip } from '../InfoTip';
+import { PresetBar, type PresetItem } from './PresetBar';
+import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
 
 export type ColorOp = 'is' | 'contains' | 'starts' | 'empty';
 
@@ -97,6 +99,8 @@ interface ColorPanelProps {
 export function ColorPanel({ rules, onChange, onClose, wbsPalette, onWbsPaletteChange, fields = COLOR_RULE_FIELDS, valuesOf, width, bare = false }: ColorPanelProps) {
   const byId = new Map(fields.map((f) => [f.id, f]));
   const [autoField, setAutoField] = useState('');
+  const saved = useUserPresetsStore((st) => st.presets).filter((p) => p.kind === 'color' && (p.data as ColorRule[]).every((r) => byId.has(r.field)));
+  const colourItems: PresetItem[] = saved.map((p) => ({ id: p.id, label: p.name, user: true }));
   const update = (id: string, patch: Partial<ColorRule>) => onChange(rules.map((r) => (r.id === id ? { ...r, ...patch } : r)));
   const addFor = (f: PickField) => onChange([...rules, { id: newRuleId('color'), field: f.id, op: 'is', value: '', color: SWATCHES[rules.length % SWATCHES.length] }]);
   const colourByField = (fieldId: string) => {
@@ -119,6 +123,18 @@ export function ColorPanel({ rules, onChange, onClose, wbsPalette, onWbsPaletteC
           ))}
         </div>
       </div>}
+
+      <PresetBar
+        noun="colouring"
+        items={colourItems}
+        saveDisabled={rules.length === 0}
+        onApply={(id) => {
+          const kept = saved.find((p) => p.id === id)?.data as ColorRule[] | undefined;
+          if (kept) onChange(kept.map((r) => ({ ...r, id: newRuleId('color') })));
+        }}
+        onSave={(name) => saveUserPreset('color', name, rules)}
+        onDelete={removeUserPreset}
+      />
 
       {valuesOf && (
         <div className="info-tip-row color-auto">

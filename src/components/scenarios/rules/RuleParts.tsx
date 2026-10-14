@@ -1,5 +1,5 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
-import { IconCopy, IconEye, IconEyeOff, IconSectionChevron, IconTrash } from '../../icons';
+import { IconCopy, IconEye, IconEyeOff, IconSectionChevron, IconRemove } from '../../icons';
 import { KIND_BY_ID, type RuleKind } from './kinds';
 import { setRules, useScenarioStore } from '../../../state/scenarioStore';
 import { useScenarioView } from '../../../scenarios/useScenarioView';
@@ -72,8 +72,13 @@ export const FreshEntryContext = createContext<string | null>(null);
 
 /** One rule: a header (on / off, id, copy, delete) and its fields. */
 export function RuleCard({
-  id, onId, enabled, onEnabled, title, onCopy, onDelete, note, problem, children, kind, summary, defaultOpen,
+  id, onId, enabled, onEnabled, title, onCopy, onDelete, note, problem, children, kind, summary, defaultOpen, collapsed, onCollapsed, hideHead,
 }: {
+  /** The card without its header line (its id, switch, copy and delete are somewhere else on the screen). */
+  hideHead?: boolean;
+  /** A card that is not in the rules list (no `kind`) is always open; with these two it can be folded: `collapsed` is the state the owner keeps. */
+  collapsed?: boolean;
+  onCollapsed?: (collapsed: boolean) => void;
   /** In the rules list: the rule's type (shown as a badge) and a one-line summary; the card then opens and closes. */
   kind?: RuleKind;
   summary?: ReactNode;
@@ -96,8 +101,14 @@ export function RuleCard({
   const [open, setOpen] = useState(defaultOpen || !kind || (!!entryKey && entryKey === fresh));
   const meta = kind ? KIND_BY_ID[kind] : undefined;
   return (
-    <div className={`rule-card${enabled ? '' : ' is-off'}${problem ? ' has-problem' : ''}${kind ? ` rule-card--list rule-card--${meta?.family}${open ? ' is-open' : ''}` : ''}`} title={problem ?? undefined}>
+    <div className={`rule-card${hideHead ? ' rule-card--bare' : ''}${enabled ? '' : ' is-off'}${problem ? ' has-problem' : ''}${kind ? ` rule-card--list rule-card--${meta?.family}${open ? ' is-open' : ''}` : ''}`} title={problem ?? undefined}>
+      {!hideHead && (
       <div className="rule-card__head">
+        {!kind && onCollapsed && (
+          <button type="button" className="rule-card__fold" onClick={() => onCollapsed(!collapsed)} aria-expanded={!collapsed} aria-label={collapsed ? 'Open the recipe' : 'Fold the recipe'} title={collapsed ? 'Open' : 'Fold'}>
+            <IconSectionChevron className="section-chevron" />
+          </button>
+        )}
         {kind && (
           <button type="button" className="rule-card__toggle" onClick={() => setOpen(!open)} aria-expanded={open} aria-label={open ? 'Close the rule' : 'Open the rule'} title={meta?.tip}>
             <span className="rule-card__chevron"><IconSectionChevron className="section-chevron" /></span>
@@ -115,12 +126,13 @@ export function RuleCard({
             </button>
           )}
           {onCopy && <button type="button" onClick={onCopy} title="Duplicate" aria-label="Duplicate rule"><IconCopy /></button>}
-          <button type="button" className="rule-card__del" onClick={onDelete} title="Delete this rule" aria-label="Delete rule"><IconTrash /></button>
+          <button type="button" className="cols__icon cols__icon--remove" onClick={onDelete} title="Delete this rule" aria-label="Delete rule"><IconRemove /></button>
         </span>
       </div>
+      )}
       {!kind && note && <div className="rule-card__note scn-dim">{note}</div>}
       {problem && <div className="rule-card__problem">{problem}</div>}
-      {children && open && <div className="rule-card__body">{children}</div>}
+      {children && open && !(collapsed && !kind) && <div className="rule-card__body">{children}</div>}
     </div>
   );
 }
@@ -200,7 +212,7 @@ export function WhenEditor({ ctx, value, onChange, label = 'Applies to', noGroup
             ) : (
               <input value={when[k] ?? ''} list={options ? listId(k) : undefined} onChange={(e) => set(k, e.target.value)} placeholder={k === 'type' || k === 'typeNot' || k === 'building' || k === 'group' ? 'A|B for several' : ''} aria-label={WHEN_LABEL[k]} spellCheck={false} />
             )}
-            <button type="button" className="mini-btn" onClick={() => set(k, undefined)} title="Remove this condition" aria-label={`Remove ${WHEN_LABEL[k]}`}>×</button>
+            <button type="button" className="cols__icon cols__icon--remove" onClick={() => set(k, undefined)} title="Remove this condition" aria-label={`Remove ${WHEN_LABEL[k]}`}><IconRemove /></button>
           </span>
         );
       })}

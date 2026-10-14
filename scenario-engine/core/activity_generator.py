@@ -6,6 +6,7 @@ from config import (
     PHASE_DEFINITIONS,
     DEFAULT_COMPONENT_DAYS,
     DEFAULT_CHAIN,
+    DEFAULT_HEAVY_PRECAST_CHAIN,
     DEFAULT_PRECAST_CHAIN,
     DEFAULT_PHASE_DAYS,
 )
@@ -81,10 +82,11 @@ def create_activities(rec, wbs_manager, overrides=None):
         wbs_oid = rec["concrete_wbs_oid"]
         prev_task_id = None
 
-        # The phases are the chain of the rules that fits (Rules > Chains), else the engine's one activity, Installation.
-        chain = _rules.active().chain_for(rec) or DEFAULT_PRECAST_CHAIN
+        # The phases are the chain of the rules that fits (Rules > Chains), else the engine's own: Installation and Stitching, and for heavy
+        # precast also Propping, Curing and Propping Removal.
+        chain = _rules.active().chain_for(rec) or (DEFAULT_HEAVY_PRECAST_CHAIN if _rules.family_of(rec) == "heavyPrecast" else DEFAULT_PRECAST_CHAIN)
         phase_definitions = [
-            {"name": c["phase"], "suffix": c["suffix"], "resource": "", "duration_days": DEFAULT_PHASE_DAYS, "task_name_suffix": f" - {c.get('label') or c['phase']}",
+            {"name": c["phase"], "suffix": c["suffix"], "resource": "", "duration_days": c.get("days", DEFAULT_PHASE_DAYS), "task_name_suffix": f" - {c.get('label') or c['phase']}",
              "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates"))}
             for c in chain
         ]

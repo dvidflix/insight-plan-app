@@ -6,6 +6,7 @@ import { useLinkGroupsStore } from '../../state/linkGroupsStore';
 import { useModelsStore } from '../../state/modelsStore';
 import { useScenarioStore } from '../../state/scenarioStore';
 import { useScheduleStore } from '../../state/scheduleStore';
+import { commit } from '../../state/programmeHistory';
 import { sharedContactIndex } from '../../schedule/activityRelation';
 import { sharedActivityObjects } from '../../schedule/activityObjects';
 import { proposeLinks, toRelationships } from '../../schedule/generateLinks';
@@ -24,6 +25,9 @@ export function AutoLinkGenerator() {
   const clashBusy = useClashStore((s) => !!s.running || s.pending > 0);
   const rows = useScenarioStore((s) => s.rows);
   const headers = useScenarioStore((s) => s.loaded?.headers);
+  // With Steps overlap the generator already orders the work (each step starts a day after the last; the pours follow as they are ready):
+  // a finish-to-start link from the previous step's pour into every slab would put the relay back and add years.
+  const stepsOverlap = useScenarioStore((s) => s.rules.settings.sequenceFlow === true);
 
   useEffect(() => {
     if (!pending) return;
@@ -43,9 +47,9 @@ export function AutoLinkGenerator() {
       return;
     }
     const objects = sharedActivityObjects(schedule, loadedModels, groups);
-    const sequence = headers ? buildPourSequence(rows, headers, loadedModels, objects.ownersOf) : [];
+    const sequence = headers && !stepsOverlap ? buildPourSequence(rows, headers, loadedModels, objects.ownersOf) : [];
     const links = proposeLinks(schedule, objects, sharedContactIndex(clashResults), { sequence });
-    if (links.length) useScheduleStore.getState().setRelationships(schedule.id, [...schedule.relationships, ...toRelationships(links)]);
+    if (links.length) commit('Add generated links', () => useScheduleStore.getState().setRelationships(schedule.id, [...schedule.relationships, ...toRelationships(links)]));
     useGeneratedLinksStore.getState().setLast({
       count: links.length,
       undo: new Map([[schedule.id, schedule.relationships]]),
@@ -53,7 +57,7 @@ export function AutoLinkGenerator() {
     });
     setStatus(links.length ? `Added ${links.length.toLocaleString()} links to the generated programme.` : 'The generated programme already has every link.');
     clear();
-  }, [pending, enabled, schedules, loadedModels, groups, clashResults, clashBusy, rows, headers]);
+  }, [pending, enabled, schedules, loadedModels, groups, clashResults, clashBusy, rows, headers, stepsOverlap]);
 
   return null;
 }

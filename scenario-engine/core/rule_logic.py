@@ -19,7 +19,7 @@ from core.clash_position import (
     classify_vertical_position, invert_position,
     DEFINITELY_BELOW, MAJORITY_BELOW, SIDE, MAJORITY_ABOVE, DEFINITELY_ABOVE, UNDETERMINED,
 )
-from core.prs_links import is_selector, select_ids
+from core.prs_links import _matches, is_selector, parse_selector, select_ids
 from core import xml_builder as _xml_builder
 
 LEVEL_TASKS_WBS = "Level tasks"
@@ -567,6 +567,29 @@ def build_level_links(rules, tasks, extras_acts, level_task_acts, programme_acts
             ends = [(a["task_id"], _tag(a["task_id"], rules)) for a in extras_acts]
             ends = [(i, (b or first_building, lv)) for i, (b, lv) in ends if lv]
         made = 0
+        pours = str(rule.get("pours") or "").strip() if which == "extras" else ""
+        if pours:
+            # the extras' own building and level: each is tied to the pours the selection picks there (Concrete of the slabs, of the walls ...)
+            try:
+                terms, _mode = parse_selector(pours)
+            except ValueError as e:
+                messages.append(f"Level link {rule.get('id', '')}: {e}")
+                continue
+            by_place = {}
+            for a in programme_acts:
+                r = a.get("rec") or {}
+                if a.get("task_id") and r and not a.get("extra") and not a.get("loe") and not a.get("rule_milestone") and _matches(a, terms):
+                    by_place.setdefault((str(r.get("building") or "").upper(), str(r.get("level_code") or "").upper()), []).append(a["task_id"])
+            for task_id, (building, level) in ends:
+                only_task = str(_full_tag(task_id, rules).get("task") or "").strip().upper()
+                if only_task and kinds and only_task not in kinds:
+                    continue
+                for target in by_place.get((building, level), []):
+                    if target != task_id:
+                        early.append(_level_relation(rule, task_id, target))
+                        made += 1
+            messages.append(f"Level link {rule.get('id', '')}: {made} link(s) to pours")
+            continue
         for task_id, (building, level) in ends:
             # an extra tagged with one level task (Walls, Slabs ...) is tied to that one only
             only_task = str(_full_tag(task_id, rules).get("task") or "").strip().upper() if which == "extras" else ""

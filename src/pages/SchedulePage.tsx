@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { ActivityTable, type ActivityTableHandle } from '../components/schedule/ActivityTable';
 import { GanttChart, ZOOMS, type GanttHandle, type Zoom } from '../components/schedule/GanttChart';
 import { ResourcesView } from '../components/schedule/ResourcesView';
@@ -47,8 +48,13 @@ import { drivingPath } from '../schedule/drivingPath';
 import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from '../state/scheduleLayoutsStore';
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
-import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel } from '../components/icons';
+import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel, IconUndo, IconRedo } from '../components/icons';
 import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
+import { EditableStatus } from '../components/schedule/EditableStatus';
+import { EditTools } from '../components/schedule/EditTools';
+import { BaselineMenu } from '../components/schedule/BaselineMenu';
+import { useChosenBaseline } from '../state/baselines';
+import { redo, undo, useProgrammeHistory, useProgrammeHistoryKeys } from '../state/programmeHistory';
 import { useAggregateStore } from '../state/aggregateStore';
 import { useAppPrefsStore, type ExperimentalId } from '../state/appPrefsStore';
 
@@ -208,6 +214,12 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   // views put their own tools in the toolbar slot instead.
   const listTools = tab === 'activities' || tab === 'gantt' || tab === 'explorer';
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
+  // The zoom and view settings live at the right of the status bar (App's footer holds the spot).
+  const [statusSlot, setStatusSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => { setStatusSlot(document.getElementById('schedule-statusbar-tools')); });
+  useProgrammeHistoryKeys();
+  const undoLabel = useProgrammeHistory((h) => h.undos[h.undos.length - 1]?.label ?? null);
+  const redoLabel = useProgrammeHistory((h) => h.redos[h.redos.length - 1]?.label ?? null);
   const showTotals = useAggregateStore((s) => s.showTotals);
   const setShowTotals = useAggregateStore((s) => s.setShowTotals);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -240,7 +252,10 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const setViewFilters = (view: ListView, next: FieldFilterState | ((prev: FieldFilterState) => FieldFilterState)) =>
     setFiltersByView((all) => ({ ...all, [view]: typeof next === 'function' ? next(all[view]) : next }));
   const catalog = useColumnCatalog(model);
-  const columnCtx = useMemo(() => (model ? buildColumnContext(model) : null), [model]);
+  // The saved baseline the programme is shown against (the Baselines menu), when it is one programme from the project database.
+  const baselineBase = schedules.length === 1 && schedules[0].dbProgrammeId !== undefined ? schedules[0] : null;
+  const chosenBaseline = useChosenBaseline(baselineBase);
+  const columnCtx = useMemo(() => (model ? buildColumnContext(model, chosenBaseline) : null), [model, chosenBaseline]);
   const [tableColumnIds, setTableColumnIds] = usePersistedState<string[]>('table.columns', DEFAULT_TABLE_COLUMNS);
   const [ganttColumnIds, setGanttColumnIds] = usePersistedState<string[]>('gantt.columns', DEFAULT_GANTT_COLUMNS);
   const tableColumns = useMemo(() => resolveColumns(catalog, tableColumnIds), [catalog, tableColumnIds]);
@@ -301,6 +316,9 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
     useSelectedActivityStore.getState().set(model, selectedActivityId);
   }, [model, selectedActivityId]);
 
+  // Declared before the early return below: a hook after it is skipped when the schedule goes away ("Rendered fewer hooks than expected").
+  const [shortcutNote, setShortcutNote] = useState<string | null>(null);
+
   const handleSelect = (activity: Activity) => {
     setSelectedId(activity.id);
   };
@@ -345,7 +363,6 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
     />
   );
   // Alt+S / Alt+F on the Gantt: link the picked activities (all in one programme).
-  const [shortcutNote, setShortcutNote] = useState<string | null>(null);
   const linkShortcut = (kind: 'SS' | 'FS') => {
     const ids = useActivitySelectionStore.getState().ids;
     const own = schedules.length === 1 ? schedules[0] : schedules.find((m) => ids.size > 0 && [...ids].every((id) => id.startsWith(`${m.id}:`)));
@@ -463,73 +480,26 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
               </select>
             </div>
           )}
+          <div className="schedule-toolbar__history">
+            <button type="button" className="btn btn--small" disabled={!undoLabel} onClick={() => undo()} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><IconUndo width={16} height={16} /></button>
+            <button type="button" className="btn btn--small" disabled={!redoLabel} onClick={() => redo()} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><IconRedo width={16} height={16} /></button>
+            <EditableStatus />
+          </div>
+          {baselineBase && <BaselineMenu model={baselineBase} />}
+          {schedules.length === 1 && schedules[0].editable && (
+            <EditTools
+              model={schedules[0]}
+              selectedId={selectedId}
+              onSelect={(id) => setSelectedId(id)}
+              onNote={(text) => { setShortcutNote(text); window.setTimeout(() => setShortcutNote((cur) => (cur === text ? null : cur)), 5000); }}
+              keys={tab === 'activities' || tab === 'gantt'}
+            />
+          )}
           <div ref={setToolbarSlot} className="schedule-toolbar__slot" />
           {dayFilter && (
             <button className="btn btn--small" type="button" onClick={() => setDayFilter(null)} title="Clear day filter">
               Day: {dayFilterLabel} ✕
             </button>
-          )}
-          {tab === 'gantt' && (
-            <>
-              <span className="groupby-panel__title">Zoom: </span>
-              <select value={zoom} onChange={(e) => setZoom(e.target.value as Zoom)}>
-                {ZOOMS.map((z) => (
-                  <option key={z} value={z}>
-                    {z[0].toUpperCase() + z.slice(1)}
-                  </option>
-                ))}
-              </select>
-              <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.scrollToToday()} title="Scroll to today">Today</button>
-              <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.fit()} title="Fit whole programme in view">Fit</button>
-              <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomOut()} title="Zoom out (Ctrl + wheel)">−</button>
-              <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomIn()} title="Zoom in (Ctrl + wheel)">+</button>
-            </>
-          )}
-          {listTools && (
-            <div style={{ position: 'relative' }}>
-              <button className="icon-btn" title={tab === 'gantt' ? 'Gantt and view settings' : 'View settings'} onClick={() => setGanttSettingsOpen((v) => !v)}>
-                <IconGear />
-              </button>
-              {ganttSettingsOpen && (
-                <div
-                  style={{
-                    position: 'absolute', top: '110%', left: 0, zIndex: 20, width: 240,
-                    background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 10,
-                  }}
-                >
-                  {tab === 'gantt' && (
-                    <>
-                      <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 6 }}>Gantt</div>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                        <input type="checkbox" checked={showGanttLinks} onChange={(e) => setShowGanttLinks(e.target.checked)} />
-                        Show relationship links
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                        <input type="checkbox" checked={showGanttCritical} onChange={(e) => setShowGanttCritical(e.target.checked)} />
-                        Highlight critical path
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                        <input type="checkbox" checked={showGanttBaseline} onChange={(e) => setShowGanttBaseline(e.target.checked)} />
-                        Show target (baseline) bars
-                      </label>
-                      <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                        <input type="checkbox" checked={showGanttLabels} onChange={(e) => setShowGanttLabels(e.target.checked)} />
-                        Show names beside bars
-                      </label>
-                    </>
-                  )}
-                  <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', margin: tab === 'gantt' ? '8px 0 6px' : '0 0 6px' }}>Rows</div>
-                  <label title="Curtain: filters and the driving path fade the other rows back instead of removing them" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                    <input type="checkbox" checked={curtain} onChange={(e) => setCurtain(e.target.checked)} />
-                    Curtain (fade filtered rows)
-                  </label>
-                  <label title="Totals row and group subtotals; pick how each column sums up (sum, average, min, max, dates, spans) in the totals row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                    <input type="checkbox" checked={showTotals} onChange={(e) => setShowTotals(e.target.checked)} />
-                    Σ Totals
-                  </label>
-                </div>
-              )}
-            </div>
           )}
         </div>
 
@@ -675,6 +645,70 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
         {listTools && layoutsOpen && <LayoutsDock filters={filtersByView} tab={tab} importContext={model ? { catalog, filterFields } : null} onClose={() => setLayoutsOpen(false)} />}
       </div>
     </div>
+      {statusSlot && createPortal(<>
+    {tab === 'gantt' && (
+      <>
+        <span className="groupby-panel__title">Zoom: </span>
+        <select value={zoom} onChange={(e) => setZoom(e.target.value as Zoom)}>
+          {ZOOMS.map((z) => (
+            <option key={z} value={z}>
+              {z[0].toUpperCase() + z.slice(1)}
+            </option>
+          ))}
+        </select>
+        <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.scrollToToday()} title="Scroll to today">Today</button>
+        <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.fit()} title="Fit whole programme in view">Fit</button>
+        <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomOut()} title="Zoom out (Alt + wheel)">−</button>
+        <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomIn()} title="Zoom in (Alt + wheel)">+</button>
+      </>
+    )}
+    {listTools && (
+      <div style={{ position: 'relative' }}>
+        <button className="btn btn--small" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title={tab === 'gantt' ? 'Gantt and view settings' : 'View settings'} onClick={() => setGanttSettingsOpen((v) => !v)}>
+          <IconGear width={14} height={14} />
+        </button>
+        {ganttSettingsOpen && (
+          <div
+            style={{
+              position: 'absolute', bottom: '110%', right: 0, zIndex: 40, width: 240,
+              background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 10,
+            }}
+          >
+            {tab === 'gantt' && (
+              <>
+                <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 6 }}>Gantt</div>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                  <input type="checkbox" checked={showGanttLinks} onChange={(e) => setShowGanttLinks(e.target.checked)} />
+                  Show relationship links
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                  <input type="checkbox" checked={showGanttCritical} onChange={(e) => setShowGanttCritical(e.target.checked)} />
+                  Highlight critical path
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                  <input type="checkbox" checked={showGanttBaseline} onChange={(e) => setShowGanttBaseline(e.target.checked)} />
+                  Show target (baseline) bars
+                </label>
+                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+                  <input type="checkbox" checked={showGanttLabels} onChange={(e) => setShowGanttLabels(e.target.checked)} />
+                  Show names beside bars
+                </label>
+              </>
+            )}
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', margin: tab === 'gantt' ? '8px 0 6px' : '0 0 6px' }}>Rows</div>
+            <label title="Curtain: filters and the driving path fade the other rows back instead of removing them" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+              <input type="checkbox" checked={curtain} onChange={(e) => setCurtain(e.target.checked)} />
+              Curtain (fade filtered rows)
+            </label>
+            <label title="Totals row and group subtotals; pick how each column sums up (sum, average, min, max, dates, spans) in the totals row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
+              <input type="checkbox" checked={showTotals} onChange={(e) => setShowTotals(e.target.checked)} />
+              Σ Totals
+            </label>
+          </div>
+        )}
+      </div>
+    )}
+      </>, statusSlot)}
     </ToolbarSlotContext.Provider>
   );
 }

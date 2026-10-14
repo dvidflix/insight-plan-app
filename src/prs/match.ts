@@ -328,7 +328,7 @@ export function validateRules(rules: ScenarioRules, extraIds: string[] = []): Ru
     checkWhen('contacts', c.id, c.with);
   }
   for (const l of rules.levelLinks) {
-    if (!l.tasks.length) out.push({ section: 'levelLinks', id: l.id, text: 'Names no level task' });
+    if (!l.tasks.length && !l.pours) out.push({ section: 'levelLinks', id: l.id, text: 'Names no level task' });
     for (const t of l.tasks) if (!taskIds.has(t.toUpperCase())) out.push({ section: 'levelLinks', id: l.id, text: `The level task "${t}" does not exist` });
     if (l.activities === 'select' && !/^select:/i.test((l.select ?? '').trim())) out.push({ section: 'levelLinks', id: l.id, text: 'The selection should be written select:{...}' });
     if (l.activities === 'extras') {

@@ -81,10 +81,16 @@ export class ProjectFolders implements DbHost, ModelsHost {
     return (await this.entry(root)).db;
   }
 
-  async writeFiles(rawRoot: unknown, files: { name: string; content: string }[]): Promise<string[]> {
+  async writeFiles(rawRoot: unknown, files: { name: string; content: string }[], dir = ''): Promise<string[]> {
     const root = String(rawRoot ?? '').trim();
-    const folder = this.folders.get(root);
-    if (!folder) throw new HttpError(400, 'Choose the project folder first (Inputs > Project database).');
+    const project = this.folders.get(root);
+    if (!project) throw new HttpError(400, 'Choose the project folder first (Inputs > Project database).');
+    // The browser may have to be asked again before it lets the page write into the folder.
+    const access = project as unknown as { queryPermission?: (o: { mode: string }) => Promise<string>; requestPermission?: (o: { mode: string }) => Promise<string> };
+    if (access.queryPermission && (await access.queryPermission({ mode: 'readwrite' })) !== 'granted' && access.requestPermission && (await access.requestPermission({ mode: 'readwrite' })) !== 'granted') {
+      throw new HttpError(403, 'The browser did not allow writing into the project folder: choose the folder again (Inputs > Project database) and allow editing.');
+    }
+    const folder = dir ? await project.getDirectoryHandle(dir, { create: true }) : project;
     const written: string[] = [];
     for (const f of files) {
       const handle = await folder.getFileHandle(f.name, { create: true });

@@ -10,6 +10,10 @@ import { ExpandCollapseToggle } from './ExpandCollapseToggle';
 import { withUnit } from '../viewer/units';
 import { IconChevronRight, IconExpandMore } from './icons';
 import { queryMatcher } from '../schedule/search';
+import { COMPUTED_SET, computeQuantities, computedRows, type ComputedQuantities } from '../viewer/computedQuantities';
+
+/** Geometry is measured for a selection of at most this many objects (a whole-model selection would be slow). */
+const MAX_COMPUTED = 300;
 
 interface Row {
   data: PropertyRow;
@@ -49,13 +53,34 @@ export function PropertiesGrid() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, byModel, hiddenPsets, hiddenProps, models, tick]);
 
+  // The quantities worked out from the selected objects' geometry (up to MAX_COMPUTED objects, summed), added as one more set.
+  const [computed, setComputed] = useState<ComputedQuantities[]>([]);
+  useEffect(() => {
+    let live = true;
+    const entries = Object.entries(byModel).filter(([, ids]) => ids.length);
+    const count = entries.reduce((n, [, ids]) => n + ids.length, 0);
+    if (!count || count > MAX_COMPUTED) { setComputed([]); return; }
+    void Promise.all(entries.map(([modelId, ids]) => computeQuantities(engine, modelId, ids))).then((maps) => {
+      if (live) setComputed(maps.flatMap((m) => [...m.values()]));
+    });
+    return () => { live = false; };
+  }, [engine, byModel]);
+
   // A new selection starts with the breakdowns closed.
   useEffect(() => setOpenValues(new Set()), [byModel]);
   useEffect(() => setToggled(new Set()), [expandMode]);
 
   const hit = useMemo(() => queryMatcher(filter), [filter]);
   const filtering = filter.trim() !== '';
-  const rows = table.rows as unknown as Row[];
+  const rows = useMemo(() => {
+    const base = table.rows as unknown as Row[];
+    if (!computed.length || hiddenPsets.includes(COMPUTED_SET)) return base;
+    const group: Row = {
+      data: { Property: COMPUTED_SET, Value: '', Count: '', Key: '', Match: '' },
+      children: computedRows(computed).filter((r) => !hiddenProps.includes(`${COMPUTED_SET}.${r.name}`)).map((r) => ({ data: { Property: r.name, Value: r.value, Count: '', Key: '', Match: '' } })),
+    };
+    return [...base, group];
+  }, [table, computed, hiddenPsets, hiddenProps]);
 
   const matches = (r: Row) => hit(r.data.Property) || hit(r.data.Value) || (r.children ?? []).some((c) => hit(c.data.Value));
   const sets = rows

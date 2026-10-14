@@ -1,3 +1,4 @@
+import { scrollDoubleWithCtrl } from '../../utils/wheelScroll';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Activity, Relationship } from '../../schedule/types';
 import { wbsGroupColors, DEFAULT_WBS_PALETTE } from '../../schedule/wbsPalette';
@@ -25,7 +26,7 @@ import { useTableStyleStore } from '../../state/tableStyleStore';
 import { useAggregateStore } from '../../state/aggregateStore';
 import { applyWbsOrder, useWbsOrder } from '../../state/wbsOrder';
 import type { GanttExport, GanttExportRow } from '../../schedule/exportGanttXlsx';
-import { aggregate, aggType, defaultAgg, type AggKind } from '../../schedule/aggregates';
+import { aggregate, aggType, defaultAgg, isGroupDate, type AggKind } from '../../schedule/aggregates';
 import { AggCell } from './AggCell';
 import { IconExpander } from '../icons';
 import { getCalendar } from '../../schedule/calendar';
@@ -263,9 +264,11 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   const setAggKind = useAggregateStore((s) => s.setKind);
   const totalsOn = aggregatable && aggShow;
   const kindOf = (c: ColumnDef): AggKind => aggKinds[c.id] ?? defaultAgg(c);
+  // Without Σ Totals a group row still shows its dates.
+  const groupKindOf = (c: ColumnDef): AggKind => (totalsOn || isGroupDate(c) ? kindOf(c) : 'none');
   const groupActs = useMemo(() => {
     const m = new Map<string, Activity[]>();
-    if (!totalsOn) return m;
+    if (!aggregatable) return m;
     const collect = (n: (typeof wbsTree)[number]): Activity[] => {
       const all = [...n.rows.map((r) => r.activity), ...n.children.flatMap(collect)];
       m.set(n.path, all);
@@ -273,7 +276,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     };
     wbsTree.forEach(collect);
     return m;
-  }, [totalsOn, wbsTree]);
+  }, [aggregatable, wbsTree]);
   const layout = useMemo(() => flattenLayout(rows, wbsTree, grouped, collapsedGroups), [rows, wbsTree, grouped, collapsedGroups]);
   const linkIndex = useMemo(() => buildLinkIndex(relationships), [relationships]);
   const items = layout.items;
@@ -336,7 +339,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   const totalWidth = LABEL_W + chartWidth;
   const xFor = (ms: number) => ((ms - rangeStartMs) / DAY_MS) * pxPerDay;
 
-  // A preset picked from the toolbar drops any ctrl+wheel/fit override.
+  // A preset picked from the toolbar drops any wheel-zoom/fit override.
   useEffect(() => setCustomPx(null), [zoom]);
 
   // Keeps whatever date is under the pointer (or the viewport centre) fixed
@@ -445,17 +448,20 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     measure();
     const ro = new ResizeObserver(measure);
     ro.observe(el);
-    // ctrl/cmd + wheel zooms the time axis around the cursor (needs a
-    // non-passive listener to suppress the browser's page zoom).
+    // Alt + wheel zooms the time axis around the cursor (a non-passive listener, to keep the page from scrolling); Ctrl / Cmd + wheel
+    // scrolls twice as far, as in the Table.
     const onWheel = (e: WheelEvent) => {
-      if (!(e.ctrlKey || e.metaKey)) return;
-      e.preventDefault();
-      controls.current.zoomBy(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - el.getBoundingClientRect().left);
+      if (e.altKey && !(e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        controls.current.zoomBy(e.deltaY < 0 || e.deltaX < 0 ? 1.15 : 1 / 1.15, e.clientX - el.getBoundingClientRect().left);
+      }
     };
     el.addEventListener('wheel', onWheel, { passive: false });
+    const stopDouble = scrollDoubleWithCtrl(el);
     return () => {
       ro.disconnect();
       el.removeEventListener('wheel', onWheel);
+      stopDouble();
       if (rafRef.current) cancelAnimationFrame(rafRef.current);
     };
   }, []);
@@ -642,7 +648,11 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     const critical = showCritical && a.isCritical;
     const color = getColor?.(a) ?? (critical ? 'var(--bar-critical)' : a.status === 'completed' ? 'var(--bar-done)' : 'var(--bar-normal)');
     const labelLeft = (isMilestone ? barLeft + 12 : barLeft + barWidth) + 6;
-    const baseline = showBaseline && a.targetStart && a.targetFinish ? { l: xFor(a.targetStart.getTime()), w: Math.max(xFor(a.targetFinish.getTime()) - xFor(a.targetStart.getTime()), 3) } : null;
+    // The thin bar under the activity: where the saved baseline had it, else its target dates (when the baseline bars are switched on).
+    const saved = columnCtx.baseline?.of(a);
+    const blStart = saved ? saved.actualStart ?? saved.earlyStart ?? saved.targetStart : showBaseline ? a.targetStart : null;
+    const blFinish = saved ? saved.actualFinish ?? saved.earlyFinish ?? saved.targetFinish : showBaseline ? a.targetFinish : null;
+    const baseline = blStart && blFinish ? { l: xFor(blStart.getTime()), w: Math.max(xFor(blFinish.getTime()) - xFor(blStart.getTime()), 3) } : null;
     const onTip = (e: React.MouseEvent) => setTip({ activity: a, x: e.clientX, y: e.clientY });
     return (
       <div
@@ -699,6 +709,14 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     );
   };
 
+  /** A group's bar hover: its dates and how long it runs, as the bar alone does not say. */
+  const summaryTitle = (agg: { s: number; f: number; pct: number }) => {
+    const days = Math.round((agg.f - agg.s) / 86400000);
+    const span = days >= 365 ? `${(days / 365.25).toFixed(1)} years` : `${days} days`;
+    const d = (ms: number) => new Date(ms).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' });
+    return `${d(agg.s)} to ${d(agg.f)} (${span}), ${Math.round(agg.pct)}% complete`;
+  };
+
   const renderGroup = (item: Extract<(typeof items)[number], { kind: 'group' }>, index: number) => {
     const { bg, fg } = wbsGroupColors(item.path, wbsPalette);
     const agg = groupAggs.get(item.path);
@@ -709,19 +727,19 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
       <div
         key={`g:${item.path}`}
         className="gantt-row gantt-group-header"
-        style={{ top: index * ROW_H, width: totalWidth, background: bg, color: fg }}
+        style={{ top: index * ROW_H, width: totalWidth, color: fg }}
         onClick={() => toggleGroup(item.path)}
       >
         <span className="gantt-row-label" style={{ width: LABEL_W, background: bg, color: fg, paddingLeft: 10 + item.depth * 16 }}>
           <IconExpander open={!collapsed} /> {item.label}
           <span style={{ opacity: 0.7, marginLeft: 6 }}>({item.count})</span>
-          {totalsOn && (() => {
+          {aggregatable && (() => {
             // Subtotals sit over their own columns (the label shows to the left of them).
             let x = 0;
             return visibleLabelColumns.map((c) => {
               const left = x;
               x += widthOf(c);
-              const k = kindOf(c);
+              const k = groupKindOf(c);
               if (k === 'none') return null;
               return (
                 <span key={c.id} className="gantt-subtotal" style={{ left, width: widthOf(c), background: bg, justifyContent: c.align ? 'flex-end' : undefined }}>
@@ -731,9 +749,9 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
             });
           })()}
         </span>
-        <div className="gantt-row-chart" style={{ width: chartWidth }}>
+        <div className="gantt-row-chart" style={{ width: chartWidth, height: '100%' }}>
           {agg && (
-            <div className="gantt-summary" style={{ left, width, color: fg }} title={`${Math.round(agg.pct)}% complete`}>
+            <div className="gantt-summary" style={{ left, width }} title={summaryTitle(agg)}>
               <div className="gantt-summary__track" />
               <div className="gantt-summary__done" style={{ width: `${agg.pct}%` }} />
             </div>

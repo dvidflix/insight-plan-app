@@ -31,7 +31,7 @@ export function pageLicensed(page: string, modules: readonly LicenceModule[]): b
 
 export type LicenceCheck = { ok: true; licence: Licence; daysLeft: number } | { ok: false; reason: string };
 
-const STORE_KEY = 'insight-plan.licence';
+export const STORE_KEY = 'insight-plan.licence';
 
 const fromB64Url = (s: string) => Uint8Array.from(atob(s.replace(/-/g, '+').replace(/_/g, '/')), (c) => c.charCodeAt(0));
 

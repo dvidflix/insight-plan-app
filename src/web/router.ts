@@ -9,7 +9,7 @@ export interface DbHost {
   /** The project folder's database (opened on first use). */
   database(root: unknown): Promise<BrowserProjectDb>;
   /** Writes plain files into the project folder (the export files of Settings > Import / Export). */
-  writeFiles(root: unknown, files: { name: string; content: string }[]): Promise<string[]>;
+  writeFiles(root: unknown, files: { name: string; content: string }[], dir?: string): Promise<string[]>;
   /** How the file is doing: saved, waiting to be saved, or failing. */
   saveStatus(root: unknown): { dirty: boolean; savedAt: number | null; error: string | null };
 }
@@ -56,7 +56,10 @@ export async function handleDbRequest(host: DbHost, method: string, route: strin
       const b = json(body);
       const files = (Array.isArray(b.files) ? b.files : []) as { name: string; content: string }[];
       for (const f of files) if (!/^insight-plan-[a-z]+\.json$/.test(String(f?.name)) || typeof f.content !== 'string') throw new HttpError(400, `Not an export file: ${f?.name}`);
-      return ok({ folder: String(b.root ?? ''), written: await host.writeFiles(b.root, files) });
+      const dir = String(b.dir ?? '');
+      if (!/^[a-z]*$/.test(dir)) throw new HttpError(400, `Not a folder name: ${dir}`);
+      const written = await host.writeFiles(b.root, files, dir);
+      return ok({ folder: dir ? `${String(b.root ?? '')}/${dir}` : String(b.root ?? ''), written });
     }
 
     // ---- programmes ----
@@ -91,6 +94,30 @@ export async function handleDbRequest(host: DbHost, method: string, route: strin
       if (!name) throw new HttpError(400, 'No name given.');
       (await host.database(b.root)).renameProgramme(numberParam(b.id, 'programme id'), name);
       return ok({ ok: true });
+    }
+    if (get && route === 'programmes/export') return ok((await host.database(root)).exportProgramme(numberParam(query.get('id'), 'programme id')));
+    if (post && route === 'programmes/copy') {
+      const b = json(body);
+      const name = String(b.name ?? '').trim();
+      if (!name) throw new HttpError(400, 'No name given.');
+      return ok({ programme: (await host.database(b.root)).copyProgramme(numberParam(b.id, 'programme id'), name) });
+    }
+    if (post && route === 'programmes/baseline') {
+      const b = json(body);
+      const name = String(b.name ?? '').trim();
+      if (!name) throw new HttpError(400, 'No name given.');
+      return ok({ programme: (await host.database(b.root)).saveBaseline(numberParam(b.id, 'programme id'), name) });
+    }
+    if (post && route === 'programmes/blank') {
+      const b = json(body);
+      const name = String(b.name ?? '').trim();
+      if (!name) throw new HttpError(400, 'No name given.');
+      return ok({ programme: (await host.database(b.root)).blankProgramme(name, String(b.start ?? '')) });
+    }
+    if (post && route === 'programmes/ops') {
+      const b = json(body);
+      if (!Array.isArray(b.ops)) throw new HttpError(400, 'No changes given.');
+      return ok((await host.database(b.root)).applyOps(numberParam(b.id, 'programme id'), b.ops));
     }
     if (post && route === 'programmes/delete') {
       const b = json(body);

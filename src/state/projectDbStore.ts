@@ -3,8 +3,16 @@ import { FEATURES } from '../features';
 import { useScheduleStore } from './scheduleStore';
 import { buildDbSchedule } from '../schedule/importSchedule';
 import type { ScheduleModel } from '../schedule/types';
+import { programmeRowOps } from '../schedule/nativeOps';
+import { withOverrides, useActivityOverridesStore } from './activityOverridesStore';
+import { programmeKey } from './unloadedWbsStore';
 import {
+  applyProgrammeOps,
+  blankProgramme,
+  copyProgramme,
   deleteProgramme,
+  renameProgramme,
+  saveBaseline,
   fetchChanges,
   fetchProgrammes,
   importProgramme,
@@ -98,7 +106,8 @@ function replaceSchedule(model: ScheduleModel, hidden: boolean) {
   else hiddenIds.delete(model.id);
   useScheduleStore.setState({
     schedules: exists ? store.schedules.map((s) => (s.id === model.id ? model : s)) : [...store.schedules, model],
-    selectedId: exists ? store.selectedId : model.id,
+    // A hidden programme (a saved baseline looked at, say) does not take the selection from the one being worked on.
+    selectedId: exists || hidden ? store.selectedId : model.id,
     hiddenScheduleIds: hiddenIds,
   });
 }
@@ -116,6 +125,8 @@ export async function loadProgramme(p: DbProgramme) {
     model.id = dbScheduleId(p.id);
     model.dbProgrammeId = p.id;
     model.sourceFileName = p.name;
+    model.editable = p.editable;
+    markSaved(model);
     replaceSchedule(model, p.hidden);
   } finally {
     set((s) => {
@@ -194,10 +205,142 @@ export const reloadFromDb = () =>
   run('Reloading from the project database…', async () => {
     const db = get().db;
     if (!db) return;
+    await flushEditable();
     const changes = await fetchChanges(db.root).catch(() => get().changes);
     await syncProgrammes(true);
     for (const s of syncers) await s.pull(db.root, 'reload');
     set({ changes, seenChanges: changes });
+  });
+
+
+// ---- programmes edited in place ----
+
+/** An editable programme's edits change its model; they are written to the database a moment after, as the row changes between the
+    model as last written and as it is now (schedule/nativeOps.ts). Undo and redo are changes of the model like any other. */
+interface EditableSave {
+  /** Edits not yet written. */
+  pending: boolean;
+  error: string | null;
+  /** When the last write finished (ms). */
+  savedAt: number | null;
+}
+export const useEditableSaveStore = create<EditableSave>(() => ({ pending: false, error: null, savedAt: null }));
+
+/** Schedule id -> the model as the database has it. */
+const written = new Map<string, ScheduleModel>();
+const markSaved = (m: ScheduleModel) => {
+  if (m.editable) written.set(m.id, m);
+  else written.delete(m.id);
+};
+
+const SAVE_DELAY_MS = 800;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+let saving: Promise<void> = Promise.resolve();
+
+async function writeEditable() {
+  const db = get().db;
+  if (!db) return;
+  for (const m of useScheduleStore.getState().schedules) {
+    if (!m.editable || m.dbProgrammeId === undefined) continue;
+    const base = written.get(m.id);
+    if (!base || base === m) continue;
+    const ops = programmeRowOps(base, m);
+    try {
+      if (ops.length) await applyProgrammeOps(db.root, m.dbProgrammeId, ops);
+      written.set(m.id, m);
+    } catch (e) {
+      useEditableSaveStore.setState({ error: `"${m.sourceFileName}" was not saved: ${e instanceof Error ? e.message : String(e)}`, pending: true });
+      return;
+    }
+  }
+  const stale = useScheduleStore.getState().schedules.some((m) => m.editable && written.get(m.id) !== m);
+  useEditableSaveStore.setState({ pending: stale, error: null, savedAt: Date.now() });
+  if (stale) scheduleSave();
+}
+
+/** Writes the edits now (before the project is reloaded or closed); resolves when they are written. */
+export function flushEditable(): Promise<void> {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = null;
+  saving = saving.then(writeEditable, writeEditable);
+  return saving;
+}
+
+function scheduleSave() {
+  useEditableSaveStore.setState({ pending: true });
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => void flushEditable(), SAVE_DELAY_MS);
+}
+
+useScheduleStore.subscribe((s, prev) => {
+  if (s.schedules === prev.schedules) return;
+  const ids = new Set(s.schedules.map((m) => m.id));
+  for (const id of written.keys()) if (!ids.has(id)) written.delete(id);
+  if (s.schedules.some((m) => m.editable && written.has(m.id) && written.get(m.id) !== m)) scheduleSave();
+});
+
+/** A copy of a programme the app can edit in place. Edits already made on top of it are made in the copy. */
+export const makeEditableCopy = (p: DbProgramme, name: string) =>
+  run('Copying the programme…', async () => {
+    const db = get().db;
+    if (!db) return;
+    await flushEditable();
+    const source = useScheduleStore.getState().schedules.find((m) => m.dbProgrammeId === p.id);
+    const copy = await copyProgramme(db.root, p.id, name);
+    set({ programmes: await fetchProgrammes(db.root) });
+    await loadProgramme(copy);
+    const id = dbScheduleId(copy.id);
+    const base = useScheduleStore.getState().schedules.find((m) => m.id === id);
+    if (source && base) {
+      const o = useActivityOverridesStore.getState();
+      const key = programmeKey(source);
+      const edited = withOverrides(base, o.byProgramme[key], o.links[key]);
+      if (edited !== base) {
+        useScheduleStore.setState((st) => ({ schedules: st.schedules.map((m) => (m.id === id ? { ...edited, id, dbProgrammeId: copy.id, editable: true, sourceFileName: base.sourceFileName } : m)) }));
+        await flushEditable();
+      }
+    }
+    useScheduleStore.getState().select(id);
+  });
+
+/** Keeps the programme as it is now under a name (a baseline): a frozen copy of it, hidden until it is looked at. */
+export const saveBaselineOf = (p: DbProgramme, name: string) =>
+  run('Saving the baseline…', async () => {
+    const db = get().db;
+    if (!db) return;
+    await flushEditable();
+    await saveBaseline(db.root, p.id, name);
+    set({ programmes: await fetchProgrammes(db.root) });
+  });
+
+export const renameBaseline = (p: DbProgramme, name: string) =>
+  run('', async () => {
+    const db = get().db;
+    if (!db) return;
+    await renameProgramme(db.root, p.id, name);
+    set((s) => ({ programmes: s.programmes.map((x) => (x.id === p.id ? { ...x, name } : x)) }));
+    useScheduleStore.setState((s) => ({ schedules: s.schedules.map((m) => (m.dbProgrammeId === p.id ? { ...m, sourceFileName: name } : m)) }));
+  });
+
+/** Deletes a saved baseline (and unloads it). */
+export const removeBaseline = (p: DbProgramme) =>
+  run('', async () => {
+    const db = get().db;
+    if (!db) return;
+    await deleteProgramme(db.root, p.id);
+    useScheduleStore.getState().removeSchedule(dbScheduleId(p.id));
+    set((s) => ({ programmes: s.programmes.filter((x) => x.id !== p.id) }));
+  });
+
+/** An empty programme to build from scratch. `start` is YYYY-MM-DD. */
+export const newProgramme = (name: string, start: string) =>
+  run('Creating the programme…', async () => {
+    const db = get().db;
+    if (!db) return;
+    const programme = await blankProgramme(db.root, name, start);
+    set({ programmes: await fetchProgrammes(db.root) });
+    await loadProgramme(programme);
+    useScheduleStore.getState().select(dbScheduleId(programme.id));
   });
 
 /** Imports an XER into the database, then loads it from there. */

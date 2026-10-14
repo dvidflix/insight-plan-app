@@ -2,6 +2,10 @@
 <!-- group: Under the hood -->
 # How the app is built
 
+## Overview
+
+![How features and the tech stack are organised](media/architecture-overview.svg)
+
 ## Tech stack
 
 | Area | Technology |

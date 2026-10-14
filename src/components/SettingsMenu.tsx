@@ -7,6 +7,7 @@ import { useTableStyleStore } from '../state/tableStyleStore';
 import { ImportExportPanel } from './ImportExportPanel';
 import { FULL_SCREEN_KEY } from './FullScreenOnStart';
 import { ACCENT_PALETTES, useAccentPaletteStore } from '../state/accentPaletteStore';
+import { THEMES, useThemeStore, type ThemeChoice } from '../state/themeStore';
 import { DEFAULT_SELECTION_COLOR, SELECTION_COLOR_KEY } from '../viewer/selectionColor';
 import { useTimelineSettingsStore, MAX_TIMELINE_ZOOM } from '../state/timelineSettingsStore';
 import { FileDetailsSync } from './InputDetails';
@@ -121,6 +122,8 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
   const [fullScreen, setFullScreen] = usePersistedValue<string>(FULL_SCREEN_KEY, 'true');
   const [statusBar, setStatusBar] = usePersistedValue<string>(STATUS_BAR_KEY, 'true');
   useEffect(() => { applyStatusBar(statusBar !== 'false'); }, [statusBar]);
+  const theme = useThemeStore((s) => s.choice);
+  const setTheme = useThemeStore((s) => s.setChoice);
   const accent = useAccentPaletteStore((s) => s.id);
   const setAccent = useAccentPaletteStore((s) => s.setId);
   const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
@@ -255,7 +258,13 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
         </div>
       </Section>
 
-      <Section title="Appearance" defaultOpen tip="The accent colour of the app: buttons, selections, highlights and the Gantt's bars.">
+      <Section title="Appearance" defaultOpen tip="The theme (light, dark, or the system's) and the accent colour of the app: buttons, selections, highlights and the Gantt's bars.">
+        <div className="disp__row">
+          <span>Theme</span>
+          <select className="rel-cell" value={theme} onChange={(e) => setTheme(e.target.value as ThemeChoice)} aria-label="Theme">
+            {THEMES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+          </select>
+        </div>
         <div className="accent-palettes" role="radiogroup" aria-label="Accent palette">
           {ACCENT_PALETTES.map((p) => (
             <button

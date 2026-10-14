@@ -152,6 +152,29 @@ def get_plan_footprint(element):
     return footprint
 
 
+_AREA_CACHE = {}
+
+# Areas a Rules > Productivity row can work from, by basis: the key of core/element_features.measure().
+AREA_BASES = {"footprint": "plan_area_m2", "sides": "side_area_m2"}
+
+
+def get_measured_area(element, basis):
+    """Square metres of an element for an area basis, measured from its geometry (cached per element): "footprint" is the
+    plan area (the upward faces projected to plan, a slab's deck area), "sides" the area of its vertical faces (a wall's
+    formwork). None when the geometry is unavailable."""
+    key = element.id()
+    if key not in _AREA_CACHE:
+        try:
+            from core import element_features as ef
+
+            _AREA_CACHE[key] = ef.measure(element)
+        except Exception as e:
+            print(f"Area error for element #{key}: {e}")
+            _AREA_CACHE[key] = {}
+    value = _AREA_CACHE[key].get(AREA_BASES[basis])
+    return float(value) if value is not None else None
+
+
 def get_element_world_coordinates(element):
     """
     Resolve absolute world coordinates from IfcLocalPlacement chain.

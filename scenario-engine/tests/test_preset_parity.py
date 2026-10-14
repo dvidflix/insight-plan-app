@@ -130,17 +130,16 @@ def _acts(pours):
     return [a for p in pours for a in gen.create_activities(p, FakeWbs())]
 
 
-def test_a_precast_pour_with_only_its_installation_is_still_in_the_sequence():
-    """A precast pour has one activity, its Installation: a sequence row pointing at its rebar, formwork or concrete is not dropped."""
+def test_a_precast_pour_without_a_concrete_is_still_in_the_sequence():
+    """A precast pour has Installation and Stitching, no rebar, formwork or concrete: a sequence row pointing at one of those is not dropped."""
     rules.activate({})
     pours = [rec("W1", "WALL", level=1), rec("P1", "HEAVY_PRECAST", level=1, conc_stage="PRECAST"), rec("W2", "WALL", level=2)]
     acts = _acts(pours)
     by = lambda guid: {a["phase"]: a["task_id"] for a in acts if a["rec"]["element"].GlobalId == guid}  # noqa: E731
-    assert "Concrete" not in by("P1") and len(by("P1")) == 1
+    assert "Concrete" not in by("P1") and "Installation" in by("P1")
     edges = sequence_edges(acts, [("W1", 1), ("P1", 2), ("W2", 3)])
-    only = next(iter(by("P1").values()))
-    assert (by("W1")["Concrete"], only, "FinishToStart") in edges  # the precast pour waits for step 1
-    assert (only, by("W2")["Rebar"], "FinishToStart") in edges  # and step 3 waits for it
+    assert (by("W1")["Concrete"], by("P1")["Installation"], "FinishToStart") in edges  # the precast pour waits for step 1
+    assert (by("P1")["Stitching"], by("W2")["Rebar"], "FinishToStart") in edges  # and step 3 waits for its last activity
 
 
 def test_overlapping_steps_start_a_few_days_apart_and_pour_in_order(monkeypatch):
@@ -159,6 +158,10 @@ def test_overlapping_steps_start_a_few_days_apart_and_pour_in_order(monkeypatch)
     assert (by("B")["Rebar"], by("C")["Rebar"], "StartToStart", 16.0) in flow
     assert (by("A")["Concrete"], by("B")["Concrete"], "FinishToStart") in flow  # the concrete is poured in step order
     assert not any(e[2] == "FinishToStart" and e[1] == by("B")["Rebar"] for e in flow)  # and B's rebar is not held back by A's whole chain
+    monkeypatch.setattr(xml_builder, "SEQUENCE_CONCRETE_FOLLOWS", False)
+    loose = sequence_edges(acts, order)
+    assert (by("A")["Rebar"], by("B")["Rebar"], "StartToStart", 16.0) in loose  # the steps still start in order
+    assert not any(e[2] == "FinishToStart" and e[1] in (by("B")["Concrete"], by("C")["Concrete"]) for e in loose)  # but a pour is cast when it is ready
 
 
 def test_the_overlap_settings_come_from_the_rules():
@@ -167,3 +170,7 @@ def test_the_overlap_settings_come_from_the_rules():
     assert xml_builder.SEQUENCE_FLOW is True and xml_builder.SEQUENCE_LEAD_DAYS == 1.5
     rules.activate({})
     assert xml_builder.SEQUENCE_FLOW is False and xml_builder.SEQUENCE_LEAD_DAYS == 3.0
+    rules.activate({"settings": {"sequenceConcreteFollows": False}})
+    assert xml_builder.SEQUENCE_CONCRETE_FOLLOWS is False
+    rules.activate({})
+    assert xml_builder.SEQUENCE_CONCRETE_FOLLOWS is True

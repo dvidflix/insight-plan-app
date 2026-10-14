@@ -61,11 +61,14 @@ export function ResourceTimeline({ origin, buckets, period, selected, onSelect, 
       : period === 'week'
         ? buckets.map((_, i): Cell => ({ from: i, to: i + 1, label: String(dates[i].getDate()) }))
         : runs(n, (i) => String(mondayOf(dates[i]).getTime()), (i) => String(mondayOf(dates[i]).getDate()));
-  const rows: { cells: Cell[]; kind: 'year' | 'month' | 'week' }[] = [
-    { cells: years, kind: 'year' },
-    { cells: middle, kind: 'month' },
-    { cells: lower, kind: 'week' },
-  ];
+  // Yearly periods are the years row itself.
+  const rows: { cells: Cell[]; kind: 'year' | 'month' | 'week' }[] = period === 'year'
+    ? [{ cells: buckets.map((_, i): Cell => ({ from: i, to: i + 1, label: String(dates[i].getFullYear()) })), kind: 'year' }]
+    : [
+      { cells: years, kind: 'year' },
+      { cells: middle, kind: 'month' },
+      { cells: lower, kind: 'week' },
+    ];
 
   return (
     <ZoomScroller zoom={zoom} onZoom={onZoom} bar>

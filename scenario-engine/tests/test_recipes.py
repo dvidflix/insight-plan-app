@@ -189,3 +189,69 @@ def test_a_recipe_link_to_a_recipe_that_is_not_there_is_ignored_and_before_rever
     acts = [a for p in [rec("S1", "SLAB", level=1)] for a in gen.create_activities(p, FakeWbs())]
     relations, _ = build_recipe_links(r, PourTasks(acts))
     assert relations == []  # the only pour is its own target: a task is never tied to itself
+
+
+# ---------------------------------------------------------------- crews per subcontractor
+
+CREWS = [{"id": "CARP", "subcontractor": "Concrete Sub", "available": 3, "trades": [{"trade": "CP", "size": 4}]},
+         {"id": "STEEL", "trades": [{"trade": "SF", "size": 3}]}]
+
+
+def test_a_named_crew_with_crews_available_is_a_pool_named_by_its_subcontractor():
+    r = rules.activate({"crewTemplates": CREWS, "assignments": [{"group": "", "phase": "Formwork", "crew": "CARP"}, {"group": "", "phase": "Rebar", "crew": "STEEL"}]})
+    assert r.crew_pools() == [{"id": "CARP", "name": "Concrete Sub · CARP", "quantity": 3.0}]  # STEEL has no number of crews: no pool
+    assert r.crew_pool_for("Formwork", rec("S1", "SLAB"))["id"] == "CARP"
+    assert r.crew_pool_for("Rebar", rec("S1", "SLAB")) is None and r.crew_pool_for("Concrete", rec("S1", "SLAB")) is None
+    rules.activate({"crewTemplates": CREWS, "settings": {"maximizeResources": True}})
+    assert rules.active().crew_pools()[0]["quantity"] == 0.0
+
+
+def test_a_crew_pool_is_a_resource_and_each_activity_of_that_crew_holds_one_crew():
+    import xml.etree.ElementTree as ET
+    from core import activity_generator as gen, xml_builder
+    from core.wbs_manager import WBSManager
+    from test_rules import FakeWbs
+    rules.activate({"crewTemplates": CREWS, "assignments": [{"group": "", "phase": "Formwork", "crew": "CARP", "days": 2}]})
+    acts = gen.create_activities(rec("S1", "SLAB"), FakeWbs())
+    for a in acts:
+        a["wbs_oid"] = 1
+    wbs = WBSManager("XML", start_counter=0)
+    wbs.register("B1 - Construction")
+    root = xml_builder.create_p6_xml_root()
+    xml_builder.add_project_and_calendar(root, building_code="B1", project_wbs_object_id="1", project_id="1")
+    ids = xml_builder.add_resources(root)
+    pool_id = ids[f"{PROJECT_SHORT}-G-CARP"]
+    named = {r.findtext("ObjectId"): (r.findtext("Name"), r.findtext("ResourceType")) for r in root.findall("Resource")}
+    assert named[pool_id] == ("Concrete Sub · CARP", "Nonlabor")
+    xml_builder.write_activities_and_relationships(root, acts, ids, wbs, intra_predecessors=xml_builder._build_intra_pour_predecessors(acts))
+    held = [ra for ra in root.findall("ResourceAssignment") if ra.findtext("ResourceObjectId") == pool_id]
+    assert len(held) == 1 and float(held[0].findtext("PlannedUnitsPerTime")) == 1.0 and float(held[0].findtext("PlannedUnits")) == 2.0
+
+
+# ---------------------------------------------------------------- links with a type and a lag
+
+def test_a_task_can_follow_another_with_a_type_and_a_lag_and_two_links_between_the_same_pair():
+    """Formwork starts 32 hours after the rebar starts (SS, an overlap) and cannot finish before it (FF); the concrete follows the formwork,
+    finished, but 8 hours early (FS with a negative lag)."""
+    from core import activity_generator as gen, xml_builder
+    from core.wbs_manager import WBSManager
+    from test_rules import FakeWbs
+    recipes = [{"id": "SLAB", "group": "", "tasks": [{"phase": "Rebar", "suffix": "-R", "days": 5}, {"phase": "Formwork", "suffix": "-F", "days": 3}, {"phase": "Concrete", "suffix": "-C", "days": 1}],
+                "edges": [{"from": "Rebar", "to": "Formwork", "type": "SS", "lagHours": 32}, {"from": "Rebar", "to": "Formwork", "type": "FF"},
+                          {"from": "Formwork", "to": "Concrete", "type": "FS", "lagHours": -8}]}]
+    chain = {c["phase"]: c for c in rules.activate({"recipes": recipes}).chains}
+    assert chain["Formwork"]["follows"] == "Rebar:SS+32, Rebar:FF+0" and chain["Concrete"]["follows"] == "Formwork:FS-8"
+    acts = gen.create_activities(rec("S1", "SLAB"), FakeWbs())
+    edges = xml_builder._build_intra_pour_predecessors(acts)
+    for a in acts:
+        a["wbs_oid"] = 1
+    wbs = WBSManager("XML", start_counter=0)
+    wbs.register("B1 - Construction")
+    root = xml_builder.create_p6_xml_root()
+    xml_builder.add_project_and_calendar(root, building_code="B1", project_wbs_object_id="1", project_id="1")
+    xml_builder.write_activities_and_relationships(root, acts, xml_builder.add_resources(root), wbs, intra_predecessors=edges)
+    project = root.find("Project")
+    ids = {a.findtext("ObjectId"): a.findtext("Id").rsplit("-", 1)[-1] for a in project.findall("Activity")}
+    rels = {(ids[r.findtext("PredecessorActivityObjectId")], ids[r.findtext("SuccessorActivityObjectId")], r.findtext("Type")): float(r.findtext("Lag") or 0) for r in project.findall("Relationship")}
+    assert rels[("R", "F", "StartToStart")] == 32.0 and ("R", "F", "FinishToFinish") in rels and ("R", "F", "FinishToStart") not in rels
+    assert rels[("F", "C", "FinishToStart")] == -8.0

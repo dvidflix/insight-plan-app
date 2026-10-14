@@ -9,7 +9,7 @@ import { exportBcf, formatPoint, importBcf, parsePoint } from '../topics/bcfBrid
 import { downloadBlob } from '../utils/download';
 import { ActivityLinkPicker } from './ActivityLinkPicker';
 import { InfoTip } from './InfoTip';
-import { IconPencil, IconTrash } from './icons';
+import { IconPencil, IconRemove } from './icons';
 import { MARKER_ICONS } from '../viewer/markerIcons';
 import { RowButtonsChooser, useRowButtons, type RowButtonDef } from './RowButtonsChooser';
 
@@ -158,7 +158,7 @@ export function TopicsPanel() {
               {rb.shown('status') && <span className={`tpc__status tpc__status--${statusClass}`}>{t.status}</span>}
               <div className="vp__actions">
                 {rb.shown('edit') && <button type="button" className="vp__icon" title="Edit" aria-label="Edit" onClick={() => select(t.id)}><IconPencil /></button>}
-                {rb.shown('delete') && <button type="button" className="vp__icon vp__icon--danger" title="Delete" aria-label="Delete" onClick={() => { if (window.confirm(`Delete topic #${t.index} "${t.title}"?`)) useTopicsStore.getState().remove(t.id); }}><IconTrash /></button>}
+                {rb.shown('delete') && <button type="button" className="vp__icon vp__icon--danger" title="Delete" aria-label="Delete" onClick={() => { if (window.confirm(`Delete topic #${t.index} "${t.title}"?`)) useTopicsStore.getState().remove(t.id); }}><IconRemove /></button>}
               </div>
             </div>
           );
@@ -265,7 +265,7 @@ function TopicDetail({ topic: t, windowOf, needAuthor, onBack }: { topic: Topic;
         <button type="button" className="btn btn--small" onClick={onBack}>‹ Topics</button>
         <b className="tpc__idx">#{t.index}</b>
         <span className="mkt__spacer" />
-        <button type="button" className="mkt__del" title="Delete this topic" aria-label="Delete this topic" onClick={() => { if (window.confirm(`Delete topic #${t.index} "${t.title}"?`)) remove(t.id); }}><IconTrash /></button>
+        <button type="button" className="mkt__del" title="Delete this topic" aria-label="Delete this topic" onClick={() => { if (window.confirm(`Delete topic #${t.index} "${t.title}"?`)) remove(t.id); }}><IconRemove /></button>
       </div>
 
       <Field label="Title"><input value={t.title} onChange={(e) => update(t.id, { title: e.target.value })} /></Field>
@@ -373,7 +373,7 @@ function TopicDetail({ topic: t, windowOf, needAuthor, onBack }: { topic: Topic;
                 <button type="button" title="Open this viewpoint" onClick={() => void openViewpoint(engine, vp)}>
                   {url ? <img src={url} alt={viewpointTitle(vp)} /> : <span className="tpc__vp-none">{viewpointTitle(vp)}</span>}
                 </button>
-                <button type="button" className="tpc__vp-x" title="Remove from this topic" aria-label="Remove from this topic" onClick={() => update(t.id, { viewpoints: t.viewpoints.filter((x) => x !== g) })}>×</button>
+                <button type="button" className="tpc__vp-x" title="Remove from this topic" aria-label="Remove from this topic" onClick={() => update(t.id, { viewpoints: t.viewpoints.filter((x) => x !== g) })}><IconRemove /></button>
               </div>
             );
           })}
@@ -392,7 +392,7 @@ function TopicDetail({ topic: t, windowOf, needAuthor, onBack }: { topic: Topic;
                 <span>{new Date(c.date).toLocaleString()}</span>
                 <span className="mkt__spacer" />
                 {vp && <button type="button" className="tpc__link" onClick={() => void openViewpoint(engine, vp)}>Open view</button>}
-                <button type="button" className="mkt__del" title="Delete the comment" aria-label="Delete the comment" onClick={() => removeComment(t.id, c.id)}><IconTrash /></button>
+                <button type="button" className="mkt__del" title="Delete the comment" aria-label="Delete the comment" onClick={() => removeComment(t.id, c.id)}><IconRemove /></button>
               </div>
               <div className="tpc__comment-text">{c.text}</div>
             </div>

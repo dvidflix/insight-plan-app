@@ -4,7 +4,6 @@ import { renderToStaticMarkup } from 'react-dom/server';
 import { useScenarioStore } from '../../src/state/scenarioStore';
 import { normalizeRules } from '../../src/prs/rules';
 import { fromSheet } from '../../src/scenarios/pourOrder';
-import { CrewRuleRowCard, DurationRowCard, ProductivityRowCard, RebarRowCard } from '../../src/components/scenarios/rules/RatesEditor';
 import { ContactRowCard } from '../../src/components/scenarios/rules/ContactsEditor';
 import { LevelLinkRowCard, LevelTaskRowCard, RuleGroupRowCard, SequenceRowCard } from '../../src/components/scenarios/rules/GroupsEditors';
 import { SettingsRowCard } from '../../src/components/scenarios/rules/SettingsEditor';
@@ -74,23 +73,17 @@ describe('the Rules list', () => {
   it('lists every type of rule in one list, each with its type', () => {
     load();
     const html = renderToStaticMarkup(createElement(ScenarioRulesEditor));
-    for (const label of ['Extra activities', 'Duration', 'Productivity', 'Rebar rate', 'Crew rule', 'Setting', 'Group', 'Level task', 'Sequence', 'Level link', 'Contact link']) {
+    for (const label of ['Extra activities', 'Setting', 'Group', 'Level task', 'Sequence', 'Level link', 'Contact link']) {
       expect(html).toContain(label);
     }
     expect(html).toContain('1/3');
     expect(html).toContain('Fits 1 of 3 objects');
-    expect(html).toContain('1 object in 1 group');
-    expect(html).toContain('WALLS/level');
     expect(html).toContain('Add rule');
   });
 
   it('opens each type of rule to its own editor', () => {
     load();
     const none = new Map<string, string>();
-    expect(open((ctx) => createElement(DurationRowCard, { ctx, i: 0 }))).toContain('+ phase');
-    expect(open((ctx) => createElement(ProductivityRowCard, { ctx, i: 0 }))).toContain('Man-hours per unit');
-    expect(open((ctx) => createElement(RebarRowCard, { ctx, i: 0 }))).toContain('Tonnes per m³');
-    expect(open((ctx) => createElement(CrewRuleRowCard, { ctx, i: 0 }))).toContain('+ trade');
     expect(open((ctx) => createElement(RuleGroupRowCard, { ctx, i: 0 }))).toContain('Made per');
     expect(open((ctx) => createElement(LevelTaskRowCard, { ctx, i: 0 }))).toContain('1 task: one for each building and level');
     expect(open((ctx) => createElement(SequenceRowCard, { ctx, i: 0 }))).toContain('WALLS L1 → SLABS L1');
@@ -114,11 +107,11 @@ describe('the Rules list', () => {
   it('shows a rule closed until it is opened', () => {
     load();
     function Row() {
-      return createElement(DurationRowCard, { ctx: useRuleContext(), i: 0 });
+      return createElement(SequenceRowCard, { ctx: useRuleContext(), i: 0 });
     }
     const html = renderToStaticMarkup(createElement(Row));
-    expect(html).toContain('Rebar 9 d');
-    expect(html).not.toContain('+ phase');
+    expect(html).toContain('WALLS/level → SLABS/level');
+    expect(html).not.toContain('+ step');
   });
 
   it('renders with nothing loaded and no rules', () => {

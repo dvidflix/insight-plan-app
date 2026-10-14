@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react';
+import { ToolbarSlot } from './ToolbarSlot';
 import type { CalendarException, ScheduleCalendar } from '../../schedule/calendar';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { queryMatcher } from '../../schedule/search';
 import { usePersistedState } from '../../utils/persistedState';
+import { AddCalendar, CalendarEditor } from './CalendarEditor';
 
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -75,19 +77,24 @@ export function CalendarsPanel({ model, onSelectActivity }: { model: ScheduleMod
   const allOpen = rows.length > 0 && rows.every((r) => openIds.has(r.cal.id));
 
   if (model.calendars.length === 0) {
-    return <div style={{ padding: 12, color: 'var(--text-dim)' }}>No calendars found in this file.</div>;
+    return (
+      <div style={{ padding: 12, color: 'var(--text-dim)', display: 'flex', gap: 8, alignItems: 'center' }}>
+        No calendars found in this file.
+        {model.editable && <AddCalendar model={model} />}
+      </div>
+    );
   }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
-      <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', padding: '8px 12px', borderBottom: '1px solid var(--border)', background: 'var(--bg-panel)' }}>
+      <ToolbarSlot>
         <input
           className="cols__search"
           type="search"
           placeholder="Search calendars, activities using them, or holiday dates…"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          style={{ flex: '1 1 260px', minWidth: 200 }}
+          style={{ flex: '1 1 200px', minWidth: 140 }}
           aria-label="Search calendars"
         />
         <label style={{ display: 'flex', alignItems: 'center', gap: 4 }} title="Order of the calendars">
@@ -110,6 +117,7 @@ export function CalendarsPanel({ model, onSelectActivity }: { model: ScheduleMod
           <input type="checkbox" checked={usedOnly} onChange={(e) => setUsedOnly(e.target.checked)} />
           <span>In use</span>
         </label>
+        {model.editable && <AddCalendar model={model} />}
         <button type="button" className="btn btn--small" onClick={() => setOpenIds(allOpen ? new Set() : new Set(rows.map((r) => r.cal.id)))} disabled={rows.length === 0}>
           {allOpen ? 'Collapse all' : 'Expand all'}
         </button>
@@ -117,7 +125,7 @@ export function CalendarsPanel({ model, onSelectActivity }: { model: ScheduleMod
           {rows.length === model.calendars.length ? `${rows.length} calendars` : `${rows.length} of ${model.calendars.length} calendars`}
           {usage.standard > 0 ? ` · ${usage.standard.toLocaleString()} activities on the standard week` : ''}
         </span>
-      </div>
+      </ToolbarSlot>
 
       <div style={{ overflow: 'auto', flex: 1, minHeight: 0, padding: 12 }}>
         {rows.length === 0 && <div style={{ color: 'var(--text-dim)' }}>{searching ? `No calendar matches “${query}”.` : 'No calendars to show.'}</div>}
@@ -163,7 +171,9 @@ export function CalendarsPanel({ model, onSelectActivity }: { model: ScheduleMod
                     </div>
                   )}
 
-                  <Exceptions exceptions={exceptions} filter={filter} marked={byDate} />
+                  {model.editable
+                    ? <CalendarEditor model={model} cal={cal} used={used.length} />
+                    : <Exceptions exceptions={exceptions} filter={filter} marked={byDate} />}
 
                   <div style={{ marginTop: 10, fontSize: 12 }}>
                     <button type="button" className="link-btn" disabled={used.length === 0} onClick={() => setListed(listed === cal.id ? null : cal.id)}>

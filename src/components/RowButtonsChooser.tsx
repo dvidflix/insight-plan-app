@@ -34,12 +34,14 @@ export function useRowButtons<Id extends string>(storageKey: string) {
   return { hidden, setHidden, shown: (id: Id) => !hidden.includes(id) };
 }
 
-export function RowButtonsChooser<Id extends string>({ buttons, rb, title = 'Choose which buttons show on each row', compact }: {
+export function RowButtonsChooser<Id extends string>({ buttons, rb, title = 'Choose which buttons show on each row', compact, inline }: {
   buttons: readonly RowButtonDef<Id>[];
   rb: ReturnType<typeof useRowButtons<Id>>;
   title?: string;
   /** A small icon button (for table headers) instead of a toolbar button. */
   compact?: boolean;
+  /** The toggles themselves, in place, for a menu that already is a popover. */
+  inline?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
@@ -51,14 +53,9 @@ export function RowButtonsChooser<Id extends string>({ buttons, rb, title = 'Cho
     document.addEventListener('keydown', esc);
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
   }, [open]);
-  return (
-    <div className="ss__cols" ref={ref} style={compact ? { display: 'inline-block' } : undefined}>
-      <button type="button" className={compact ? 'mini-btn mini-btn--icon' : 'btn ss__tool'} onClick={() => setOpen((v) => !v)} aria-expanded={open} title={title} aria-label="Row buttons">
-        <IconTune width={16} height={16} />
-      </button>
-      {open && (
-        <div className="ss__pop" role="dialog" aria-label="Row buttons">
-          <div className="ss__pop-title">Row buttons</div>
+  const toggles = (
+    <>
+      <div className="ss__pop-title">Row buttons</div>
           <div className="ss__pop-row">
             {buttons.map((b) => {
               const on = rb.shown(b.id);
@@ -76,6 +73,17 @@ export function RowButtonsChooser<Id extends string>({ buttons, rb, title = 'Cho
               );
             })}
           </div>
+    </>
+  );
+  if (inline) return <div className="ss__pop-inline">{toggles}</div>;
+  return (
+    <div className="ss__cols" ref={ref} style={compact ? { display: 'inline-block' } : undefined}>
+      <button type="button" className={compact ? 'mini-btn mini-btn--icon' : 'btn ss__tool'} onClick={() => setOpen((v) => !v)} aria-expanded={open} title={title} aria-label="Row buttons">
+        <IconTune width={16} height={16} />
+      </button>
+      {open && (
+        <div className="ss__pop" role="dialog" aria-label="Row buttons">
+          {toggles}
         </div>
       )}
     </div>

@@ -1,4 +1,6 @@
-// First, so the active scene follows every change to the saved settings from the start.
+// Before everything else: in the free edition the browser's saved settings are replaced by memory, so no store reads or keeps any.
+import { FREE_MODE } from './licence/freeMode';
+// Then the active scene follows every change to the saved settings from the start.
 import { startScenes } from './state/scenes';
 startScenes();
 
@@ -6,6 +8,7 @@ import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import App from './App';
 import './styles/global.css';
+import './state/themeStore';
 import { installTableColumnResize } from './utils/tableResize';
 // Opens the project database and keeps link groups, capacities and settings in it.
 import './db/dbSync';
@@ -26,7 +29,7 @@ async function start() {
     web.installLocalApi();
     // Installable and offline: the service worker keeps the whole build (only in the built site, not the dev server).
     if (import.meta.env.PROD && 'serviceWorker' in navigator) void navigator.serviceWorker.register('/sw.js').catch(() => undefined);
-    const folder = location.search.includes('opfs') ? await web.useBrowserStorage().then((f) => ({ ...f, ready: true })) : await web.restoreProjectFolder();
+    const folder = FREE_MODE ? null : location.search.includes('opfs') ? await web.useBrowserStorage().then((f) => ({ ...f, ready: true })) : await web.restoreProjectFolder();
     useWebFolderStore.setState({ remembered: folder });
     useProjectDbStore.setState({ root: folder?.ready ? folder.root : '' });
   }

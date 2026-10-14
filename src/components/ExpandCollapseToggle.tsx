@@ -11,16 +11,19 @@ export function ExpandCollapseToggle({
   onExpand,
   disabled,
   className = 'btn',
+  what = 'groups',
 }: {
   collapsed?: boolean;
   onCollapse: () => void;
   onExpand: () => void;
   disabled?: boolean;
   className?: string;
+  /** What is folded, in the tooltip ("groups", "recipes"). */
+  what?: string;
 }) {
   const [own, setOwn] = useState(false);
   const isCollapsed = collapsed ?? own;
-  const label = isCollapsed ? 'Expand all groups' : 'Collapse all groups';
+  const label = isCollapsed ? `Expand all ${what}` : `Collapse all ${what}`;
   return (
     <button
       type="button"

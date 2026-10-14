@@ -28,7 +28,7 @@ import { CellPick } from '../CellPick';
 import { downloadCsv } from '../../utils/csv';
 import { basisFinish, basisStart } from '../../schedule/linking';
 import { DEFAULT_SUB_SEQUENCE, MAX_OVERLAP_PCT, MIN_OVERLAP_PCT, slotWindow, type SubSequence } from '../../schedule/subSequence';
-import { IconCopy, IconEye, IconEyeOff, IconPencil, IconSectionChevron } from '../icons';
+import { IconCopy, IconEye, IconEyeOff, IconPencil, IconSectionChevron, IconRemove } from '../icons';
 import { usePersistedState } from '../../utils/persistedState';
 
 /** The section header's "New group" button asks the panel (mounted once the section is open) to start a new group. */
@@ -362,7 +362,7 @@ function GroupEditor({
             <CellPick value={r.attribute} options={taskOptions} onChange={(attribute) => updateTaskFilter(r.id, { attribute })} />
             <CellPick value={r.op} options={OPS} onChange={(op) => updateTaskFilter(r.id, { op: op as CompareOp })} />
             <input value={r.value} onChange={(e) => updateTaskFilter(r.id, { value: e.target.value })} placeholder="value" />
-            <button type="button" className="ge-x" title="Remove" aria-label="Remove" onClick={() => setG({ ...g, taskFilters: g.taskFilters.filter((x) => x.id !== r.id) })}>{'✕'}</button>
+            <button type="button" className="cols__icon cols__icon--remove" title="Remove" aria-label="Remove" onClick={() => setG({ ...g, taskFilters: g.taskFilters.filter((x) => x.id !== r.id) })}><IconRemove /></button>
           </div>
         ))}
         {g.taskFilters.length === 0 && <div className="ge-none">All tasks</div>}
@@ -383,7 +383,7 @@ function GroupEditor({
               <button type="button" className={`tags__chip${r.caseSensitive ? ' active' : ''}`} aria-pressed={r.caseSensitive} title="Case-sensitive" onClick={() => updateObjectFilter(r.id, { caseSensitive: !r.caseSensitive })}>Aa</button>
               <button type="button" className={`tags__chip${r.ignore ? ' active' : ''}`} aria-pressed={r.ignore} title="Ignore this condition" onClick={() => updateObjectFilter(r.id, { ignore: !r.ignore })}>Ign</button>
             </span>
-            <button type="button" className="ge-x" title="Remove" aria-label="Remove" onClick={() => setG({ ...g, objectFilters: g.objectFilters.filter((x) => x.id !== r.id) })}>{'✕'}</button>
+            <button type="button" className="cols__icon cols__icon--remove" title="Remove" aria-label="Remove" onClick={() => setG({ ...g, objectFilters: g.objectFilters.filter((x) => x.id !== r.id) })}><IconRemove /></button>
           </div>
         ))}
         {g.objectFilters.length === 0 && <div className="ge-none">All objects</div>}
@@ -411,7 +411,7 @@ function GroupEditor({
                   title="A field holding several values (like A || B) can be split on separators: one equal value then links"
                   onClick={() => setSplitOpen((o) => { const n = new Set(o); if (n.has(r.id)) n.delete(r.id); else n.add(r.id); return n; })}
                 >split{splits ? ` ${splits}` : ''}</button>
-                <button type="button" className="ge-x" title="Remove" aria-label="Remove" onClick={() => setG({ ...g, matchRules: g.matchRules.filter((x) => x.id !== r.id) })}>{'✕'}</button>
+                <button type="button" className="cols__icon cols__icon--remove" title="Remove" aria-label="Remove" onClick={() => setG({ ...g, matchRules: g.matchRules.filter((x) => x.id !== r.id) })}><IconRemove /></button>
               </div>
               {open && (
                 <div className="rule-seps">

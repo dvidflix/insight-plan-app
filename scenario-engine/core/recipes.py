@@ -21,11 +21,16 @@ def _follows_text(edges, phase):
     for e in edges:
         if _text(e.get("to")).upper() != phase.upper():
             continue
+        name = _text(e.get("from"))
+        kind = _text(e.get("type")).upper()
+        lag = _number(e.get("lagHours"))
+        if (kind and kind != "FS") or lag:  # an explicit type and lag: "Rebar:SS+16" (hours)
+            parts.append(f"{name}:{kind or 'FS'}{'+' if lag >= 0 else '-'}{abs(lag):g}")
+            continue
         try:
             pct = float(e.get("sharePct"))
         except (TypeError, ValueError):
             pct = 100.0
-        name = _text(e.get("from"))
         parts.append(f"{name}@{pct:g}" if pct < 100 else name)
     return ", ".join(parts)
 

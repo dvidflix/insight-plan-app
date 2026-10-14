@@ -3,6 +3,8 @@ import { FileDrop } from '../FileDrop';
 import { loadScheduleFile } from '../../schedule/importSchedule';
 import { compareSchedules } from '../../schedule/compare';
 import { useScheduleStore } from '../../state/scheduleStore';
+import { useBaselinesOf } from '../../state/baselines';
+import { dbScheduleId, loadProgramme } from '../../state/projectDbStore';
 import type { ScheduleModel } from '../../schedule/types';
 import type { MilestoneDriver } from '../../schedule/milestoneDrivers';
 
@@ -10,6 +12,18 @@ export function ComparePanel({ current }: { current: ScheduleModel }) {
   const schedules = useScheduleStore((s) => s.schedules);
   const addSchedule = useScheduleStore((s) => s.addSchedule);
   const otherSchedules = schedules.filter((s) => s.id !== current.id);
+  // The baselines saved of this programme (see the Baselines menu); one not loaded yet is read from the database when picked.
+  const savedBaselines = useBaselinesOf(current);
+  const pickSaved = async (id: number) => {
+    setError(null);
+    try {
+      const p = savedBaselines.find((b) => b.id === id);
+      if (p && !schedules.some((s) => s.dbProgrammeId === id)) await loadProgramme(p);
+      setBaselineId(dbScheduleId(id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    }
+  };
 
   const [baselineId, setBaselineId] = useState<string | null>(null);
   const [subTab, setSubTab] = useState<'events' | 'drag' | 'milestones'>('events');
@@ -36,9 +50,17 @@ export function ComparePanel({ current }: { current: ScheduleModel }) {
         <div style={{ padding: 12, color: 'var(--text-dim)' }}>
           Pick a baseline schedule to compare against the current one ({current.project.name}).
         </div>
-        {otherSchedules.length > 0 && (
+        {savedBaselines.length > 0 && (
+          <div style={{ padding: '0 12px 12px', display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+            <span className="scn-dim">Saved baselines</span>
+            {savedBaselines.map((b) => (
+              <button key={b.id} className="btn" onClick={() => void pickSaved(b.id)} title={`Saved ${new Date(b.importedAt).toLocaleString()}`}>{b.name}</button>
+            ))}
+          </div>
+        )}
+        {otherSchedules.filter((s) => !savedBaselines.some((b) => b.id === s.dbProgrammeId)).length > 0 && (
           <div style={{ padding: '0 12px 12px', display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-            {otherSchedules.map((s) => (
+            {otherSchedules.filter((s) => !savedBaselines.some((b) => b.id === s.dbProgrammeId)).map((s) => (
               <button key={s.id} className="btn" onClick={() => setBaselineId(s.id)}>
                 {s.sourceFileName}
               </button>

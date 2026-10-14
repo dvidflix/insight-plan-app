@@ -3,8 +3,9 @@ import { setCrews, setExtras, setRelations, useScenarioStore } from '../../../st
 import type { ScenarioCrew, ScenarioExtra, ScenarioRelation } from '../../../scenarios/api';
 import { useScenarioView } from '../../../scenarios/useScenarioView';
 import type { ExtraTag } from '../../../prs/rules';
+import type { Recipe, RecipeTask } from '../../../prs/recipes';
 import { EXTRA_KINDS, extrasToTsv, parseExtrasPaste, patchTags, type ExtraKind } from '../../../prs/extrasTable';
-import { IconCopy, IconTrash } from '../../icons';
+import { IconCopy, IconRemove } from '../../icons';
 import { Field, RuleCard, useTrades, type RuleContext } from './RuleParts';
 
 /** Rule types Extra activity, Manual link and Crew override: the parts of a scenario that are saved in their own tables
@@ -122,6 +123,30 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
     if (!dateOk(e.BaselineStart) || !dateOk(e.BaselineFinish)) return 'Dates are year-month-day';
     return null;
   };
+  // Ticked extras become tasks of a recipe: each runs alongside the Concrete of every object the recipe builds (start with it, finish with it).
+  const intoRecipe = (recipeId: string) => {
+    const recipe = ctx.rules.recipes.find((r) => r.id === recipeId);
+    const list = chosen.map((i) => extras[i]).filter(Boolean);
+    if (!recipe || !list.length) return;
+    const concrete = recipe.tasks.find((t) => t.material === 'concrete') ?? recipe.tasks.find((t) => /concrete/i.test(t.phase));
+    if (!concrete) return window.alert(`The recipe ${recipe.id} has no Concrete task to link to.`);
+    if (!window.confirm(`Move ${list.length} extra activit${list.length === 1 ? 'y' : 'ies'} into the recipe ${recipe.id}, each starting and finishing with its ${concrete.phase}? They leave this table (their levels and WBS places are not used any more).`)) return;
+    const phases = new Set(recipe.tasks.map((t) => t.phase.toUpperCase()));
+    const suffixes = new Set(recipe.tasks.map((t) => (t.suffix ?? '').toUpperCase()));
+    const added: RecipeTask[] = [];
+    for (const e of list) {
+      let phase = (e.Name || e.TaskID).trim();
+      for (let n = 2; phases.has(phase.toUpperCase()); n++) phase = `${(e.Name || e.TaskID).trim()} ${n}`;
+      phases.add(phase.toUpperCase());
+      let suffix = `-${e.TaskID.trim().split('-').pop()}`;
+      for (let n = 2; suffixes.has(suffix.toUpperCase()); n++) suffix = `-${e.TaskID.trim().split('-').pop()}${n}`;
+      suffixes.add(suffix.toUpperCase());
+      added.push({ phase, name: e.Name.trim() || phase, suffix, days: e.DurationDays > 0 ? e.DurationDays : 1 });
+    }
+    const edges = added.flatMap((t) => (['SS', 'FF'] as const).map((type) => ({ from: concrete.phase, to: t.phase, type, lagHours: 0 })));
+    ctx.change((r) => ({ ...r, recipes: r.recipes.map((x): Recipe => (x.id === recipe.id ? { ...x, tasks: [...x.tasks, ...added], edges: [...(x.edges ?? []), ...edges] } : x)) }));
+    remove(chosen);
+  };
   const toggle = (i: number) => setPicked((p) => { const n = new Set(p); if (n.has(i)) n.delete(i); else n.add(i); return n; });
   const tasks = ctx.rules.levelTasks;
   const bulkIds = ids(chosen);
@@ -172,6 +197,12 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
           </select>
           <input className="rule-num" type="number" min={0} step="any" value={days} onChange={(e) => setDays(e.target.value)} placeholder="Days" aria-label="Days for the ticked rows" />
           <button type="button" className="btn btn--small" disabled={days === ''} onClick={() => { const d = Math.max(0, Number(days) || 0); setExtras(extras.map((x, j) => (picked.has(j) ? { ...x, DurationDays: d } : x))); setDays(''); }}>Set days</button>
+          {ctx.rules.recipes.some((r) => r.chain !== false) && (
+            <select style={selectStyle} value="" onChange={(e) => e.target.value && intoRecipe(e.target.value)} aria-label="Move the ticked rows into a recipe" title="Make the ticked extras tasks of a recipe, starting and finishing with its Concrete (Start → Start and Finish → Finish)">
+              <option value="">Into a recipe…</option>
+              {ctx.rules.recipes.filter((r) => r.chain !== false).map((r) => <option key={r.id} value={r.id}>{r.name || r.id}</option>)}
+            </select>
+          )}
           <button type="button" className="btn btn--small" onClick={() => duplicate(chosen)}>Duplicate</button>
           <button type="button" className="btn btn--small danger" onClick={() => remove(chosen)}>Delete</button>
           <button type="button" className="cols__link" onClick={() => setPicked(new Set())}>None</button>
@@ -221,7 +252,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
                     <td><input type="date" value={e.BaselineFinish} onChange={(ev) => editRow(i, { BaselineFinish: ev.target.value })} aria-label="Baseline finish" /></td>
                     <td className="rule-card__tools">
                       <button type="button" onClick={() => duplicate([i])} title="Duplicate" aria-label="Duplicate"><IconCopy /></button>
-                      <button type="button" className="rule-card__del" onClick={() => remove([i])} title="Delete" aria-label="Delete"><IconTrash /></button>
+                      <button type="button" className="cols__icon cols__icon--remove" onClick={() => remove([i])} title="Delete" aria-label="Delete"><IconRemove /></button>
                     </td>
                   </tr>
                 );

@@ -6,7 +6,7 @@ import { parseTsv, toTsv } from './timelines/gridText';
 import { usePersistedState } from '../utils/persistedState';
 import { CollapsibleSection } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
-import { IconCopy, IconEye, IconEyeOff, IconTrash } from './icons';
+import { IconCopy, IconEye, IconEyeOff, IconRemove } from './icons';
 import { RichNoteEditor } from './RichNoteEditor';
 import { MarkerActivityPicker } from './MarkerActivityPicker';
 import { isEmptyNote } from '../utils/richText';
@@ -182,7 +182,7 @@ export function MarkersPanel() {
                   </select>
                   <button type="button" className={`mkt__more${more === m.id ? ' on' : ''}${m.activityId || !isEmptyNote(m.note) ? ' has' : ''}`} title="Activity and note" aria-label="Activity and note" aria-expanded={more === m.id} onClick={() => setMore(more === m.id ? null : m.id)}>{more === m.id ? '▾' : '▸'}</button>
                   <button type="button" className="mkt__del" title="Duplicate this marker" aria-label="Duplicate this marker" onClick={() => duplicate(m.id)}><IconCopy /></button>
-                  <button type="button" className="mkt__del" title="Delete this marker" aria-label="Delete this marker" onClick={() => remove(m.id)}><IconTrash /></button>
+                  <button type="button" className="mkt__del" title="Delete this marker" aria-label="Delete this marker" onClick={() => remove(m.id)}><IconRemove /></button>
                 </div>
                 {more === m.id && (
                   <div className="mkt__detail">

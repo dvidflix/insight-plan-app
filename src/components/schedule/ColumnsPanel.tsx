@@ -1,5 +1,7 @@
 import { useMemo, useState } from 'react';
 import { COLUMN_GROUPS, COLUMN_PRESETS, type ColumnDef } from '../../schedule/columns';
+import { PresetBar, type PresetItem } from './PresetBar';
+import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
 import { IconSectionChevron } from '../icons';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { CalcColumnsEditor } from './CalcColumnsEditor';
@@ -51,7 +53,7 @@ interface ColumnsPanelProps {
 /** Column picker for the Configuration pane: a reorderable "Shown" list on
     top, then every available column grouped the way P6 groups them. */
 export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOrder = COLUMN_GROUPS, closedGroups = ['Relationships', 'Resources & Cost', 'Constraints'], onSavePreset, onDeletePreset, listed, twin, calculated }: ColumnsPanelProps) {
-  const [presetName, setPresetName] = useState('');
+  const savedPresets = useUserPresetsStore((st) => st.presets);
   const [viewId, setViewId] = useState(views[0]?.id);
   const view = views.find((v) => v.id === viewId) ?? views[0];
   const [search, setSearch] = useState('');
@@ -77,6 +79,13 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
 
   if (!view) return null;
   const set = (ids: string[]) => view.onChange(ids);
+  const columnKind = `columns:${view.id}`;
+  const savedColumns = savedPresets.filter((p) => p.kind === columnKind);
+  const columnPresets: PresetItem[] = [
+    { id: 'default', label: 'Default' },
+    ...presets.map((p) => ({ id: p.id, label: p.label, user: !!onSavePreset })),
+    ...(onSavePreset ? [] : savedColumns.map((p) => ({ id: p.id, label: p.name, user: true }))),
+  ];
   const toggle = (id: string) => set(shownSet.has(id) ? shown.filter((x) => x !== id) : [...shown, id]);
   const move = (id: string, delta: number) => {
     const from = shown.indexOf(id);
@@ -123,34 +132,18 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
         </div>
       )}
 
-      <div className="cols__presets">
-        <span className="cols__hint">Presets</span>
-        <button type="button" onClick={() => set(view.defaults.filter((id) => byId.has(id)))}>Default</button>
-        {presets.map((p) =>
-          onDeletePreset ? (
-            <span key={p.id} className="scn-preset">
-              <button type="button" onClick={() => set(p.ids.filter((id) => byId.has(id)))} title="Apply preset">{p.label}</button>
-              <button type="button" className="scn-preset__x" onClick={() => onDeletePreset(p.id)} title="Delete preset" aria-label={`Delete preset ${p.label}`}>✕</button>
-            </span>
-          ) : (
-            <button key={p.id} type="button" onClick={() => set(p.ids.filter((id) => byId.has(id)))}>{p.label}</button>
-          ),
-        )}
-      </div>
-      {onSavePreset && (
-        <form
-          className="scn-row cols__save"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (!presetName.trim()) return;
-            onSavePreset(presetName.trim(), shown);
-            setPresetName('');
-          }}
-        >
-          <input value={presetName} onChange={(e) => setPresetName(e.target.value)} placeholder="Save shown columns as preset…" />
-          <button className="btn btn--small" type="submit" disabled={!presetName.trim()}>Save</button>
-        </form>
-      )}
+      <PresetBar
+        noun="column preset"
+        items={columnPresets}
+        saveDisabled={shown.length === 0}
+        onApply={(id) => {
+          if (id === 'default') return set(view.defaults.filter((c) => byId.has(c)));
+          const ids = presets.find((p) => p.id === id)?.ids ?? (savedColumns.find((p) => p.id === id)?.data as string[] | undefined);
+          if (ids) set(ids.filter((c) => byId.has(c)));
+        }}
+        onSave={(name) => (onSavePreset ? onSavePreset(name, shown) : saveUserPreset(columnKind, name, shown))}
+        onDelete={(id) => (onDeletePreset ? onDeletePreset(id) : removeUserPreset(id))}
+      />
 
       <div className="cols__heading">
         <span>Shown <b>{shown.length}</b></span>

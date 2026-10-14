@@ -22,7 +22,7 @@ import {
   type TimelineRow,
 } from '../state/timelinesStore';
 import { usePersistedState } from '../utils/persistedState';
-import { IconChevronDown, IconClose, IconCopy, IconDownload, IconFlag, IconInfoOutlined, IconPencil, IconPlus, IconSidePanel, IconTrash } from '../components/icons';
+import { IconChevronDown, IconCopy, IconDownload, IconFlag, IconInfoOutlined, IconPencil, IconPlus, IconSidePanel, IconDelete, IconRemove } from '../components/icons';
 import { InfoTip } from '../components/InfoTip';
 import { FullscreenButton } from '../components/ViewerToolbar';
 import { ukBankHolidays } from '../components/timelines/holidays';
@@ -370,7 +370,7 @@ export function TimelinesPage() {
             <>
               <button className="btn btn--small scn-icon-btn" type="button" onClick={rename} title="Rename the timeline" aria-label="Rename"><IconPencil width={16} height={16} /></button>
               <button className="btn btn--small scn-icon-btn" type="button" onClick={duplicate} title="Duplicate the timeline" aria-label="Duplicate"><IconCopy width={16} height={16} /></button>
-              <button className="btn btn--small danger scn-icon-btn" type="button" onClick={remove} title="Delete the timeline" aria-label="Delete"><IconTrash width={16} height={16} /></button>
+              <button className="btn btn--small danger scn-icon-btn" type="button" onClick={remove} title="Delete the timeline" aria-label="Delete"><IconDelete /></button>
               <div className="tl-viewswitch" role="tablist" aria-label="View">
                 <button type="button" role="tab" aria-selected={view === 'table'} className={view === 'table' ? 'is-on' : ''} onClick={() => setView('table')}>Table</button>
                 <button type="button" role="tab" aria-selected={view === 'timeline'} className={view === 'timeline' ? 'is-on' : ''} onClick={() => setView('timeline')}>Timeline</button>
@@ -739,7 +739,7 @@ function FieldsEditor({ timeline, patch }: { timeline: Timeline; patch: (fn: (t:
         <div key={f.id} className="tl-stagerow">
           <input value={f.name} onChange={(e) => patch((t) => ({ ...t, fields: t.fields.map((x) => (x.id === f.id ? { ...x, name: e.target.value } : x)) }))} />
           <button
-            className="btn btn--small danger"
+            className="cols__icon cols__icon--remove"
             type="button"
             title="Delete the field"
             onClick={() => {
@@ -752,7 +752,7 @@ function FieldsEditor({ timeline, patch }: { timeline: Timeline; patch: (fn: (t:
               }));
             }}
           >
-            ✕
+            <IconRemove />
           </button>
         </div>
       ))}
@@ -772,7 +772,7 @@ function SummaryEditor({ timeline, patch }: { timeline: Timeline; patch: (fn: (t
           <div className="tl-stagerow">
             <HexColorInput value={b.color} onChange={(hex) => set(b.id, { color: hex })} />
             <input value={b.name} onChange={(e) => set(b.id, { name: e.target.value })} placeholder="Name" />
-            <button className="btn btn--small danger" type="button" title="Delete the summary bar" onClick={() => window.confirm(`Delete the summary bar "${b.name}"?`) && patch((t) => ({ ...t, summaries: (t.summaries ?? []).filter((x) => x.id !== b.id) }))}>✕</button>
+            <button className="cols__icon cols__icon--remove" type="button" title="Delete the summary bar" onClick={() => window.confirm(`Delete the summary bar "${b.name}"?`) && patch((t) => ({ ...t, summaries: (t.summaries ?? []).filter((x) => x.id !== b.id) }))}><IconRemove /></button>
           </div>
           <label>Description (optional)<input value={b.description} onChange={(e) => set(b.id, { description: e.target.value })} placeholder="Shown with the bar" /></label>
           <div className="tl-stagerow">
@@ -812,7 +812,7 @@ function StagesEditor({ timeline, patch, barLabels, setBarLabels }: { timeline: 
           <input value={s.name} onChange={(e) => set(s.id, { name: e.target.value })} />
           <button className="btn btn--small" type="button" disabled={i === 0} onClick={() => patch((t) => { const a = [...t.stages]; [a[i - 1], a[i]] = [a[i], a[i - 1]]; return { ...t, stages: a }; })} title="Earlier">↑</button>
           <button
-            className="btn btn--small danger"
+            className="cols__icon cols__icon--remove"
             type="button"
             title="Delete the stage"
             onClick={() => {
@@ -820,7 +820,7 @@ function StagesEditor({ timeline, patch, barLabels, setBarLabels }: { timeline: 
               patch((t) => ({ ...t, stages: t.stages.filter((x) => x.id !== s.id), rows: t.rows.map((r) => { const { [s.id]: _g, ...spans } = r.spans; return { ...r, spans }; }) }));
             }}
           >
-            ✕
+            <IconRemove />
           </button>
         </div>
       ))}
@@ -848,7 +848,7 @@ function HolidaysEditor({ timeline, patch }: { timeline: Timeline; patch: (fn: (
           <input value={h.name} onChange={(e) => set(h.id, { name: e.target.value })} placeholder="Name" />
           <input type="date" value={h.start} onChange={(e) => e.target.value && set(h.id, { start: e.target.value, end: h.end < e.target.value ? e.target.value : h.end })} aria-label="First day" />
           <input type="date" value={h.end} min={h.start} onChange={(e) => e.target.value && set(h.id, { end: e.target.value })} aria-label="Last day" />
-          <button className="btn btn--small danger" type="button" title="Delete" onClick={() => patch((t) => ({ ...t, holidays: (t.holidays ?? []).filter((x) => x.id !== h.id) }))}>✕</button>
+          <button className="cols__icon cols__icon--remove" type="button" title="Delete" onClick={() => patch((t) => ({ ...t, holidays: (t.holidays ?? []).filter((x) => x.id !== h.id) }))}><IconRemove /></button>
         </div>
       ))}
       <div className="tl-actions">
@@ -873,7 +873,7 @@ function EventsEditor({ timeline, patch }: { timeline: Timeline; patch: (fn: (t:
           <input type="color" value={e.color} onChange={(ev) => set(e.id, { color: ev.target.value })} aria-label="Colour" />
           <input value={e.name} onChange={(ev) => set(e.id, { name: ev.target.value })} />
           <input type="date" value={e.date} onChange={(ev) => ev.target.value && set(e.id, { date: ev.target.value })} />
-          <button className="btn btn--small danger" type="button" title="Delete the event" onClick={() => window.confirm(`Delete the event "${e.name}"?`) && patch((t) => ({ ...t, events: t.events.filter((x) => x.id !== e.id) }))}>✕</button>
+          <button className="cols__icon cols__icon--remove" type="button" title="Delete the event" onClick={() => window.confirm(`Delete the event "${e.name}"?`) && patch((t) => ({ ...t, events: t.events.filter((x) => x.id !== e.id) }))}><IconRemove /></button>
         </div>
       ))}
       <button className="btn btn--small" type="button" onClick={() => patch((t) => ({ ...t, events: [...t.events, { id: newId(), name: 'Event', date: todayStr(), color: PALETTE[3] }] }))}>+ Add event</button>
@@ -911,7 +911,7 @@ function PeopleEditor() {
               }
             }}
           >
-            <IconClose width={12} height={12} />
+            <IconDelete />
           </button>
         </div>
       ))}

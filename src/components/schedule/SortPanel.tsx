@@ -1,4 +1,6 @@
 import { DirectionToggle, FieldPicker, RuleRows, newRuleId, type PickField } from './FieldRules';
+import { PresetBar, type PresetItem } from './PresetBar';
+import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
 import { InfoTip } from '../InfoTip';
 
 export interface SortRule {
@@ -8,6 +10,7 @@ export interface SortRule {
 }
 
 /** One-click sorts, used when their fields exist (Programmes). */
+type SortKey = { field: string; direction: 'up' | 'down' };
 const PRESETS: { label: string; rules: { field: string; direction: 'up' | 'down' }[] }[] = [
   { label: 'Start', rules: [{ field: 'start', direction: 'up' }] },
   { label: 'Finish', rules: [{ field: 'finish', direction: 'up' }] },
@@ -41,17 +44,22 @@ export function SortPanel({ fields, rules, onChange, onClose, width, bare = fals
     onChange([...rules, { id: newRuleId('sort'), field: f.id, direction: 'up' }]);
   };
   const presets = offered.filter((p) => p.rules.every((r) => byId.has(r.field)));
+  const saved = useUserPresetsStore((st) => st.presets).filter((p) => p.kind === 'sort' && (p.data as SortKey[]).every((r) => byId.has(r.field)));
+  const sortItems: PresetItem[] = [...presets.map((p) => ({ id: p.label, label: p.label })), ...saved.map((p) => ({ id: p.id, label: p.name, user: true }))];
 
   const body = (
     <div className="cols">
-      {presets.length > 0 && (
-        <div className="cols__presets">
-          <span className="cols__hint">Presets</span>
-          {presets.map((p) => (
-            <button key={p.label} type="button" onClick={() => onChange(p.rules.map((r) => ({ id: newRuleId('sort'), ...r })))}>{p.label}</button>
-          ))}
-        </div>
-      )}
+      <PresetBar
+        noun="sort"
+        items={sortItems}
+        saveDisabled={rules.length === 0}
+        onApply={(id) => {
+          const keys = sortItems.find((i) => i.id === id)?.user ? (saved.find((p) => p.id === id)?.data as SortKey[] | undefined) : presets.find((p) => p.label === id)?.rules;
+          if (keys) onChange(keys.map((r) => ({ id: newRuleId('sort'), ...r })));
+        }}
+        onSave={(name) => saveUserPreset('sort', name, rules.map((r) => ({ field: r.field, direction: r.direction })))}
+        onDelete={removeUserPreset}
+      />
 
       <div className="cols__heading">
         <span>

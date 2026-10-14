@@ -105,7 +105,7 @@ export const useActivityOverridesStore = create<OverridesState>()(
 );
 
 /** Fields that move the dates: when one is edited the programme is calculated again. */
-const DRIVES_DATES = ['durationHours', 'remainingDurationHours', 'calendarId', 'constraintType', 'constraintDate', 'earlyStart', 'earlyFinish', 'targetStart', 'targetFinish'];
+const DRIVES_DATES = ['durationHours', 'remainingDurationHours', 'calendarId', 'constraintType', 'constraintDate', 'status', 'actualStart', 'actualFinish', 'secondaryConstraintType', 'secondaryConstraintDate', 'earlyStart', 'earlyFinish', 'targetStart', 'targetFinish'];
 const DATE_FIELDS = ['earlyStart', 'earlyFinish', 'targetStart', 'targetFinish', 'actualStart', 'actualFinish'] as const;
 
 /** The programme with its edits applied (matched by Activity ID). When an edit changes what drives the dates (a duration, a
@@ -160,6 +160,15 @@ export function withOverrides(m: ScheduleModel, edits: Record<string, Stored> | 
       return { ...a, ...keep };
     }),
   };
+}
+
+/** The programme with these edits and link edits made in it (not kept on top): what editing an editable programme does. Dates and float
+    are calculated again when the edits change what drives them, as withOverrides does. */
+export function applyEdits(m: ScheduleModel, edits: Map<string, Partial<Activity>>, linkOps?: LinkOp[]): ScheduleModel {
+  const stored: Record<string, Stored> = {};
+  for (const [code, patch] of edits) stored[norm(code)] = toStored(patch);
+  const out = withOverrides(m, stored, linkOps);
+  return out === m ? m : { ...out, id: m.id, dbProgrammeId: m.dbProgrammeId, editable: m.editable, sourceFileName: m.sourceFileName };
 }
 
 /** How many activities of a programme carry edits. */

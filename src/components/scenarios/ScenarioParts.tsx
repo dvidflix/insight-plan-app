@@ -44,7 +44,7 @@ import { totalRules } from '../../prs/rules';
 import { DEFAULT_PRESETS, normalizePresets, type RulePreset } from '../../prs/presets';
 import { ScenarioTableConfig, scnTabBadges } from './ScenarioTableConfig';
 import { ScenarioRulesEditor } from './ScenarioRules';
-import { IconArrowDown, IconArrowUp, IconClose, IconColumns, IconFilter, IconGroup, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash } from '../icons';
+import { IconArrowDown, IconArrowUp, IconColumns, IconFilter, IconGroup, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash, IconDelete, IconRemove } from '../icons';
 import { useProjectDbStore } from '../../state/projectDbStore';
 import type { SidePaneTab } from '../SidePane';
 import { AddModelToProject, ModelCheckCard } from './ScenarioModelCheck';
@@ -204,7 +204,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
       <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveDown(rows, selected))} title="Move down one step (Alt+↓)" aria-label="Move down one step"><IconArrowDown width={16} height={16} /></button>
       <button className="btn scn-icon-btn" disabled={!undo.length} onClick={undoRows} title="Undo (Ctrl+Z)" aria-label="Undo"><IconUndo width={16} height={16} /></button>
       <button className="btn scn-icon-btn" disabled={!redo.length} onClick={redoRows} title="Redo (Ctrl+Y)" aria-label="Redo"><IconRedo width={16} height={16} /></button>
-      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(unsequence(rows, selected))} title="Remove from sequence: blank the Index so the generator orders these items by its automatic rules" aria-label="Remove from sequence"><IconClose width={16} height={16} /></button>
+      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(unsequence(rows, selected))} title="Remove from sequence: blank the Index so the generator orders these items by its automatic rules" aria-label="Remove from sequence"><IconDelete /></button>
       <button
         className={`btn scn-icon-btn${flaggedOnly ? ' primary' : ''}`}
         aria-pressed={flaggedOnly}
@@ -672,6 +672,7 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
   const busy = useScenarioStore((s) => s.busy);
   const dirty = useScenarioStore((s) => isDirty(s));
   const autoUpdate = useScenarioStore((s) => s.autoUpdate);
+  const autoSave = useScenarioStore((s) => s.autoSave);
   const inputModels = useModelsStore((s) => s.models);
   const inputStems = stemsInInputs(inputModels);
   const [newName, setNewName] = useState('');
@@ -740,7 +741,16 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
             >
               <IconSync width={16} height={16} />
             </button>
-            <button className="btn" disabled={!ready || !!busy || !dirty} onClick={() => void saveOrder()} title="Save the order, manual links and crews to the project database">Save</button>
+            <button className="btn" disabled={!ready || !!busy || !dirty} onClick={() => void saveOrder()} title="Save the order, joined objects, manual links, crews and rules to the project database">Save</button>
+            <button
+              type="button"
+              className={`btn scn-autosave${autoSave ? ' primary' : ''}`}
+              aria-pressed={autoSave}
+              onClick={() => useScenarioStore.setState({ autoSave: !autoSave })}
+              title={autoSave ? 'Autosave on: a saved scenario saves itself a moment after each change (a new scenario needs its first Save)' : 'Autosave off: use Save'}
+            >
+              Auto
+            </button>
             <button className="btn scn-icon-btn" disabled={!ready || !!busy || !generatedAt} onClick={() => void loadGenerated()} title="Load the last generated XML into Inputs without regenerating" aria-label="Load last generated">
               <IconUpload width={16} height={16} />
             </button>
@@ -778,7 +788,7 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
                     </span>
                   </button>
                   <button type="button" className="scn-list__delete" disabled={!!busy} title={`Delete the scenario "${name}"`} aria-label={`Delete the scenario ${name}`} onClick={() => void deleteScenario(name)}>
-                    <IconClose width={14} height={14} />
+                    <IconRemove />
                   </button>
                 </div>
               );
