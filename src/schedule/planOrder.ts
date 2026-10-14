@@ -301,3 +301,12 @@ export function duplicateActivities(m: ScheduleModel, ids: string[], nextId: (us
 }
 
 export { isBelow };
+
+/** Puts a WBS node right after a sibling (same parent). */
+export function placeWbsAfter(m: ScheduleModel, id: string, afterId: string): ScheduleModel {
+  const n = m.wbs.find((x) => x.id === id);
+  const ref = m.wbs.find((x) => x.id === afterId);
+  if (!n || !ref || n.parentId !== ref.parentId) return m;
+  const at = childrenOf(m, n.parentId).wbs.filter((x) => x.id !== id).findIndex((x) => x.id === afterId);
+  return putWbs(m, id, n.parentId, at + 1);
+}
