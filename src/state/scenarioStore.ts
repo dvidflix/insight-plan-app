@@ -3,7 +3,7 @@ import type { PresetContent } from '../prs/presets';
 import { withOwn } from '../prs/recipeRules';
 import { create } from 'zustand';
 import { useModelsStore } from './modelsStore';
-import { reloadFromDb, useProjectDbStore } from './projectDbStore';
+import { makeEditableCopy, reloadFromDb, useProjectDbStore } from './projectDbStore';
 import {
   downloadText,
   fetchProject,
@@ -568,6 +568,21 @@ export const loadGenerated = () =>
     const { scenario, loaded } = get();
     await loadIntoInputs(await currentXml(), loaded!.stem, scenario!);
     set({ message: { kind: 'ok', text: `Loaded "${scenarioFileName(loaded!.stem, scenario!)}" into Inputs.` } });
+  });
+
+/** "Take over": switches from the scenario to editing by hand. The programme as generated now (generated first when there is none in
+    the project database yet) is copied to an editable programme that no scenario owns, so later generating does not replace it. */
+export const takeOver = () =>
+  run('Taking over the programme…', async () => {
+    const { scenario, loaded } = get();
+    const stem = loaded!.stem;
+    const find = () => useProjectDbStore.getState().programmes.find((p) => p.kind === 'scenario' && p.scenario === scenario && p.stem === stem);
+    if (!find()) await loadIntoInputs(await currentXml(), stem, scenario!);
+    const source = find();
+    if (!source) throw new Error('The project database has no programme for this scenario: open a project folder first.');
+    await makeEditableCopy(source, `${scenarioFileName(stem, scenario!)} (manual)`);
+    const err = useProjectDbStore.getState().error;
+    set({ message: err ? { kind: 'error', text: err } : { kind: 'ok', text: `"${scenarioFileName(stem, scenario!)} (manual)" is now yours to edit in Inputs / Schedule. It is no longer changed by this scenario.` } });
   });
 
 export const download = (format: 'xml' | 'xer') =>

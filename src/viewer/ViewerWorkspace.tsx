@@ -17,6 +17,7 @@ import { ClashPanel } from '../components/ClashPanel';
 import { ViewpointsList } from '../components/ViewpointsList';
 import { useModelEdgesStore } from '../state/modelEdgesStore';
 import { useModelsStore } from '../state/modelsStore';
+import { IS_SATELLITE } from '../state/satellite';
 
 /** Combines the persistent 3D viewer shell with an optional side panel (the
     4D sequencing panel) and an optional overlay floated on top of the
@@ -80,13 +81,18 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
   // when the viewer is narrow.
   return (
     <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
-      <DockPanel id="datatable" label="Data table" shown={tableOpen} setShown={setTableOpen}><ModelDataTable /></DockPanel>
-      <DockPanel id="clash" label="Clash"><ClashPanel /></DockPanel>
-      <DockPanel id="viewpoints" label="Viewpoints">
-        <div className="dock-viewpoints">
-                    <div className="dock-viewpoints__list"><ViewpointsList layout={vpSide === 'bottom' ? 'cards' : 'list'} actions /></div>
-        </div>
-      </DockPanel>
+      {/* A satellite window shows programme panels only. */}
+      {!IS_SATELLITE && (
+        <>
+          <DockPanel id="datatable" label="Data table" shown={tableOpen} setShown={setTableOpen}><ModelDataTable /></DockPanel>
+          <DockPanel id="clash" label="Clash"><ClashPanel /></DockPanel>
+          <DockPanel id="viewpoints" label="Viewpoints">
+            <div className="dock-viewpoints">
+              <div className="dock-viewpoints__list"><ViewpointsList layout={vpSide === 'bottom' ? 'cards' : 'list'} actions /></div>
+            </div>
+          </DockPanel>
+        </>
+      )}
       <DockSideView side="left" />
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
         <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>

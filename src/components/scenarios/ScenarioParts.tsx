@@ -29,6 +29,7 @@ import {
   setRules,
   setSelected,
   stemsInInputs,
+  takeOver,
   undoRows,
   updateFourD,
   useScenarioStem,
@@ -755,6 +756,16 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
               <IconUpload width={16} height={16} />
             </button>
             <ProgrammeDownload canXml disabled={!ready || !!busy || !generatedAt} onDownload={(f) => void download(f)} />
+            <button
+              className="btn"
+              disabled={!ready || !!busy || !project || (modelInfo ? !modelInfo.hasSource : true)}
+              onClick={() => {
+                if (window.confirm(`Take over the programme of "${scenario}" to edit by hand?\n\nIt is copied as it is now to an editable programme. The scenario keeps generating its own programme; the copy is not changed by it.`)) void takeOver();
+              }}
+              title="Switch from the scenario to editing by hand: copies the generated programme to an editable one (add, change and link activities, export as XER). The scenario itself is left as it is."
+            >
+              Take over
+            </button>
           </div>
         </section>
       )}

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { FEATURES } from '../features';
+import { IS_SATELLITE } from './satellite';
 import { useScheduleStore } from './scheduleStore';
 import { buildDbSchedule } from '../schedule/importSchedule';
 import type { ScheduleModel } from '../schedule/types';
@@ -239,7 +240,8 @@ let saving: Promise<void> = Promise.resolve();
 
 async function writeEditable() {
   const db = get().db;
-  if (!db) return;
+  // A satellite window's edits reach the window that opened it, which writes them.
+  if (!db || IS_SATELLITE) return;
   for (const m of useScheduleStore.getState().schedules) {
     if (!m.editable || m.dbProgrammeId === undefined) continue;
     const base = written.get(m.id);

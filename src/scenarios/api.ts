@@ -198,7 +198,8 @@ async function loadIntoDb(xml: string, stem: string, scenario: string) {
   // the database too; copies loaded from files are replaced / hidden.
   const others: Record<number, boolean> = {};
   for (const p of useProjectDbStore.getState().programmes) {
-    if (p.id !== programme.id && !p.hidden && (p.stem === stem || p.name.startsWith(stem))) others[p.id] = true;
+    // A programme taken over to edit by hand stays shown.
+    if (p.id !== programme.id && !p.hidden && !p.editable && (p.stem === stem || p.name.startsWith(stem))) others[p.id] = true;
   }
   if (Object.keys(others).length) await setHidden(others);
   const store = useScheduleStore.getState();

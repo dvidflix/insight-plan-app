@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import { IS_SATELLITE } from './satellite';
 
 /** The panels that can be docked around the 3D view (Models and 4D Sequencing pages): each sits on the left, at the
     bottom or on the right of it. Panels on the same side share it as tabs; panels on different sides show together. */
@@ -124,7 +125,7 @@ export const useDockStore = create<DockState>()(
       },
     }),
     {
-      name: 'viewer.dock',
+      name: IS_SATELLITE ? 'viewer.dock.satellite' : 'viewer.dock',
       version: 1,
       partialize: (s) => ({ placement: s.placement, active: s.active, size: s.size, folded: s.folded }),
     },

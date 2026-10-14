@@ -49,6 +49,8 @@ import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/t
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
 import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel, IconUndo, IconRedo } from '../components/icons';
 import { DockMenu, DockPanel } from '../components/Dock';
+import { hasLinkedWindows, onWindowMessage, openSatelliteWindow, sendToWindows } from '../state/windowSync';
+import { IS_SATELLITE } from '../state/satellite';
 import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditableStatus } from '../components/schedule/EditableStatus';
 import { EditTools } from '../components/schedule/EditTools';
@@ -222,7 +224,13 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const redoLabel = useProgrammeHistory((h) => h.redos[h.redos.length - 1]?.label ?? null);
   const showTotals = useAggregateStore((s) => s.showTotals);
   const setShowTotals = useAggregateStore((s) => s.setShowTotals);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [selectedId, setSelectedIdLocal] = useState<string | null>(null);
+  // The activity picked is shared with the other windows (a Gantt on one screen, its details on another).
+  const setSelectedId = (id: string | null) => {
+    setSelectedIdLocal(id);
+    if (hasLinkedWindows()) sendToWindows('activity', id);
+  };
+  useEffect(() => onWindowMessage<string | null>('activity', (id) => setSelectedIdLocal(id)), []);
   // Curtain: filters fade rows back instead of removing them. Driving path: the chain driving one activity.
   const [curtain, setCurtain] = usePersistedState('schedule.curtain', false);
   const [drivingTarget, setDrivingTarget] = useState<string | null>(null);
@@ -326,6 +334,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const handleSelect = (activity: Activity) => {
     setSelectedId(activity.id);
   };
+
 
   if (!model) {
     return (
@@ -540,6 +549,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
                 Activity details
               </button>
               <DockMenu />
+              {!IS_SATELLITE && <button type="button" className="btn layouts-toggle layouts-toggle--next" onClick={() => openSatelliteWindow(tab)} title="Open this view in a new window (e.g. on a second screen). The windows stay in step: edits, the activity picked, the 4D date">New window</button>}
             </div>
           )}
         </div>

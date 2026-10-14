@@ -3,6 +3,8 @@ import { DuplicateTabButton, DuplicateTabSync } from './components/DuplicateTab'
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useDockStore } from './state/dockStore';
+import './state/windowSync';
+import { IS_SATELLITE, SATELLITE_VIEW } from './state/satellite';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
 import { SettingsSync } from './components/SettingsMenu';
@@ -153,6 +155,7 @@ const mayLeave = (from: PageId, to: PageId) => {
 
 export default function App() {
   const [page, setPageRaw] = useState<PageId>(() => {
+    if (IS_SATELLITE) return 'schedule';
     // Settings › Layout profiles › Open on.
     try {
       const saved = localStorage.getItem('app.startPage');
@@ -196,7 +199,7 @@ export default function App() {
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    () => PAGES.filter((p) => (!IS_SATELLITE || p.id === 'schedule') && (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
     [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
@@ -242,7 +245,7 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [pages]);
   // Programmes opens on the Gantt.
-  const [scheduleTab, setScheduleTab] = useState<ScheduleTabId>('gantt');
+  const [scheduleTab, setScheduleTab] = useState<ScheduleTabId>((IS_SATELLITE && SATELLITE_VIEW ? SATELLITE_VIEW : 'gantt') as ScheduleTabId);
   // Applying a layout (Programmes > Layouts) also opens the view it was saved on.
   const layoutRevision = useScheduleLayoutsStore((s) => s.revision);
   useEffect(() => {
@@ -265,7 +268,7 @@ export default function App() {
       {/* The side pane runs the full window height, beside the top bar too. */}
       <div className="app-frame">
       <div className="app-shell">
-        <header className="app-topbar app-topbar--minimal">
+        {!IS_SATELLITE && <header className="app-topbar app-topbar--minimal">
           <div className="app-topbar__center">
             <nav className="app-topbar__nav">
               {pages.map((p) => (
@@ -280,7 +283,7 @@ export default function App() {
             {FEATURES.selfUpdate && <UpdateChip />}
             <DuplicateTabButton />
           </div>
-        </header>
+        </header>}
         <div className="app-body">
           <div
             style={
