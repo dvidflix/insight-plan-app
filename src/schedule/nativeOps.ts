@@ -58,6 +58,8 @@ const ACTIVITY_FIELDS: { fields: (keyof Activity)[]; /** What the columns are ma
   { fields: ['suspendDate'], write: (a) => ({ suspend_date: xerDate(a.suspendDate) }) },
   { fields: ['resumeDate'], write: (a) => ({ resume_date: xerDate(a.resumeDate) }) },
   { fields: ['expectedFinish'], write: (a) => ({ expect_end_date: xerDate(a.expectedFinish) }) },
+  // The planner's order within a WBS node: the project database's own column, left out of an XER.
+  { fields: ['seq'], write: (a) => ({ ip_seq: a.seq ?? null }) },
 ];
 
 const sameValue = (a: unknown, b: unknown) => (a instanceof Date || b instanceof Date ? a instanceof Date && b instanceof Date && a.getTime() === b.getTime() : (a ?? null) === (b ?? null));
@@ -108,6 +110,7 @@ function wbsColumns(n: WbsNode, prev?: WbsNode): Record<string, Cell> {
   if (!prev || n.name !== prev.name) out.wbs_name = n.name;
   if (!prev || (n.code ?? '') !== (prev.code ?? '')) out.wbs_short_name = n.code ?? '';
   if (!prev || n.parentId !== prev.parentId) out.parent_wbs_id = n.parentId === null ? null : idValue(n.parentId);
+  if (n.seq !== prev?.seq && (n.seq !== undefined || prev)) out.seq_num = n.seq ?? 0;
   return out;
 }
 
@@ -151,7 +154,7 @@ export function programmeRowOps(before: ScheduleModel, after: ScheduleModel): Db
     const prev = beforeWbs.get(id);
     if (prev === n) continue;
     const set = wbsColumns(n, prev);
-    if (!prev) Object.assign(set, { proj_id: idValue(after.project.id), proj_node_flag: 'N', sum_data_flag: 'N', status_code: 'WS_Open', seq_num: 0 });
+    if (!prev) Object.assign(set, { proj_id: idValue(after.project.id), proj_node_flag: 'N', sum_data_flag: 'N', status_code: 'WS_Open', ...(set.seq_num === undefined ? { seq_num: 0 } : {}) });
     if (Object.keys(set).length) made.push({ table: 'PROJWBS', op: 'upsert', key: { column: 'wbs_id', value: idValue(id) }, set });
   }
 

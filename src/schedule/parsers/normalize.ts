@@ -69,6 +69,7 @@ export function normalizeXer(tables: XerTables, fileName: string, projectId?: st
       name: row.wbs_name ?? '',
       code: row.wbs_short_name ?? '',
       parentId: row.parent_wbs_id || null,
+      ...(row.seq_num ? { seq: num(row.seq_num) } : {}),
     });
   }
   const wbsPath = (wbsId: string | null, field: 'name' | 'code' = 'name'): string => {
@@ -200,6 +201,7 @@ export function normalizeXer(tables: XerTables, fileName: string, projectId?: st
       expectedFinish: date(row.expect_end_date),
       primaryResource: row.rsrc_id ? (rsrcNames.get(row.rsrc_id) ?? '') : '',
       longestPath: row.driving_path_flag === 'Y',
+      ...(row.ip_seq ? { seq: num(row.ip_seq) } : {}),
     };
   });
 

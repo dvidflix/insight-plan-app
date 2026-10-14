@@ -11,8 +11,10 @@ export function tablesToXer(tables: Record<string, XerTable>, header?: string | 
   const today = new Date().toISOString().slice(0, 10);
   const out: string[] = [header?.startsWith('ERMHDR') ? header.replace(/[\r\n]+$/, '') : ['ERMHDR', '19.12', today, 'Project', 'admin', 'admin', 'dbxDatabaseNoName', 'Project Management', 'USD'].join('\t')];
   for (const [name, t] of Object.entries(tables)) {
-    out.push(`%T\t${name}`, ['%F', ...t.columns].join('\t'));
-    for (const r of t.rows) out.push(['%R', ...r.map(cell)].join('\t'));
+    // The app's own columns (ip_...) are not P6's: they stay in the project database.
+    const keep = t.columns.map((c, i) => (/^ip_/i.test(c) ? -1 : i)).filter((i) => i >= 0);
+    out.push(`%T\t${name}`, ['%F', ...keep.map((i) => t.columns[i])].join('\t'));
+    for (const r of t.rows) out.push(['%R', ...keep.map((i) => cell(r[i]))].join('\t'));
   }
   out.push('%E');
   return out.join('\r\n') + '\r\n';

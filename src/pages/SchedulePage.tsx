@@ -47,7 +47,7 @@ import { drivingPath } from '../schedule/drivingPath';
 import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from '../state/scheduleLayoutsStore';
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
-import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel, IconUndo, IconRedo } from '../components/icons';
+import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel, IconUndo, IconRedo, IconLaunch } from '../components/icons';
 import { DockMenu, DockPanel } from '../components/Dock';
 import { hasLinkedWindows, onWindowMessage, openSatelliteWindow, sendToWindows } from '../state/windowSync';
 import { IS_SATELLITE } from '../state/satellite';
@@ -549,7 +549,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
                 Activity details
               </button>
               <DockMenu />
-              {!IS_SATELLITE && <button type="button" className="btn layouts-toggle layouts-toggle--next" onClick={() => openSatelliteWindow(tab)} title="Open this view in a new window (e.g. on a second screen). The windows stay in step: edits, the activity picked, the 4D date">New window</button>}
+              {!IS_SATELLITE && <button type="button" className="btn layouts-toggle layouts-toggle--next" onClick={() => openSatelliteWindow(tab)} title="Open this view in a new window (e.g. on a second screen). The windows stay in step: edits, the activity picked, the 4D date" aria-label="New window"><IconLaunch width={16} height={16} /></button>}
             </div>
           )}
         </div>

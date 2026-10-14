@@ -86,6 +86,8 @@ export interface Activity {
   expectedFinish?: Date | null;
   primaryResource?: string;
   longestPath?: boolean;
+  /** Place among the activities of its WBS node, as the planner orders them (kept in the project database only; not in an XER). */
+  seq?: number;
 }
 
 export interface ActivityCodeValue {
@@ -107,6 +109,8 @@ export interface WbsNode {
   /** WBS code (P6 "wbs_short_name" / XML "Code"). */
   code?: string;
   parentId: string | null;
+  /** Place among its siblings (P6 seq_num); absent: the siblings are in their natural order. */
+  seq?: number;
 }
 
 export interface ScheduleProject {
