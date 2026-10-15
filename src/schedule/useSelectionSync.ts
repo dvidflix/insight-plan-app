@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef } from 'react';
 import type { Activity, ScheduleModel } from './types';
 import { sharedActivityObjects } from './activityObjects';
-import { activityStartMs } from './linking';
+import { activitiesByObject, orderedActivities } from './pickOrder';
 import { useActivitySelectionStore } from '../state/activitySelectionStore';
 import { useLinkGroupsStore } from '../state/linkGroupsStore';
 import { useModelsStore } from '../state/modelsStore';
@@ -31,14 +31,7 @@ export function useSelectionSync({ model, selectedId, onPick, active, enabled }:
 
   const objects = useMemo(() => (model && enabled && loadedModels.length && groups.length ? sharedActivityObjects(model, loadedModels, groups) : null), [model, enabled, loadedModels, groups]);
   /** "modelId:localId" -> the activities linked to that object. */
-  const activitiesOf = useMemo(() => {
-    const out = new Map<string, string[]>();
-    if (!objects) return out;
-    for (const [activityId, perModel] of objects.objectsOf) {
-      for (const [modelId, ids] of perModel) for (const id of ids) (out.get(`${modelId}:${id}`) ?? out.set(`${modelId}:${id}`, []).get(`${modelId}:${id}`)!).push(activityId);
-    }
-    return out;
-  }, [objects]);
+  const activitiesOf = useMemo(() => (objects ? activitiesByObject(objects.objectsOf) : new Map<string, string[]>()), [objects]);
 
   const keyOf = (ids: Record<string, number[]>) => Object.keys(ids).sort().map((m) => `${m}=${[...ids[m]].sort((a, b) => a - b).join(',')}`).join(';');
   /** The selection this page made in the 3D model last, and the one it picked activities for last: neither is answered again. */
@@ -72,9 +65,8 @@ export function useSelectionSync({ model, selectedId, onPick, active, enabled }:
     const key = keyOf(sel);
     if (!key || key === pulled.current) return;
     pulled.current = key;
-    const found = new Set<string>();
-    for (const [modelId, ids] of Object.entries(sel)) for (const id of ids) for (const a of activitiesOf.get(`${modelId}:${id}`) ?? []) found.add(a);
-    const list = model.activities.filter((a) => found.has(a.id)).sort((a, b) => (activityStartMs(a, 'planned') ?? 0) - (activityStartMs(b, 'planned') ?? 0));
+    // In the order the objects were picked, so a chain of picks is a chain of activities.
+    const list = orderedActivities(sel, activitiesOf, model);
     if (!list.length) return;
     const order = list.map((a) => a.id);
     const store = useActivitySelectionStore.getState();

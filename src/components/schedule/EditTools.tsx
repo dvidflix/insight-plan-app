@@ -1,9 +1,13 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDismiss } from '../useDismiss';
+import { IconMenu } from '../icons';
 import type { ScheduleModel } from '../../schedule/types';
 import { assignResource } from '../../schedule/planResources';
-import { addActivity, addTasksFromObjects, addWbs, deleteActivities, deleteWbs, moveActivities, moveWbs, renameWbs, setDataDate, wbsPathOf } from '../../schedule/programmeCommands';
-import { applyLinkShortcut, type LinkKind } from '../../schedule/linkShortcuts';
+import { addActivity, addTasksFromObjects, addWbs, deleteActivities, deleteWbs, dissolveActivities, moveActivities, moveWbs, renameWbs, setDataDate, wbsPathOf } from '../../schedule/programmeCommands';
+import { applyLinkShortcut, unlinkActivities, type LinkKind } from '../../schedule/linkShortcuts';
+import { useLinkTypeStore } from '../../state/linkTypeStore';
+import { setPercentMany, splitActivity } from '../../schedule/planActions';
+import { rescheduleProgramme } from '../../schedule/reschedule';
 import { editStructure } from '../../state/programmeEdits';
 import { commit } from '../../state/programmeHistory';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
@@ -43,10 +47,18 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
   const picked = useActivitySelectionStore((s) => s.ids);
   const [open, setOpen] = useState(false);
   const [node, setNode] = useState('');
-  const [linkKind, setLinkKind] = useState<LinkKind>('FS');
+  const linkKind = useLinkTypeStore((s) => s.kind);
+  const setLinkKind = useLinkTypeStore((s) => s.setKind);
 
   // ---- New tasks from the objects picked in the 3D model, linked to them by a Link Group (or none: linked by hand later) ----
   const [from3d, setFrom3d] = useState(false);
+  const [menu, setMenu] = useState(false);
+  const menuRef = useDismiss<HTMLDivElement>(menu, () => setMenu(false));
+  /** A tool that does something closes the menu; the toggles (the link type, the drop-downs) leave it open. */
+  const closeOnAction = (e: React.MouseEvent) => {
+    const b = (e.target as HTMLElement).closest('button');
+    if (b && !b.hasAttribute('aria-expanded') && b.getAttribute('role') !== 'radio' && !b.closest('.schedule-toolbar__edit-panel')) setMenu(false);
+  };
   const from3dRef = useDismiss<HTMLSpanElement>(from3d, () => setFrom3d(false));
   const wbsRef = useDismiss<HTMLSpanElement>(open, () => setOpen(false));
   const [groupId, setGroupId] = useState('');
@@ -126,7 +138,33 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
     if (!m) return;
     wbs('Set the data date', (p) => setDataDate(p, new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]), dataDate?.getHours() ?? 8, dataDate?.getMinutes() ?? 0)));
   };
-  const link = () => onNote(applyLinkShortcut(linkKind, model, new Set(ids())).message);
+  const link = () => onNote(applyLinkShortcut(linkKind, model, ids()).message);
+  const unlink = () => onNote(unlinkActivities(model, ids()).message);
+  const progress = (percent: number) => {
+    const list = ids();
+    const r = commit(`Progress ${percent}%`, () => editStructure(key, (m) => setPercentMany(m, list, percent)));
+    if (failed(r)) return onNote(r.error);
+    onNote(`${(r as { done: number }).done} set to ${percent}%, as of the data date. Press F9 to schedule.`);
+  };
+  const split = () => {
+    const list = ids();
+    if (list.length !== 1) return onNote('Pick one activity to split.');
+    const n = Number(window.prompt('Split into how many parts?', '2'));
+    if (!n) return;
+    const r = commit('Split activity', () => editStructure(key, (m) => splitActivity(m, list[0], n)));
+    if (failed(r)) return onNote(r.error);
+    onNote(`Split into ${n} parts, one after the other. Undo (Ctrl+Z) puts it back.`);
+  };
+  const dissolve = () => {
+    const list = ids();
+    if (!list.length) return onNote('Pick the activities to dissolve first.');
+    const r = commit(`Dissolve ${list.length} ${list.length === 1 ? 'activity' : 'activities'}`, () => editStructure(key, (m) => dissolveActivities(m, list)));
+    if (failed(r)) return onNote(r.error);
+    useActivitySelectionStore.getState().clear();
+    onSelect(null);
+    const { removed, bridged } = r as { removed: number; bridged: number };
+    onNote(`Dissolved ${removed} ${removed === 1 ? 'activity' : 'activities'}: ${bridged} ${bridged === 1 ? 'link joins' : 'links join'} what was before them to what was after. Undo (Ctrl+Z) puts them back.`);
+  };
   const nameNode = (what: string, initial = '') => window.prompt(what, initial)?.trim() ?? '';
 
   useEffect(() => {
@@ -144,11 +182,16 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
   });
 
   return (
-    <div className="schedule-toolbar__edit">
-      {/* What the buttons act on, then only the buttons that make sense for it. */}
-      <span className="ctx-label" title="What the buttons here act on">
+    <div className="schedule-toolbar__edit ctx-menu" ref={menuRef}>
+      <button type="button" className={`btn btn--small ctx-menu__btn${menu ? ' is-open' : ''}`} aria-expanded={menu} aria-haspopup="menu" aria-label="Planning tools" title="Planning tools: add, link, progress, split, dissolve, schedule, delete, 3D, WBS" onClick={() => setMenu(!menu)}>
+        <IconMenu width={18} height={18} />
+      </button>
+      {/* What the tools in the menu act on. */}
+      <span className="ctx-label" title="What the tools in the menu act on">
         {count === 0 ? 'Nothing picked' : count === 1 ? (model.activities.find((a) => a.id === ids()[0])?.code ?? '1 activity') : `${count} activities`}
       </span>
+      {menu && (
+      <div className="ctx-menu__panel" role="menu" onClick={closeOnAction}>
       {count <= 1 && (
         <>
           <button type="button" className="btn btn--small" onClick={() => add('task')} title="Add an activity after the picked one, in its WBS node (Insert)">+ Activity</button>
@@ -165,6 +208,15 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
           <button type="button" className="btn btn--small primary" onClick={link} title={`Link the picked activities with ${linkKind}: ${LINK_KINDS.find(([k]) => k === linkKind)![1]} ${linkKind === 'FS' ? 'They are chained in start order.' : 'Each is linked from the earliest one.'}`}>Link</button>
         </span>
       )}
+      {count >= 2 && <button type="button" className="btn btn--small" onClick={unlink} title="Break the links between the picked activities">Unlink</button>}
+      {count === 1 && <button type="button" className="btn btn--small" onClick={split} title="Split the activity into parts one after the other">Split</button>}
+      {count >= 1 && (
+        <span className="np__seg" aria-label="Progress of the picked activities">
+          {[0, 25, 50, 75, 100].map((p) => <button key={p} type="button" onClick={() => progress(p)} title={`Set to ${p}% as of the data date`}>{p}%</button>)}
+        </span>
+      )}
+      {count >= 1 && <button type="button" className="btn btn--small" onClick={dissolve} title="Dissolve: the picked activities are taken out and what was before them is linked to what was after, so the logic stays">Dissolve</button>}
+      <button type="button" className="btn btn--small" onClick={() => void rescheduleProgramme(model).then(onNote)} title="Calculate the dates and float again from the links, calendars, constraints and the data date (F9)">Schedule F9</button>
       {count >= 1 && <button type="button" className="btn btn--small" onClick={remove} title="Delete the picked activities and their links (Delete). Undo puts them back.">Delete</button>}
       {(objects.length > 0 || from3d) && (
       <span className="schedule-toolbar__edit-wbs" ref={from3dRef}>
@@ -228,6 +280,8 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
           </div>
         )}
       </span>
+      </div>
+      )}
     </div>
   );
 }

@@ -9,8 +9,6 @@ import { programmeKey } from '../state/unloadedWbsStore';
     order (finish-to-start). The links are kept with the project like the other edits, so they survive re-importing or
     regenerating the programme. A link that would close a loop is left out. */
 
-const startMs = (a: Activity) => (a.actualStart ?? a.earlyStart ?? a.targetStart)?.getTime() ?? Number.MAX_SAFE_INTEGER;
-
 /** Whether `from` already leads to `to` through the links. */
 export function reaches(model: ScheduleModel, from: string, to: string, extra: { predId: string; succId: string }[]): boolean {
   const next = new Map<string, string[]>();
@@ -36,16 +34,19 @@ export interface ShortcutResult {
 /** `model` is the programme the activities are in (one programme, not a combined display). */
 export type LinkKind = 'FS' | 'SS' | 'FF' | 'SF';
 
-export function applyLinkShortcut(kind: LinkKind, model: ScheduleModel, ids: ReadonlySet<string>): ShortcutResult {
-  const picked = model.activities.filter((a) => ids.has(a.id) && a.type !== 'wbs-summary').sort((a, b) => startMs(a) - startMs(b));
-  if (picked.length < 2) return { added: 0, skipped: 0, message: 'Pick two or more activities first (Ctrl+click or Shift+click).' };
+/** Links the picked activities: Finish to start chains them in the order they were picked (`ids` is kept in pick order: a Set keeps the
+    order things were added), the other types fan out from the first picked. */
+export function applyLinkShortcut(kind: LinkKind, model: ScheduleModel, ids: Iterable<string>): ShortcutResult {
+  const byId = new Map(model.activities.map((a) => [a.id, a]));
+  const picked = [...new Set(ids)].map((id) => byId.get(id)).filter((a): a is Activity => !!a && a.type !== 'wbs-summary');
+  if (picked.length < 2) return { added: 0, skipped: 0, message: 'Pick two or more activities first (Ctrl+click or Shift+click, or pick objects in the 3D model one by one).' };
   const pairs: [Activity, Activity][] = kind === 'FS'
     ? picked.slice(1).map((a, i) => [picked[i], a])
     : picked.slice(1).map((a) => [picked[0], a]);
   const key = programmeKey(model);
   const adding: { predId: string; succId: string }[] = [];
   let skipped = 0;
-  commit(kind === 'FS' ? 'Link in start order' : 'Link from the earliest', () => {
+  commit(kind === 'FS' ? 'Link in a chain' : 'Link from the first', () => {
     for (const [pred, succ] of pairs) {
       const exists = model.relationships.some((r) => r.predId === pred.id && r.succId === succ.id && r.type === kind && r.lagHours === 0);
       if (exists || reaches(model, succ.id, pred.id, adding)) {
@@ -57,10 +58,28 @@ export function applyLinkShortcut(kind: LinkKind, model: ScheduleModel, ids: Rea
       adding.push({ predId: pred.id, succId: succ.id });
     }
   });
-  const what = kind === 'FS' ? 'finish-to-start links in start order' : `${{ SS: 'start-to-start', FF: 'finish-to-finish', SF: 'start-to-finish' }[kind]} links from the earliest`;
+  const what = kind === 'FS' ? 'finish-to-start links in a chain, in the order picked' : `${{ SS: 'start-to-start', FF: 'finish-to-finish', SF: 'start-to-finish' }[kind]} links from the first picked`;
   return {
     added: adding.length,
     skipped,
     message: `${adding.length} ${what}${skipped ? `; ${skipped} left out (already there, or they would make a loop)` : ''}.`,
   };
+}
+
+/** Breaks the links between the picked activities (every link that has both ends among them). The activities stay. */
+export function unlinkActivities(model: ScheduleModel, ids: Iterable<string>): ShortcutResult {
+  const set = new Set(ids);
+  const byId = new Map(model.activities.map((a) => [a.id, a]));
+  const gone = model.relationships.filter((r) => set.has(r.predId) && set.has(r.succId));
+  if (set.size < 2) return { added: 0, skipped: 0, message: 'Pick two or more activities to break the links between them.' };
+  if (!gone.length) return { added: 0, skipped: 0, message: 'There are no links between the picked activities.' };
+  const key = programmeKey(model);
+  commit('Break links', () => {
+    for (const r of gone) {
+      const pred = byId.get(r.predId);
+      const succ = byId.get(r.succId);
+      if (pred && succ) setLinkOp(key, { op: 'remove', pred: pred.code, succ: succ.code });
+    }
+  });
+  return { added: 0, skipped: 0, message: `Broke ${gone.length} ${gone.length === 1 ? 'link' : 'links'} between the picked activities. Undo (Ctrl+Z) puts them back.` };
 }

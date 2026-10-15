@@ -239,9 +239,9 @@ export function ModelDockPanels({ page, views, colour }: { page: 'model' | 'sequ
   return (
     <>
       <DockPanel id="related" label="3D & Related"><PaneBody><RelatedTab page={page} /></PaneBody></DockPanel>
-      <DockPanel id="tree" label="Selection Tree"><PaneBody><SelectionTreeTab /></PaneBody></DockPanel>
+      <DockPanel id="tree" label="Tree"><PaneBody><SelectionTreeTab /></PaneBody></DockPanel>
       <DockPanel id="properties" label="Properties"><PaneBody><PropertiesTab /></PaneBody></DockPanel>
-      <DockPanel id="search" label="Search sets"><PaneBody><SearchSetsPanel player={page === 'model'} /></PaneBody></DockPanel>
+      <DockPanel id="search" label="Sets"><PaneBody><SearchSetsPanel player={page === 'model'} /></PaneBody></DockPanel>
       {views !== undefined && <DockPanel id="views" label="Views"><PaneBody>{views}</PaneBody></DockPanel>}
       {colour && <DockPanel id="colour" label="Colour"><PaneBody><ModelColorPanel /></PaneBody></DockPanel>}
       <DockPanel id="tableSetup" label="Data table setup"><PaneBody><DataTablePanel /></PaneBody></DockPanel>

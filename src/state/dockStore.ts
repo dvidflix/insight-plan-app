@@ -50,7 +50,8 @@ export const DOCK_DEFAULTS: Record<DockPanelId, DockSide> = {
   planning: 'right',
   dictionary: 'right',
 };
-const ORDER: DockPanelId[] = ['related', 'tree', 'properties', 'search', 'views', 'colour', 'tableSetup', 'fourD', 'gantt', 'tasks', 'resources', 'scenarios', 'recipes', 'rules', 'clash', 'topics', 'viewpoints', 'checks', 'compare', 'datatable', 'planning', 'dictionary', 'layouts', 'details', 'links', 'predecessors', 'successors', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'generated', 'scenarioSettings', 'settings'];
+/** The order of the tabs on a side: Tree, Properties, Sets, 4D, Tasks, 3D & Related, Clash first, then the rest. */
+const ORDER: DockPanelId[] = ['tree', 'properties', 'search', 'fourD', 'tasks', 'related', 'clash', 'views', 'colour', 'tableSetup', 'gantt', 'resources', 'scenarios', 'recipes', 'rules', 'topics', 'viewpoints', 'checks', 'compare', 'datatable', 'planning', 'dictionary', 'layouts', 'details', 'links', 'predecessors', 'successors', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'generated', 'scenarioSettings', 'settings'];
 
 /** Which page's docks the panels belong to: the 3D view's (Models, 4D Sequencing) or the Programmes page's. Only the
     host that is showing registers its panels and draws its docks. */

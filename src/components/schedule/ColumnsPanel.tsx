@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { COLUMN_GROUPS, COLUMN_PRESETS, type ColumnDef } from '../../schedule/columns';
 import { PresetBar, type PresetItem } from './PresetBar';
 import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
-import { IconRemove, IconSectionChevron } from '../icons';
+import { IconRemove, IconSectionChevron, IconPencil } from '../icons';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { CalcColumnsEditor } from './CalcColumnsEditor';
 import { queryMatcher } from '../../schedule/search';
@@ -87,15 +87,6 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
     ...(onSavePreset ? [] : savedColumns.map((p) => ({ id: p.id, label: p.name, user: true }))),
   ];
   const toggle = (id: string) => set(shownSet.has(id) ? shown.filter((x) => x !== id) : [...shown, id]);
-  const move = (id: string, delta: number) => {
-    const from = shown.indexOf(id);
-    const to = from + delta;
-    if (from < 0 || to < 0 || to >= shown.length) return;
-    const next = [...shown];
-    next.splice(from, 1);
-    next.splice(to, 0, id);
-    set(next);
-  };
   const drop = (targetId: string) => {
     if (!dragId || dragId === targetId) return;
     const next = shown.filter((x) => x !== dragId);
@@ -149,40 +140,47 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
         <span>Shown <b>{shown.length}</b></span>
         {shown.length > 0 && <button type="button" className="cols__link" onClick={() => set([])}>Clear all</button>}
       </div>
-      <div className="cols__shown">
-        {shown.length === 0 && <div className="cols__empty">No columns shown — add some below.</div>}
-        {shown.map((id, i) => (
-          <div
-            key={id}
-            className={`cols__row${dragId === id ? ' dragging' : ''}`}
-            draggable
-            onDragStart={(e) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; }}
-            onDragOver={(e) => e.preventDefault()}
-            onDrop={(e) => { e.preventDefault(); drop(id); setDragId(null); }}
-            onDragEnd={() => setDragId(null)}
-          >
-            <span className="cols__grip" aria-hidden="true">⋮⋮</span>
-            {calculated && renaming === id ? (
-              <input
-                className="cols__rename"
-                autoFocus
-                defaultValue={byId.get(id)!.label}
-                onFocus={(e) => e.target.select()}
-                onBlur={(e) => { rename(id, e.target.value, byId.get(id)!.baseLabel ?? byId.get(id)!.label); setRenaming(null); }}
-                onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenaming(null); }}
-                aria-label="Column name"
-              />
-            ) : (
-              <span className={`cols__label${byId.get(id)!.baseLabel ? ' is-renamed' : ''}`} title={byId.get(id)!.baseLabel ? `${byId.get(id)!.label} (was “${byId.get(id)!.baseLabel}”)` : byId.get(id)!.label} onDoubleClick={() => calculated && setRenaming(id)}>{byId.get(id)!.label}</span>
-            )}
-            {calculated && byId.get(id)!.baseLabel && <button type="button" className="cols__icon" onClick={() => resetLabel(id)} aria-label={`Reset the name to “${byId.get(id)!.baseLabel}”`} title={`Reset the name to “${byId.get(id)!.baseLabel}”`}>↺</button>}
-            {calculated && renaming !== id && <button type="button" className="cols__icon" onClick={() => setRenaming(id)} aria-label={`Rename ${byId.get(id)!.label}`} title="Give the column a short name of your own (double-click the name too)">✎</button>}
-            <button type="button" className="cols__icon" disabled={i === 0} onClick={() => move(id, -1)} aria-label={`Move ${byId.get(id)!.label} up`} title="Move up">↑</button>
-            <button type="button" className="cols__icon" disabled={i === shown.length - 1} onClick={() => move(id, 1)} aria-label={`Move ${byId.get(id)!.label} down`} title="Move down">↓</button>
-            <button type="button" className="cols__icon cols__icon--remove" onClick={() => toggle(id)} aria-label={`Hide ${byId.get(id)!.label}`} title="Hide column"><IconRemove /></button>
-          </div>
-        ))}
-      </div>
+      {shown.length === 0 && <div className="cols__shown"><div className="cols__empty">No columns shown — add some below.</div></div>}
+      {shown.length > 0 && (
+        <div className="rgrid" role="table" style={{ '--rg-cols': 'minmax(0, 1fr) 52px' } as React.CSSProperties}>
+          {shown.map((id, i) => (
+            <div
+              key={id}
+              role="row"
+              className={`rgrid__row${dragId === id ? ' dragging' : ''}`}
+              draggable
+              onDragStart={(e) => { setDragId(id); e.dataTransfer.effectAllowed = 'move'; }}
+              onDragOver={(e) => e.preventDefault()}
+              onDrop={(e) => { e.preventDefault(); drop(id); setDragId(null); }}
+              onDragEnd={() => setDragId(null)}
+            >
+              <span className="rgrid__n" title="Drag the row to reorder it">
+                <span className="rgrid__num">{i + 1}</span>
+                <button type="button" className="rgrid__del" onClick={() => toggle(id)} aria-label={`Hide ${byId.get(id)!.label}`} title="Hide column"><IconRemove /></button>
+              </span>
+              <div className="rgrid__body">
+                {calculated && renaming === id ? (
+                  <input
+                    className="rgrid__cell"
+                    autoFocus
+                    defaultValue={byId.get(id)!.label}
+                    onFocus={(e) => e.target.select()}
+                    onBlur={(e) => { rename(id, e.target.value, byId.get(id)!.baseLabel ?? byId.get(id)!.label); setRenaming(null); }}
+                    onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); if (e.key === 'Escape') setRenaming(null); }}
+                    aria-label="Column name"
+                  />
+                ) : (
+                  <span className={`rgrid__cell${byId.get(id)!.baseLabel ? ' is-renamed' : ''}`} title={byId.get(id)!.baseLabel ? `${byId.get(id)!.label} (was “${byId.get(id)!.baseLabel}”)` : byId.get(id)!.label} onDoubleClick={() => calculated && setRenaming(id)}>{byId.get(id)!.label}</span>
+                )}
+                <span className="rgrid__cell rgrid__cell--act">
+                  {calculated && byId.get(id)!.baseLabel && <button type="button" className="rgrid__ib" onClick={() => resetLabel(id)} aria-label={`Reset the name to “${byId.get(id)!.baseLabel}”`} title={`Reset the name to “${byId.get(id)!.baseLabel}”`}>↺</button>}
+                  {calculated && renaming !== id && <button type="button" className="rgrid__ib" onClick={() => setRenaming(id)} aria-label={`Rename ${byId.get(id)!.label}`} title="Give the column a short name of your own (double-click the name too)"><IconPencil width={14} height={14} /></button>}
+                </span>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {calculated && <CalcColumnsEditor catalog={catalog as unknown as ColumnDef[]} />}
       <div className="cols__heading"><span>Available columns <b>{(listed ?? catalog).length}</b></span></div>

@@ -1,15 +1,16 @@
-/** Workspaces: tabs along the top, like Blender's. Each one keeps how the app is set up, exactly, and follows every change
-    you make while you are in it (no Save button): the page, the Programmes view, the panels (where they sit, which tab shows,
-    their sizes), columns, filters, view settings, and the second windows that are open (what they show and where they are on
-    the screen). Opening the app again puts back the one you were in.
+/** Workspaces, in the view picker's menu. Each one keeps how the app is set up, exactly, when you save it: the page, the Programmes
+    view, the panels (where they sit, which tab shows, their sizes), columns, filters, view settings, and the second windows that are
+    open (what they show and where they are on the screen). Nothing is saved behind your back: Save keeps the changes in the workspace
+    you are in, Save as new makes another from how the app is now. One workspace can be the one the app starts with; with none, the
+    app opens where you left it.
 
-    The first is Inputs, the second Custom; more can be added (a copy of the one you are in). Like scenes (state/scenes.ts),
-    which this builds on, the layout is a snapshot of the browser's layout keys: switching writes the other workspace's keys
-    back and reloads the page, which is what makes every panel read its saved state again. Unlike scenes, a workspace holds only
-    layout: viewpoints, topics, programmes and the rest are the same in all of them.
+    The first is Inputs, the second Custom; more can be added. Like scenes (state/scenes.ts), which this builds on, the layout is a
+    snapshot of the browser's layout keys: switching writes the other workspace's keys back and reloads the page, which is what makes
+    every panel read its saved state again. Unlike scenes, a workspace holds only layout: viewpoints, topics, programmes and the rest
+    are the same in all of them.
 
-    Where it is kept: the short list (names, page, view, windows) in localStorage, where the app reads it before it starts;
-    the layout snapshots in IndexedDB, one per workspace. */
+    Where it is kept: the short list (names, page, view, windows, the default) in localStorage, where the app reads it before it
+    starts; the layout snapshots in IndexedDB, one per workspace. */
 
 import { useSyncExternalStore } from 'react';
 import { applyLayoutKeys, captureLayoutKeys, isLayoutKey, reloadSaved } from './scenes';
@@ -32,10 +33,15 @@ export interface Workspace {
 interface List {
   items: Workspace[];
   activeId: string;
+  /** The workspace the app starts with (absent: where it was left). */
+  defaultId?: string | null;
 }
 
 const KEY = 'profiles.workspaces';
 const EVENT = 'ip-workspaces';
+const LIVE_KEY = 'ws.live';
+const VIEW_KEY = 'ws.view';
+const SESSION_KEY = 'ws.session';
 
 // ---- IndexedDB: one layout snapshot per workspace ----
 
@@ -92,11 +98,30 @@ export const workspaces = {
   active: (): Workspace | null => cache?.items.find((w) => w.id === cache!.activeId) ?? null,
 };
 
-/** What the app opens on: the page and Programmes view of the workspace it was last in (null: no workspaces yet). */
+let startView: { page: string; tab: string | null } | null | undefined;
+/** What the app opens on: the page and Programmes view of the workspace it was switched to, else where it was left (null: no workspaces yet). */
 export function initialView(): { page: string; tab: string | null } | null {
   if (IS_SATELLITE) return null;
-  const w = workspaces.active();
-  return w ? { page: w.page, tab: w.tab } : null;
+  if (startView === undefined) {
+    startView = null;
+    try {
+      const raw = sessionStorage.getItem(VIEW_KEY);
+      if (raw) {
+        startView = JSON.parse(raw);
+        sessionStorage.removeItem(VIEW_KEY);
+      } else {
+        const live = localStorage.getItem(LIVE_KEY);
+        if (live) startView = JSON.parse(live);
+      }
+    } catch {
+      // the workspace's own page below
+    }
+    if (!startView) {
+      const w = workspaces.active();
+      if (w) startView = { page: w.page, tab: w.tab };
+    }
+  }
+  return startView ?? null;
 }
 
 /** The workspace list as React sees it. */
@@ -110,41 +135,32 @@ export function useWorkspaces(): List | null {
   );
 }
 
-// ---- Following the changes ----
+// ---- Changes since the last save ----
 
 let switching = false;
-/** Windows are only noted once the ones the workspace had are opened again (else the start-up would empty its list). */
-let windowsReady = false;
-let timer: number | undefined;
-let pending: Promise<void> = Promise.resolve();
-/** Windows the browser blocked when the workspace was opened: a click on the bar opens them. */
+/** The layout has changed since the workspace was saved (the start-up's own writes do not count). */
+let dirty = false;
+let quietUntil = 0;
+/** Windows the browser blocked when the workspace was opened: a click on the menu opens them. */
 let blocked: WindowInfo[] = [];
 export const blockedWindows = () => blocked;
+/** The workspace you are in has changes that are not saved. */
+export const workspaceDirty = () => dirty;
 
-/** Saves the layout and the open windows into the workspace you are in. */
-async function sync(): Promise<void> {
-  window.clearTimeout(timer);
-  if (switching || !cache) return;
-  const list = cache;
-  const id = list.activeId;
-  await putLayout(id, captureLayoutKeys());
-  if (switching || !windowsReady) return;
-  const windows = satelliteWindows();
-  const current = cache.items.find((w) => w.id === id);
-  if (current && JSON.stringify(current.windows) !== JSON.stringify(windows)) write({ ...cache, items: cache.items.map((w) => (w.id === id ? { ...w, windows } : w)) });
+function markDirty() {
+  if (dirty || switching || Date.now() < quietUntil) return;
+  dirty = true;
+  window.dispatchEvent(new Event(EVENT));
 }
 
-function schedule() {
-  window.clearTimeout(timer);
-  timer = window.setTimeout(() => { pending = sync().catch(() => undefined); }, 600);
-}
-
-/** The page and Programmes view the app is on now (App calls it as they change). */
+/** The page and Programmes view the app is on now (App calls it as they change). Kept for the next start; saved with the workspace on Save. */
+let live: { page: string; tab: string | null } | null = null;
 export function noteView(page: string, tab: string | null) {
   if (IS_SATELLITE || !cache || switching) return;
+  live = { page, tab };
+  try { localStorage.setItem(LIVE_KEY, JSON.stringify(live)); } catch { /* not kept */ }
   const w = workspaces.active();
-  if (!w || (w.page === page && w.tab === tab)) return;
-  write({ ...cache, items: cache.items.map((x) => (x.id === w.id ? { ...x, page, tab } : x)) });
+  if (w && (w.page !== page || w.tab !== tab)) markDirty();
 }
 
 /** Opens the windows of the workspace; the ones the browser blocks are kept for a click. */
@@ -152,7 +168,7 @@ function openWindows(windows: WindowInfo[]) {
   blocked = windows.filter((w) => !openSatelliteWindow(w.view, w));
   window.dispatchEvent(new Event(EVENT));
 }
-/** From a click on the bar: opens the windows the browser blocked. */
+/** From a click in the menu: opens the windows the browser blocked. */
 export function openBlockedWindows() {
   const todo = blocked;
   blocked = [];
@@ -161,11 +177,35 @@ export function openBlockedWindows() {
 
 const newId = () => `ws-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 
-/** Runs first, from main.tsx: the first launch makes Inputs and Custom from how the app is set up now; from then on the
-    workspace you are in follows every change. */
+const sameLayout = (a: Record<string, string>, b: Record<string, string>) => {
+  const ka = Object.keys(a).sort();
+  const kb = Object.keys(b).sort();
+  return ka.length === kb.length && ka.every((k, i) => k === kb[i] && a[k] === b[k]);
+};
+
+/** Goes to a workspace: its layout keys are written back and the page reloads. */
+async function enter(id: string) {
+  const target = cache!.items.find((w) => w.id === id)!;
+  const layout = await getLayout(id);
+  switching = true;
+  closeSatelliteWindows();
+  write({ ...cache!, activeId: id });
+  if (layout) applyLayoutKeys(layout);
+  try {
+    localStorage.setItem('app.startPage', target.page);
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify({ page: target.page, tab: target.tab }));
+  } catch {
+    // the workspace's own page is read from the list
+  }
+  void reloadSaved();
+}
+
+/** Runs first, from main.tsx: the first launch makes Inputs and Custom from how the app is set up now. A new session starts
+    with the default workspace, if one is set; otherwise the app opens as it was left. */
 export function startWorkspaces() {
   if (IS_SATELLITE) return;
   try {
+    quietUntil = Date.now() + 2500;
     if (!cache) {
       let start = 'inputs';
       try { start = localStorage.getItem('app.startPage') || 'inputs'; } catch { /* the default */ }
@@ -176,10 +216,10 @@ export function startWorkspaces() {
       void putLayout(custom.id, layout).catch(() => undefined);
       write({ items: [inputs, custom], activeId: start === 'inputs' ? inputs.id : custom.id });
     }
-    // Any write to a layout key schedules a save of the workspace you are in.
+    // Any write to a layout key means the workspace has changes to save.
     const rawRemove = Storage.prototype.removeItem;
     const note = (storage: Storage, key: string) => {
-      if (storage === localStorage && key !== KEY && !switching && isLayoutKey(key)) schedule();
+      if (storage === localStorage && key !== KEY && key !== LIVE_KEY && !switching && isLayoutKey(key)) markDirty();
     };
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key: string, value: string) {
@@ -190,24 +230,43 @@ export function startWorkspaces() {
       rawRemove.call(this, key);
       note(this, key);
     };
-    window.addEventListener(WINDOWS_EVENT, schedule);
-    // Closing the app saves it as it is, then closes the second windows (they open again with the workspace).
-    window.addEventListener('pagehide', () => {
-      void sync().catch(() => undefined);
-      if (!switching) closeSatelliteWindows();
-    });
+    window.addEventListener(WINDOWS_EVENT, markDirty);
+    // Closing the app closes the second windows (they open again with the workspace, as it was saved).
+    window.addEventListener('pagehide', () => { if (!switching) closeSatelliteWindows(); });
+
+    // A new session (a new tab, or the app started again) goes to the default workspace, as it was saved.
+    let fresh = false;
+    try {
+      fresh = !sessionStorage.getItem(SESSION_KEY);
+      sessionStorage.setItem(SESSION_KEY, '1');
+    } catch {
+      // not a new session as far as we know
+    }
+    const def = cache?.defaultId ? cache.items.find((w) => w.id === cache!.defaultId) : undefined;
+    if (fresh && def) {
+      void (async () => {
+        const saved = await getLayout(def.id).catch(() => undefined);
+        // Already in it, with the layout as saved: nothing to put back.
+        if (cache!.activeId === def.id && saved && sameLayout(saved, captureLayoutKeys())) {
+          startView = { page: def.page, tab: def.tab };
+          if (def.windows.length) openWindows(def.windows);
+          return;
+        }
+        await enter(def.id);
+      })();
+      return;
+    }
     // The second windows of the workspace the app opens in.
     window.setTimeout(() => {
       const w = workspaces.active();
       if (w?.windows.length) openWindows(w.windows);
-      windowsReady = true;
     }, 400);
   } catch {
     // workspaces are off: the browser keeps its own layout
   }
 }
 
-// ---- The tabs ----
+// ---- The workspaces ----
 
 const uniqueName = (list: List, base: string) => {
   let name = base;
@@ -216,31 +275,40 @@ const uniqueName = (list: List, base: string) => {
 };
 
 export const workspaceActions = {
-  /** Goes to a workspace: the one you are in is saved, then the page reloads with the other's layout. */
+  /** Goes to a workspace: the page reloads with its saved layout. What you changed in the one you leave is lost unless you saved it. */
   async switchTo(id: string) {
     if (!cache || cache.activeId === id || !cache.items.some((w) => w.id === id)) return;
-    await pending;
-    await sync();
-    const target = cache.items.find((w) => w.id === id)!;
-    const layout = await getLayout(id);
-    switching = true;
-    closeSatelliteWindows();
-    write({ ...cache, activeId: id });
-    if (layout) applyLayoutKeys(layout);
-    try { localStorage.setItem('app.startPage', target.page); } catch { /* the workspace's own page is read from the list */ }
-    void reloadSaved();
+    await enter(id);
   },
 
-  /** A new workspace: a copy of how the app is now, and you are in it. */
+  /** Keeps how the app is now in the workspace you are in: its layout, page, Programmes view and second windows. */
+  async save() {
+    if (!cache) return;
+    const w = workspaces.active();
+    if (!w) return;
+    await putLayout(w.id, captureLayoutKeys());
+    const view = live ?? { page: w.page, tab: w.tab };
+    const windows = satelliteWindows();
+    dirty = false;
+    write({ ...cache, items: cache.items.map((x) => (x.id === w.id ? { ...x, page: view.page, tab: view.tab, windows } : x)) });
+  },
+
+  /** A new workspace made from how the app is now; you are in it. */
   async add(name: string) {
     if (!cache) return;
-    await pending;
-    await sync();
-    const here = workspaces.active();
     const list = cache;
-    const ws: Workspace = { id: newId(), name: uniqueName(list, name.trim() || 'Workspace'), page: here?.page ?? 'model', tab: here?.tab ?? null, windows: satelliteWindows() };
+    const here = workspaces.active();
+    const view = live ?? { page: here?.page ?? 'model', tab: here?.tab ?? null };
+    const ws: Workspace = { id: newId(), name: uniqueName(list, name.trim() || 'Workspace'), page: view.page, tab: view.tab, windows: satelliteWindows() };
     await putLayout(ws.id, captureLayoutKeys());
-    write({ items: [...list.items, ws], activeId: ws.id });
+    dirty = false;
+    write({ ...list, items: [...list.items, ws], activeId: ws.id });
+  },
+
+  /** The workspace the app starts with (null: it opens as it was left). */
+  setDefault(id: string | null) {
+    if (!cache) return;
+    write({ ...cache, defaultId: id && cache.items.some((w) => w.id === id) ? id : null });
   },
 
   rename(id: string, name: string) {
@@ -255,6 +323,6 @@ export const workspaceActions = {
     if (cache.activeId === id) await workspaceActions.switchTo(cache.items.find((x) => x.fixed)?.id ?? cache.items[0].id);
     if (!cache) return;
     await delLayout(id).catch(() => undefined);
-    write({ ...cache, items: cache.items.filter((x) => x.id !== id) });
+    write({ ...cache, defaultId: cache.defaultId === id ? null : cache.defaultId, items: cache.items.filter((x) => x.id !== id) });
   },
 };

@@ -24,7 +24,7 @@ const ZOOM_LABEL: Record<Zoom, string> = { hour: 'Hours', day: 'Days', week: 'We
 /** The 4D page's Gantt: the Programmes Gantt in a dock — the same columns, grouping, sorting, colour rules, zoom and
     options (they are shared, set up once) — with the 4D timeline's date drawn as a line across it, and the colours the
     Appearance Profiles give the tasks in 3D when those apply. */
-export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollToId, onSelect, onOpen, activities: given, dimmedIds, onLinkShortcut }: {
+export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollToId, onSelect, onOpen, activities: given, dimmedIds, onLinkShortcut, onLagChange }: {
   model: ScheduleModel;
   /** The tasks to show when the page has filtered them already (Programmes: its filters and the driving path); else all of them. */
   activities?: Activity[];
@@ -32,6 +32,7 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
   dimmedIds?: Set<string>;
   /** Alt+S / Alt+F on the chart: link the picked tasks (Programmes). */
   onLinkShortcut?: (kind: 'SS' | 'FS') => void;
+  onLagChange?: (rel: { predId: string; succId: string }, deltaDays: number) => void;
   /** The colour a task has in the 4D view now (an Appearance Profile stage), else null. */
   getColor?: (a: Activity) => string | null;
   selectedId: string | null;
@@ -81,7 +82,6 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
 
   const catalogById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
   const ruleColour = (a: Activity) => resolveRuleColor(set.colorRules, a, (field, act) => catalogById.get(field)?.text(act, columnCtx));
-  const colour = (a: Activity) => getColor?.(a) ?? ruleColour(a);
 
   // Following the timeline: the chart scrolls to keep its date in view.
   // The rows follow too: to the task in progress at that date that started first (else the next to start).
@@ -152,7 +152,8 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
       <div className="dockgantt__chart">
         <GanttChart
           ref={ref}
-          getColor={colour}
+          getColor={getColor}
+          rowColor={ruleColour}
           columns={columns}
           columnCtx={columnCtx}
           catalog={catalog}
@@ -180,6 +181,7 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
           onOpen={onOpen}
           dimmedIds={dimmedIds}
           onLinkShortcut={onLinkShortcut}
+          onLagChange={onLagChange}
         />
       </div>
     </div>

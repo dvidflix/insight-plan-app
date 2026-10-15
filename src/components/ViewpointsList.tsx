@@ -16,7 +16,7 @@ const VP_BUTTONS = [
   { id: 'move', glyph: '🗀', label: 'Move to a folder' },
   { id: 'date', glyph: '◷', label: 'Timeline date (4D)' },
   { id: 'update', glyph: '⟳', label: 'Update from the view as it is now' },
-  { id: 'rename', glyph: '✎', label: 'Rename' },
+  { id: 'rename', glyph: <IconPencil width={14} height={14} />, label: 'Rename' },
   { id: 'delete', glyph: '⊖', label: 'Delete' },
 ] as const satisfies readonly RowButtonDef<string>[];
 type VpButton = (typeof VP_BUTTONS)[number]['id'];

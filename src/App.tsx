@@ -18,11 +18,14 @@ import { ViewerWorkspace } from './viewer/ViewerWorkspace';
 import { SchedulePage, type TabId as ScheduleTabId } from './pages/SchedulePage';
 import { takePendingTab, useScheduleLayoutsStore } from './state/scheduleLayoutsStore';
 import { SequencePanel } from './pages/SequencePage';
+import { FourDSetupPanel } from './components/sequence/FourDSetupPanel';
+import { useSatelliteModelsStore } from './state/satelliteModels';
 import { ScenariosPage } from './pages/ScenariosPage';
 import { HelpPage } from './pages/HelpPage';
 
 import { ExternalPage } from './pages/ExternalPage';
 import { SequenceLabelOverlay } from './components/sequence/SequenceLabelOverlay';
+import { ScheduleHotkey } from './components/PlanningTools';
 import { SequenceTimelineStatusBar } from './components/sequence/SequenceTimelineStatusBar';
 import { useModelsStore } from './state/modelsStore';
 import { useContextMeshStore, type ContextMeshRow } from './state/contextMeshStore';
@@ -31,7 +34,7 @@ import { hasMadeChoice, useProgrammeChoiceStore } from './state/programmeChoiceS
 import { programmeKey } from './state/unloadedWbsStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
-import { IconSidePanel, IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData, IconRemove } from './components/icons';
+import { IconSidePanel, IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData, IconRemove, IconClose, IconPencil } from './components/icons';
 import { FileDrop } from './components/FileDrop';
 import { SCHEDULE_ACCEPT, buildScheduleModel, parseScheduleFile, xmlScheduleTables } from './schedule/loadSchedule';
 import { buildXerSchedule, indexXerFile, isXer, type ImportProgress, type XerIndex } from './schedule/importSchedule';
@@ -170,6 +173,8 @@ export default function App() {
   });
   // The External data and Dashboards frames stay loaded once opened.
   const [visited, setVisited] = useState<ReadonlySet<PageId>>(new Set());
+  // A second window loads the models when a panel there asks for them.
+  const wantModels = useSatelliteModelsStore((s) => s.wanted);
   useEffect(() => { setVisited((v) => (v.has(page) ? v : new Set(v).add(page))); }, [page]);
   const pageRef = useRef(page);
   pageRef.current = page;
@@ -181,6 +186,12 @@ export default function App() {
     if (to === from || !mayLeave(from, to)) return;
     pageRef.current = to;
     setPageRaw(to);
+  };
+  // Inputs opens as a small window over the page you are on (to pick what to open, then it closes); only from Inputs itself is it a page.
+  const [inputsOpen, setInputsOpen] = useState(false);
+  const goPage = (id: string) => {
+    if (id === 'inputs' && pageRef.current !== 'inputs') setInputsOpen((v) => !v);
+    else setPage(id as PageId);
   };
   // Other parts of the app move to a page by asking: window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'sequence' })).
   useEffect(() => {
@@ -231,7 +242,7 @@ export default function App() {
         const target = PAGE_SHORTCUTS[e.code];
         if (target && pages.some((p) => p.id === target)) {
           e.preventDefault();
-          setPage(target);
+          goPage(target);
           return;
         }
       }
@@ -265,7 +276,7 @@ export default function App() {
     <ViewerEngineProvider>
       <ThemeSync />
       {/* A second window loads the models only once it shows a page with the 3D view (loading them is the slow part). */}
-      {FEATURES.browserData && <ModelsRestoreSync enabled={!IS_SATELLITE || visited.has('model') || visited.has('sequence')} />}
+      {FEATURES.browserData && <ModelsRestoreSync enabled={!IS_SATELLITE || visited.has('model') || visited.has('sequence') || wantModels} />}
       <ProgrammeChoiceSync />
       <FitOnModelsTab page={page} />
       <SettingsSync />
@@ -276,9 +287,9 @@ export default function App() {
       <div className="app-frame">
       <div className="app-shell">
         {IS_SATELLITE
-          ? !viewerVisible && <header className="ws-bar"><ViewPicker pages={pages} page={page} onPage={(id) => setPage(id as PageId)} tab={scheduleTab} onTab={setScheduleTab} /></header>
+          ? !viewerVisible && <header className="ws-bar"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></header>
           // No bar along the top: Programmes, Models and 4D hold the picker in their own toolbar; the other pages get it as a small button in the corner.
-          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && <div className="ws-float"><ViewPicker pages={pages} page={page} onPage={(id) => setPage(id as PageId)} tab={scheduleTab} onTab={setScheduleTab} /></div>}
+          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && <div className="ws-float"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></div>}
         <div className="app-body">
           <div
             style={
@@ -294,12 +305,12 @@ export default function App() {
             }
           >
             <ViewerWorkspace
-              picker={<ViewPicker named pages={pages} page={page} onPage={(id) => setPage(id as PageId)} tab={scheduleTab} onTab={setScheduleTab} />}
+              picker={<ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} />}
               layout={page === 'sequence' ? 'sequence' : 'model'}
               paneActive={page === 'model'}
-              panel={page === 'sequence' ? <SequencePanel /> : undefined}
+              panel={page === 'sequence' ? <SequencePanel /> : <FourDSetupPanel />}
               overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
-              center={page === 'schedule' || visited.has('schedule') ? <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={(id) => setPage(id as PageId)} /> : undefined}
+              center={page === 'schedule' || visited.has('schedule') ? <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={goPage} /> : undefined}
               centerShown={page === 'schedule'}
             />
           </div>
@@ -317,6 +328,7 @@ export default function App() {
       {!viewerVisible && <SidePaneHost />}
       <SettingsDock />
       <ListConfigPanels />
+      {inputsOpen && <InputsDialog onClose={() => setInputsOpen(false)} />}
       <AutoLinkGenerator />
       {FEATURES.scenarios && scenariosOn && <ScenarioSync loadOnly />}
       </div>
@@ -330,12 +342,36 @@ const INPUT_BUTTONS = [
   { id: 'open', glyph: '☑', label: 'Open a model of the project database' },
   { id: 'export', glyph: '⤓', label: 'Export IFC (models of the project database)' },
   { id: 'hide', glyph: '👁', label: 'Hide / show (unload without removing)' },
-  { id: 'edit', glyph: '✎', label: 'Make an editable copy (programmes of the project database)' },
+  { id: 'edit', glyph: <IconPencil width={14} height={14} />, label: 'Make an editable copy (programmes of the project database)' },
   { id: 'sync', glyph: '⟳', label: 'Sync: show this in the other tabs' },
   { id: 'remove', glyph: '⊖', label: 'Remove / delete' },
   { id: 'versions', glyph: '#', label: 'Number of earlier IFC versions' },
 ] as const satisfies readonly RowButtonDef<string>[];
 type InputButton = (typeof INPUT_BUTTONS)[number]['id'];
+
+/** Inputs as a window over the current page: choose a model or programme to open, and it closes itself once something has loaded. */
+function InputsDialog({ onClose }: { onClose: () => void }) {
+  const modelCount = useModelsStore((s) => s.models.length);
+  const scheduleCount = useScheduleStore((s) => s.schedules.length);
+  const first = useRef({ modelCount, scheduleCount });
+  useEffect(() => {
+    if (modelCount > first.current.modelCount || scheduleCount > first.current.scheduleCount) onClose();
+    first.current = { modelCount: Math.min(first.current.modelCount, modelCount), scheduleCount: Math.min(first.current.scheduleCount, scheduleCount) };
+  }, [modelCount, scheduleCount, onClose]);
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  return (
+    <div className="inputs-dialog__backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className="inputs-dialog" role="dialog" aria-label="Inputs">
+        <button type="button" className="icon-btn inputs-dialog__close" onClick={onClose} title="Close (Esc)" aria-label="Close Inputs"><IconClose /></button>
+        <InputsPage />
+      </div>
+    </div>
+  );
+}
 
 function InputsPage() {
   const inputBtns = useRowButtons<InputButton>('inputs.hiddenButtons');
@@ -1127,6 +1163,7 @@ function StatusBar({ page }: { page: PageId }) {
         </span>
         {scheduleModel.computedFloat && <span>Float: recomputed (calendar-aware)</span>}
         <span id="schedule-statusbar-tools" className="app-statusbar__tools" />
+        <ScheduleHotkey />
         <DbStatusChip />
       </footer>
     );
@@ -1147,6 +1184,7 @@ function StatusBar({ page }: { page: PageId }) {
           </span>
         </>
       )}
+      <ScheduleHotkey />
       <DbStatusChip />
     </footer>
   );

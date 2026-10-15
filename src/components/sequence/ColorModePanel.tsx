@@ -1,6 +1,7 @@
-import { IconRemove } from '../icons';
 import { useMemo } from 'react';
 import { HexColorInput } from '../HexColorInput';
+import { HexCell } from '../HexCell';
+import { RuleRows } from '../schedule/FieldRules';
 import type { ElementSummary } from '../../viewer/types';
 import { samplePropKeys } from '../../viewer/query';
 import { objectFieldValue, parseObjectFieldKey, newId } from '../../schedule/linkGroups';
@@ -82,17 +83,20 @@ export function ViewColorSettings({ view, elements }: { view: ViewId; elements: 
               {rules.length > 0 && <button type="button" className="cols__link" onClick={() => patch({ rules: [] })}>Clear</button>}
             </span>
           </div>
-          <div className="cm__rules">
-            {rules.length === 0 && <div className="cols__empty">No rules — every element keeps its {fallback ? 'other-values' : 'original'} colour.</div>}
-            {rules.map((r) => (
-              <div className="cm__rule" key={r.id}>
-                <HexColorInput value={r.color} onChange={(hex) => update(r.id, { color: hex })} />
-                <input className="cm__value" value={r.value} onChange={(e) => update(r.id, { value: e.target.value })} placeholder="value" />
-                <span className="flt__n" title="Elements with this value">{counts.get(r.value.trim().toLowerCase()) ?? 0}</span>
-                <button type="button" className="cols__icon cols__icon--remove" onClick={() => patch({ rules: rules.filter((x) => x.id !== r.id) })} aria-label={`Remove rule ${r.value}`} title="Remove rule"><IconRemove /></button>
-              </div>
-            ))}
-          </div>
+          <RuleRows
+            grid={{ key: 'colourmode', columns: [{ label: 'Colour', width: 56 }, { label: 'Value' }, { label: 'Elements', width: 76 }] }}
+            rules={rules}
+            onChange={(next) => patch({ rules: next })}
+            empty={`No rules — every element keeps its ${fallback ? 'other-values' : 'original'} colour.`}
+          >
+            {(r) => (
+              <>
+                <HexCell value={r.color} onChange={(hex) => update(r.id, { color: hex })} />
+                <input className="rgrid__cell rgrid__cell--grow" value={r.value} onChange={(e) => update(r.id, { value: e.target.value })} placeholder="value" aria-label="Value" />
+                <span className="rgrid__cell rgrid__cell--num" title="Elements with this value">{counts.get(r.value.trim().toLowerCase()) ?? 0}</span>
+              </>
+            )}
+          </RuleRows>
           <button type="button" className="btn btn--small" style={{ marginTop: 6 }} onClick={() => patch({ rules: [...rules, { id: newId(), value: '', color: RULE_PALETTE[rules.length % RULE_PALETTE.length] }] })}>+ Add rule</button>
 
           <div className="cols__heading"><span>Other values</span></div>

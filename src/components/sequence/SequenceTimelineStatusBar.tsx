@@ -407,7 +407,6 @@ export function SequenceTimelineStatusBar() {
           <IconLastPage />
         </button>
       </div>
-
     </footer>
   );
 }

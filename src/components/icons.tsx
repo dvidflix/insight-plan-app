@@ -38,6 +38,7 @@ import locationPointSvg from '../icons/location-point.svg?raw';
 import boxSelectSvg from '../icons/box-select.svg?raw';
 import textInputShortSvg from '../icons/text-input-short.svg?raw';
 import viewTableSvg from '../icons/view-table.svg?raw';
+import gridTableSvg from '../icons/table.svg?raw';
 import fullscreenSvg from '../icons/fullscreen.svg?raw';
 import selectSingleSvg from '../icons/select-single.svg?raw';
 import selectAreaSvg from '../icons/select-area.svg?raw';
@@ -183,6 +184,8 @@ export const IconLocationPoint = svgIcon(locationPointSvg);
 export const IconSelectionSet = svgIcon(boxSelectSvg);
 export const IconTextInputShort = svgIcon(textInputShortSvg);
 export const IconViewTable = svgIcon(viewTableSvg);
+/** A spreadsheet grid: the Programmes table view (the data table keeps IconViewTable). */
+export const IconGridTable = svgIcon(gridTableSvg);
 export const IconFullscreen = svgIcon(fullscreenSvg);
 
 
@@ -498,3 +501,14 @@ export const IconSelectOff = svgIcon(selectSubtractSvg);
 export const IconZoomToSelected = svgIcon(zoomToSelectedSvg);
 export const IconDashboard = svgIcon(dashboardSvg);
 export const IconExternalData = svgIcon(modusTableSvg);
+
+export const IconMenu = (p: SVGProps<SVGSVGElement>) => (
+  <Icon {...p} path="M3 18h18v-2H3zm0-5h18v-2H3zm0-7v2h18V6z" />
+);
+
+/** Totals and subtotals: a sigma. */
+export const IconTotals = (p: SVGProps<SVGSVGElement>) => (
+  <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden {...p}>
+    <path d="M18 5H6l6.5 7L6 19h12" />
+  </svg>
+);

@@ -1,26 +1,29 @@
 import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
-import { addActivity, addWbs, deleteActivities, deleteWbs, nextCode, renameWbs, type Result } from '../../schedule/programmeCommands';
+import { addActivity, addWbs, deleteActivities, deleteWbs, dissolveActivities, nextCode, renameWbs, type Result } from '../../schedule/programmeCommands';
 import { duplicateActivities, indentRows, moveRows, moveRowsToEnd, outdentRows, placeTaskAfter, placeWbsAfter, planRows, type PlanRef, type PlanRow } from '../../schedule/planOrder';
 import { hoursPerDayOfCalendar, parsePredecessors, patchActivities, predecessorText, setDateConstraint, setDurationDays, setPercent, setPredecessors, setWbsCode } from '../../schedule/planEdit';
-import { recomputeCpm } from '../../schedule/cpm';
+import { rescheduleProgramme } from '../../schedule/reschedule';
 import { productivityOf, resourcesText, setProductivity, setResourcesText } from '../../schedule/planResources';
 import { assignCode } from '../../schedule/planCodes';
+import { constraintText, setConstraintText, setPercentMany, splitActivity } from '../../schedule/planActions';
 import { setDataDate } from '../../schedule/programmeCommands';
-import { applyLinkShortcut, type LinkKind } from '../../schedule/linkShortcuts';
+import { applyLinkShortcut, unlinkActivities, type LinkKind } from '../../schedule/linkShortcuts';
+import { useLinkTypeStore } from '../../state/linkTypeStore';
 import { editStructure } from '../../state/programmeEdits';
 import { commit } from '../../state/programmeHistory';
 import { programmeKey } from '../../state/unloadedWbsStore';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { usePersistedState } from '../../utils/persistedState';
 import { useDockStore } from '../../state/dockStore';
+import { useRowPx } from '../../state/tableStyleStore';
 
 /** The planner: the programme as a tree to build and edit, in the way of P6 and Synchro: WBS nodes as summary rows with their
     activities under them, every cell typed in place, rows moved (Alt+↑ ↓), indented (Tab) and outdented (Shift+Tab) with the
     keyboard or the buttons, and the bars beside them. Each change goes through the same undoable edit as the rest of the app. */
 
 /** Taller rows on a touch screen: a finger needs more than a mouse. */
-const ROW_H = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 36 : 26;
+const BASE_ROW_H = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 36 : 26;
 const DAY = 86400000;
 
 /** A column: the fixed ones, and `code:<type>` for each activity code type of the programme. */
@@ -43,6 +46,7 @@ const BASE_COLUMNS: Column[] = [
   { id: 'duration', label: 'Dur (d)', width: 64, align: 'right', title: 'Duration in working days of the activity’s calendar' },
   { id: 'start', label: 'Start', width: 94, title: 'Start. Typing a date holds the activity to start on or after it (a constraint)' },
   { id: 'finish', label: 'Finish', width: 94, title: 'Finish. Typing a date holds the activity to finish on or after it (a constraint)' },
+  { id: 'constraint', label: 'Constraint', width: 120, title: 'SNET 2030-05-31 (start no earlier than), SNLT, FNET, FNLT, SO, FO, MSO, MFO, ALAP. Empty: none' },
   { id: 'pred', label: 'Predecessors', width: 170, title: 'Type the IDs: A1000, A1010SS+2 (type FS SS FF SF, then the lag in days)' },
   { id: 'qty', label: 'Quantity', width: 96, align: 'right', title: 'Quantity of work and its unit, like 240 m2. With the productivity it can make the duration (Resources & codes panel)' },
   { id: 'prod', label: 'Prod / day', width: 76, align: 'right', title: 'Output per day for each person or machine of the crew' },
@@ -70,6 +74,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
   onSelect: (activity: Activity | null) => void;
   onNote: (text: string) => void;
 }) {
+  const ROW_H = useRowPx(BASE_ROW_H);
   const key = programmeKey(model);
   const editable = !!model.editable;
   const [collapsed, setCollapsed] = usePersistedState<string[]>(`planner.collapsed.${key}`, []);
@@ -79,7 +84,8 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
   const codeTypes = model.activityCodeCatalog ?? [];
   const COLUMNS = useMemo<Column[]>(() => [...BASE_COLUMNS, ...codeTypes.map((t): Column => ({ id: `code:${t.name}`, label: t.name, width: 110, title: `Activity code “${t.name}”` }))], [codeTypes]);
   const [pxPerDay, setPxPerDay] = usePersistedState('planner.pxPerDay', 6);
-  const [linkKind, setLinkKind] = useState<LinkKind>('FS');
+  const linkKind = useLinkTypeStore((s) => s.kind);
+  const setLinkKind = useLinkTypeStore((s) => s.setKind);
 
   // ---- Selection: the rows picked (by kind and id) and the cell the cursor is in.
   const [picked, setPicked] = useState<string[]>([]);
@@ -164,6 +170,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
       case 'start': return show(r.kind === 'wbs' ? r.summary?.start : a!.earlyStart ?? a!.targetStart);
       case 'finish': return show(r.kind === 'wbs' ? r.summary?.finish : a!.earlyFinish ?? a!.targetFinish);
       case 'pred': return a ? predecessorText(model, a) : '';
+      case 'constraint': return a ? constraintText(a) : '';
       case 'percent': return r.kind === 'wbs' ? `${Math.round(r.summary?.percent ?? 0)}` : `${Math.round(a!.percentComplete)}`;
       case 'calendar': return cal?.name ?? '';
       case 'float': return a?.totalFloatHours != null ? num2(a.totalFloatHours / perDay) : '';
@@ -222,6 +229,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
         if (value && !d) { onNote('Type the date as 2030-05-31 (year-month-day).'); return false; }
         return run(col === 'start' ? 'Set the start' : 'Set the finish', (m) => setDateConstraint(m, act.id, col, d)) !== null;
       }
+      case 'constraint': return run('Set the constraint', (m) => setConstraintText(m, act.id, value, (t) => fromInput(t) ?? parseLooseDate(t))) !== null;
       case 'pred': {
         const parsed = parsePredecessors(value);
         if ('error' in parsed) { onNote(parsed.error); return false; }
@@ -331,18 +339,41 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
   };
   const indent = () => { const refs = pickedRefs(); run('Indent', (m) => indentRows(m, refs)); };
   const outdent = () => { const refs = pickedRefs(); run('Outdent', (m) => outdentRows(m, refs)); };
-  const schedule = () => {
-    const done = run('Schedule', (m) => ({ model: recomputeCpm(m, { keepOwnStarts: true }) }));
-    if (done) onNote('Scheduled: the dates and float are calculated from the links, calendars, constraints and the data date.');
-  };
+  const schedule = () => { void rescheduleProgramme(model).then(onNote); };
   const dataDate0 = model.project.dataDate;
   const changeDataDate = (value: string) => {
     const d = fromInput(value);
     if (d) run('Set the data date', (m) => setDataDate(m, new Date(d.getFullYear(), d.getMonth(), d.getDate(), dataDate0?.getHours() ?? 8, dataDate0?.getMinutes() ?? 0)));
   };
-  const linkPicked = () => {
-    const ids = new Set(pickedRefs().filter((r) => r.kind === 'task').map((r) => r.id));
-    onNote(applyLinkShortcut(linkKind, model, ids).message);
+  /** The activities picked, in the order they were picked (a chain follows that order). */
+  const pickedTaskIds = () => {
+    const ids = picked.filter((k) => k.startsWith('task:')).map((k) => k.slice(5));
+    return ids.length ? ids : pickedRefs().filter((r) => r.kind === 'task').map((r) => r.id);
+  };
+  const linkPicked = () => onNote(applyLinkShortcut(linkKind, model, pickedTaskIds()).message);
+  const unlinkPicked = () => onNote(unlinkActivities(model, pickedTaskIds()).message);
+  const split = () => {
+    const ids = pickedTaskIds();
+    if (ids.length !== 1) return onNote('Pick one activity to split.');
+    const n = Number(window.prompt('Split into how many parts?', '2'));
+    if (!n) return;
+    const done = run('Split activity', (m) => splitActivity(m, ids[0], n));
+    if (done) onNote(`Split into ${n} parts, one after the other. Undo (Ctrl+Z) puts it back.`);
+  };
+  const progress = (percent: number) => {
+    const ids = pickedTaskIds();
+    const done = run(`Progress ${percent}%`, (m) => setPercentMany(m, ids, percent));
+    if (done) onNote(`${(done as { done: number }).done} ${(done as { done: number }).done === 1 ? 'activity' : 'activities'} set to ${percent}%, as of the data date.`);
+  };
+  const dissolve = () => {
+    const ids = pickedTaskIds();
+    if (!ids.length) return onNote('Pick the activities to dissolve first.');
+    const done = run(`Dissolve ${ids.length} ${ids.length === 1 ? 'activity' : 'activities'}`, (m) => dissolveActivities(m, ids));
+    if (done) {
+      const { removed, bridged } = done as { removed: number; bridged: number };
+      setPicked([]); setCursor(null); useActivitySelectionStore.getState().clear(); onSelect(null);
+      onNote(`Dissolved ${removed} ${removed === 1 ? 'activity' : 'activities'}: ${bridged} ${bridged === 1 ? 'link joins' : 'links join'} what was before them to what was after. Undo (Ctrl+Z) puts them back.`);
+    }
   };
   const toggle = (id: string) => setCollapsed(collapsedSet.has(id) ? collapsed.filter((x) => x !== id) : [...collapsed, id]);
   const expandAll = () => setCollapsed([]);
@@ -475,7 +506,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
     if (e.key === 'F2' || e.key === 'Enter') { stop(); if (cursor) startEdit(cursor.row, cursor.col); return; }
     if (e.key === 'F9') { stop(); schedule(); return; }
     if (e.key === 'Insert') { stop(); addRow(e.shiftKey ? 'wbs' : e.ctrlKey ? 'milestone-finish' : 'task'); return; }
-    if (e.key === 'Delete') { stop(); removeRows(); return; }
+    if (e.key === 'Delete') { stop(); if (ctrl) dissolve(); else removeRows(); return; }
     if (ctrl && e.key.toLowerCase() === 'd') { stop(); if (e.shiftKey) duplicate(); else fillDown(); return; }
     if (ctrl && e.key.toLowerCase() === 'a') { stop(); const all = rows.map(rowKey); setPicked(all); syncSelection(all, cursor?.row ?? null); return; }
     if (e.key === 'Escape') { setPicked([]); return; }
@@ -596,6 +627,8 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
           <button type="button" className="btn btn--small" onClick={() => addRow('wbs')} title="Add a WBS node after the one picked (Shift+Insert)">+ WBS</button>
           <button type="button" className="btn btn--small" onClick={duplicate} title="Duplicate the picked activities (Ctrl+Shift+D)">Duplicate</button>
           <button type="button" className="btn btn--small" onClick={removeRows} title="Delete the picked rows (Delete)">Delete</button>
+          <button type="button" className="btn btn--small" onClick={split} title="Split the picked activity into parts one after the other">Split</button>
+          <button type="button" className="btn btn--small" onClick={dissolve} title="Dissolve the picked activities (Ctrl+Delete): they are taken out and what was before them is linked to what was after, so the logic stays">Dissolve</button>
         </span>
         <span className="planner__group">
           <button type="button" className="btn btn--small" onClick={() => move('up')} title="Move the picked rows up (Alt+↑)">▲</button>
@@ -615,7 +648,11 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
           <span className="np__seg" role="radiogroup" aria-label="Link type">
             {(['FS', 'SS', 'FF', 'SF'] as LinkKind[]).map((k) => <button key={k} type="button" role="radio" aria-checked={linkKind === k} className={linkKind === k ? 'is-on' : ''} onClick={() => setLinkKind(k)}>{k}</button>)}
           </span>
-          <button type="button" className="btn btn--small" onClick={linkPicked} title="Link the picked activities with the type chosen (in the order shown)">Link</button>
+          <button type="button" className="btn btn--small" onClick={linkPicked} title="Link the picked activities with the type chosen: a chain in the order picked (the type is also in the status bar)">Link</button>
+          <span className="np__seg" aria-label="Progress of the picked activities">
+            {[0, 25, 50, 75, 100].map((p) => <button key={p} type="button" onClick={() => progress(p)} title={`Set the picked activities to ${p}% as of the data date`}>{p}%</button>)}
+          </span>
+          <button type="button" className="btn btn--small" onClick={unlinkPicked} title="Break the links between the picked activities">Unlink</button>
         </span>
         <span className="planner__group planner__zoom">
           <label>Zoom <input type="range" min={1} max={30} value={pxPerDay} onChange={(e) => setPxPerDay(Number(e.target.value))} /></label>

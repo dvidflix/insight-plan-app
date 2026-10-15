@@ -1,5 +1,6 @@
 import { SearchRow } from '../SearchRow';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { usePersistedState } from '../../utils/persistedState';
 import { COLUMN_GROUPS } from '../../schedule/columns';
 
 /** A field that can be grouped / sorted / coloured on; `group` is its
@@ -80,15 +81,27 @@ export function FieldPicker<F extends PickField>({ catalog, picked, onPick, plac
   );
 }
 
+/** A column of a rules grid: its title, and its width in px (absent: it shares what is left with the other such columns). */
+export interface RuleColumn {
+  label: string;
+  width?: number;
+}
+
 /** The rules in effect, in order: drag the grip (or ↑ ↓) to reorder, ✕ to
     remove. `children` renders each rule's own controls. */
-export function RuleRows<T extends { id: string }>({ rules, onChange, children, empty }: {
+export function RuleRows<T extends { id: string }>({ rules, onChange, children, empty, grid }: {
   rules: T[];
   onChange: (rules: T[]) => void;
   children: (rule: T, index: number) => ReactNode;
   empty: string;
+  /** A grid like the links tables: a row number (the remove button replaces it under the pointer) and one cell per control; drag a
+      row by its number to reorder it. `children` returns the cells, one per column; the column widths can be
+      dragged (kept under `key`, double-click a handle to go back to the default). */
+  grid?: { key: string; columns: RuleColumn[] };
 }) {
   const [dragId, setDragId] = useState<string | null>(null);
+  const [widths, setWidths] = usePersistedState<Record<string, number>>(`rules.columns.${grid?.key ?? 'none'}`, {});
+  const headRef = useRef<HTMLDivElement>(null);
   const move = (from: number, to: number) => {
     if (to < 0 || to >= rules.length || from === to) return;
     const next = [...rules];
@@ -97,6 +110,60 @@ export function RuleRows<T extends { id: string }>({ rules, onChange, children, 
     onChange(next);
   };
   if (rules.length === 0) return <div className="cols__shown"><div className="cols__empty">{empty}</div></div>;
+  if (grid) {
+    const width = (c: RuleColumn) => widths[c.label] ?? c.width;
+    const template = grid.columns.map((c) => (width(c) ? `${width(c)}px` : 'minmax(40px, 1fr)')).join(' ');
+    const startResize = (e: React.MouseEvent, index: number) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const col = grid.columns[index];
+      const cell = headRef.current?.children[index] as HTMLElement | undefined;
+      const from = e.clientX;
+      const base = width(col) ?? cell?.getBoundingClientRect().width ?? 100;
+      const drag = (m: MouseEvent) => setWidths((w) => ({ ...w, [col.label]: Math.max(40, Math.round(base + m.clientX - from)) }));
+      const up = () => { window.removeEventListener('mousemove', drag); window.removeEventListener('mouseup', up); };
+      window.addEventListener('mousemove', drag);
+      window.addEventListener('mouseup', up);
+    };
+    return (
+      <div className="rgrid" role="table" style={{ '--rg-cols': template } as CSSProperties}>
+        <div className="rgrid__head" role="row">
+          <span className="rgrid__n rgrid__n--head" />
+          <div className="rgrid__body" ref={headRef}>
+            {grid.columns.map((c, i) => (
+              <span key={c.label} className="rgrid__th" role="columnheader">
+                {c.label}
+                <span className="rgrid__grip" onMouseDown={(e) => startResize(e, i)} onDoubleClick={() => setWidths((w) => { const next = { ...w }; delete next[c.label]; return next; })} title="Drag to change the width (double-click: back to the default)" />
+              </span>
+            ))}
+          </div>
+        </div>
+        {rules.map((r, i) => (
+          <div
+            key={r.id}
+            role="row"
+            className={`rgrid__row${dragId === r.id ? ' dragging' : ''}`}
+            draggable
+            onDragStart={(e) => { setDragId(r.id); e.dataTransfer.effectAllowed = 'move'; }}
+            onDragOver={(e) => e.preventDefault()}
+            onDrop={(e) => {
+              e.preventDefault();
+              const from = rules.findIndex((x) => x.id === dragId);
+              if (from >= 0) move(from, i);
+              setDragId(null);
+            }}
+            onDragEnd={() => setDragId(null)}
+          >
+            <span className="rgrid__n" title="Drag the row to reorder it">
+              <span className="rgrid__num">{i + 1}</span>
+              <button type="button" className="rgrid__del" onClick={() => onChange(rules.filter((x) => x.id !== r.id))} title="Remove" aria-label={`Remove rule ${i + 1}`}><IconRemove /></button>
+            </span>
+            <div className="rgrid__body">{children(r, i)}</div>
+          </div>
+        ))}
+      </div>
+    );
+  }
   return (
     <div className="cols__shown">
       {rules.map((r, i) => (

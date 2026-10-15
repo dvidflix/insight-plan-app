@@ -93,12 +93,11 @@ export function GroupPanel({ fields, rules, onChange, onClose, onCollapseAll, on
         </span>
         {rules.length > 0 && <button type="button" className="cols__link" onClick={() => onChange([])}>Clear all</button>}
       </div>
-      <RuleRows rules={rules} onChange={onChange} empty="Not grouped: pick a field below.">
-        {(r, i) => (
+      <RuleRows grid={{ key: 'group', columns: [{ label: 'Field' }, { label: 'Order', width: 96 }] }} rules={rules} onChange={onChange} empty="Not grouped: pick a field below.">
+        {(r) => (
           <>
-            <span className="rule-item__level">{i + 1}</span>
-            <span className="cols__label" title={byId.get(r.field)?.label ?? r.field}>{byId.get(r.field)?.label ?? r.field}</span>
-            <DirectionToggle value={r.direction} onChange={(direction) => update(r.id, { direction })} />
+            <span className="rgrid__cell rgrid__cell--grow" title={byId.get(r.field)?.label ?? r.field}>{byId.get(r.field)?.label ?? r.field}</span>
+            <span className="rgrid__cell rgrid__cell--op"><DirectionToggle value={r.direction} onChange={(direction) => update(r.id, { direction })} /></span>
           </>
         )}
       </RuleRows>

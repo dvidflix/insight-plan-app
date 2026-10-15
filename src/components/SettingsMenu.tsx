@@ -3,7 +3,7 @@ import { type ReactNode, useEffect, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { CollapsibleSection } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
-import { useTableStyleStore } from '../state/tableStyleStore';
+import { ROW_SCALE_MAX, ROW_SCALE_MIN, useTableStyleStore } from '../state/tableStyleStore';
 import { ImportExportPanel } from './ImportExportPanel';
 import { FULL_SCREEN_KEY } from './FullScreenOnStart';
 import { ACCENT_PALETTES, useAccentPaletteStore } from '../state/accentPaletteStore';
@@ -119,6 +119,12 @@ function TimelineSettings() {
 export function SettingsPanel({ timeline = false, inputs = false }: { timeline?: boolean; inputs?: boolean }) {
   const wrapHeaders = useTableStyleStore((s) => s.wrapHeaders);
   const setWrapHeaders = useTableStyleStore((s) => s.setWrapHeaders);
+  const smoothScroll = useTableStyleStore((s) => s.smoothScroll);
+  const setSmoothScroll = useTableStyleStore((s) => s.setSmoothScroll);
+  const ctrlScroll = useTableStyleStore((s) => s.ctrlScrollFactor);
+  const setCtrlScroll = useTableStyleStore((s) => s.setCtrlScrollFactor);
+  const rowScale = useTableStyleStore((s) => s.rowScale);
+  const setRowScale = useTableStyleStore((s) => s.setRowScale);
   const [fullScreen, setFullScreen] = usePersistedValue<string>(FULL_SCREEN_KEY, 'true');
   const [statusBar, setStatusBar] = usePersistedValue<string>(STATUS_BAR_KEY, 'true');
   useEffect(() => { applyStatusBar(statusBar !== 'false'); }, [statusBar]);
@@ -249,12 +255,49 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
         ))}
       </Section>
 
-      <Section title="Tables" defaultOpen>
-        <div className="disp__row">
-          <span>Wrap column headers</span>
-          <button type="button" role="switch" aria-checked={wrapHeaders} className={`switch${wrapHeaders ? ' on' : ''}`} onClick={() => setWrapHeaders(!wrapHeaders)}>
+      <Section title="Tables" defaultOpen tip="How tight the rows are and how the column headers read, in the Gantt, the Planner, the activity table and the data table.">
+        <div className="set-row set-row--stack">
+          <div className="set-row__text">
+            <span className="set-row__label">Row height</span>
+            <span className="set-row__hint">Smaller fits more rows; larger is easier to hit with a finger. The Gantt, Planner and tables follow it.</span>
+          </div>
+          <div className="set-size">
+            <span className="set-seg__bars" aria-hidden style={{ gap: `${Math.max(1, Math.round((3 * rowScale) / 100))}px` }}><i /><i /><i /></span>
+            <input type="range" min={ROW_SCALE_MIN} max={ROW_SCALE_MAX} step={5} value={rowScale} onChange={(e) => setRowScale(Number(e.target.value))} aria-label="Row height, percent of normal" />
+            <label className="set-size__value">
+              <input type="number" min={ROW_SCALE_MIN} max={ROW_SCALE_MAX} step={5} value={rowScale} onChange={(e) => setRowScale(Number(e.target.value))} aria-label="Row height in percent" />%
+            </label>
+          </div>
+          <div className="set-size__presets">
+            {[80, 100, 130, 160].map((p) => (
+              <button key={p} type="button" className={rowScale === p ? 'is-on' : ''} onClick={() => setRowScale(p)}>{p === 100 ? 'Normal' : `${p}%`}</button>
+            ))}
+            <span className="set-row__hint">Gantt row: {Math.round((28 * rowScale) / 100)} px</span>
+          </div>
+        </div>
+        <div className="set-row">
+          <div className="set-row__text">
+            <span className="set-row__label">Wrap column headers</span>
+            <span className="set-row__hint">Long headings go onto more lines instead of being cut off.</span>
+          </div>
+          <button type="button" role="switch" aria-checked={wrapHeaders} aria-label="Wrap column headers" className={`switch${wrapHeaders ? ' on' : ''}`} onClick={() => setWrapHeaders(!wrapHeaders)}>
             <span className="switch__thumb" />
           </button>
+        </div>
+        <div className="set-row">
+          <div className="set-row__text">
+            <span className="set-row__label">Smooth mouse scrolling</span>
+            <span className="set-row__hint">The mouse wheel glides in the tables and the Gantt: it speeds up as you turn it and slows to a stop, as a hand does on a tablet.</span>
+          </div>
+          <button type="button" role="switch" aria-checked={smoothScroll} aria-label="Smooth mouse scrolling" className={`switch${smoothScroll ? ' on' : ''}`} onClick={() => setSmoothScroll(!smoothScroll)}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+        <div className="disp__row">
+          <span title="Holding Ctrl while the wheel turns scrolls this many times as far (with or without the glide)">Ctrl + wheel scrolls</span>
+          <select className="rel-cell" value={ctrlScroll} onChange={(e) => setCtrlScroll(Number(e.target.value))} aria-label="Ctrl and wheel scroll distance">
+            {[2, 3, 4].map((n) => <option key={n} value={n}>{n}× as far</option>)}
+          </select>
         </div>
       </Section>
 

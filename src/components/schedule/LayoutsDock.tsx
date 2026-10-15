@@ -85,13 +85,13 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
     if (fileInput.current) fileInput.current.value = '';
   };
 
-  const row = (l: ScheduleLayout, indent: boolean) => {
+  const row = (l: ScheduleLayout, indent: boolean, n: number) => {
     const current = l.id === currentId;
     const mark = drop?.kind === 'layout' && drop.id === l.id && dragLayout !== l.id ? (drop.after ? ' drop-after' : ' drop-before') : '';
     return (
       <div
         key={l.id}
-        className={`layouts-dock__item${current ? ' is-current' : ''}${indent ? ' layouts-dock__item--in' : ''}${dragLayout === l.id ? ' is-dragging' : ''}${mark}`}
+        className={`rgrid__row ld-row${current ? ' is-current' : ''}${indent ? ' ld-row--in' : ''}${dragLayout === l.id ? ' is-dragging' : ''}${mark}`}
         draggable={renaming?.id !== l.id}
         onDragStart={(e) => {
           e.dataTransfer.setData(DRAG_LAYOUT, l.id);
@@ -113,6 +113,18 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
         }}
         onDragEnd={endDrag}
       >
+        <span className="rgrid__n">
+          <span className="rgrid__num">{n}</span>
+          <button
+            type="button"
+            className="rgrid__del"
+            onClick={() => window.confirm(`Delete the layout "${l.name}"?`) && deleteLayout(l.id)}
+            title="Delete this layout"
+            aria-label={`Delete ${l.name}`}
+          >
+            <IconRemove />
+          </button>
+        </span>
         {renaming?.id === l.id ? (
           <form
             className="scn-row"
@@ -125,24 +137,15 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
             <input autoFocus value={renaming.name} onChange={(e) => setRenaming({ id: l.id, name: e.target.value })} onBlur={() => setRenaming(null)} onKeyDown={(e) => e.key === 'Escape' && setRenaming(null)} />
           </form>
         ) : (
-          <button type="button" className="layouts-dock__apply" onClick={() => applyLayout(l.id)} onDoubleClick={() => setRenaming({ id: l.id, name: l.name })} title="Apply this layout (double-click to rename, drag to reorder or into a folder)">
+          <button type="button" className="layouts-dock__apply ld-row__name" onClick={() => applyLayout(l.id)} onDoubleClick={() => setRenaming({ id: l.id, name: l.name })} title="Apply this layout (double-click to rename, drag to reorder or into a folder)">
             <span className="layouts-dock__name">{l.name}</span>
           </button>
         )}
-        <div className="layouts-dock__actions">
-          <button type="button" className="layouts-dock__icon" onClick={() => updateLayout(l.id, filters, tab)} title="Update: overwrite this layout with the current view" aria-label={`Update ${l.name}`}>
+        <span className="rgrid__cell rgrid__cell--act ld-row__act">
+          <button type="button" className="rgrid__ib" onClick={() => updateLayout(l.id, filters, tab)} title="Update: overwrite this layout with the current view" aria-label={`Update ${l.name}`}>
             <IconSync />
           </button>
-          <button
-            type="button"
-            className="layouts-dock__icon layouts-dock__icon--danger"
-            onClick={() => window.confirm(`Delete the layout "${l.name}"?`) && deleteLayout(l.id)}
-            title="Delete this layout"
-            aria-label={`Delete ${l.name}`}
-          >
-            <IconRemove />
-          </button>
-        </div>
+        </span>
       </div>
     );
   };
@@ -154,7 +157,7 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
     return (
       <div
         key={`head-${f}`}
-        className={`ld-folder${into ? ' ld-folder--into' : ''}${dragFolder === f ? ' is-dragging' : ''}${mark}`}
+        className={`rgrid__row ld-row ld-row--folder${into ? ' ld-folder--into' : ''}${dragFolder === f ? ' is-dragging' : ''}${mark}`}
         draggable
         onDragStart={(e) => {
           e.dataTransfer.setData(DRAG_FOLDER, f);
@@ -179,16 +182,18 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
         }}
         onDragEnd={endDrag}
       >
-        <button type="button" className="ld-folder__toggle" onClick={() => toggleClosed(f)} aria-expanded={!isClosed} title={isClosed ? 'Open the folder' : 'Close the folder'}>
+        <button type="button" className="rgrid__n ld-row__chev" onClick={() => toggleClosed(f)} aria-expanded={!isClosed} title={isClosed ? 'Open the folder' : 'Close the folder'} aria-label={isClosed ? `Open ${f}` : `Close ${f}`}>
           {isClosed ? <IconChevronRight width={14} height={14} /> : <IconChevronDown width={14} height={14} />}
+        </button>
+        <span className="ld-row__name ld-row__folder" onClick={() => toggleClosed(f)}>
           <IconFolder width={15} height={15} />
           <b>{f}</b>
           <span className="ld-folder__count">{count}</span>
-        </button>
-        <span className="ld-folder__actions">
+        </span>
+        <span className="rgrid__cell rgrid__cell--act ld-row__act">
           <button
             type="button"
-            className="layouts-dock__icon"
+            className="rgrid__ib"
             title="Rename the folder"
             aria-label={`Rename folder ${f}`}
             onClick={() => {
@@ -200,7 +205,7 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
           </button>
           <button
             type="button"
-            className="layouts-dock__icon layouts-dock__icon--danger"
+            className="rgrid__ib rgrid__ib--danger"
             title="Delete the folder (its layouts stay, loose)"
             aria-label={`Delete folder ${f}`}
             onClick={() => window.confirm(`Delete the folder "${f}"? Its ${count} layout${count === 1 ? '' : 's'} stay, without a folder.`) && deleteFolder(f)}
@@ -277,17 +282,17 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
             )}
           </div>
           {layouts.length === 0 && folders.length === 0 && <div className="scn-dim">No layouts yet.</div>}
-          <div className="layouts-dock__list">
+          <div className="layouts-dock__list rgrid">
             {folders.map((f) => (
               <div key={f} className="ld-section">
                 {folderHead(f, inFolder(f).length)}
-                {!closed.includes(f) && inFolder(f).map((l) => row(l, true))}
+                {!closed.includes(f) && inFolder(f).map((l, i) => row(l, true, i + 1))}
                 {!closed.includes(f) && inFolder(f).length === 0 && <div className="scn-dim ld-empty">Drag layouts here.</div>}
               </div>
             ))}
             {folders.length > 0 && (
               <div
-                className={`ld-folder ld-folder--loose${drop?.kind === 'loose' ? ' ld-folder--into' : ''}`}
+                className={`rgrid__row ld-row ld-row--folder ld-folder--loose${drop?.kind === 'loose' ? ' ld-folder--into' : ''}`}
                 onDragOver={(e) => {
                   if (!dragLayout) return;
                   e.preventDefault();
@@ -299,10 +304,10 @@ export function LayoutsDock({ filters, tab, importContext }: { filters: ViewFilt
                   endDrag();
                 }}
               >
-                <span className="ld-folder__toggle"><b>No folder</b><span className="ld-folder__count">{loose.length}</span></span>
+                <span className="rgrid__n" /><span className="ld-row__name ld-row__folder"><b>No folder</b><span className="ld-folder__count">{loose.length}</span></span>
               </div>
             )}
-            {loose.map((l) => row(l, false))}
+            {loose.map((l, i) => row(l, false, i + 1))}
           </div>
         </section>
       </div>

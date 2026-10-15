@@ -1,4 +1,7 @@
 import { scrollDoubleWithCtrl } from '../../utils/wheelScroll';
+import type { GanttEditor } from '../../schedule/ganttEdit';
+import { useSheetEditing } from './useSheetEditing';
+import { SheetCellInput } from './SheetCellInput';
 import { forwardRef, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { Activity } from '../../schedule/types';
 import { downloadCsv } from '../../utils/csv';
@@ -17,6 +20,8 @@ import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 
 export interface ActivityTableHandle {
   download: () => void;
+  /** The rows shown, with headings, on the clipboard as Excel takes them. Resolves to the number of rows. */
+  copyTable: () => Promise<number>;
 }
 
 interface ActivityTableProps {
@@ -55,6 +60,8 @@ interface ActivityTableProps {
   onSelect: (activity: Activity) => void;
   /** Double-click on a row. */
   onOpen?: (activity: Activity) => void;
+  /** Always-on editing of the cells (type, Enter / F2 / double-click, copy and paste with Excel). Without it the table is read-only. */
+  editor?: GanttEditor;
 }
 
 /** Resolves a group-by field id (any catalog column, including activity-code
@@ -87,6 +94,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
   aggregatable = false,
   onSelect,
   onOpen,
+  editor,
 }, ref) {
   const [sortCol, setSortCol] = usePersistedState(`${persistKey}.sortCol`, 'start');
   const [sortAsc, setSortAsc] = usePersistedState(`${persistKey}.sortAsc`, true);
@@ -259,19 +267,41 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
   // Ctrl+click adds or removes a row, Shift+click picks the rows between (in the order listed now).
   const multi = useActivitySelectionStore((s) => s.ids);
   const listedIds = (): string[] => (groupItems ? groupItems.flatMap((i) => (i.kind === 'row' ? [i.row.id] : [])) : rows.map((r) => r.id));
+  const shownActs = useMemo(() => (groupItems ? groupItems.flatMap((i) => (i.kind === 'row' ? [i.row] : [])) : rows), [groupItems, rows]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const goDown = (delta: number) => {
+    const at = shownActs.findIndex((a) => a.id === selectedId);
+    const next = shownActs[Math.min(shownActs.length - 1, Math.max(0, at + delta))];
+    if (!next) return;
+    useActivitySelectionStore.getState().click(next.id, {}, listedIds());
+    onSelect(next);
+    scrollRef.current?.querySelector(`tr[data-id="${CSS.escape(next.id)}"]`)?.scrollIntoView({ block: 'nearest' });
+  };
+  const sheet = useSheetEditing({
+    editor, columns, catalog, columnCtx, shown: shownActs, selectedId, picked: multi,
+    moveDown: () => goDown(1),
+    refocus: () => scrollRef.current?.focus(),
+  });
+  const onKeyDown = (e: React.KeyboardEvent) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return;
+    if (sheet.onKeyDown(e)) return;
+    const delta = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'PageDown' ? 15 : e.key === 'PageUp' ? -15 : 0;
+    if (delta && !e.ctrlKey && !e.altKey && !e.metaKey) { e.preventDefault(); goDown(delta); }
+  };
   const renderRow = (a: Activity) => {
     const ruleColor = getColor?.(a) ?? null;
     const picked = multi.size > 1 && multi.has(a.id);
     return (
       <tr
         key={a.id}
+        data-id={a.id}
         className={`${a.id === selectedId || picked ? 'selected' : ''}${dimmedIds?.has(a.id) ? ' is-dim' : ''}${markedIds?.has(a.id) ? ' is-marked' : ''}`}
         onMouseDown={(e) => { if (e.shiftKey) e.preventDefault(); }}
         onClick={(e) => {
           useActivitySelectionStore.getState().click(a.id, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey }, listedIds());
           onSelect(a);
         }}
-        onDoubleClick={onOpen ? () => onOpen(a) : undefined}
+        onDoubleClick={onOpen && !editor ? () => onOpen(a) : undefined}
         style={{
           ...(ruleColor ? { background: ruleColor } : undefined),
           ...(a.id === selectedId || picked ? { outline: '1px solid var(--accent)' } : undefined),
@@ -279,9 +309,21 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
       >
         {columns.map((c) => {
           const value = c.text(a, columnCtx);
+          const editing = sheet.edit?.id === a.id && sheet.edit.col === c.id;
+          const here = !!editor && a.id === selectedId && c.id === sheet.curCol;
           return (
-            <td key={c.id} title={value} style={{ width: widthOf(c), minWidth: widthOf(c), maxWidth: widthOf(c), textAlign: c.align }}>
-              {value}
+            <td
+              key={c.id}
+              title={value}
+              className={`${editing ? 'sheet-editing ' : ''}${here ? 'sheet-cursor' : ''}${editor && !editor.canEdit(a, c.id) ? ' sheet-readonly' : ''}`}
+              style={{ width: widthOf(c), minWidth: widthOf(c), maxWidth: widthOf(c), textAlign: c.align }}
+              onClick={() => sheet.setCurCol(c.id)}
+              onDoubleClick={(e) => {
+                if (editor?.editable && editor.canEdit(a, c.id)) { e.stopPropagation(); sheet.startEdit(a, c.id); }
+                else onOpen?.(a);
+              }}
+            >
+              {editing ? <SheetCellInput sheet={sheet} align={c.align} /> : value}
             </td>
           );
         })}
@@ -290,10 +332,10 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
   };
 
   // Ctrl + wheel scrolls the table twice as far.
-  const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => (scrollRef.current ? scrollDoubleWithCtrl(scrollRef.current) : undefined), []);
 
   useImperativeHandle(ref, () => ({
+    copyTable: () => sheet.copyTable(),
     download: () => {
       downloadCsv(
         'activities.csv',
@@ -306,7 +348,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div className="activity-table-shell">
-        <div className="activity-table-scroll" ref={scrollRef}>
+        <div className="activity-table-scroll" ref={scrollRef} tabIndex={0} onKeyDown={onKeyDown} onCopy={sheet.onCopy} onPaste={sheet.onPaste}>
           <table className={`data-table no-resize${wrapHeaders ? ' wrap-headers' : ''}`}>
             <thead>
               <tr ref={headRowRef}>

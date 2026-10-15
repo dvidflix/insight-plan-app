@@ -324,7 +324,7 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
             ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.remainingDays} onChange={(e) => setDraft({ ...draft, remainingDays: e.target.value })} {...typed('remainingDays')} aria-label="Remaining duration in days" />
             : days(activity.remainingDurationHours, perDay)],
           ...((editing ? [['Constraint', (
-            <span key="cs" style={{ display: 'inline-flex', gap: 3 }}>
+            <span key="cs" className="ad-pair">
               <select className="ad-edit" value={draft.constraintType} onChange={(e) => pick({ constraintType: e.target.value })} aria-label="Constraint">
                 {draft.constraintType && !CONSTRAINT_OPTIONS.some(([id]) => id === draft.constraintType) && <option value={draft.constraintType}>{constraintName(draft.constraintType)}</option>}
                 {CONSTRAINT_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}

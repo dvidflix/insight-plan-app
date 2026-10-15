@@ -168,12 +168,25 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
               <span className="flt__match-label">of these filters</span>
             </div>
           )}
-          <div className="flt__active">
-            {activeFields.map((f) => (
-              <span className="flt__chip" key={f.id}>
-                <span className="flt__chip-label">{f.label}:</span> {summarize(f, state)}
-                <button type="button" onClick={() => clear(f.id)} aria-label={`Clear ${f.label} filter`} title="Remove filter"><IconRemove /></button>
-              </span>
+          <div className="rgrid" role="table" style={{ '--rg-cols': '40% minmax(0, 1fr)' } as React.CSSProperties}>
+            <div className="rgrid__head" role="row">
+              <span className="rgrid__n rgrid__n--head" />
+              <div className="rgrid__body">
+                <span className="rgrid__th" role="columnheader">Field</span>
+                <span className="rgrid__th" role="columnheader">Filter</span>
+              </div>
+            </div>
+            {activeFields.map((f, i) => (
+              <div className="rgrid__row" role="row" key={f.id}>
+                <span className="rgrid__n">
+                  <span className="rgrid__num">{i + 1}</span>
+                  <button type="button" className="rgrid__del" onClick={() => clear(f.id)} aria-label={`Clear ${f.label} filter`} title="Remove filter"><IconRemove /></button>
+                </span>
+                <div className="rgrid__body">
+                  <span className="rgrid__cell rgrid__cell--name" title={f.label}>{f.label}</span>
+                  <span className="rgrid__cell" title={summarize(f, state)}>{summarize(f, state)}</span>
+                </div>
+              </div>
             ))}
           </div>
         </>

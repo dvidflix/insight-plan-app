@@ -11,7 +11,7 @@ import {
 } from '../viewer/searchSets';
 import { FieldPicker, RuleRows, newRuleId, type PickField } from './schedule/FieldRules';
 import { useFieldValues, useIndexTick, useModelFields } from './modelFields';
-import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTextInputShort, IconUpload, IconRemove } from './icons';
+import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTextInputShort, IconUpload, IconRemove, IconPencil } from './icons';
 import { RowButtonsChooser, useRowButtons } from './RowButtonsChooser';
 import { InfoTip } from './InfoTip';
 import { queryMatcher } from '../schedule/search';
@@ -78,7 +78,7 @@ export function SearchSetsPanel({ player = false }: { /** Show the folder player
 const ROW_BUTTONS = [
   { id: 'count', glyph: '123', label: 'Object count' },
   { id: 'eye', glyph: '👁', label: 'Show / hide in 3D' },
-  { id: 'edit', glyph: '✎', label: 'Edit' },
+  { id: 'edit', glyph: <IconPencil width={14} height={14} />, label: 'Edit' },
   { id: 'dup', glyph: '⧉', label: 'Duplicate' },
   { id: 'del', glyph: '⊖', label: 'Delete' },
 ] as const;
@@ -461,7 +461,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                       </button>
                       {shownBtn('count') && <span className={`ss__count${n === 0 ? ' is-zero' : ''}${saved && stored > n ? ' is-partial' : ''}`} title={`${n} of ${total} objects${saved && stored > n ? ` · ${stored - n} saved objects not in the loaded models` : ''}`}>{n.toLocaleString()}</span>}
                       {shownBtn('eye') && eye(ids, `“${s.name}”`)}
-                      {shownBtn('edit') && <button type="button" className="cols__icon" onClick={() => onEdit(s)} title="Edit" aria-label={`Edit ${s.name}`}>✎</button>}
+                      {shownBtn('edit') && <button type="button" className="cols__icon" onClick={() => onEdit(s)} title="Edit" aria-label={`Edit ${s.name}`}><IconPencil width={14} height={14} /></button>}
                       {shownBtn('dup') && <button type="button" className="cols__icon" onClick={() => duplicate(s)} title="Duplicate" aria-label={`Duplicate ${s.name}`}>⧉</button>}
                       {shownBtn('del') && <button type="button" className="cols__icon cols__icon--remove" onClick={() => { if (window.confirm(`Delete the ${saved ? 'selection' : 'search'} set “${s.name}”?`)) remove(s.id); }} title="Delete" aria-label={`Delete ${s.name}`}><IconRemove /></button>}
                     </div>

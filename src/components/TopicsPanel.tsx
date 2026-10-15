@@ -24,7 +24,7 @@ const TOPIC_BUTTONS = [
   { id: 'thumb', glyph: '▣', label: 'Thumbnail (the first viewpoint)' },
   { id: 'comments', glyph: '💬', label: 'Number of comments' },
   { id: 'status', glyph: '●', label: 'Status label (the colour on the left stays)' },
-  { id: 'edit', glyph: '✎', label: 'Edit' },
+  { id: 'edit', glyph: <IconPencil width={14} height={14} />, label: 'Edit' },
   { id: 'delete', glyph: '⊖', label: 'Delete' },
 ] as const satisfies readonly RowButtonDef<string>[];
 type TopicButton = (typeof TOPIC_BUTTONS)[number]['id'];

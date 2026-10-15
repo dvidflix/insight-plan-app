@@ -62,24 +62,41 @@ export function CalcColumnsEditor({ catalog }: { catalog: ColumnDef[] }) {
       </div>
       {open && (
         <>
-          {columns.map((c) => (
-            <div className="calc-cols__row" key={c.id}>
-              <div className="calc-cols__text">
-                <b>{c.name}</b>
-                <code title={c.formula}>{c.formula}</code>
+          {columns.length > 0 && (
+            <div className="rgrid" role="table" style={{ '--rg-cols': '38% minmax(0, 1fr) 30px' } as React.CSSProperties}>
+              <div className="rgrid__head" role="row">
+                <span className="rgrid__n rgrid__n--head" />
+                <div className="rgrid__body">
+                  <span className="rgrid__th" role="columnheader">Name</span>
+                  <span className="rgrid__th" role="columnheader">Formula</span>
+                  <span className="rgrid__th" />
+                </div>
               </div>
-              <button type="button" className="cols__icon" onClick={() => setDraft(c)} aria-label={`Edit ${c.name}`} title="Edit"><IconPencil width={14} height={14} /></button>
-              <button
-                type="button"
-                className="cols__icon cols__icon--remove"
-                onClick={() => { if (window.confirm(`Delete the calculated column “${c.name}”?`)) remove(c.id); }}
-                aria-label={`Delete ${c.name}`}
-                title="Delete"
-              >
-                <IconRemove />
-              </button>
+              {columns.map((c, i) => (
+                <div className="rgrid__row" role="row" key={c.id}>
+                  <span className="rgrid__n">
+                    <span className="rgrid__num">{i + 1}</span>
+                    <button
+                      type="button"
+                      className="rgrid__del"
+                      onClick={() => { if (window.confirm(`Delete the calculated column “${c.name}”?`)) remove(c.id); }}
+                      aria-label={`Delete ${c.name}`}
+                      title="Delete"
+                    >
+                      <IconRemove />
+                    </button>
+                  </span>
+                  <div className="rgrid__body">
+                    <span className="rgrid__cell rgrid__cell--name" title={c.name}>{c.name}</span>
+                    <code className="rgrid__cell rgrid__cell--code" title={c.formula}>{c.formula}</code>
+                    <span className="rgrid__cell rgrid__cell--act">
+                      <button type="button" className="rgrid__ib" onClick={() => setDraft(c)} aria-label={`Edit ${c.name}`} title="Edit"><IconPencil width={14} height={14} /></button>
+                    </span>
+                  </div>
+                </div>
+              ))}
             </div>
-          ))}
+          )}
           {columns.length === 0 && !draft && <div className="flt__hint">None yet. “+ New” starts from tonnes per hour.</div>}
           {draft && (
             <div className="calc-cols__form">

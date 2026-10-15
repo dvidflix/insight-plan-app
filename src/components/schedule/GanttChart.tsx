@@ -5,7 +5,7 @@ import { wbsGroupColors, DEFAULT_WBS_PALETTE } from '../../schedule/wbsPalette';
 import { allWbsPaths, buildRuleTree, buildWbsTree, wbsPathsAtOrBeyondDepth } from '../../schedule/wbsTree';
 import {
   DAY_MS,
-  ROW_H,
+  ROW_H as BASE_ROW_H,
   buildGanttRows,
   buildLinkIndex,
   computeGroupAggregates,
@@ -22,7 +22,7 @@ import type { ColumnCtx, ColumnDef } from '../../schedule/columns';
 import { usePersistedState } from '../../utils/persistedState';
 import type { GroupRule } from './GroupPanel';
 import type { SortRule } from './SortPanel';
-import { useTableStyleStore } from '../../state/tableStyleStore';
+import { useRowPx, useTableStyleStore } from '../../state/tableStyleStore';
 import { useAggregateStore } from '../../state/aggregateStore';
 import { applyWbsOrder, useWbsOrder } from '../../state/wbsOrder';
 import type { GanttExport, GanttExportRow } from '../../schedule/exportGanttXlsx';
@@ -31,6 +31,9 @@ import { AggCell } from './AggCell';
 import { IconExpander } from '../icons';
 import { getCalendar } from '../../schedule/calendar';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
+import type { GanttEditor } from '../../schedule/ganttEdit';
+import { useSheetEditing } from './useSheetEditing';
+import { SheetCellInput } from './SheetCellInput';
 
 export type Zoom = 'hour' | 'day' | 'week' | 'month' | 'quarter' | 'year';
 export const ZOOMS: Zoom[] = ['hour', 'day', 'week', 'month', 'quarter', 'year'];
@@ -48,6 +51,8 @@ export interface GanttHandle {
   scrollToRow: (id: string) => void;
   /** The label grid as shown (columns, groups, subtotals, folded state) for the Excel export. */
   getExport: () => GanttExport;
+  /** The rows shown, with their columns and headings, on the clipboard as Excel takes them. Resolves to the number of rows. */
+  copyTable: () => Promise<number>;
 }
 
 interface GanttChartProps {
@@ -66,6 +71,8 @@ interface GanttChartProps {
       viewer selection instead of a click inside the Gantt itself). */
   scrollToId?: string | null;
   getColor?: (activity: Activity) => string | null;
+  /** The colour of a whole row (Colour rules): the row is tinted, the bar keeps its own colour. */
+  rowColor?: (activity: Activity) => string | null;
   groupByWbs?: boolean;
   /** Group rules (Configuration > Group): one nesting level per rule, by the
       field's value, sorted up or down. When set they replace the WBS grouping. */
@@ -107,6 +114,10 @@ interface GanttChartProps {
   onOpen?: (activity: Activity) => void;
   /** Alt+S (start together: SS links) and Alt+F (one after another: FS links) on the activities picked. */
   onLinkShortcut?: (kind: 'SS' | 'FS') => void;
+  /** The end of a selected link was dragged: move its lag by this many working days. */
+  onLagChange?: (rel: Relationship, deltaDays: number) => void;
+  /** Always-on editing of the cells (typing, Enter / F2 / double-click, copy and paste with Excel). Without it the grid is read-only (copy still works). */
+  editor?: GanttEditor;
 }
 
 const HEADER_H = 44;
@@ -141,10 +152,12 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     highlightedIds,
     scrollToId = null,
     getColor,
+    rowColor,
     groupByWbs = true,
     groupRules,
     sortRules,
     onLinkShortcut,
+    onLagChange,
     catalog,
     aggregatable = false,
     wbsLevel = '',
@@ -162,17 +175,21 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     expandAllSignal = 0,
     onSelect,
     onOpen,
+    editor,
   },
   ref,
 ) {
   const containerRef = useRef<HTMLDivElement>(null);
   // Settings > Tables > Wrap column headers, as in the Activities table.
   const wrapHeaders = useTableStyleStore((s) => s.wrapHeaders);
+  const ROW_H = useRowPx(BASE_ROW_H);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [scroll, setScroll] = useState({ top: 0, left: 0 });
   const [view, setView] = useState({ w: 900, h: 600 });
   const [customPx, setCustomPx] = useState<number | null>(null);
   const [tip, setTip] = useState<Tip | null>(null);
+  /** A link's lag being dragged: which link and how far (px). */
+  const [lagDrag, setLagDrag] = useState<{ key: string; dx: number } | null>(null);
   const labelWidth = useResizableWidth('schedule.ganttLabelWidth', 480, 340, 1800);
   const LABEL_W = labelWidth.width;
   const visibleLabelColumns = columns;
@@ -288,6 +305,15 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     onSelect(a);
   };
   const contentHeight = items.length * ROW_H;
+
+  // ---- editing the cells, and copying to and from Excel (see useSheetEditing) ----
+  const shownActs = useMemo(() => items.flatMap((i) => (i.kind === 'row' ? [i.row.activity] : [])), [items]);
+  const sheet = useSheetEditing({
+    editor, columns, catalog, columnCtx, shown: shownActs, selectedId, picked: multi,
+    moveDown: () => moveSelection(1),
+    refocus: () => containerRef.current?.focus(),
+  });
+  const { curCol, setCurCol, edit, startEdit } = sheet;
 
   // Picking a Group Level re-seeds which nodes start collapsed (depth >= N);
   // after that, clicks toggle individual nodes same as before, until the
@@ -414,11 +440,14 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   };
   const controls2 = useRef(exportData);
   controls2.current = exportData;
+  const copyRef = useRef(sheet.copyTable);
+  copyRef.current = sheet.copyTable;
 
   useImperativeHandle(
     ref,
     () => ({
       getExport: () => controls2.current(),
+      copyTable: () => copyRef.current(),
       zoomIn: () => controls.current.zoomBy(1.5),
       zoomOut: () => controls.current.zoomBy(1 / 1.5),
       fit: () => controls.current.fit(),
@@ -508,6 +537,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   };
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return;
+    if (sheet.onKeyDown(e)) return;
     const page = Math.max(1, Math.floor(bodyH / ROW_H) - 1);
     const delta = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'PageDown' ? page : e.key === 'PageUp' ? -page : 0;
     if (delta !== 0) {
@@ -587,6 +618,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     d: string;
     cls: string;
     marker: string;
+    /** Selected links: where the end of the link is, to drag its lag from. */
+    handle?: { x: number; y: number; rel: Relationship; lag: number; perWeek: number };
   }
   const links: LinkDraw[] = [];
   if (rows.length > 0) {
@@ -609,8 +642,10 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
         toLeft,
       );
       const critical = showCritical && p.activity.isCritical && s.activity.isCritical;
+      const succCal = getCalendar(s.activity.calendarId, columnCtx?.calendarsById ?? new Map());
       links.push({
         key: `${rel.predId}>${rel.succId}:${rel.type}:${rel.lagHours}:${links.length}`,
+        handle: selected && onLagChange ? { x: xFor(toLeft ? s.s : s.f), y: si * ROW_H + ROW_H / 2, rel, lag: Math.round((rel.lagHours / (succCal.hoursPerDay || 8)) * 10) / 10, perWeek: succCal.workingDaysPerWeek || 5 } : undefined,
         d,
         cls: selected ? 'gantt-link gantt-link--selected' : critical ? 'gantt-link gantt-link--critical' : 'gantt-link',
         marker: selected ? 'gantt-arrow-sel' : critical ? 'gantt-arrow-crit' : 'gantt-arrow',
@@ -646,6 +681,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     const selected = a.id === selectedId || (multi.size > 1 && multi.has(a.id));
     const linked = highlightedIds?.has(a.id) ?? false;
     const critical = showCritical && a.isCritical;
+    const tint = rowColor?.(a) ?? null;
     const color = getColor?.(a) ?? (critical ? 'var(--bar-critical)' : a.status === 'completed' ? 'var(--bar-done)' : 'var(--bar-normal)');
     const labelLeft = (isMilestone ? barLeft + 12 : barLeft + barWidth) + 6;
     // The thin bar under the activity: where the saved baseline had it, else its target dates (when the baseline bars are switched on).
@@ -657,8 +693,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
     return (
       <div
         key={a.id}
-        className={`gantt-row${linked ? ' gantt-row--linked' : ''}${dimmedIds?.has(a.id) ? ' gantt-row--dim' : ''}`}
-        style={{ top: index * ROW_H, width: totalWidth }}
+        className={`gantt-row${linked ? ' gantt-row--linked' : ''}${tint ? ' gantt-row--tinted' : ''}${dimmedIds?.has(a.id) ? ' gantt-row--dim' : ''}`}
+        style={{ top: index * ROW_H, width: totalWidth, ...(tint ? { '--row-tint': `color-mix(in srgb, ${tint} 26%, #ffffff)` } as React.CSSProperties : null) }}
       >
         <div
           onClick={(e) => pickRow(a, e)}
@@ -667,16 +703,24 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
           className={`gantt-row-label gantt-row-label--cols${selected ? ' selected' : ''}${linked ? ' gantt-row-label--linked' : ''}`}
           style={{ width: LABEL_W }}
         >
-          {visibleLabelColumns.map((c) => (
-            <span
-              key={c.id}
-              className="gantt-row-label__cell"
-              title={c.text(a, columnCtx)}
-              style={{ ...cellStyle(c), justifyContent: c.align ? 'flex-end' : undefined }}
-            >
-              {c.text(a, columnCtx)}
-            </span>
-          ))}
+          {visibleLabelColumns.map((c) => {
+            const editing = edit?.id === a.id && edit.col === c.id;
+            const here = a.id === selectedId && !!editor && c.id === curCol;
+            return (
+              <span
+                key={c.id}
+                className={`gantt-row-label__cell${editing ? ' sheet-editing' : ''}${here ? ' is-cursor' : ''}${editor && !editor.canEdit(a, c.id) ? ' is-readonly' : ''}`}
+                title={c.text(a, columnCtx)}
+                style={{ ...cellStyle(c), justifyContent: c.align ? 'flex-end' : undefined }}
+                onClick={() => setCurCol(c.id)}
+                onDoubleClick={(e) => { if (editor?.editable && editor.canEdit(a, c.id)) { e.stopPropagation(); startEdit(a, c.id); } }}
+              >
+                {editing ? (
+                  <SheetCellInput sheet={sheet} align={c.align} />
+                ) : c.text(a, columnCtx)}
+              </span>
+            );
+          })}
         </div>
         <div className="gantt-row-chart" style={{ width: chartWidth }} onClick={(e) => pickRow(a, e)} onDoubleClick={() => { jumpToActivity(a); onOpen?.(a); }}>
           {baseline && <div className="gantt-baseline" style={{ left: baseline.l, width: baseline.w }} />}
@@ -783,6 +827,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
         tabIndex={0}
         onScroll={onScroll}
         onKeyDown={onKeyDown}
+        onCopy={sheet.onCopy}
+        onPaste={sheet.onPaste}
         style={{ flex: 1, minWidth: 0, minHeight: 0, overflow: 'auto', position: 'relative' }}
       >
         {rows.length === 0 ? (
@@ -896,6 +942,37 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
                   ))}
                 </svg>
               )}
+              {links.filter((l) => l.handle).map((l) => {
+                const h = l.handle!;
+                const dragging = lagDrag?.key === l.key ? lagDrag.dx : 0;
+                const workingDays = (dx: number) => Math.round(((dx / pxPerDay) * h.perWeek) / 7);
+                const shown = Math.round((h.lag + workingDays(dragging)) * 10) / 10;
+                return (
+                  <div
+                    key={`lag:${l.key}`}
+                    className={`gantt-lag${lagDrag?.key === l.key ? ' is-dragging' : ''}`}
+                    style={{ left: LABEL_W + h.x + dragging - 6, top: h.y - 6 }}
+                    title="Drag sideways to change the lag of this link"
+                    onPointerDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      const x0 = e.clientX;
+                      const move = (ev: PointerEvent) => setLagDrag({ key: l.key, dx: ev.clientX - x0 });
+                      const up = (ev: PointerEvent) => {
+                        window.removeEventListener('pointermove', move);
+                        window.removeEventListener('pointerup', up);
+                        const days = workingDays(ev.clientX - x0);
+                        setLagDrag(null);
+                        if (days !== 0) onLagChange?.(h.rel, days);
+                      };
+                      window.addEventListener('pointermove', move);
+                      window.addEventListener('pointerup', up);
+                    }}
+                  >
+                    <span className="gantt-lag__label">{`${shown > 0 ? '+' : ''}${shown} d`}</span>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}

@@ -2,7 +2,6 @@ import { useMemo, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
 import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataTableTab } from '../state/dataTableStore';
-import { DOCK_DEFAULTS, useDockStore, type DockSide } from '../state/dockStore';
 import { useTwin } from './useTwin';
 import { SEVERAL } from '../viewer/twinMatch';
 import { useSearchSetsStore } from '../state/searchSetsStore';
@@ -36,8 +35,7 @@ export function DataTablePanel() {
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
   const store = useDataTableStore();
-  const dockSide = useDockStore((d) => d.placement.datatable ?? DOCK_DEFAULTS.datatable);
-  const { columns, setColumns, filters, filterMatch, groupRules, sortRules, colorRules, tab, patch, totals } = store;
+  const { columns, setColumns, filters, filterMatch, groupRules, sortRules, colorRules, tab, patch } = store;
   const baseFields = useModelFields();
   const twin = useTwin();
   // With a twin model, every property of its objects can be a column, filter, group, sort key or colour too.
@@ -100,23 +98,6 @@ export function DataTablePanel() {
   return (
     <div className="dtp">
       <div className="disp dtp__top">
-        <label className="disp__row">
-          <span>Position <InfoTip>Under the 3D view, or beside it on the left or right. Panels on the same side share it as tabs (the Panels menu in the toolbar moves any panel).</InfoTip></span>
-          <select value={dockSide === 'closed' ? 'bottom' : dockSide} onChange={(e) => useDockStore.getState().move('datatable', e.target.value as DockSide)}>
-            <option value="bottom">Bottom</option>
-            <option value="left">Left</option>
-            <option value="right">Right</option>
-          </select>
-        </label>
-        <div className="disp__row">
-          <span>
-            Totals and subtotals{' '}
-            <InfoTip>A totals row under the table and a subtotal on each group row. Number columns are summed by default; click a total in the totals row to pick sum, average, min, max, count or none for that column.</InfoTip>
-          </span>
-          <button type="button" role="switch" aria-checked={totals} className={`switch${totals ? ' on' : ''}`} onClick={() => patch({ totals: !totals })}>
-            <span className="switch__thumb" />
-          </button>
-        </div>
       </div>
       <PresetsRow />
       <TwinBlock twin={twin} />

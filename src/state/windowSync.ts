@@ -89,12 +89,16 @@ export function closeSatelliteWindows() {
 
 /** Opens a satellite window on a Programmes view; at `at` when given. False when the browser blocked it. */
 export function openSatelliteWindow(view: string, at?: Partial<WindowInfo>): boolean {
-  const group = crypto.randomUUID();
-  groups.add(group);
-  try {
-    sessionStorage.setItem(GROUPS_KEY, JSON.stringify([...groups]));
-  } catch {
-    // the link is lost on reload
+  // A window opened from a secondary one joins the same group, so all of them stay in step with the main window.
+  const group = IS_SATELLITE ? (SATELLITE_GROUP as string) : crypto.randomUUID();
+  const id = crypto.randomUUID();
+  if (!IS_SATELLITE) {
+    groups.add(group);
+    try {
+      sessionStorage.setItem(GROUPS_KEY, JSON.stringify([...groups]));
+    } catch {
+      // the link is lost on reload
+    }
   }
   const url = new URL(window.location.href);
   url.search = '';
@@ -104,13 +108,13 @@ export function openSatelliteWindow(view: string, at?: Partial<WindowInfo>): boo
   const w = at?.w ?? Math.round(window.screen.availWidth * 0.8);
   const h = at?.h ?? Math.round(window.screen.availHeight * 0.85);
   const place = at?.x !== undefined && at?.y !== undefined ? `,left=${at.x},top=${at.y}` : '';
-  const win = window.open(url.toString(), `insight-plan-${group}`, `popup=yes,width=${w},height=${h}${place}`);
+  const win = window.open(url.toString(), `insight-plan-${id}`, `popup=yes,width=${w},height=${h}${place}`);
   if (!win) {
-    groups.delete(group);
+    if (!IS_SATELLITE) groups.delete(group);
     if (!at) window.alert('The browser blocked the new window. Allow pop-ups for this site and try again.');
     return false;
   }
-  opened.set(group, { win, view });
+  opened.set(id, { win, view });
   window.dispatchEvent(new Event(WINDOWS_EVENT));
   return true;
 }

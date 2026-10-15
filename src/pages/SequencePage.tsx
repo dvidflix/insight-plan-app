@@ -31,6 +31,8 @@ import { LinkGroupsPanel, exportLinkGroupMatches, useLinkGroupsUiStore } from '.
 import { AppearancePanel, useAppearanceUiStore } from '../components/sequence/AppearancePanel';
 import { TaskFieldFromSets } from '../components/sequence/TaskFieldFromSets';
 import { LabelPanel } from '../components/sequence/LabelPanel';
+import { NeedsModels } from '../components/sequence/NeedsModels';
+import { FourDSetupPanel } from '../components/sequence/FourDSetupPanel';
 import { usePersistedState } from '../utils/persistedState';
 import { buildColumnContext } from '../schedule/columns';
 import { useColumnCatalog } from '../schedule/calculatedColumns';
@@ -773,7 +775,7 @@ export function SequencePanel() {
 
   // No programme (or model) yet: Scenarios still works — it is how a
   // building's first programme gets generated.
-  const needProgramme = <div style={{ padding: 12, color: 'var(--text-dim)' }}>Load both an IFC model and a P6 programme in Inputs to start 4D sequencing — or generate one from the Scenarios tab.</div>;
+  const needProgramme = <NeedsModels />;
   const ready = !!model && models.length > 0;
   const dockPanels = (
     <>
@@ -814,7 +816,8 @@ export function SequencePanel() {
     return (
       <>
         {dockPanels}
-        <ModelDockPanels page="sequence" />
+        <ModelDockPanels page="sequence" views={needProgramme} />
+        <FourDSetupPanel />
       </>
     );
   }

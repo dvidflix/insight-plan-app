@@ -3,6 +3,7 @@ import type { Activity } from '../../schedule/types';
 import { WBS_PALETTES, wbsPaletteFor } from '../../schedule/wbsPalette';
 import { FieldPicker, RuleRows, newRuleId, type PickField } from './FieldRules';
 import { InfoTip } from '../InfoTip';
+import { HexCell } from '../HexCell';
 import { PresetBar, type PresetItem } from './PresetBar';
 import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
 
@@ -154,32 +155,29 @@ export function ColorPanel({ rules, onChange, onClose, wbsPalette, onWbsPaletteC
         </span>
         {rules.length > 0 && <button type="button" className="cols__link" onClick={() => onChange([])}>Clear all</button>}
       </div>
-      <RuleRows rules={rules} onChange={onChange} empty="No colour rules: pick a field below, or colour by field above.">
+      <RuleRows grid={{ key: 'color', columns: [{ label: 'Field' }, { label: 'Condition', width: 96 }, { label: 'Value' }, { label: 'Colour', width: 56 }] }} rules={rules} onChange={onChange} empty="No colour rules: pick a field below, or colour by field above.">
         {(r) => {
           const op = r.op ?? 'is';
           const listId = `color-values-${r.id}`;
           const suggestions = valuesOf ? valuesOf(r.field).slice(0, 200) : [];
           return (
-            <div className="color-rule2">
-              <div className="color-rule2__line">
-                <span className="cols__label color-rule2__field" title={byId.get(r.field)?.label ?? r.field}>{byId.get(r.field)?.label ?? r.field}</span>
-                <select className="color-rule2__op" value={op} onChange={(e) => update(r.id, { op: e.target.value as ColorOp })}>
-                  {OPS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
-                </select>
-              </div>
-              <div className="color-rule2__line">
-                {op === 'empty' && <span />}
-                {op !== 'empty' && (
+            <>
+              <span className="rgrid__cell rgrid__cell--grow" title={byId.get(r.field)?.label ?? r.field}>{byId.get(r.field)?.label ?? r.field}</span>
+              <select className="rgrid__cell rgrid__cell--op" value={op} onChange={(e) => update(r.id, { op: e.target.value as ColorOp })} aria-label="Condition">
+                {OPS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+              </select>
+              {op === 'empty'
+                ? <span className="rgrid__cell rgrid__cell--grow" />
+                : (
                   <>
-                    <input className="color-rule2__value" placeholder="value" list={listId} value={r.value} onChange={(e) => update(r.id, { value: e.target.value })} />
+                    <input className="rgrid__cell rgrid__cell--grow" placeholder="value" list={listId} value={r.value} onChange={(e) => update(r.id, { value: e.target.value })} aria-label="Value" />
                     <datalist id={listId}>
                       {suggestions.map((s) => <option key={s.value} value={s.value}>{`${s.count}`}</option>)}
                     </datalist>
                   </>
                 )}
-                <input type="color" className="color-rule2__custom" value={r.color ?? '#ffffff'} onChange={(e) => update(r.id, { color: e.target.value })} title="Colour" aria-label="Colour" />
-              </div>
-            </div>
+              <HexCell value={r.color} onChange={(hex) => update(r.id, { color: hex })} />
+            </>
           );
         }}
       </RuleRows>

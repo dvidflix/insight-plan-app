@@ -30,6 +30,7 @@ import { ConfigPanel } from '../components/schedule/ConfigPanel';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { activitySearchText, matchesSearchTokens, searchTokens } from '../schedule/search';
 import { exportGanttXlsx } from '../schedule/exportGanttXlsx';
+import { makeGanttEditor } from '../schedule/ganttEdit';
 import { applyFieldFilters, buildFilterFields, emptyFilterState, type FieldFilterState } from '../schedule/filterFields';
 import { useScheduleStore, useVisibleSchedules } from '../state/scheduleStore';
 import { usePersistedState } from '../utils/persistedState';
@@ -37,6 +38,7 @@ import { LayoutsDock } from '../components/schedule/LayoutsDock';
 import { LookaheadView } from '../components/schedule/LookaheadView';
 import { BulkEditView } from '../components/schedule/BulkEditView';
 import { applyLinkShortcut } from '../schedule/linkShortcuts';
+import { nudgeLag } from '../schedule/linkLag';
 import { useActivitySelectionStore } from '../state/activitySelectionStore';
 import { RenumberView } from '../components/schedule/RenumberView';
 import { LinksPane } from '../components/schedule/LinksPane';
@@ -49,7 +51,7 @@ import { drivingPath } from '../schedule/drivingPath';
 import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from '../state/scheduleLayoutsStore';
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
-import { IconDownload, IconGear, IconUndo, IconRedo, IconRelated } from '../components/icons';
+import { IconCopy, IconDownload, IconGear, IconUndo, IconRedo, IconRelated } from '../components/icons';
 import { DockPanel } from '../components/Dock';
 import { hasLinkedWindows, onWindowMessage, sendToWindows } from '../state/windowSync';
 import { useSelectionSync } from '../schedule/useSelectionSync';
@@ -369,9 +371,11 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
   const catalogById = new Map(catalog.map((c) => [c.id, c]));
   const colorLookup = (fieldId: string, a: Activity) => (columnCtx ? catalogById.get(fieldId)?.text(a, columnCtx) : undefined);
 
+  const ganttEditor = makeGanttEditor(schedules.length === 1 ? schedules[0] : null, flash);
   const activityTable = (
     <ActivityTable
       ref={activityTableRef}
+      editor={ganttEditor}
       activities={tableList}
       dimmedIds={tableDimmed}
       markedIds={drivingIds ?? undefined}
@@ -402,19 +406,33 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
     setShortcutNote(note);
     window.setTimeout(() => setShortcutNote((cur) => (cur === note ? null : cur)), 4000);
   };
+  // Dragging the end of a selected link on the Gantt: its lag moves by whole working days.
+  const lagChange = (rel: { predId: string; succId: string }, deltaDays: number) => {
+    const own = schedules.length === 1 ? schedules[0] : schedules.find((m) => rel.predId.startsWith(`${m.id}:`) && rel.succId.startsWith(`${m.id}:`));
+    const cut = (id: string) => (own && schedules.length > 1 ? id.slice(own.id.length + 1) : id);
+    const note = own ? nudgeLag(own, cut(rel.predId), cut(rel.succId), deltaDays) : 'Pick links inside one programme.';
+    if (!note) return;
+    setShortcutNote(note);
+    window.setTimeout(() => setShortcutNote((cur) => (cur === note ? null : cur)), 4000);
+  };
   const exportGantt = () => {
     const data = ganttRef.current?.getExport();
     if (data) exportGanttXlsx(data, `Gantt ${new Date().toISOString().slice(0, 10)}.xlsx`);
   };
+  // The Gantt is always ready to edit (one programme at a time): type in a cell, or copy rows to Excel and paste them back.
+  const copyGantt = () => {
+    (tab === 'activities' ? activityTableRef.current : ganttRef.current)?.copyTable().then((n) => flash(`Copied ${n} rows with their headings. Paste into Excel, change them there, then select the rows (Ctrl+A in Excel), copy, click the Gantt and paste (Ctrl+V): rows are matched by Activity ID.`), () => flash('The browser did not allow copying to the clipboard.'));
+  };
   const ganttChart = (
     <GanttChart
       ref={ganttRef}
+      editor={ganttEditor}
       activities={ganttList}
       dimmedIds={ganttDimmed}
       highlightedIds={drivingIds ?? undefined}
       relationships={model.relationships}
       selectedId={selectedId}
-      getColor={(a) => resolveRuleColor(ganttSet.colorRules, a, colorLookup)}
+      rowColor={(a) => resolveRuleColor(ganttSet.colorRules, a, colorLookup)}
       groupByWbs={ganttSet.groupByWbs}
       groupRules={ganttSet.groupRules}
       sortRules={ganttSet.sortRules}
@@ -430,6 +448,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
       collapseAllSignal={collapseAllSignal}
       expandAllSignal={expandAllSignal}
       onLinkShortcut={linkShortcut}
+      onLagChange={lagChange}
       zoom={zoom}
       columns={ganttColumns}
       columnCtx={columnCtx!}
@@ -499,16 +518,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
               })()}
             </div>
           )}
-          <div ref={setToolbarSlot} className="schedule-toolbar__slot" />
-          {dayFilter && (
-            <button className="btn btn--small" type="button" onClick={() => setDayFilter(null)} title="Clear day filter">
-              Day: {dayFilterLabel} ✕
-            </button>
-          )}
-        </div>
-
-        {/* The middle: buttons for what is picked (activities, nothing, objects in 3D). */}
-        <div className="schedule-toolbar__ctx">
+          {/* The planning tools, in a menu, next to the level: they follow it instead of sitting in a place of their own. */}
           {schedules.length === 1 && schedules[0].editable && tab !== 'planner' && (
             <EditTools
               model={schedules[0]}
@@ -517,6 +527,12 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
               onNote={(text) => { setShortcutNote(text); window.setTimeout(() => setShortcutNote((cur) => (cur === text ? null : cur)), 5000); }}
               keys={tab === 'activities' || tab === 'gantt'}
             />
+          )}
+          <div ref={setToolbarSlot} className="schedule-toolbar__slot" />
+          {dayFilter && (
+            <button className="btn btn--small" type="button" onClick={() => setDayFilter(null)} title="Clear day filter">
+              Day: {dayFilterLabel} ✕
+            </button>
           )}
         </div>
 
@@ -542,6 +558,11 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
               <IconDownload />
             </button>
           )}
+          {(tab === 'gantt' || tab === 'activities') && (
+            <button className="icon-btn" type="button" onClick={copyGantt} title="Copy the rows to the clipboard to paste into Excel. Change them there, copy them back and paste them here (Ctrl+V in the Gantt): rows are matched by Activity ID and only what changed is set">
+              <IconCopy />
+            </button>
+          )}
           {tab === 'gantt' && (
             <button className="icon-btn" type="button" onClick={exportGantt} title="Export the Gantt to Excel as it is shown: its columns, grouping, subtotals and folded groups">
               <IconDownload />
@@ -560,7 +581,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
           <>
             {/* The one Gantt panel (the same on 4D Sequencing, where it also follows the timeline): this page's filters and driving path apply. */}
             <DockPanel id="gantt" label="Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>
-              {ganttPanelOpen && <DockGantt model={model} activities={ganttList} dimmedIds={ganttDimmed} selectedId={selectedId} highlightedIds={drivingIds ?? new Set<string>()} scrollToId={null} onSelect={handleSelect} onOpen={(a) => { handleSelect(a); setDetailsOpen(true); }} onLinkShortcut={linkShortcut} />}
+              {ganttPanelOpen && <DockGantt model={model} activities={ganttList} dimmedIds={ganttDimmed} selectedId={selectedId} highlightedIds={drivingIds ?? new Set<string>()} scrollToId={null} onSelect={handleSelect} onOpen={(a) => { handleSelect(a); setDetailsOpen(true); }} onLinkShortcut={linkShortcut} onLagChange={lagChange} />}
             </DockPanel>
             <DockPanel id="planning" label="Resources & codes" shown={planningOpen} setShown={setPlanningOpen}>
               <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><ActivityPlanningPanel model={model} selectedId={selectedId} onNote={flash} /></div>

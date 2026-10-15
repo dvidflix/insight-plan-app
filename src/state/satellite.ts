@@ -8,3 +8,6 @@ export const SATELLITE_GROUP: string | null = params.get('satellite');
 export const IS_SATELLITE = SATELLITE_GROUP !== null;
 /** The Programmes view the satellite opens on. */
 export const SATELLITE_VIEW: string | null = params.get('view');
+
+// The window says which it is in its title, so the two are easy to tell apart in the taskbar.
+if (typeof document !== 'undefined') document.title = `Insight Plan - ${IS_SATELLITE ? 'Secondary' : 'Main'}`;

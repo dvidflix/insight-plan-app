@@ -73,20 +73,32 @@ ${r.written.join(', ')}` });
       onDragLeave={() => setOver(false)}
       onDrop={onDrop}
     >
-      <div className="ie__rows">
-        {DATA_PORTS.map((p) => (
-          <div key={p.id} className="ie__row">
-            <div className="ie__name" title={p.hint}>
-              <b>{p.label}</b>
-              <small>{p.count()}</small>
+      <div className="ie__top">
+        <button type="button" className="ie__cellbtn" onClick={() => void exportAll()} title="Write every export file into the settings folder of the project at once (each is the file its Export button downloads)"><IconDownload width={14} height={14} /> Export all to project folder</button>
+        <button type="button" className="ie__cellbtn" onClick={() => anyRef.current?.click()} title="Pick one or more export files; each goes to the list it belongs to. You can also drop them on this box.">Import any file…</button>
+      </div>
+      <div className="rgrid ie__grid" role="table" style={{ '--rg-cols': 'minmax(0, 1fr) 52px 88px 88px' } as React.CSSProperties}>
+        <div className="rgrid__head" role="row">
+          <span className="rgrid__n rgrid__n--head" />
+          <div className="rgrid__body">
+            <span className="rgrid__th" role="columnheader">Data</span>
+            <span className="rgrid__th ie__right" role="columnheader">Items</span>
+            <span className="rgrid__th" role="columnheader">Export</span>
+            <span className="rgrid__th" role="columnheader">Import</span>
+          </div>
+        </div>
+        {DATA_PORTS.map((p, i) => (
+          <div key={p.id} className="rgrid__row" role="row">
+            <span className="rgrid__n"><span className="rgrid__num">{i + 1}</span></span>
+            <div className="rgrid__body">
+              <span className="rgrid__cell rgrid__cell--name" title={p.hint}>{p.label}</span>
+              <span className="rgrid__cell rgrid__cell--num">{p.count()}</span>
+              <button type="button" className="ie__cellbtn" onClick={() => void exportOne(p)} title={`Export the ${p.label.toLowerCase()} to a file. ${p.hint}`} aria-label={`Export ${p.label}`}><IconDownload width={14} height={14} /> Export</button>
+              <button type="button" className="ie__cellbtn" onClick={() => { rowFor.current = p.id; rowRef.current?.click(); }} title={`Import ${p.label.toLowerCase()} from a file: new ones are added, ones with the same id are replaced, nothing is removed.`} aria-label={`Import ${p.label}`}><IconUpload width={14} height={14} /> Import</button>
             </div>
-            <button type="button" className="btn btn--small" onClick={() => void exportOne(p)} title={`Export the ${p.label.toLowerCase()} to a file. ${p.hint}`} aria-label={`Export ${p.label}`}><IconDownload width={14} height={14} /> Export</button>
-            <button type="button" className="btn btn--small" onClick={() => { rowFor.current = p.id; rowRef.current?.click(); }} title={`Import ${p.label.toLowerCase()} from a file: new ones are added, ones with the same id are replaced, nothing is removed.`} aria-label={`Import ${p.label}`}><IconUpload width={14} height={14} /> Import</button>
           </div>
         ))}
       </div>
-      <button type="button" className="btn btn--small" onClick={() => void exportAll()} title="Write every export file into the settings folder of the project at once (each is the file its Export button downloads)"><IconDownload width={14} height={14} /> Export all to project folder</button>
-      <button type="button" className="btn btn--small ie__any" onClick={() => anyRef.current?.click()} title="Pick one or more export files; each goes to the list it belongs to. You can also drop them on this box.">Import any file…</button>
       <div className="ie__drop">or drop export files here</div>
       <input ref={rowRef} type="file" accept=".json,.xml,.prs" style={{ display: 'none' }} onChange={(e) => { if (e.target.files?.length) void run(e.target.files, rowFor.current); e.target.value = ''; }} />
       <input ref={anyRef} type="file" accept=".json,.xml,.prs" multiple style={{ display: 'none' }} onChange={(e) => { if (e.target.files?.length) void run(e.target.files); e.target.value = ''; }} />
