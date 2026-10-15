@@ -16,6 +16,7 @@
     "dev:product": "vite --mode product",
     "build:server": "esbuild server/main.ts --bundle --platform=node --format=esm --target=node22 --outfile=server-dist/server.mjs --banner:js=\"import{createRequire as __cr}from'node:module';const require=__cr(import.meta.url);\" --external:node:*",
     "package": "node scripts/package.mjs",
+    "release": "node scripts/release.mjs",
     "dev:web": "vite --mode web",
     "build:web": "tsc -b && vite build --mode web --outDir dist-web"
   },

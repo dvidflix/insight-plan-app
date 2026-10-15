@@ -6,3 +6,9 @@ ifcclash>=0.0.4             # optional but used for clash detection
 
 # Optional / nice to have
 tqdm                        # if you want progress bars later
+
+# Used by the IFC tools (strip, translate, merge, split) and the generator
+ifcpatch>=0.8.0
+requests>=2.31.0
+numpy
+shapely

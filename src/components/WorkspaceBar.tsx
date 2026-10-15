@@ -1,6 +1,7 @@
 import { FEATURES } from '../features';
 import { blockedWindows, openBlockedWindows, useWorkspaces, workspaceActions, workspaceDirty } from '../state/workspaces';
 import { UpdateChip } from './UpdateChip';
+import { PackageUpdateChip } from './PackageUpdateChip';
 import { IconAddCircleOutline, IconLaunch, IconRemove } from './icons';
 
 /** The workspaces (Inputs, Custom, ...), in the view picker's menu: a workspace keeps how the app is set up, exactly, when you save it
@@ -120,6 +121,7 @@ export function WindowsFooter({ onNewWindow, close }: { onNewWindow: () => void;
           </button>
         )}
         {FEATURES.selfUpdate && <div className="ws-ws__update"><UpdateChip /></div>}
+        {FEATURES.packageUpdate && <div className="ws-ws__update"><PackageUpdateChip /></div>}
     </div>
   );
 }

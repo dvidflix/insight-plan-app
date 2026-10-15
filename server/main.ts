@@ -4,9 +4,11 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { wikiPlugin } from '../vite-plugins/wiki';
 import { idsPlugin } from '../vite-plugins/ids';
+import { ifcToolsPlugin } from '../vite-plugins/ifcTools';
 import { projectDbPlugin } from '../vite-plugins/projectDbPlugin';
 import { modelsPlugin } from '../vite-plugins/modelsPlugin';
 import { scenariosPlugin } from '../vite-plugins/scenarios';
+import { registerPackageUpdater } from './packageUpdater';
 
 /** The production server of the product edition: serves the built app (dist/) and the same /api endpoints the Vite dev
     server provides (project database, models, Scenarios, IDS, Wiki) — no Vite, no internet. It is bundled to
@@ -68,9 +70,12 @@ function sameOrigin(req: IncomingMessage): boolean {
 const closers: (() => void)[] = [];
 const httpServer = { on: (event: string, fn: () => void) => { if (event === 'close') closers.push(fn); } };
 
-for (const plugin of [wikiPlugin(), idsPlugin(), projectDbPlugin(), modelsPlugin(), scenariosPlugin()]) {
+for (const plugin of [wikiPlugin(), idsPlugin(), ifcToolsPlugin(), projectDbPlugin(), modelsPlugin(), scenariosPlugin()]) {
   (plugin.configureServer as unknown as (s: unknown) => void)({ middlewares, httpServer });
 }
+
+// Updates of the packaged app: download in the background, install on the next start (or now, via the launcher: exit code 75).
+registerPackageUpdater(middlewares, (code) => shutdown(code));
 
 const server = http.createServer((req, res) => {
   const host = (req.headers.host ?? '').split(':')[0];
@@ -101,6 +106,6 @@ server.on('error', (e: NodeJS.ErrnoException) => {
 });
 server.listen(PORT, HOST, () => console.log(`Insight Plan is running at http://localhost:${PORT}  (this computer only; close this window to stop it)`));
 
-const shutdown = () => { for (const close of closers) try { close(); } catch { /* closing anyway */ } server.close(); process.exit(0); };
-process.on('SIGINT', shutdown);
-process.on('SIGTERM', shutdown);
+const shutdown = (code = 0) => { for (const close of closers) try { close(); } catch { /* closing anyway */ } server.close(); process.exit(code); };
+process.on('SIGINT', () => shutdown());
+process.on('SIGTERM', () => shutdown());

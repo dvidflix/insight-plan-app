@@ -8,6 +8,8 @@ const internal = EDITION === 'internal';
 export const FEATURES = {
   /** "Update available" from GitHub, and Update now (git pull). */
   selfUpdate: internal,
+  /** The packaged app downloads signed updates in the background (server/packageUpdater.ts). */
+  packageUpdate: EDITION === 'product',
   /** File details and model data synced with SeaTable. */
   seatable: internal,
   /** The External data and Dashboards pages (SeaTable / Superset in a frame). */
