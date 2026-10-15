@@ -80,7 +80,7 @@ const ROW_BUTTONS = [
   { id: 'eye', glyph: '👁', label: 'Show / hide in 3D' },
   { id: 'edit', glyph: '✎', label: 'Edit' },
   { id: 'dup', glyph: '⧉', label: 'Duplicate' },
-  { id: 'del', glyph: '✕', label: 'Delete' },
+  { id: 'del', glyph: '⊖', label: 'Delete' },
 ] as const;
 type RowButton = (typeof ROW_BUTTONS)[number]['id'];
 

@@ -11,7 +11,8 @@ import { applyFieldFilters, buildFilterFields } from '../../schedule/filterField
 import { useCalcFilterFields } from '../../schedule/calculatedColumns';
 import { spreadColumns } from '../../schedule/periodShare';
 import { IconTune } from '../icons';
-import { isSettingsOpen, useSettingsPaneStore } from '../../state/settingsPaneStore';
+import { configFocusProps } from '../../state/listConfigStore';
+import { openConfig } from '../ListConfig';
 import { useTasksSettingsStore } from '../../state/tasksSettingsStore';
 
 export type TasksMode = 'active' | 'starting' | 'finishing';
@@ -97,7 +98,6 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
   const [mode, setMode] = usePersistedState<Mode>('sequence.tasksMode', 'active');
   // Columns, filters, grouping, sorting and colours are set in the Tasks settings pane (TasksDock).
   const settings = useTasksSettingsStore();
-  const settingsOn = useSettingsPaneStore((s) => isSettingsOpen(s.target, 'tasks'));
   const calcFields = useCalcFilterFields(model);
   const filterFields = useMemo(() => buildFilterFields(model, calcFields), [model, calcFields]);
 
@@ -112,7 +112,7 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
   const ruleColour = (a: Activity) => resolveRuleColor(settings.colorRules, a, (field, act) => catalogById.get(field)?.text(act, columnCtx));
 
   return (
-    <div className="tasks">
+    <div className="tasks" {...configFocusProps('tasks')}>
       <div className="tasks__head">
         <div className="tasks__period">
           <span className="tasks__unit">{UNIT_NOUN[stepUnit]}</span>
@@ -120,7 +120,7 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
           <span className="tasks__count" title={`${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} in this period`}>· {tasks.length.toLocaleString()}</span>
         </div>
         <div className="tasks__tools">
-          <button type="button" className={`icon-btn${settingsOn ? ' is-on' : ''}`} aria-pressed={settingsOn} aria-label="Tasks settings" title={settingsOn ? 'Hide the Tasks settings (columns, filters, group, sort, colour)' : 'Show the Tasks settings (columns, filters, group, sort, colour)'} onClick={() => useSettingsPaneStore.getState().toggle('tasks')}>
+          <button type="button" className="icon-btn" aria-label="Tasks settings" title="Set up the Tasks: columns, filters, group, sort, colour" onClick={() => openConfig('tasks')}>
             <IconTune />
           </button>
           <div className="heat__tabs" role="tablist">

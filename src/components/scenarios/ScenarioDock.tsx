@@ -155,7 +155,7 @@ export function ScenarioDock() {
   // Rules has a dock panel of its own here.
   const tab = ready && cfgTab !== 'rules' ? cfgTab : 'scenario';
   return (
-    <SidePaneDock>
+    <SidePaneDock id="scenarioSettings" label="Scenarios settings">
       <div className="scn-dock" aria-label="Scenario">
         <div className="side-pane__bar scn-dock__bar" role="tablist">
           {tabs.map((t) => (

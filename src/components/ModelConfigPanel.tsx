@@ -2,7 +2,7 @@ import { FEATURES } from '../features';
 import { PropertiesGrid } from './PropertiesGrid';
 import { RecipesDock } from './scenarios/rules/RecipesEditor';
 import { BottomDock } from './BottomDock';
-import { useEffect, useMemo, useRef, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
 import { rerenderTables } from '../viewer/viewerUI';
@@ -31,10 +31,27 @@ import { SearchSetsPanel } from './SearchSetsPanel';
 import { DataTablePanel } from './DataTablePanel';
 import { useDataTableStore } from '../state/dataTableStore';
 import { DockPanel } from './Dock';
+import { DockGantt } from './sequence/DockGantt';
+import { useSequenceSchedule } from '../state/scheduleStore';
 import { useDockStore } from '../state/dockStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
 import { useAppPrefsStore, useExperimental } from '../state/appPrefsStore';
 import { useViewSettingsStore } from '../state/viewSettingsStore';
+
+/** The Gantt as a panel on the Models page too (4D Sequencing and Programmes have it as well): the same Gantt, here without a
+    timeline to follow beyond the date line, so a programme can sit beside the 3D view whichever page it is. */
+function ModelsGanttPanel() {
+  const model = useSequenceSchedule();
+  const [picked, setPicked] = useState<string | null>(null);
+  return (
+    <DockPanel id="gantt" label="Gantt">
+      {model
+        ? <DockGantt model={model} selectedId={picked} highlightedIds={NO_IDS} scrollToId={null} onSelect={(a) => setPicked(a.id)} />
+        : <div style={{ padding: 12, color: 'var(--text-dim)' }}>Load a programme in Inputs to see it here.</div>}
+    </DockPanel>
+  );
+}
+const NO_IDS = new Set<string>();
 
 /** The Models page's tools (Model checks, Compare models, Topics): dock panels beside / under the 3D view, like 4D
     Sequencing's Gantt, Tasks and Scenarios — each can sit left, bottom or right (the Panels menu), and panels on the
@@ -248,6 +265,7 @@ export function ModelConfigPanel() {
   return (
     <>
       <ModelToolsPanel />
+      <ModelsGanttPanel />
       <ModelDockPanels
         page="model"
         colour

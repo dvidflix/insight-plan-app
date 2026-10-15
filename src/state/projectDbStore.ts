@@ -146,6 +146,9 @@ async function syncProgrammes(reloadAll: boolean) {
   if (!db) return;
   const programmes = await fetchProgrammes(db.root);
   set({ programmes });
+  // A second window gets the programmes from the window that opened it (state/windowSync.ts): reading them again from the
+  // database would take as long a second time, in both windows' memory.
+  if (IS_SATELLITE) return;
   const ids = new Set(programmes.map((p) => p.id));
   const store = useScheduleStore.getState();
   for (const s of store.schedules) if (s.dbProgrammeId !== undefined && !ids.has(s.dbProgrammeId)) store.removeSchedule(s.id);

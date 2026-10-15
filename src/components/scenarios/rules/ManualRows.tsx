@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useEditableGrid } from '../../useEditableGrid';
 import { setCrews, setExtras, setRelations, useScenarioStore } from '../../../state/scenarioStore';
 import type { ScenarioCrew, ScenarioExtra, ScenarioRelation } from '../../../scenarios/api';
 import { useScenarioView } from '../../../scenarios/useScenarioView';
@@ -152,6 +153,43 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
   const bulkIds = ids(chosen);
   const bulk = (patch: Partial<ExtraTag>) => setTags(bulkIds, patch);
   const selectStyle = { minWidth: 0 } as const;
+  // The columns typed in as a spreadsheet's: range, fill down (Ctrl+D, the corner square), copy and paste.
+  const grid = useEditableGrid({
+    rows: shown,
+    get: (col, { e }) => {
+      const t = tags[e.TaskID] ?? {};
+      switch (col) {
+        case 'name': return e.Name;
+        case 'days': return String(e.DurationDays);
+        case 'bs': return e.BaselineStart;
+        case 'bf': return e.BaselineFinish;
+        case 'kind': return t.kind ?? '';
+        case 'building': return t.building ?? '';
+        case 'level': return t.level ?? '';
+        case 'task': return t.task ?? '';
+      }
+      return '';
+    },
+    write: (col, cells) => {
+      if (col === 'name' || col === 'days' || col === 'bs' || col === 'bf') {
+        const to = new Map(cells.map(([at, text]) => [shown[at].i, text]));
+        setExtras(extras.map((x, j) => {
+          const v = to.get(j);
+          if (v === undefined) return x;
+          return col === 'name' ? { ...x, Name: v } : col === 'days' ? { ...x, DurationDays: Math.max(0, Number(v) || 0) } : col === 'bs' ? { ...x, BaselineStart: v } : { ...x, BaselineFinish: v };
+        }));
+        return;
+      }
+      ctx.change((r) => {
+        let next = r.extraTags;
+        for (const [at, text] of cells) {
+          const patch: Partial<ExtraTag> = col === 'kind' ? { kind: text as ExtraKind | '' } : col === 'building' ? { building: text.trim() } : col === 'level' ? { level: text.trim().toUpperCase() } : { task: text };
+          next = patchTags(next, [shown[at].e.TaskID], patch);
+        }
+        return { ...r, extraTags: next };
+      });
+    },
+  });
 
   return (
     <RuleCard
@@ -211,7 +249,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
       {extras.length === 0 && <div className="scn-dim">No extra activities. Add one, or paste a table from a spreadsheet.</div>}
       {extras.length > 0 && (
         <div className="rule-extras__scroll">
-          <table className="scn-crews rule-extras">
+          <table className="scn-crews rule-extras xgrid" {...grid.grid}>
             <thead>
               <tr>
                 <th><input type="checkbox" checked={allShown} onChange={() => setPicked(allShown ? new Set() : new Set(shown.map(({ i }) => i)))} aria-label="Tick all" /></th>
@@ -219,37 +257,39 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
               </tr>
             </thead>
             <tbody>
-              {shown.map(({ e, i }) => {
+              {shown.map(({ e, i }, at) => {
                 const t = tags[e.TaskID] ?? {};
                 const bad = problem(e);
                 const choice = wbsChoice(t.wbs);
                 return (
-                  <tr key={i} className={`${picked.has(i) ? 'is-picked' : ''}${bad ? ' is-overridden' : ''}`} title={bad ?? undefined}>
+                  <tr key={i} data-line={at} className={`${picked.has(i) ? 'is-picked' : ''}${bad ? ' is-overridden' : ''}`} title={bad ?? undefined}>
                     <td><input type="checkbox" checked={picked.has(i)} onChange={() => toggle(i)} aria-label={`Tick ${e.TaskID}`} /></td>
                     <td><input className={`rule-extras__id${bad ? ' is-unknown' : ''}`} value={e.TaskID} onChange={(ev) => editRow(i, { TaskID: ev.target.value })} aria-label="ID" spellCheck={false} /></td>
-                    <td><input value={e.Name} onChange={(ev) => editRow(i, { Name: ev.target.value })} aria-label="Name" /></td>
-                    <td>
+                    <td className={`xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><input value={e.Name} onChange={(ev) => editRow(i, { Name: ev.target.value })} aria-label="Name" />{grid.handle('name', at)}</td>
+                    <td className={`xgrid__cell${grid.sel('kind', at)}`} data-col="kind" data-row={at}>
                       <select value={t.kind ?? ''} onChange={(ev) => setTags([e.TaskID], { kind: ev.target.value as ExtraKind | '' })} aria-label="Type">
                         {EXTRA_KINDS.map((k) => <option key={k.value || 'auto'} value={k.value} title={k.tip}>{k.label}</option>)}
                       </select>
+                      {grid.handle('kind', at)}
                     </td>
-                    <td className="scn-num"><input type="number" min={0} step="any" value={e.DurationDays} onChange={(ev) => editRow(i, { DurationDays: Math.max(0, Number(ev.target.value) || 0) })} aria-label="Days" /></td>
-                    <td><input list="rule-extra-buildings" value={t.building ?? ''} onChange={(ev) => setTags([e.TaskID], { building: ev.target.value.trim() })} aria-label="Building" placeholder="—" /></td>
-                    <td><input list="rule-extra-levels" value={t.level ?? ''} onChange={(ev) => setTags([e.TaskID], { level: ev.target.value.trim().toUpperCase() })} aria-label="Level" placeholder="—" /></td>
+                    <td className={`scn-num xgrid__cell${grid.sel('days', at)}`} data-col="days" data-row={at}><input type="number" min={0} step="any" value={e.DurationDays} onChange={(ev) => editRow(i, { DurationDays: Math.max(0, Number(ev.target.value) || 0) })} aria-label="Days" />{grid.handle('days', at)}</td>
+                    <td className={`xgrid__cell${grid.sel('building', at)}`} data-col="building" data-row={at}><input list="rule-extra-buildings" value={t.building ?? ''} onChange={(ev) => setTags([e.TaskID], { building: ev.target.value.trim() })} aria-label="Building" placeholder="—" />{grid.handle('building', at)}</td>
+                    <td className={`xgrid__cell${grid.sel('level', at)}`} data-col="level" data-row={at}><input list="rule-extra-levels" value={t.level ?? ''} onChange={(ev) => setTags([e.TaskID], { level: ev.target.value.trim().toUpperCase() })} aria-label="Level" placeholder="—" />{grid.handle('level', at)}</td>
                     <td>
                       <select value={choice} onChange={(ev) => setTags([e.TaskID], { wbs: wbsFromChoice(ev.target.value) })} aria-label="WBS">
                         {WBS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                       </select>
                       {choice === 'path' && <input value={(t.wbs ?? '').slice(5)} onChange={(ev) => setTags([e.TaskID], { wbs: `path:${ev.target.value}` })} placeholder="Folder / Subfolder" aria-label="WBS folder" spellCheck={false} />}
                     </td>
-                    <td>
+                    <td className={`xgrid__cell${grid.sel('task', at)}`} data-col="task" data-row={at}>
                       <select value={t.task ?? ''} onChange={(ev) => setTags([e.TaskID], { task: ev.target.value })} aria-label="Level task">
                         <option value="">all the link names</option>
                         {tasks.map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}
                       </select>
+                      {grid.handle('task', at)}
                     </td>
-                    <td><input type="date" value={e.BaselineStart} onChange={(ev) => editRow(i, { BaselineStart: ev.target.value })} aria-label="Baseline start" /></td>
-                    <td><input type="date" value={e.BaselineFinish} onChange={(ev) => editRow(i, { BaselineFinish: ev.target.value })} aria-label="Baseline finish" /></td>
+                    <td className={`xgrid__cell${grid.sel('bs', at)}`} data-col="bs" data-row={at}><input type="date" value={e.BaselineStart} onChange={(ev) => editRow(i, { BaselineStart: ev.target.value })} aria-label="Baseline start" />{grid.handle('bs', at)}</td>
+                    <td className={`xgrid__cell${grid.sel('bf', at)}`} data-col="bf" data-row={at}><input type="date" value={e.BaselineFinish} onChange={(ev) => editRow(i, { BaselineFinish: ev.target.value })} aria-label="Baseline finish" />{grid.handle('bf', at)}</td>
                     <td className="rule-card__tools">
                       <button type="button" onClick={() => duplicate([i])} title="Duplicate" aria-label="Duplicate"><IconCopy /></button>
                       <button type="button" className="cols__icon cols__icon--remove" onClick={() => remove([i])} title="Delete" aria-label="Delete"><IconRemove /></button>

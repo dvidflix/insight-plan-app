@@ -15,6 +15,7 @@ import { countIds, runSearchSet } from '../../../viewer/searchSets';
 import type { ScenarioRules } from '../../../prs/rules';
 import { downloadBlob } from '../../../utils/download';
 import { IconCopy, IconEye, IconEyeOff, IconDelete, IconRemove } from '../../icons';
+import { useEditableGrid } from '../../useEditableGrid';
 import { RuleCard, useRuleContext } from './RuleParts';
 import { RecipeGraph } from './RecipeGraph';
 import { TaskResources } from './TaskResources';
@@ -136,6 +137,21 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
   };
   const q = filter.trim().toLowerCase();
   const shown = recipe.tasks.map((t, i) => ({ t, i })).filter(({ t }) => !q || JSON.stringify(t).toLowerCase().includes(q));
+  // The columns typed in as a spreadsheet's: range, fill down (Ctrl+D, the corner square), copy and paste. One change for all the cells.
+  const FILL: Record<string, { field: keyof RecipeTask; numeric?: boolean }> = {
+    name: { field: 'name' }, suffix: { field: 'suffix' }, material: { field: 'material' }, days: { field: 'days', numeric: true }, rate: { field: 'rate' },
+    density: { field: 'density' }, crew: { field: 'crew' }, calendar: { field: 'calendar' }, priority: { field: 'priority', numeric: true },
+  };
+  const grid = useEditableGrid({
+    rows: shown,
+    get: (col, { t }) => { const f = FILL[col]; const v = f ? t[f.field] : undefined; return v === undefined || v === null ? '' : String(v); },
+    write: (col, cells) => {
+      const f = FILL[col];
+      if (!f) return;
+      const to = new Map(cells.map(([at, text]) => [shown[at].i, text]));
+      onChange({ ...recipe, tasks: recipe.tasks.map((t, j) => { const v = to.get(j); return v === undefined ? t : { ...t, [f.field]: f.numeric ? num(v) : v === '' ? undefined : v }; }) });
+    },
+  });
   const counts = new Map<string, number>();
   for (const t of recipe.tasks) counts.set(t.phase.trim().toUpperCase(), (counts.get(t.phase.trim().toUpperCase()) ?? 0) + 1);
   /** What is wrong with one task (shown on its row). */
@@ -253,7 +269,7 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
             </div>
           )}
           <div className="rel-scroll">
-            <table className="rel-table rel-table--grid">
+            <table className="rel-table rel-table--grid xgrid" {...grid.grid}>
               <thead>
                 <tr className="rel-group">
                   <th colSpan={2} />
@@ -281,10 +297,10 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
                 </tr>
               </thead>
               <tbody>
-                {shown.map(({ t, i }) => {
+                {shown.map(({ t, i }, at) => {
                   const own = rowProblems(t);
                   return (
-                    <tr key={i} className={`${t.enabled === false ? 'is-off' : ''}${own.length ? ' has-problem' : ''}${selected === i ? ' is-selected' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`} title={own.join('\n') || undefined} onClick={() => setSelected(i)}
+                    <tr key={i} data-line={at} className={`${t.enabled === false ? 'is-off' : ''}${own.length ? ' has-problem' : ''}${selected === i ? ' is-selected' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`} title={own.join('\n') || undefined} onClick={() => setSelected(i)}
                       onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }} onDrop={(e) => { e.preventDefault(); drop(i); }}>
                       <td className="rel-c"><input type="checkbox" checked={t.enabled !== false} onChange={(e) => setTask(i, { enabled: e.target.checked ? undefined : false })} aria-label="Task on" /></td>
                       <td
@@ -293,26 +309,27 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
                         onDragEnd={() => setDrag(null)}
                       >{i + 1}</td>
                       <td><Cell value={t.phase} list="recipe-phases" onChange={(v) => rename(i, v)} width={116} /></td>
-                      {chain && <td><Cell value={t.name} onChange={(v) => setTask(i, { name: v || undefined })} width={120} /></td>}
-                      {chain && <td><Cell value={t.suffix} onChange={(v) => setTask(i, { suffix: v || undefined })} width={44} /></td>}
+                      {chain && <td className={`xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><Cell value={t.name} onChange={(v) => setTask(i, { name: v || undefined })} width={120} />{grid.handle('name', at)}</td>}
+                      {chain && <td className={`xgrid__cell${grid.sel('suffix', at)}`} data-col="suffix" data-row={at}><Cell value={t.suffix} onChange={(v) => setTask(i, { suffix: v || undefined })} width={44} />{grid.handle('suffix', at)}</td>}
                       {chain && (
-                        <td>
+                        <td className={`xgrid__cell${grid.sel('material', at)}`} data-col="material" data-row={at}>
                           <select className="rel-cell" style={{ width: 72 }} value={t.material ?? ''} onChange={(e) => setTask(i, { material: (e.target.value || undefined) as RecipeTask['material'] })}>
                             <option value="">none</option>
                             <option value="rebar">rebar</option>
                             <option value="concrete">concrete</option>
                           </select>
+                          {grid.handle('material', at)}
                         </td>
                       )}
                       {chain && <td><FollowsCell recipe={recipe} phase={t.phase} onChange={(text) => follow(i, text)} /></td>}
                       {chain && <td className="rel-c">{flag(i, 'finishAfter', 'Finish after')}</td>}
                       {chain && <td className="rel-c">{flag(i, 'gates', 'Gates what follows')}</td>}
-                      <td><Cell type="number" value={t.days} onChange={(v) => setTask(i, { days: num(v) })} width={46} /></td>
-                      <td><Cell value={t.rate} list="recipe-rates" onChange={(v) => setTask(i, { rate: v || undefined })} width={92} /></td>
-                      <td><Cell value={t.density} list="recipe-rates" onChange={(v) => setTask(i, { density: v || undefined })} width={84} /></td>
-                      <td><PickCell value={t.crew} options={rules.crewTemplates.map((c) => c.id)} none="" onChange={(v) => setTask(i, { crew: v || undefined })} width={96} /></td>
-                      <td><PickCell value={t.calendar} options={rules.calendars.map((c) => ({ value: c.id, label: c.name || c.id }))} none="" onChange={(v) => setTask(i, { calendar: v || undefined })} width={72} /></td>
-                      <td><Cell type="number" value={t.priority} onChange={(v) => setTask(i, { priority: num(v) })} width={42} /></td>
+                      <td className={`xgrid__cell${grid.sel('days', at)}`} data-col="days" data-row={at}><Cell type="number" value={t.days} onChange={(v) => setTask(i, { days: num(v) })} width={46} />{grid.handle('days', at)}</td>
+                      <td className={`xgrid__cell${grid.sel('rate', at)}`} data-col="rate" data-row={at}><Cell value={t.rate} list="recipe-rates" onChange={(v) => setTask(i, { rate: v || undefined })} width={92} />{grid.handle('rate', at)}</td>
+                      <td className={`xgrid__cell${grid.sel('density', at)}`} data-col="density" data-row={at}><Cell value={t.density} list="recipe-rates" onChange={(v) => setTask(i, { density: v || undefined })} width={84} />{grid.handle('density', at)}</td>
+                      <td className={`xgrid__cell${grid.sel('crew', at)}`} data-col="crew" data-row={at}><PickCell value={t.crew} options={rules.crewTemplates.map((c) => c.id)} none="" onChange={(v) => setTask(i, { crew: v || undefined })} width={96} />{grid.handle('crew', at)}</td>
+                      <td className={`xgrid__cell${grid.sel('calendar', at)}`} data-col="calendar" data-row={at}><PickCell value={t.calendar} options={rules.calendars.map((c) => ({ value: c.id, label: c.name || c.id }))} none="" onChange={(v) => setTask(i, { calendar: v || undefined })} width={72} />{grid.handle('calendar', at)}</td>
+                      <td className={`xgrid__cell${grid.sel('priority', at)}`} data-col="priority" data-row={at}><Cell type="number" value={t.priority} onChange={(v) => setTask(i, { priority: num(v) })} width={42} />{grid.handle('priority', at)}</td>
                       <td className="rel-c"><button type="button" className="cols__icon cols__icon--remove" onClick={() => remove(i)} aria-label="Delete task"><IconRemove /></button></td>
                     </tr>
                   );

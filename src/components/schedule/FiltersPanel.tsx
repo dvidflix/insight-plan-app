@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
-import { IconSectionChevron } from '../icons';
+import { IconRemove, IconSectionChevron } from '../icons';
 import {
   FILTER_GROUPS, TEXT_MODES, applyFieldFilters, isPresenceMode, buildFilterFields, countActiveFilters, emptyFilterState, rangeActive,
   type FieldFilterState, type FilterFieldDef, type TextMode, type RangeFilter,
@@ -172,7 +172,7 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
             {activeFields.map((f) => (
               <span className="flt__chip" key={f.id}>
                 <span className="flt__chip-label">{f.label}:</span> {summarize(f, state)}
-                <button type="button" onClick={() => clear(f.id)} aria-label={`Clear ${f.label} filter`} title="Remove filter">✕</button>
+                <button type="button" onClick={() => clear(f.id)} aria-label={`Clear ${f.label} filter`} title="Remove filter"><IconRemove /></button>
               </span>
             ))}
           </div>
@@ -259,7 +259,7 @@ function FieldCard({ bare, field: f, fields, base, state, open, onToggle, onChan
           <span className="flt__field-label">{f.label}</span>
           {active && <span className="flt__field-sum">{summarize(f, state)}</span>}
         </button>
-        {active && <button type="button" className="cols__icon cols__icon--remove" onClick={onClear} aria-label={`Clear ${f.label}`} title="Clear">✕</button>}
+        {active && <button type="button" className="cols__icon cols__icon--remove" onClick={onClear} aria-label={`Clear ${f.label}`} title="Clear"><IconRemove /></button>}
       </div>
       {open && (
         <div className="flt__field-body">

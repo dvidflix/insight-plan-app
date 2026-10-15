@@ -10,7 +10,7 @@ const KEY = 'loadedModels';
 
 /** Browser edition: opens the models that were loaded when the project was last used (from the model store, so from their
     converted copies), and keeps that list in the project database as models are loaded and removed. */
-export function ModelsRestoreSync() {
+export function ModelsRestoreSync({ enabled = true }: { /** False: not yet (a second window waits until it shows a page with the 3D view). */ enabled?: boolean }) {
   const engine = useViewerEngine();
   const root = useProjectDbStore((s) => s.db?.root ?? null);
   const models = useModelsStore((s) => s.models);
@@ -19,7 +19,7 @@ export function ModelsRestoreSync() {
   const [restoredFor, setRestoredFor] = useState<string | null>(null);
 
   useEffect(() => {
-    if (!root || started.current === root) return;
+    if (!enabled || !root || started.current === root) return;
     started.current = root;
     void (async () => {
       try {
@@ -37,7 +37,7 @@ export function ModelsRestoreSync() {
         setRestoredFor(root);
       }
     })();
-  }, [root, engine]);
+  }, [root, engine, enabled]);
 
   // Only after the restore, so the empty page at start does not overwrite the saved list.
   const names = JSON.stringify(models.map((m) => m.name).filter((n) => stored.some((s) => s.name === n)).sort());

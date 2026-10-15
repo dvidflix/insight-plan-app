@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { COLUMN_GROUPS, COLUMN_PRESETS, type ColumnDef } from '../../schedule/columns';
 import { PresetBar, type PresetItem } from './PresetBar';
 import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
-import { IconSectionChevron } from '../icons';
+import { IconRemove, IconSectionChevron } from '../icons';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { CalcColumnsEditor } from './CalcColumnsEditor';
 import { queryMatcher } from '../../schedule/search';
@@ -179,7 +179,7 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
             {calculated && renaming !== id && <button type="button" className="cols__icon" onClick={() => setRenaming(id)} aria-label={`Rename ${byId.get(id)!.label}`} title="Give the column a short name of your own (double-click the name too)">✎</button>}
             <button type="button" className="cols__icon" disabled={i === 0} onClick={() => move(id, -1)} aria-label={`Move ${byId.get(id)!.label} up`} title="Move up">↑</button>
             <button type="button" className="cols__icon" disabled={i === shown.length - 1} onClick={() => move(id, 1)} aria-label={`Move ${byId.get(id)!.label} down`} title="Move down">↓</button>
-            <button type="button" className="cols__icon cols__icon--remove" onClick={() => toggle(id)} aria-label={`Hide ${byId.get(id)!.label}`} title="Hide column">✕</button>
+            <button type="button" className="cols__icon cols__icon--remove" onClick={() => toggle(id)} aria-label={`Hide ${byId.get(id)!.label}`} title="Hide column"><IconRemove /></button>
           </div>
         ))}
       </div>

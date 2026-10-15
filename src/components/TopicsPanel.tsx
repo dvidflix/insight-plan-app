@@ -25,7 +25,7 @@ const TOPIC_BUTTONS = [
   { id: 'comments', glyph: '💬', label: 'Number of comments' },
   { id: 'status', glyph: '●', label: 'Status label (the colour on the left stays)' },
   { id: 'edit', glyph: '✎', label: 'Edit' },
-  { id: 'delete', glyph: '✕', label: 'Delete' },
+  { id: 'delete', glyph: '⊖', label: 'Delete' },
 ] as const satisfies readonly RowButtonDef<string>[];
 type TopicButton = (typeof TOPIC_BUTTONS)[number]['id'];
 
@@ -292,7 +292,7 @@ function TopicDetail({ topic: t, windowOf, needAuthor, onBack }: { topic: Topic;
 
       <Field label="Labels">
         <div className="tpc__labels">
-          {t.labels.map((l) => <span key={l} className="tpc__label">{l}<button type="button" aria-label={`Remove ${l}`} onClick={() => update(t.id, { labels: t.labels.filter((x) => x !== l) })}>×</button></span>)}
+          {t.labels.map((l) => <span key={l} className="tpc__label">{l}<button type="button" aria-label={`Remove ${l}`} onClick={() => update(t.id, { labels: t.labels.filter((x) => x !== l) })}><IconRemove /></button></span>)}
           <input value={labelText} placeholder="add a label" list="tpc-labels" onChange={(e) => setLabelText(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addLabel(); } }} onBlur={addLabel} />
         </div>
       </Field>

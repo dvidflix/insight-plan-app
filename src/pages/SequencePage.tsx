@@ -23,7 +23,7 @@ import { placementOf, tagStyleOf, useActiveTagsStore, useTagsStore, type ActiveT
 import { lerpStage, type AppearanceProfile, type AppearanceStage } from '../schedule/appearance';
 import { DockPanel } from '../components/Dock';
 import { MATERIAL_CLASS_COLOURS, encodeSurfaceInColour } from '../viewer/materialClasses';
-import { DOCK_DEFAULTS, activeOn, useDockStore } from '../state/dockStore';
+import { isShowing, useDockStore } from '../state/dockStore';
 import { DockGantt } from '../components/sequence/DockGantt';
 import { TasksDock } from '../components/sequence/TasksDock';
 import { SequenceResources } from '../components/sequence/SequenceResources';
@@ -195,14 +195,7 @@ export function SequencePanel() {
   // Gantt, Tasks, Resources, Scenarios, Clash and Topics are dock panels (components/Dock.tsx): the user puts each on the
   // left, at the bottom or on the right. Scenarios has a second part (its dock) that goes with it while it shows.
   const settingsTarget = useSettingsPaneStore((s) => s.target);
-  const tasksShowing = useDockStore((d) => {
-    const side = d.placement.tasks ?? DOCK_DEFAULTS.tasks;
-    return side !== 'closed' && !d.folded[side] && activeOn(d, side) === 'tasks';
-  });
-  const scenariosShowing = useDockStore((d) => {
-    const side = d.placement.scenarios ?? DOCK_DEFAULTS.scenarios;
-    return side !== 'closed' && !d.folded[side] && activeOn(d, side) === 'scenarios';
-  });
+  const scenariosShowing = useDockStore((d) => isShowing(d, 'scenarios'));
   useEffect(() => {
     if (topicOpenRequest === topicSeen.current) return;
     topicSeen.current = topicOpenRequest;
@@ -799,7 +792,10 @@ export function SequencePanel() {
       </DockPanel>
       <DockPanel id="tasks" label="Tasks">
         {ready && model && ganttColumnCtx ? (
-          <TasksPanel model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} selectedId={ganttSelectedId} getColor={taskColorOf ?? undefined} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
+          <>
+            <TasksPanel model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} selectedId={ganttSelectedId} getColor={taskColorOf ?? undefined} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
+            <TasksDock model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} />
+          </>
         ) : needProgramme}
       </DockPanel>
       <DockPanel id="resources" label="Resources">
@@ -810,7 +806,6 @@ export function SequencePanel() {
       {experimental.scenarios && <DockPanel id="rules" label="Rules"><ScenarioRulesDock /></DockPanel>}
       {experimental.bcf && <DockPanel id="topics" label={`Topics${topicCount ? ` (${topicCount})` : ''}`}><div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div></DockPanel>}
       {experimental.scenarios && scenariosShowing && isSettingsOpen(settingsTarget, 'scenarios') && <ScenarioDock />}
-      {tasksShowing && isSettingsOpen(settingsTarget, 'tasks') && ready && model && ganttColumnCtx && <TasksDock model={model} catalog={ganttCatalog} columnCtx={ganttColumnCtx} />}
     </>
   );
 

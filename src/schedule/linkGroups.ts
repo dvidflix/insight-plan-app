@@ -162,7 +162,7 @@ function matchesTaskFilters(a: Activity, rules: TaskFilterRule[]): boolean {
   return evalChain(active, (r) => evalOp(taskFieldValue(a, r.attribute), r.value, r.op));
 }
 
-function matchesObjectFilters(el: ElementSummary, rules: ObjectFilterRule[]): boolean {
+export function matchesObjectFilters(el: ElementSummary, rules: ObjectFilterRule[]): boolean {
   const active = rules.filter((r) => !r.ignore && r.value !== '');
   return evalChain(active, (r) => evalOp(objectFieldValue(el, r.propertySet, r.attribute), r.value, r.op, r.caseSensitive));
 }

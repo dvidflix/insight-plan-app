@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { useSidePaneStore } from '../state/sidePaneStore';
+import { useDockStore, type DockPanelId } from '../state/dockStore';
+import { DockPanel } from './Dock';
 import { ResizeHandle, useResizableWidth } from './ResizeHandle';
 import { SettingsPanel } from './SettingsMenu';
 import { IconChevronLeft, IconClose, IconGear } from './icons';
@@ -147,15 +149,20 @@ function PaneContent<Id extends string>({ tabs, active, onSelect, bodyClassName,
   );
 }
 
-/** A page's second panel, under the side pane's tabs: the pane is split in
-    two, with a draggable divider. Shown only while the pane is open. */
-export function SidePaneDock({ children }: { children: ReactNode }) {
-  const dockHost = useSidePaneStore((s) => s.dockHost);
-  const open = useSidePaneStore((s) => s.open);
-  useEffect(() => {
-    useSidePaneStore.setState((s) => ({ dockClaims: s.dockClaims + 1 }));
-    return () => { useSidePaneStore.setState((s) => ({ dockClaims: s.dockClaims - 1 })); };
-  }, []);
-  if (!open || !dockHost || !dockHost.isConnected) return null;
-  return createPortal(children, dockHost);
+/** A panel that used to sit under the side pane's tabs (the settings of the 4D Gantt, Tasks and Scenarios): now a dock panel like
+    the rest, brought up when it is made, and it sits left, bottom or right as the Panels menu says. */
+export function SidePaneDock({ id, label, children }: { id: DockPanelId; label: string; children: ReactNode }) {
+  useEffect(() => { useDockStore.getState().reveal(id); }, [id]);
+  return <DockPanel id={id} label={label}>{children}</DockPanel>;
+}
+
+/** The app's Settings as a dock panel, on the pages that have docks (Models, 4D Sequencing, Programmes); the Inputs and
+    Scenarios pages keep Settings in the side pane. */
+export function SettingsDock() {
+  const timeline = useSidePaneStore((s) => s.timelineSettings);
+  return (
+    <DockPanel id="settings" label="Settings">
+      <div className="config-panel__body side-pane__settings" style={{ flex: 1, minHeight: 0 }}><SettingsPanel timeline={timeline} /></div>
+    </DockPanel>
+  );
 }

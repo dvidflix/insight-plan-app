@@ -1,15 +1,17 @@
 import { resolveTheme, useThemeStore } from './state/themeStore';
-import { DuplicateTabButton, DuplicateTabSync } from './components/DuplicateTab';
+import { DuplicateTabSync } from './components/DuplicateTab';
+import { ViewPicker } from './components/ViewPicker';
+import { initialView, noteView } from './state/workspaces';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useDockStore } from './state/dockStore';
-import './state/windowSync';
 import { IS_SATELLITE, SATELLITE_VIEW } from './state/satellite';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
 import { SettingsSync } from './components/SettingsMenu';
 import { CustomFieldsSync } from './components/CustomFieldsSync';
-import { SidePaneHost } from './components/SidePane';
+import { SettingsDock, SidePaneHost } from './components/SidePane';
+import { ListConfigPanels } from './components/ListConfig';
 import { AutoLinkGenerator } from './components/schedule/AutoLinkGenerator';
 import { ScenarioSync } from './components/scenarios/ScenarioParts';
 import { ViewerWorkspace } from './viewer/ViewerWorkspace';
@@ -37,7 +39,6 @@ import { ProjectPicker } from './components/schedule/ProjectPicker';
 import { experimentalOn, useAppPrefsStore } from './state/appPrefsStore';
 import { useRecordingStore } from './state/recordingStore';
 import { DbStatusChip } from './components/ProjectDbPanel';
-import { UpdateChip } from './components/UpdateChip';
 import { FEATURES } from './features';
 import { fileSizeOf, rememberFileSize, rememberModelFile, uploadOf } from './state/modelFiles';
 import { useModelPlacementStore } from './state/modelPlacementStore';
@@ -156,6 +157,9 @@ const mayLeave = (from: PageId, to: PageId) => {
 export default function App() {
   const [page, setPageRaw] = useState<PageId>(() => {
     if (IS_SATELLITE) return 'schedule';
+    // The workspace you were in opens on its page.
+    const ws = initialView()?.page;
+    if (PAGES.some((p) => p.id === ws)) return ws as PageId;
     // Settings › Layout profiles › Open on.
     try {
       const saved = localStorage.getItem('app.startPage');
@@ -199,7 +203,7 @@ export default function App() {
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => (!IS_SATELLITE || p.id === 'schedule') && (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
     [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
@@ -245,7 +249,9 @@ export default function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, [pages]);
   // Programmes opens on the Gantt.
-  const [scheduleTab, setScheduleTab] = useState<ScheduleTabId>((IS_SATELLITE && SATELLITE_VIEW ? SATELLITE_VIEW : 'gantt') as ScheduleTabId);
+  const [scheduleTab, setScheduleTab] = useState<ScheduleTabId>((IS_SATELLITE && SATELLITE_VIEW ? SATELLITE_VIEW : initialView()?.tab ?? 'gantt') as ScheduleTabId);
+  // The workspace keeps the page and view it is on.
+  useEffect(() => { noteView(page, scheduleTab); }, [page, scheduleTab]);
   // Applying a layout (Programmes > Layouts) also opens the view it was saved on.
   const layoutRevision = useScheduleLayoutsStore((s) => s.revision);
   useEffect(() => {
@@ -258,7 +264,8 @@ export default function App() {
   return (
     <ViewerEngineProvider>
       <ThemeSync />
-      {FEATURES.browserData && <ModelsRestoreSync />}
+      {/* A second window loads the models only once it shows a page with the 3D view (loading them is the slow part). */}
+      {FEATURES.browserData && <ModelsRestoreSync enabled={!IS_SATELLITE || visited.has('model') || visited.has('sequence')} />}
       <ProgrammeChoiceSync />
       <FitOnModelsTab page={page} />
       <SettingsSync />
@@ -268,22 +275,10 @@ export default function App() {
       {/* The side pane runs the full window height, beside the top bar too. */}
       <div className="app-frame">
       <div className="app-shell">
-        {!IS_SATELLITE && <header className="app-topbar app-topbar--minimal">
-          <div className="app-topbar__center">
-            <nav className="app-topbar__nav">
-              {pages.map((p) => (
-                <button key={p.id} className={p.id === page ? 'active' : ''} onClick={() => setPage(p.id)} style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                  {p.icon}
-                  {p.label}
-                </button>
-              ))}
-            </nav>
-          </div>
-          <div className="app-topbar__right">
-            {FEATURES.selfUpdate && <UpdateChip />}
-            <DuplicateTabButton />
-          </div>
-        </header>}
+        {IS_SATELLITE
+          ? !viewerVisible && <header className="ws-bar"><ViewPicker pages={pages} page={page} onPage={(id) => setPage(id as PageId)} tab={scheduleTab} onTab={setScheduleTab} /></header>
+          // No bar along the top: Programmes, Models and 4D hold the picker in their own toolbar; the other pages get it as a small button in the corner.
+          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && <div className="ws-float"><ViewPicker pages={pages} page={page} onPage={(id) => setPage(id as PageId)} tab={scheduleTab} onTab={setScheduleTab} /></div>}
         <div className="app-body">
           <div
             style={
@@ -299,11 +294,12 @@ export default function App() {
             }
           >
             <ViewerWorkspace
+              picker={<ViewPicker named pages={pages} page={page} onPage={(id) => setPage(id as PageId)} tab={scheduleTab} onTab={setScheduleTab} />}
               layout={page === 'sequence' ? 'sequence' : 'model'}
               paneActive={page === 'model'}
               panel={page === 'sequence' ? <SequencePanel /> : undefined}
               overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
-              center={page === 'schedule' || visited.has('schedule') ? <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} /> : undefined}
+              center={page === 'schedule' || visited.has('schedule') ? <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={(id) => setPage(id as PageId)} /> : undefined}
               centerShown={page === 'schedule'}
             />
           </div>
@@ -317,7 +313,10 @@ export default function App() {
         </div>
         {page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? null : <StatusBar page={page} />}
       </div>
-      <SidePaneHost />
+      {/* Pages with docks hold their settings as panels (Settings is one of them); the others keep the side pane. */}
+      {!viewerVisible && <SidePaneHost />}
+      <SettingsDock />
+      <ListConfigPanels />
       <AutoLinkGenerator />
       {FEATURES.scenarios && scenariosOn && <ScenarioSync loadOnly />}
       </div>
@@ -333,7 +332,7 @@ const INPUT_BUTTONS = [
   { id: 'hide', glyph: '👁', label: 'Hide / show (unload without removing)' },
   { id: 'edit', glyph: '✎', label: 'Make an editable copy (programmes of the project database)' },
   { id: 'sync', glyph: '⟳', label: 'Sync: show this in the other tabs' },
-  { id: 'remove', glyph: '✕', label: 'Remove / delete' },
+  { id: 'remove', glyph: '⊖', label: 'Remove / delete' },
   { id: 'versions', glyph: '#', label: 'Number of earlier IFC versions' },
 ] as const satisfies readonly RowButtonDef<string>[];
 type InputButton = (typeof INPUT_BUTTONS)[number]['id'];

@@ -1,11 +1,19 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useDismiss } from '../useDismiss';
 import type { ScheduleModel } from '../../schedule/types';
-import { addActivity, addWbs, deleteActivities, deleteWbs, moveActivities, moveWbs, renameWbs, setDataDate, wbsPathOf } from '../../schedule/programmeCommands';
+import { assignResource } from '../../schedule/planResources';
+import { addActivity, addTasksFromObjects, addWbs, deleteActivities, deleteWbs, moveActivities, moveWbs, renameWbs, setDataDate, wbsPathOf } from '../../schedule/programmeCommands';
 import { applyLinkShortcut, type LinkKind } from '../../schedule/linkShortcuts';
 import { editStructure } from '../../state/programmeEdits';
 import { commit } from '../../state/programmeHistory';
 import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { programmeKey } from '../../state/unloadedWbsStore';
+import { useSelectionStore } from '../../state/selectionStore';
+import { useModelsStore } from '../../state/modelsStore';
+import { useLinkGroupsStore } from '../../state/linkGroupsStore';
+import { useScheduleStore } from '../../state/scheduleStore';
+import { computeGroupLinks, matchesObjectFilters } from '../../schedule/linkGroups';
+import type { RelationType } from '../../schedule/types';
 
 interface EditToolsProps {
   /** The programme edited in place that is shown (the only one). */
@@ -37,7 +45,30 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
   const [node, setNode] = useState('');
   const [linkKind, setLinkKind] = useState<LinkKind>('FS');
 
+  // ---- New tasks from the objects picked in the 3D model, linked to them by a Link Group (or none: linked by hand later) ----
+  const [from3d, setFrom3d] = useState(false);
+  const from3dRef = useDismiss<HTMLSpanElement>(from3d, () => setFrom3d(false));
+  const wbsRef = useDismiss<HTMLSpanElement>(open, () => setOpen(false));
+  const [groupId, setGroupId] = useState('');
+  const [perObject, setPerObject] = useState(true);
+  const [taskDays, setTaskDays] = useState('5');
+  const [taskCalendar, setTaskCalendar] = useState('');
+  const [taskChain, setTaskChain] = useState<RelationType | ''>('FS');
+  const [workType, setWorkType] = useState('Install');
+  const [taskKind, setTaskKind] = useState<'task' | 'milestone-finish' | 'milestone-start'>('task');
+  const [taskResource, setTaskResource] = useState('');
+  const selection = useSelectionStore((s) => s.byModel);
+  const loadedModels = useModelsStore((s) => s.models);
+  const groups = useLinkGroupsStore((s) => s.groups);
+  const objects = useMemo(() => loadedModels.flatMap((m) => {
+    const wanted = new Set(selection[m.modelId] ?? []);
+    return wanted.size ? m.elements.filter((el) => wanted.has(el.localId)) : [];
+  }), [loadedModels, selection]);
+  const usable = useMemo(() => groups.filter((g) => g.matchRules.length > 0 && objects.length > 0 && objects.every((el) => matchesObjectFilters(el, g.objectFilters))), [groups, objects]);
+  const group = groups.find((g) => g.id === groupId && usable.includes(g)) ?? usable[0] ?? null;
+
   const ids = () => (picked.size ? [...picked] : selectedId ? [selectedId] : []);
+  const count = picked.size || (selectedId ? 1 : 0);
   const nodes = useMemo(() => model.wbs.map((n) => ({ id: n.id, label: wbsPathOf(model.wbs, n.id) || n.name })).sort((a, b) => a.label.localeCompare(b.label)), [model.wbs]);
   const current = nodes.some((n) => n.id === node) ? node : '';
 
@@ -48,6 +79,31 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
     onSelect(id);
     useActivitySelectionStore.getState().click(id, {}, [id]);
     onNote(`Added ${model.activities.find((a) => a.id === id)?.code ?? 'an activity'}. Rename it and set its duration in the details pane, link it from its predecessor.`);
+  };
+  const createFrom3d = () => {
+    const r = commit('Add tasks from 3D', () => editStructure(key, (m) => {
+      const made = addTasksFromObjects(m, objects, group, {
+        perObject, days: Math.max(0, Number(taskDays) || 0), calendarId: taskCalendar || null, chain: taskChain || null, after: selectedId ?? undefined,
+        workType, type: taskKind,
+      });
+      if ('error' in made || !taskResource) return made;
+      // The resource goes on every new task, in the same step (one undo).
+      const assigned = assignResource(made.model, made.ids, taskResource);
+      return 'error' in assigned ? assigned : { ...made, model: assigned.model };
+    }));
+    if (failed(r)) return onNote(r.error);
+    const { ids: made, notes } = r as { ids: string[]; notes: string[] };
+    const now = useScheduleStore.getState().schedules.find((x) => x.id === model.id);
+    let linked = 0;
+    if (now && group) {
+      const found = new Set<string>();
+      for (const m of loadedModels) for (const id of computeGroupLinks(now, m.elements, group).taskToElements.keys()) found.add(id);
+      linked = made.filter((id) => found.has(id)).length;
+    }
+    useActivitySelectionStore.getState().click(made[0], {}, made);
+    if (made.length > 1) for (const id of made.slice(1)) useActivitySelectionStore.getState().click(id, { ctrl: true }, made);
+    onSelect(made[0]);
+    onNote(`Added ${made.length} ${made.length === 1 ? 'task' : 'tasks'}${group ? `; ${linked} linked to their objects by “${group.name}”` : ', not linked to the objects (no Link Group matches them: define one, or link by hand)'}. ${notes.join(' ')}`.trim());
   };
   const remove = () => {
     const list = ids();
@@ -89,21 +145,74 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
 
   return (
     <div className="schedule-toolbar__edit">
-      <button type="button" className="btn btn--small" onClick={() => add('task')} title="Add an activity after the picked one, in its WBS node (Insert)">+ Activity</button>
-      <button type="button" className="btn btn--small" onClick={() => add('milestone-finish')} title="Add a finish milestone after the picked activity">+ Milestone</button>
-      <button type="button" className="btn btn--small" onClick={remove} disabled={ids().length === 0} title="Delete the picked activities and their links (Delete). Undo puts them back.">Delete</button>
-      <span className="schedule-toolbar__edit-link">
-        <span className="np__seg" role="radiogroup" aria-label="Link type">
-          {LINK_KINDS.map(([k, tip]) => (
-            <button key={k} type="button" role="radio" aria-checked={linkKind === k} className={linkKind === k ? 'is-on' : ''} title={tip} onClick={() => setLinkKind(k)}>{k}</button>
-          ))}
-        </span>
-        <button type="button" className="btn btn--small" onClick={link} disabled={ids().length < 2} title={`Link the picked activities with ${linkKind}: ${LINK_KINDS.find(([k]) => k === linkKind)![1]} ${linkKind === 'FS' ? 'They are chained in start order.' : 'Each is linked from the earliest one.'}`}>Link</button>
+      {/* What the buttons act on, then only the buttons that make sense for it. */}
+      <span className="ctx-label" title="What the buttons here act on">
+        {count === 0 ? 'Nothing picked' : count === 1 ? (model.activities.find((a) => a.id === ids()[0])?.code ?? '1 activity') : `${count} activities`}
       </span>
-      <label className="schedule-toolbar__edit-date" title="The data date: the day the progress is as of. What is not started cannot start before it, and what is left of a started activity runs from it.">
-        Data date <input type="date" value={dateText} onChange={(e) => changeDataDate(e.target.value)} />
-      </label>
-      <span className="schedule-toolbar__edit-wbs">
+      {count <= 1 && (
+        <>
+          <button type="button" className="btn btn--small" onClick={() => add('task')} title="Add an activity after the picked one, in its WBS node (Insert)">+ Activity</button>
+          <button type="button" className="btn btn--small" onClick={() => add('milestone-finish')} title="Add a finish milestone after the picked activity">+ Milestone</button>
+        </>
+      )}
+      {count >= 2 && (
+        <span className="schedule-toolbar__edit-link">
+          <span className="np__seg" role="radiogroup" aria-label="Link type">
+            {LINK_KINDS.map(([k, tip]) => (
+              <button key={k} type="button" role="radio" aria-checked={linkKind === k} className={linkKind === k ? 'is-on' : ''} title={tip} onClick={() => setLinkKind(k)}>{k}</button>
+            ))}
+          </span>
+          <button type="button" className="btn btn--small primary" onClick={link} title={`Link the picked activities with ${linkKind}: ${LINK_KINDS.find(([k]) => k === linkKind)![1]} ${linkKind === 'FS' ? 'They are chained in start order.' : 'Each is linked from the earliest one.'}`}>Link</button>
+        </span>
+      )}
+      {count >= 1 && <button type="button" className="btn btn--small" onClick={remove} title="Delete the picked activities and their links (Delete). Undo puts them back.">Delete</button>}
+      {(objects.length > 0 || from3d) && (
+      <span className="schedule-toolbar__edit-wbs" ref={from3dRef}>
+        <button type="button" className="btn btn--small" aria-expanded={from3d} onClick={() => setFrom3d(!from3d)} title="Make tasks from the objects picked in the 3D model: each gets the values its Link Group matches on, so it is linked to its object at once">From 3D ({objects.length}) ▾</button>
+        {from3d && (
+          <div className="schedule-toolbar__edit-panel" role="group" aria-label="Tasks from 3D">
+            <div className="scn-dim">{objects.length === 0 ? 'Pick objects in the 3D model (Models or 4D page), then come back.' : `${objects.length.toLocaleString()} ${objects.length === 1 ? 'object' : 'objects'} picked.`}</div>
+            <select value={group?.id ?? ''} onChange={(e) => setGroupId(e.target.value)} aria-label="Link Group" disabled={usable.length === 0} title="The Link Group that links the new tasks to the objects: its matching rules say what each task takes from its object">
+              {usable.length === 0 && <option value="">{groups.length === 0 ? 'No Link Groups defined' : 'No Link Group takes these objects'}</option>}
+              {usable.map((g) => <option key={g.id} value={g.id}>{g.name}</option>)}
+            </select>
+            <select value={workType} onChange={(e) => setWorkType(e.target.value)} aria-label="Task type" title="What the work is: the word the task name starts with">
+              {['Install', 'Construct', 'Remove', 'Demolish', 'Temporary'].map((t) => <option key={t} value={t}>Task type: {t}</option>)}
+              <option value="">Task type: none</option>
+            </select>
+            <select value={taskKind} onChange={(e) => setTaskKind(e.target.value as typeof taskKind)} aria-label="Activity type" title="A task with a duration, or a milestone">
+              <option value="task">Activity type: Task</option>
+              <option value="milestone-finish">Activity type: Finish milestone</option>
+              <option value="milestone-start">Activity type: Start milestone</option>
+            </select>
+            <select value={taskResource} onChange={(e) => setTaskResource(e.target.value)} aria-label="Resource" title="A resource of the programme to put on every new task (add them in Resources)">
+              <option value="">Resource: none</option>
+              {(model.resourceCatalog ?? []).filter((r) => !r.virtual).map((r) => <option key={r.id} value={r.id}>Resource: {r.name}</option>)}
+            </select>
+            <label className="np__check"><input type="checkbox" checked={perObject} onChange={(e) => setPerObject(e.target.checked)} /> One task per object</label>
+            <label title="Working days of each new task">Days <input type="number" min={0} step="0.5" value={taskDays} onChange={(e) => setTaskDays(e.target.value)} style={{ width: 56 }} /></label>
+            <select value={taskCalendar} onChange={(e) => setTaskCalendar(e.target.value)} aria-label="Calendar">
+              <option value="">Calendar of the task above</option>
+              {model.calendars.map((c) => <option key={c.id} value={c.id}>{c.name || c.id}</option>)}
+            </select>
+            <select value={taskChain} onChange={(e) => setTaskChain(e.target.value as RelationType | '')} aria-label="Relation between the new tasks" title="How the new tasks follow one another, and the picked task before them">
+              <option value="FS">Relation: Finish to start (FS)</option>
+              <option value="SS">Relation: Start to start (SS)</option>
+              <option value="FF">Relation: Finish to finish (FF)</option>
+              <option value="SF">Relation: Start to finish (SF)</option>
+              <option value="">No links</option>
+            </select>
+            <button type="button" className="btn btn--small primary" disabled={objects.length === 0} onClick={createFrom3d}>Create {perObject ? objects.length || '' : 1} {perObject && objects.length !== 1 ? 'tasks' : 'task'}</button>
+          </div>
+        )}
+      </span>
+      )}
+      {count === 0 && (
+        <label className="schedule-toolbar__edit-date" title="The data date: the day the progress is as of. What is not started cannot start before it, and what is left of a started activity runs from it.">
+          Data date <input type="date" value={dateText} onChange={(e) => changeDataDate(e.target.value)} />
+        </label>
+      )}
+      <span className="schedule-toolbar__edit-wbs" ref={wbsRef}>
         <button type="button" className="btn btn--small" aria-expanded={open} onClick={() => setOpen(!open)} title="Add, rename, move and delete WBS nodes, and move the picked activities into one">WBS ▾</button>
         {open && (
           <div className="schedule-toolbar__edit-panel" role="group" aria-label="WBS">

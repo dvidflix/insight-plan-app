@@ -3,6 +3,9 @@ import { FREE_MODE } from './licence/freeMode';
 // Then the active scene follows every change to the saved settings from the start.
 import { startScenes } from './state/scenes';
 startScenes();
+// And the workspace (the tabs along the top) you are in: the page, panels and second windows as you left them.
+import { startWorkspaces } from './state/workspaces';
+startWorkspaces();
 
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';

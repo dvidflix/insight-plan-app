@@ -1,5 +1,6 @@
 import { IconRemove } from '../icons';
 import { useState } from 'react';
+import { useEditableGrid } from '../useEditableGrid';
 import type { CalendarException, ScheduleCalendar } from '../../schedule/calendar';
 import { DAY_NAMES, dayHours, daySpans, standardSpan, weekWithDayLength } from '../../schedule/calendarData';
 import { addCalendar, deleteCalendar, updateCalendar, type CalendarPatch } from '../../schedule/programmeCommands';
@@ -80,21 +81,41 @@ export function CalendarEditor({ model, cal, used }: { model: ScheduleModel; cal
     const lengths = new Set(DAY_NAMES.filter((n) => days[n]?.working).map((n) => Math.round(dayHours(days[n]) * 100) / 100));
     return lengths.size === 1 ? [...lengths][0] : null;
   };
-  const setDay = (name: string, change: { working?: boolean; start?: string; finish?: string }) => {
-    const current = week[name];
+  /** One day of the week with a change made to it. */
+  const dayWith = (from: Days, name: string, change: { working?: boolean; start?: string; finish?: string }) => {
+    const current = from[name];
     const spans = daySpans(current);
     const first = spans[0] ?? standardSpan(cal.hoursPerDay || 8);
     const working = change.working ?? current.working;
     const start = change.start ?? first.start;
     const finish = change.finish ?? spans[spans.length - 1]?.finish ?? first.finish;
     const run1 = change.start !== undefined || change.finish !== undefined || (change.working && spans.length === 0);
-    const day = working
+    return working
       ? (run1 || spans.length === 0 ? { working: true, range: `${start}–${finish}`, spans: [{ start, finish }] } : { ...current, working: true })
       : { working: false, range: '' };
-    const days = { ...week, [name]: day };
-    const hours = sharedHours(days);
-    patch(`Edit ${name} of ${cal.name}`, { days, ...(hours && hours > 0 && hours !== cal.hoursPerDay ? { hoursPerDay: hours } : {}) }, `cal:${cal.id}:${name}`);
   };
+  const hoursPatch = (days: Days) => {
+    const hours = sharedHours(days);
+    return hours && hours > 0 && hours !== cal.hoursPerDay ? { hoursPerDay: hours } : {};
+  };
+  const setDay = (name: string, change: { working?: boolean; start?: string; finish?: string }) => {
+    const days = { ...week, [name]: dayWith(week, name, change) };
+    patch(`Edit ${name} of ${cal.name}`, { days, ...hoursPatch(days) }, `cal:${cal.id}:${name}`);
+  };
+  // Start and Finish typed as a spreadsheet's: range, fill down (Ctrl+D, the corner square: Monday's hours down to Friday), copy and paste.
+  const grid = useEditableGrid({
+    rows: WEEK as string[],
+    get: (col, name) => { const spans = daySpans(week[name]); return !week[name].working || spans.length === 0 ? '' : col === 'start' ? spans[0].start : spans[spans.length - 1].finish; },
+    write: (col, cells) => {
+      let days = { ...week };
+      for (const [at, text] of cells) {
+        const name = WEEK[at];
+        if (!/^\d{2}:\d{2}$/.test(text.trim()) || !days[name].working) continue;
+        days = { ...days, [name]: dayWith(days, name, col === 'start' ? { start: text.trim() } : { finish: text.trim() }) };
+      }
+      patch(`Fill the working week of ${cal.name}`, { days, ...hoursPatch(days) });
+    },
+  });
 
   const exceptions = cal.exceptions ?? [];
   const addDates = () => {
@@ -124,33 +145,39 @@ export function CalendarEditor({ model, cal, used }: { model: ScheduleModel; cal
         {note && <span role="alert" style={{ color: 'var(--danger, #b91c1c)' }}>{note}</span>}
       </div>
 
-      <table style={{ marginTop: 8, borderCollapse: 'collapse' }} aria-label={`Working week of ${cal.name}`}>
+      <table className="xgrid" style={{ marginTop: 8 }} aria-label={`Working week of ${cal.name}`} {...grid.grid}>
+        <thead><tr><th>Day</th><th>Start</th><th>Finish</th></tr></thead>
         <tbody>
-          {WEEK.map((name) => {
+          {WEEK.map((name, at) => {
             const day = week[name];
             const spans = daySpans(day);
             const split = spans.length > 1;
             return (
-              <tr key={name}>
-                <td style={{ paddingRight: 8 }}>
+              <tr key={name} data-line={at}>
+                <td>
                   <label style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     <input type="checkbox" checked={day.working} onChange={(e) => setDay(name, { working: e.target.checked })} /> {name}
                   </label>
                 </td>
                 {day.working && !split && (
-                  <td>
-                    <input type="time" value={spans[0]?.start ?? ''} onChange={(e) => e.target.value && setDay(name, { start: e.target.value })} aria-label={`${name} starts`} />
-                    {' – '}
-                    <input type="time" value={spans[0]?.finish ?? ''} onChange={(e) => e.target.value && setDay(name, { finish: e.target.value })} aria-label={`${name} finishes`} />
-                  </td>
+                  <>
+                    <td className={`xgrid__cell${grid.sel('start', at)}`} data-col="start" data-row={at}>
+                      <input type="time" value={spans[0]?.start ?? ''} onChange={(e) => e.target.value && setDay(name, { start: e.target.value })} aria-label={`${name} starts`} />
+                      {grid.handle('start', at)}
+                    </td>
+                    <td className={`xgrid__cell${grid.sel('finish', at)}`} data-col="finish" data-row={at}>
+                      <input type="time" value={spans[0]?.finish ?? ''} onChange={(e) => e.target.value && setDay(name, { finish: e.target.value })} aria-label={`${name} finishes`} />
+                      {grid.handle('finish', at)}
+                    </td>
+                  </>
                 )}
                 {day.working && split && (
-                  <td className="scn-dim" title="This day has a break. Changing its times makes it one run.">
+                  <td colSpan={2} className="scn-dim" title="This day has a break. Changing its times makes it one run.">
                     {runText(spans)}{' '}
                     <button type="button" className="link-btn" onClick={() => setDay(name, { start: spans[0].start, finish: spans[spans.length - 1].finish })}>make it one run</button>
                   </td>
                 )}
-                {!day.working && <td className="scn-dim">off</td>}
+                {!day.working && <td colSpan={2} className="scn-dim">off</td>}
               </tr>
             );
           })}

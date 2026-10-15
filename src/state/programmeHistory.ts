@@ -55,9 +55,14 @@ interface HistoryState {
 export const useProgrammeHistory = create<HistoryState>(() => ({ undos: [], redos: [] }));
 
 /** Makes an edit that can be undone: runs `edit` and, if it changed anything, records it as one step called `label`. */
+let nesting = 0;
 export function commit<T>(label: string, edit: () => T, opts: { merge?: string } = {}): T {
+  // A commit inside a commit (a fill that sets many cells, each through its own edit) is part of the outer step: one undo.
+  if (nesting > 0) return edit();
   const before = snapshot();
-  const result = edit();
+  nesting++;
+  let result: T;
+  try { result = edit(); } finally { nesting--; }
   const after = snapshot();
   if (same(before, after)) return result;
   const now = Date.now();

@@ -1,5 +1,6 @@
 import { IconRemove } from '../icons';
 import { useState } from 'react';
+import { useDismiss } from '../useDismiss';
 import type { ScheduleModel } from '../../schedule/types';
 import { useBaselineChoiceStore, useBaselinesOf } from '../../state/baselines';
 import { removeBaseline, renameBaseline, saveBaselineOf, useProjectDbStore } from '../../state/projectDbStore';
@@ -14,6 +15,7 @@ const when = (iso: string) => {
     programme is shown against (the Gantt's baseline bars, the Saved baseline columns, Compare). */
 export function BaselineMenu({ model }: { model: ScheduleModel }) {
   const [open, setOpen] = useState(false);
+  const boxRef = useDismiss<HTMLSpanElement>(open, () => setOpen(false));
   const baselines = useBaselinesOf(model);
   const programmes = useProjectDbStore((s) => s.programmes);
   const busy = useProjectDbStore((s) => s.busy);
@@ -34,7 +36,7 @@ export function BaselineMenu({ model }: { model: ScheduleModel }) {
   };
 
   return (
-    <span className="schedule-toolbar__edit-wbs">
+    <span className="schedule-toolbar__edit-wbs" ref={boxRef}>
       <button type="button" className={`btn btn--small${chosen !== null ? ' primary' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)} title="Save the programme as a baseline, and choose the baseline it is shown against">
         Baselines ▾
       </button>

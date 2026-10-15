@@ -4,7 +4,7 @@ import { FEATURES } from '../features';
 import { experimentalOn } from '../state/appPrefsStore';
 import { pushFiles, type PushFile } from '../seatable/filesClient';
 import { queryMatcher } from '../schedule/search';
-import { IconChevronDown, IconChevronRight, IconExpander } from './icons';
+import { IconRemove, IconChevronDown, IconChevronRight, IconExpander } from './icons';
 import { SearchRow } from './SearchRow';
 import { useModelsStore } from '../state/modelsStore';
 import { useScheduleStore } from '../state/scheduleStore';
@@ -125,7 +125,7 @@ export function InputsFilters() {
             {activeKeys.map((k) => (
               <span className="flt__chip" key={k.id}>
                 <span className="flt__chip-label">{k.label}:</span> {filters[k.id].map(labelOf).join(', ')}
-                <button type="button" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label} filter`} title="Remove filter">✕</button>
+                <button type="button" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label} filter`} title="Remove filter"><IconRemove /></button>
               </span>
             ))}
           </div>
@@ -155,7 +155,7 @@ export function InputsFilters() {
                   <button type="button" className="cols__link" onClick={() => setFilter(k.id, [])}>None</button>
                 </span>
               )}
-              {kept.length > 0 && <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label}`} title="Clear">✕</button>}
+              {kept.length > 0 && <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label}`} title="Clear"><IconRemove /></button>}
             </div>
             {isOpen && (
               <div className="flt__field-body">

@@ -11,35 +11,34 @@ import { usePersistedState } from '../../utils/persistedState';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { activityFinishMs, activityStartMs } from '../../schedule/linking';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
-import { useSettingsPaneStore } from '../../state/settingsPaneStore';
+import { configFocusProps } from '../../state/listConfigStore';
+import { ListConfig, openConfig } from '../ListConfig';
 import { ColumnsPanel } from '../schedule/ColumnsPanel';
 import { GroupPanel } from '../schedule/GroupPanel';
 import { SortPanel } from '../schedule/SortPanel';
 import { ColorPanel } from '../schedule/ColorPanel';
-import { SidePaneDock } from '../SidePane';
-import { IconColumns, IconGroup, IconPalette, IconSort, IconTune } from '../icons';
-
-const SETTINGS_TABS = [
-  { id: 'columns', label: 'Columns', icon: <IconColumns /> },
-  { id: 'group', label: 'Group', icon: <IconGroup /> },
-  { id: 'sort', label: 'Sort', icon: <IconSort /> },
-  { id: 'color', label: 'Color', icon: <IconPalette /> },
-] as const;
+import { IconTune } from '../icons';
 
 const ZOOM_LABEL: Record<Zoom, string> = { hour: 'Hours', day: 'Days', week: 'Weeks', month: 'Months', quarter: 'Quarters', year: 'Years' };
 
 /** The 4D page's Gantt: the Programmes Gantt in a dock — the same columns, grouping, sorting, colour rules, zoom and
     options (they are shared, set up once) — with the 4D timeline's date drawn as a line across it, and the colours the
     Appearance Profiles give the tasks in 3D when those apply. */
-export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollToId, onSelect, onOpen }: {
+export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollToId, onSelect, onOpen, activities: given, dimmedIds, onLinkShortcut }: {
   model: ScheduleModel;
+  /** The tasks to show when the page has filtered them already (Programmes: its filters and the driving path); else all of them. */
+  activities?: Activity[];
+  /** Tasks drawn faded (Programmes: the driving path's curtain). */
+  dimmedIds?: Set<string>;
+  /** Alt+S / Alt+F on the chart: link the picked tasks (Programmes). */
+  onLinkShortcut?: (kind: 'SS' | 'FS') => void;
   /** The colour a task has in the 4D view now (an Appearance Profile stage), else null. */
   getColor?: (a: Activity) => string | null;
   selectedId: string | null;
   highlightedIds: Set<string>;
   scrollToId: string | null;
   onSelect: (a: Activity) => void;
-  onOpen: (a: Activity) => void;
+  onOpen?: (a: Activity) => void;
 }) {
   const ref = useRef<GanttHandle>(null);
   const catalog = useColumnCatalog(model);
@@ -58,8 +57,6 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
   const [collapseAll, setCollapseAll] = useState(0);
   const [expandAll, setExpandAll] = useState(0);
   const date = useSequenceTimelineStore((s) => s.date);
-  const settingsOn = useSettingsPaneStore((s) => s.target === 'gantt');
-  const [settingsTab, setSettingsTab] = usePersistedState<(typeof SETTINGS_TABS)[number]['id']>('sequence.ganttSettingsTab', 'columns');
   const valuesOf = useMemo(() => {
     const cache = new Map<string, { value: string; count: number }[]>();
     return (fieldId: string) => {
@@ -78,8 +75,9 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
 
   const activities = useMemo(() => {
     const tokens = searchTokens(search);
-    return tokens.length ? model.activities.filter((a) => matchesSearchTokens(activitySearchText(a), tokens)) : model.activities;
-  }, [model, search]);
+    const base = given ?? model.activities;
+    return tokens.length ? base.filter((a) => matchesSearchTokens(activitySearchText(a), tokens)) : base;
+  }, [model, search, given]);
 
   const catalogById = useMemo(() => new Map(catalog.map((c) => [c.id, c])), [catalog]);
   const ruleColour = (a: Activity) => resolveRuleColor(set.colorRules, a, (field, act) => catalogById.get(field)?.text(act, columnCtx));
@@ -114,11 +112,11 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
     ['Critical', critical, setCritical, 'Critical tasks in red'],
     ['Baseline', baseline, setBaseline, 'The target dates under each bar'],
     ['Names', labels, setLabels, 'Task names beside the bars'],
-    ['WBS', set.groupByWbs, set.setGroupByWbs, 'Group by WBS (the Programmes Gantt\'s group rules, when set, win)'],
+    ['WBS', set.groupByWbs, set.setGroupByWbs, 'Group by WBS (the Gantt page\'s group rules, when set, win)'],
   ] as const;
 
   return (
-    <div className="dockgantt">
+    <div className="dockgantt" {...configFocusProps('gantt')}>
       <div className="dockgantt__bar">
         <input className="filterbar__search dockgantt__search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search anything: ID, name, codes, UDFs, resources…" title="Matches any value of a task: ID, name, WBS, activity codes, user defined fields, resources. Several terms: separate with commas." />
         <select value={basis} onChange={(e) => setBasis(e.target.value as 'planned' | 'actual')} title="Date basis: which dates drive the 4D playback" aria-label="Date basis">
@@ -128,8 +126,8 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
         <select value={zoom} onChange={(e) => setZoom(e.target.value as Zoom)} title="Time scale" aria-label="Time scale">
           {ZOOMS.map((z) => <option key={z} value={z}>{ZOOM_LABEL[z]}</option>)}
         </select>
-        <button type="button" className="btn btn--small" onClick={() => ref.current?.zoomOut()} title="Zoom out" aria-label="Zoom out">−</button>
-        <button type="button" className="btn btn--small" onClick={() => ref.current?.zoomIn()} title="Zoom in" aria-label="Zoom in">+</button>
+        <button type="button" className="icon-btn icon-btn--sm" onClick={() => ref.current?.zoomOut()} title="Zoom out" aria-label="Zoom out">−</button>
+        <button type="button" className="icon-btn icon-btn--sm" onClick={() => ref.current?.zoomIn()} title="Zoom in" aria-label="Zoom in">+</button>
         <button type="button" className="btn btn--small" onClick={() => ref.current?.fit()} title="Fit the whole programme in the panel">Fit</button>
         <button type="button" className="btn btn--small" onClick={() => ref.current?.scrollToToday()} title="Scroll to today">Today</button>
         <button type="button" className="btn btn--small" disabled={date === null} onClick={() => date !== null && ref.current?.scrollToDate(date)} title="Scroll to the 4D timeline's date">4D date</button>
@@ -137,26 +135,20 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
         {options.map(([label, on, setter, tip]) => (
           <button key={label} type="button" className={`tags__chip${on ? ' active' : ''}`} aria-pressed={on} title={tip} onClick={() => setter(!on)}>{label}</button>
         ))}
-        <button type="button" className={`btn btn--small${settingsOn ? ' primary' : ''}`} aria-pressed={settingsOn} aria-label="Gantt settings" title={settingsOn ? 'Hide the Gantt settings (columns, group, sort, colour)' : 'Show the Gantt settings (columns, group, sort, colour)'} onClick={() => useSettingsPaneStore.getState().toggle('gantt')}><IconTune width={16} height={16} /></button>
+        <button type="button" className="icon-btn icon-btn--sm" aria-label="Gantt settings" title="Set up the Gantt: columns, group, sort, colour" onClick={() => openConfig('gantt')}><IconTune width={16} height={16} /></button>
         <ExpandCollapseToggle className="btn btn--small" onCollapse={() => setCollapseAll((n) => n + 1)} onExpand={() => setExpandAll((n) => n + 1)} />
       </div>
-      {settingsOn && (
-        <SidePaneDock>
-          <div className="scn-dock" aria-label="Gantt settings">
-            <div className="side-pane__bar scn-dock__bar" role="tablist">
-              {SETTINGS_TABS.map((t) => (
-                <button key={t.id} type="button" role="tab" aria-selected={settingsTab === t.id} className={`side-pane__tab${settingsTab === t.id ? ' active' : ''}`} title={`Gantt: ${t.label}`} aria-label={`Gantt: ${t.label}`} onClick={() => setSettingsTab(t.id)}>{t.icon}</button>
-              ))}
-            </div>
-            <div className="config-panel__body scn-panel scn-dock__body">
-              {settingsTab === 'columns' && <ColumnsPanel catalog={catalog} views={[{ id: 'gantt', label: 'Gantt', selected: columnIds, defaults: DEFAULT_GANTT_COLUMNS, onChange: setColumnIds }]} calculated />}
-              {settingsTab === 'group' && <GroupPanel bare fields={catalog} rules={set.groupRules} onChange={set.setGroupRules} onClose={() => {}} onCollapseAll={() => setCollapseAll((n) => n + 1)} onExpandAll={() => setExpandAll((n) => n + 1)} groupByWbs={set.groupByWbs} onToggleGroupByWbs={() => set.setGroupByWbs(!set.groupByWbs)} />}
-              {settingsTab === 'sort' && <SortPanel bare fields={catalog} rules={set.sortRules} onChange={set.setSortRules} onClose={() => {}} />}
-              {settingsTab === 'color' && <ColorPanel bare rules={set.colorRules} onChange={set.setColorRules} onClose={() => {}} wbsPalette={palette} onWbsPaletteChange={setPalette} fields={catalog} valuesOf={valuesOf} />}
-            </div>
-          </div>
-        </SidePaneDock>
-      )}
+      <ListConfig
+        id="gantt"
+        label="Gantt panel"
+        badges={{ group: set.groupRules.length, sort: set.sortRules.length, color: set.colorRules.length }}
+        panels={{
+          columns: <ColumnsPanel catalog={catalog} views={[{ id: 'gantt', label: 'Gantt', selected: columnIds, defaults: DEFAULT_GANTT_COLUMNS, onChange: setColumnIds }]} calculated />,
+          group: <GroupPanel bare fields={catalog} rules={set.groupRules} onChange={set.setGroupRules} onClose={() => {}} onCollapseAll={() => setCollapseAll((n) => n + 1)} onExpandAll={() => setExpandAll((n) => n + 1)} groupByWbs={set.groupByWbs} onToggleGroupByWbs={() => set.setGroupByWbs(!set.groupByWbs)} />,
+          sort: <SortPanel bare fields={catalog} rules={set.sortRules} onChange={set.setSortRules} onClose={() => {}} />,
+          color: <ColorPanel bare rules={set.colorRules} onChange={set.setColorRules} onClose={() => {}} wbsPalette={palette} onWbsPaletteChange={setPalette} fields={catalog} valuesOf={valuesOf} />,
+        }}
+      />
       <div className="dockgantt__chart">
         <GanttChart
           ref={ref}
@@ -186,6 +178,8 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
           expandAllSignal={expandAll}
           onSelect={onSelect}
           onOpen={onOpen}
+          dimmedIds={dimmedIds}
+          onLinkShortcut={onLinkShortcut}
         />
       </div>
     </div>

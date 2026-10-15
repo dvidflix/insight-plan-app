@@ -1,10 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
-import { activeOn, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning } from './icons';
+import { activeTargetId, useListConfigStore } from '../state/listConfigStore';
+import { activeOn, isShowing, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
+import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
-const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
+export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   gantt: IconGantt,
   tasks: IconList,
   resources: IconLineGraph,
@@ -18,20 +19,28 @@ const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   compare: IconTwoPane,
   datatable: IconViewTable,
   layouts: IconBookmark,
-  details: IconList,
+  details: IconInfo,
   links: IconSplit,
-  predecessors: IconSplit,
-  successors: IconSplit,
-  progGantt: IconGantt,
-  progTable: IconViewTable,
+  predecessors: IconArrowUp,
+  successors: IconArrowDown,
   related: IconCube,
   tree: IconTree,
   properties: IconList,
   search: IconSearch,
-  views: IconCamera,
+  views: IconCubeFocus,
   colour: IconPalette,
   tableSetup: IconViewTable,
   fourD: IconSchema,
+  planning: IconList,
+  dictionary: IconTune,
+  cfgColumns: IconColumns,
+  cfgFilters: IconFilter,
+  cfgGroup: IconGroup,
+  cfgSort: IconSort,
+  cfgColor: IconPalette,
+  generated: IconBookingsOpen,
+  settings: IconGear,
+  scenarioSettings: IconTune,
 };
 
 /** A panel that lives in one of the three docks around the 3D view (left, bottom, right). Mount it wherever its state
@@ -50,12 +59,18 @@ export function DockPanel({ id, label, shown, setShown, host = 'viewer', childre
     if (side === 'closed' || s.folded[side] || activeOn(s, side) !== id) return null;
     return s.bodies[side];
   });
-  return target ? createPortal(children, target) : null;
+  // Its settings tab is the one showing: the panel stays mounted (it holds the settings), drawn nowhere.
+  // So does a list that the settings panels are for: they sit beside it as tabs and the list must not go while they show.
+  const configured = useListConfigStore((s) => activeTargetId(s) === id);
+  const keep = useDockStore((s) => mine && s.entries[id]?.shown !== false && (s.placement[id] ?? DOCK_DEFAULTS[id]) !== 'closed' && (configured || isShowing(s, id)));
+  const parked = useMemo(() => document.createElement('div'), []);
+  if (target) return createPortal(children, target);
+  return keep ? createPortal(children, parked) : null;
 }
 
 /** A tiny picture of a window with one side filled: where a panel goes. */
-function SideIcon({ side, size = 16 }: { side: DockSide; size?: number }) {
-  const fill = side === 'left' ? { x: 2, y: 2, w: 5, h: 12 } : side === 'right' ? { x: 9, y: 2, w: 5, h: 12 } : { x: 2, y: 9, w: 12, h: 5 };
+export function SideIcon({ side, size = 16 }: { side: DockSide | 'main'; size?: number }) {
+  const fill = side === 'main' ? { x: 3, y: 3, w: 10, h: 10 } : side === 'left' ? { x: 2, y: 2, w: 5, h: 12 } : side === 'right' ? { x: 9, y: 2, w: 5, h: 12 } : { x: 2, y: 9, w: 12, h: 5 };
   return (
     <svg width={size} height={size} viewBox="0 0 16 16" aria-hidden>
       <rect x="1.5" y="1.5" width="13" height="13" rx="1.5" fill="none" stroke="currentColor" strokeWidth="1.2" />
@@ -86,14 +101,29 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
   const toolsEl = useRef<HTMLSpanElement>(null);
   const namedWidth = useRef(0);
   const iconWidth = useRef(0);
+  const toolsWidth = useRef(0);
+  // Layout changes made since the last frame: a header whose measuring flips back and forth is held where it is (a loop of
+  // changes inside one frame can only end this way, as no frame is drawn in between).
+  const flips = useRef({ n: 0, frame: 0 });
+  const spend = () => {
+    if (flips.current.n++ >= 8) return false;
+    if (!flips.current.frame) flips.current.frame = requestAnimationFrame(() => { flips.current = { n: 0, frame: 0 }; });
+    return true;
+  };
   const [compact, setCompact] = useState(false);
   const [stacked, setStacked] = useState(false);
   const tabKey = tabs.map((t) => t.id + t.label).join('|');
   useLayoutEffect(() => {
     namedWidth.current = 0;
     iconWidth.current = 0;
-    setCompact(false);
-    setStacked(false);
+    toolsWidth.current = 0;
+    if (!compact && !stacked) return;
+    if (spend()) {
+      setCompact(false);
+      setStacked(false);
+    }
+    // Starts again from the names only when the tabs change; what it reads is the state at that moment.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [tabKey, folded]);
   useLayoutEffect(() => {
     const head = headEl.current;
@@ -103,11 +133,17 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
     // don't fit: the tools take a row of their own (first, at the right) and the icons the row below.
     const measure = () => {
       if (!compact) namedWidth.current = el.scrollWidth;
-      const tools = toolsEl.current?.offsetWidth ?? 0;
-      const room = head.clientWidth - tools - 16;
+      // The tools' width is taken while they share the row: stacked, they have a row of their own and measuring then would
+      // make the room look bigger, so the layout would flip back and forth for ever.
+      if (!stacked) toolsWidth.current = toolsEl.current?.offsetWidth ?? toolsWidth.current;
+      const room = head.clientWidth - toolsWidth.current - 16;
       if (compact && !stacked) iconWidth.current = el.scrollWidth;
-      setCompact(namedWidth.current > room);
-      setStacked(compact && iconWidth.current > room);
+      const nextCompact = namedWidth.current > room;
+      const nextStacked = compact && iconWidth.current > room;
+      if (nextCompact === compact && nextStacked === stacked) return;
+      if (!spend()) return;
+      setCompact(nextCompact);
+      setStacked(nextStacked);
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -164,16 +200,13 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
             {tabs.map((t) => {
               const TabIcon = TAB_ICONS[t.id];
               return (
-                <button key={t.id} type="button" role="tab" aria-selected={active === t.id} aria-label={t.label} title={compact ? t.label : undefined} className={`config-tab${active === t.id ? ' active' : ''}`} onClick={() => store().select(side, t.id)}>
+                <button key={t.id} type="button" role="tab" aria-selected={active === t.id} aria-label={t.label} title={compact ? `${t.label} (drag to the left, bottom or right to move it)` : 'Drag to the left, bottom or right to move it'} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => store().setDragging(t.id), 0); }} onDragEnd={() => store().setDragging(null)} className={`config-tab${active === t.id ? ' active' : ''}`} onClick={() => store().select(side, t.id)}>
                   {compact && TabIcon ? <TabIcon className="dock__tabicon" /> : t.label}
                 </button>
               );
             })}
           </div>
           <span className="dock__tools" ref={toolsEl}>
-            {active && DOCK_SIDES.filter((s) => s !== side).map((s) => (
-              <button key={s} type="button" className="icon-btn dock__tool" onClick={() => store().move(active, s)} title={`Move ${entries[active]?.label ?? 'this panel'} to the ${SIDE_LABEL[s].toLowerCase()}`} aria-label={`Move to the ${SIDE_LABEL[s].toLowerCase()}`}><SideIcon side={s} /></button>
-            ))}
             <button type="button" className="icon-btn dock__tool" onClick={() => store().setFolded(side, true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: side === 'right' ? 'rotate(180deg)' : side === 'left' ? undefined : 'rotate(-90deg)' }} /></button>
             {active && <button type="button" className="icon-btn dock__tool" onClick={() => store().close(active)} title={`Close ${entries[active]?.label ?? 'the panel'} (the Panels menu brings it back)`} aria-label="Close panel"><IconClose /></button>}
           </span>
@@ -185,52 +218,22 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
   );
 }
 
-/** The toolbar's Panels menu: every panel of this page, where it sits (left, bottom, right), and a switch to show or close it. */
-export function DockMenu() {
-  const entries = useDockStore((s) => s.entries);
-  const placement = useDockStore((s) => s.placement);
-  const [open, setOpen] = useState(false);
-  const root = useRef<HTMLDivElement>(null);
-  useEffect(() => {
-    if (!open) return;
-    const away = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
-    document.addEventListener('mousedown', away);
-    document.addEventListener('keydown', esc);
-    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
-  }, [open]);
-  const list = Object.values(entries).sort((a, b) => a.label.localeCompare(b.label));
-  if (list.length === 0) return null;
-  const store = useDockStore.getState;
-  const isOn = (e: (typeof list)[number]) => (e.shown !== undefined ? e.shown : (placement[e.id] ?? DOCK_DEFAULTS[e.id]) !== 'closed');
-  return (
-    <div className="dock-menu" ref={root}>
-      <button type="button" className={`btn btn--small${open ? ' primary' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} title="Panels: choose which show, and whether each sits left, at the bottom or right. Panels on the same side share it as tabs.">Panels ▾</button>
-      {open && (
-        <div className="dock-menu__pop" role="menu">
-          {list.map((e) => {
-            const side = placement[e.id] ?? DOCK_DEFAULTS[e.id];
-            const on = isOn(e);
-            return (
-              <div key={e.id} className="dock-menu__row">
-                <label className="dock-menu__name">
-                  <input type="checkbox" checked={on} onChange={() => (on ? store().close(e.id) : store().reveal(e.id))} />
-                  {e.label}
-                </label>
-                <span className="dock-menu__sides">
-                  {DOCK_SIDES.map((s) => (
-                    <button key={s} type="button" className={`icon-btn dock__tool${on && side === s ? ' is-on' : ''}`} onClick={() => store().move(e.id, s)} title={`${e.label} on the ${SIDE_LABEL[s].toLowerCase()}`} aria-label={`${e.label} on the ${SIDE_LABEL[s].toLowerCase()}`} aria-pressed={on && side === s}><SideIcon side={s} /></button>
-                  ))}
-                </span>
-              </div>
-            );
-          })}
-          <div className="dock-menu__foot" title="Panels on the same side share it as tabs; on different sides they show together.">
-            <button type="button" className="btn btn--small" onClick={() => list.forEach((e) => { if (!isOn(e)) store().reveal(e.id); })}>Show all</button>
-            <button type="button" className="btn btn--small" onClick={() => list.forEach((e) => { if (isOn(e)) store().close(e.id); })}>Hide all</button>
-          </div>
-        </div>
-      )}
+/** While a tab is dragged: a zone along the left, bottom and right of the workspace to drop it on. */
+export function DockDropZones() {
+  const dragging = useDockStore((s) => s.dragging);
+  const [over, setOver] = useState<DockSide | null>(null);
+  if (!dragging) return null;
+  const zone = (side: DockSide) => (
+    <div
+      key={side}
+      className={`dock-drop dock-drop--${side}${over === side ? ' is-over' : ''}`}
+      onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; if (over !== side) setOver(side); }}
+      onDragLeave={() => setOver((o) => (o === side ? null : o))}
+      onDrop={(e) => { e.preventDefault(); useDockStore.getState().move(dragging, side); useDockStore.getState().setDragging(null); setOver(null); }}
+    >
+      <SideIcon side={side} size={28} />
+      <span>{SIDE_LABEL[side]}</span>
     </div>
   );
+  return <>{DOCK_SIDES.map(zone)}</>;
 }

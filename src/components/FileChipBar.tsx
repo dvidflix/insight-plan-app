@@ -1,3 +1,4 @@
+import { IconRemove } from './icons';
 export interface FileChip {
   id: string;
   label: string;
@@ -52,7 +53,7 @@ export function FileChipBar({ chips, onRemove, onSelect }: FileChipBarProps) {
               onRemove(chip.id);
             }}
           >
-            {'✕'}
+            <IconRemove />
           </button>
         </div>
       ))}

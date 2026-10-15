@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ClipboardEvent as ReactClipboardEvent, type KeyboardEvent as ReactKeyboardEvent, type MouseEvent as ReactMouseEvent, type ReactNode } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { addActivity, addWbs, deleteActivities, deleteWbs, nextCode, renameWbs, type Result } from '../../schedule/programmeCommands';
 import { duplicateActivities, indentRows, moveRows, moveRowsToEnd, outdentRows, placeTaskAfter, placeWbsAfter, planRows, type PlanRef, type PlanRow } from '../../schedule/planOrder';
@@ -19,7 +19,8 @@ import { useDockStore } from '../../state/dockStore';
     activities under them, every cell typed in place, rows moved (Alt+↑ ↓), indented (Tab) and outdented (Shift+Tab) with the
     keyboard or the buttons, and the bars beside them. Each change goes through the same undoable edit as the rest of the app. */
 
-const ROW_H = 26;
+/** Taller rows on a touch screen: a finger needs more than a mouse. */
+const ROW_H = typeof window !== 'undefined' && window.matchMedia?.('(pointer: coarse)').matches ? 36 : 26;
 const DAY = 86400000;
 
 /** A column: the fixed ones, and `code:<type>` for each activity code type of the programme. */
@@ -347,15 +348,97 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
   const expandAll = () => setCollapsed([]);
   const collapseAll = () => setCollapsed(rows.filter((r) => r.kind === 'wbs' && r.hasChildren).map((r) => r.id).concat(model.wbs.map((n) => n.id)).filter((v, i, l) => l.indexOf(v) === i));
 
-  const fillDown = () => {
-    if (!cursor || !picked.length) return;
-    const from = rows[index(cursor.row)];
-    if (!from || from.kind !== 'task') return;
-    const text = editText(from, cursor.col);
-    const targets = picked.filter((k) => k !== cursor.row && k.startsWith('task:'));
+  // ---- Excel-like: fill down (Ctrl+D, or drag the square at the corner of the range), copy and paste cells. One undo step each.
+  const pickedRange = (): { lo: number; hi: number } | null => {
+    const idxs = picked.map(index).filter((i) => i >= 0);
+    if (idxs.length) return { lo: Math.min(...idxs), hi: Math.max(...idxs) };
+    const at = cursor ? index(cursor.row) : -1;
+    return at >= 0 ? { lo: at, hi: at } : null;
+  };
+  /** The cells srcLo..srcHi of a column are copied down over the rows after srcHi, up to `end` (the source repeats if shorter). */
+  const fillCells = (srcLo: number, srcHi: number, end: number, col: ColumnId) => {
+    const len = srcHi - srcLo + 1;
     let n = 0;
-    for (const k of targets) if (apply(k, cursor.col, text)) n++;
-    if (n) onNote(`Filled ${n} ${n === 1 ? 'row' : 'rows'} with “${text}”.`);
+    commit('Fill down', () => {
+      for (let i = srcHi + 1; i <= end; i++) {
+        const from = rows[srcLo + ((i - srcHi - 1) % len)];
+        const to = rows[i];
+        if (!from || !to || !canEdit(from, col) || !canEdit(to, col)) continue;
+        if (apply(rowKey(to), col, editText(from, col))) n++;
+      }
+    });
+    if (n) onNote(`Filled ${n} ${n === 1 ? 'cell' : 'cells'}. Undo (Ctrl+Z) takes the fill back in one step.`);
+  };
+  const fillDown = () => {
+    const range = pickedRange();
+    if (!cursor || !range) return;
+    if (range.hi > range.lo) fillCells(range.lo, range.lo, range.hi, cursor.col);
+    else if (range.lo > 0) fillCells(range.lo - 1, range.lo - 1, range.lo, cursor.col);
+  };
+  const startFill = (e: ReactMouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const range = pickedRange();
+    if (!cursor || !range) return;
+    const { lo, hi } = range;
+    const col = cursor.col;
+    let end = hi;
+    const move = (ev: MouseEvent) => {
+      const box = scroller.current?.getBoundingClientRect();
+      if (box && scroller.current) {
+        if (ev.clientY > box.bottom - 24) scroller.current.scrollTop += 24;
+        else if (ev.clientY < box.top + 50) scroller.current.scrollTop -= 24;
+      }
+      const key = (document.elementFromPoint(ev.clientX, ev.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-rowkey]')?.dataset.rowkey;
+      const i = key ? index(key) : -1;
+      if (i < 0) return;
+      end = Math.max(hi, i);
+      setPicked(rows.slice(lo, end + 1).map(rowKey));
+    };
+    const up = () => {
+      window.removeEventListener('mousemove', move);
+      window.removeEventListener('mouseup', up);
+      if (end > hi) fillCells(lo, hi, end, col);
+    };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+  const onCopy = (e: ReactClipboardEvent) => {
+    if (edit || !cursor || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return;
+    const range = pickedRange();
+    if (!range) return;
+    e.preventDefault();
+    e.clipboardData.setData('text/plain', rows.slice(range.lo, range.hi + 1).map((r) => editText(r, cursor.col)).join('\n'));
+    onNote(`Copied ${range.hi - range.lo + 1} ${range.hi === range.lo ? 'cell' : 'cells'}.`);
+  };
+  const onPaste = (e: ReactClipboardEvent) => {
+    if (edit || !cursor || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return;
+    const text = e.clipboardData.getData('text/plain');
+    if (!text) return;
+    e.preventDefault();
+    const lines = text.replace(/\r/g, '').split('\n');
+    if (lines.length && lines[lines.length - 1] === '') lines.pop();
+    const grid = lines.map((l) => l.split('\t'));
+    const range = pickedRange();
+    const start = index(cursor.row);
+    const col0 = COLUMNS.findIndex((c) => c.id === cursor.col);
+    let n = 0;
+    commit('Paste', () => {
+      // One value into several picked rows: it goes into all of them, as in Excel.
+      if (grid.length === 1 && grid[0].length === 1 && range && range.hi > range.lo) {
+        for (let i = range.lo; i <= range.hi; i++) if (rows[i] && canEdit(rows[i], cursor.col) && apply(rowKey(rows[i]), cursor.col, grid[0][0])) n++;
+        return;
+      }
+      grid.forEach((cells, dr) => {
+        const to = rows[start + dr];
+        if (!to) return;
+        cells.forEach((value, dc) => {
+          const col = COLUMNS[col0 + dc];
+          if (col && canEdit(to, col.id) && apply(rowKey(to), col.id, value)) n++;
+        });
+      });
+    });
+    onNote(n ? `Pasted ${n} ${n === 1 ? 'cell' : 'cells'}.` : 'Nothing could be pasted there.');
   };
 
   const onKeyDown = (e: ReactKeyboardEvent<HTMLDivElement>) => {
@@ -393,7 +476,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
     if (e.key === 'F9') { stop(); schedule(); return; }
     if (e.key === 'Insert') { stop(); addRow(e.shiftKey ? 'wbs' : e.ctrlKey ? 'milestone-finish' : 'task'); return; }
     if (e.key === 'Delete') { stop(); removeRows(); return; }
-    if (ctrl && e.key.toLowerCase() === 'd') { stop(); if (e.shiftKey) fillDown(); else duplicate(); return; }
+    if (ctrl && e.key.toLowerCase() === 'd') { stop(); if (e.shiftKey) duplicate(); else fillDown(); return; }
     if (ctrl && e.key.toLowerCase() === 'a') { stop(); const all = rows.map(rowKey); setPicked(all); syncSelection(all, cursor?.row ?? null); return; }
     if (e.key === 'Escape') { setPicked([]); return; }
     // Typing starts editing the cell with what was typed.
@@ -421,6 +504,9 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
   const first = Math.max(0, Math.floor(scroll.top / ROW_H) - 8);
   const last = Math.min(rows.length, Math.ceil((scroll.top + scroll.height) / ROW_H) + 8);
   const dataDate = model.project.dataDate;
+  // The square to drag down sits at the corner of the range: its last row.
+  const fillRange = pickedRange();
+  const fillRowKey = fillRange && rows[fillRange.hi] ? rowKey(rows[fillRange.hi]) : null;
 
   const ticks = useMemo(() => {
     const out: { left: number; label: string; major: boolean }[] = [];
@@ -502,13 +588,13 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
   }
 
   return (
-    <div className="planner" ref={root} tabIndex={0} onKeyDown={onKeyDown} aria-label="Planner: arrow keys move, Enter edits, Tab indents, Shift+Tab outdents, Alt+Up and Alt+Down move the rows">
+    <div className="planner" ref={root} tabIndex={0} onKeyDown={onKeyDown} onCopy={onCopy} onPaste={onPaste} aria-label="Planner: arrow keys move, Enter edits, Tab indents, Shift+Tab outdents, Alt+Up and Alt+Down move the rows">
       <div className="planner__bar">
         <span className="planner__group">
           <button type="button" className="btn btn--small" onClick={() => addRow('task')} title="Add an activity after the one picked (Insert)">+ Activity</button>
           <button type="button" className="btn btn--small" onClick={() => addRow('milestone-finish')} title="Add a milestone (Ctrl+Insert)">+ Milestone</button>
           <button type="button" className="btn btn--small" onClick={() => addRow('wbs')} title="Add a WBS node after the one picked (Shift+Insert)">+ WBS</button>
-          <button type="button" className="btn btn--small" onClick={duplicate} title="Duplicate the picked activities (Ctrl+D)">Duplicate</button>
+          <button type="button" className="btn btn--small" onClick={duplicate} title="Duplicate the picked activities (Ctrl+Shift+D)">Duplicate</button>
           <button type="button" className="btn btn--small" onClick={removeRows} title="Delete the picked rows (Delete)">Delete</button>
         </span>
         <span className="planner__group">
@@ -534,7 +620,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
         <span className="planner__group planner__zoom">
           <label>Zoom <input type="range" min={1} max={30} value={pxPerDay} onChange={(e) => setPxPerDay(Number(e.target.value))} /></label>
         </span>
-        <span className="planner__hint">Enter edits · Tab / Shift+Tab indent · Alt+↑↓ move · Insert adds · Delete · Ctrl+D duplicates · F9 schedules</span>
+        <span className="planner__hint">Enter edits · Tab / Shift+Tab indent · Alt+↑↓ move · Insert adds · Delete · Ctrl+D fills down (or drag the corner square) · Ctrl+C / V copy and paste cells · Ctrl+Shift+D duplicates · F9 schedules</span>
       </div>
       <div className="planner__scroll" ref={scroller} onScroll={(e) => setScroll({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })} onMouseDown={() => { if (!edit) root.current?.focus(); }}>
         <div style={{ width: gridWidth + timelineWidth, minWidth: '100%' }}>
@@ -554,6 +640,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
               return (
                 <div
                   key={k}
+                  data-rowkey={k}
                   className={`planner__row${r.kind === 'wbs' ? ' is-wbs' : ''}${on ? ' is-picked' : ''}${r.activity?.isCritical ? ' is-critical' : ''}`}
                   style={{ top: (first + i) * ROW_H, height: ROW_H }}
                   onMouseDown={(e) => {
@@ -566,12 +653,15 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
                     {COLUMNS.map((c) => (
                       <div
                         key={c.id}
-                        className={`planner__cell${c.id in STICKY ? ' is-sticky' : ''}${cursor?.row === k && cursor.col === c.id ? ' is-cursor' : ''}${c.align === 'right' ? ' is-right' : ''}${canEdit(r, c.id) ? '' : ' is-readonly'}`}
+                        className={`planner__cell${c.id in STICKY ? ' is-sticky' : ''}${cursor?.row === k && cursor.col === c.id ? ' is-cursor' : ''}${on && picked.length > 1 && cursor?.col === c.id ? ' is-range' : ''}${c.align === 'right' ? ' is-right' : ''}${canEdit(r, c.id) ? '' : ' is-readonly'}`}
                         style={{ width: c.width, left: STICKY[c.id] }}
                         data-col={c.id}
                         onDoubleClick={() => startEdit(k, c.id)}
                       >
                         {cell(r, c)}
+                        {editable && !edit && cursor?.col === c.id && k === fillRowKey && canEdit(r, c.id) && (
+                          <span className="planner__fill" onMouseDown={startFill} title="Drag down to fill (Ctrl+D)" />
+                        )}
                       </div>
                     ))}
                   </div>

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useDismiss } from '../components/useDismiss';
 import { createPortal } from 'react-dom';
 import { ActivityTable, type ActivityTableHandle } from '../components/schedule/ActivityTable';
 import { GanttChart, ZOOMS, type GanttHandle, type Zoom } from '../components/schedule/GanttChart';
@@ -24,6 +25,7 @@ import { resolveRuleColor, type ColorRule } from '../components/schedule/ColorPa
 import { DEFAULT_WBS_PALETTE } from '../schedule/wbsPalette';
 import { type GroupRule } from '../components/schedule/GroupPanel';
 import { type SortRule } from '../components/schedule/SortPanel';
+import { configFocusProps } from '../state/listConfigStore';
 import { ConfigPanel } from '../components/schedule/ConfigPanel';
 import { useSidePaneStore } from '../state/sidePaneStore';
 import { activitySearchText, matchesSearchTokens, searchTokens } from '../schedule/search';
@@ -47,25 +49,30 @@ import { drivingPath } from '../schedule/drivingPath';
 import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from '../state/scheduleLayoutsStore';
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
-import { IconDownload, IconGear, IconBookmark, IconChevronDown, IconSidePanel, IconUndo, IconRedo, IconLaunch } from '../components/icons';
-import { DockMenu, DockPanel } from '../components/Dock';
-import { hasLinkedWindows, onWindowMessage, openSatelliteWindow, sendToWindows } from '../state/windowSync';
-import { IS_SATELLITE } from '../state/satellite';
+import { IconDownload, IconGear, IconUndo, IconRedo, IconRelated } from '../components/icons';
+import { DockPanel } from '../components/Dock';
+import { hasLinkedWindows, onWindowMessage, sendToWindows } from '../state/windowSync';
+import { useSelectionSync } from '../schedule/useSelectionSync';
+import { ViewPicker, type PageItem } from '../components/ViewPicker';
+import { DockGantt } from '../components/sequence/DockGantt';
 import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditableStatus } from '../components/schedule/EditableStatus';
 import { EditTools } from '../components/schedule/EditTools';
+import { PlannerView } from '../components/schedule/PlannerView';
+import { ActivityPlanningPanel, DictionaryPanel } from '../components/schedule/PlanningPanels';
 import { BaselineMenu } from '../components/schedule/BaselineMenu';
 import { useChosenBaseline } from '../state/baselines';
 import { redo, undo, useProgrammeHistory, useProgrammeHistoryKeys } from '../state/programmeHistory';
 import { useAggregateStore } from '../state/aggregateStore';
 import { useAppPrefsStore, type ExperimentalId } from '../state/appPrefsStore';
 
-export type TabId = 'explorer' | 'activities' | 'wbs' | 'gantt' | 'resources' | 'heatmap' | 'calendars' | 'codes' | 'network' | 'checks' | 'reports' | 'whatif' | 'compare' | 'concrete' | 'lookahead' | 'ppc' | 'montecarlo' | 'anonymise' | 'bulkedit' | 'renumber';
+export type TabId = 'planner' | 'explorer' | 'activities' | 'wbs' | 'gantt' | 'resources' | 'heatmap' | 'calendars' | 'codes' | 'network' | 'checks' | 'reports' | 'whatif' | 'compare' | 'concrete' | 'lookahead' | 'ppc' | 'montecarlo' | 'anonymise' | 'bulkedit' | 'renumber';
 
 /** The Views list, in this order. Views marked `experimental` are still being tried out and
     only show when switched on in Settings › Experimental features. */
 export const SCHEDULE_TABS: { id: TabId; label: string; experimental?: ExperimentalId }[] = [
   { id: 'gantt', label: 'Gantt' },
+  { id: 'planner', label: 'Planner (build and edit)' },
   { id: 'compare', label: 'Schedule Comparison' },
   { id: 'concrete', label: 'Concrete Comparison' },
   { id: 'wbs', label: 'WBS' },
@@ -166,6 +173,9 @@ type SchedulePageProps = {
   onTabChange?: (tab: TabId) => void;
   /** False while the page is kept mounted but hidden: it must not claim the shared side pane. */
   active?: boolean;
+  /** The pages the picker at the start of the toolbar can go to (none in a second window: it only changes the view). */
+  pages?: PageItem[];
+  onPage?: (id: string) => void;
 };
 
 /** The two activity views, each with its own filters, grouping, sorting,
@@ -200,7 +210,7 @@ export function SchedulePage(props: SchedulePageProps = {}) {
   return <SchedulePageView key={revision} {...props} />;
 }
 
-function SchedulePageView({ selectedTab, onTabChange, active = true }: SchedulePageProps) {
+function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [], onPage }: SchedulePageProps) {
   const schedules = useVisibleSchedules();
   const model = useMemo(() => mergeSchedulesForDisplay(schedules), [schedules]);
   // Experimental views only show when switched on; a saved one that is off falls back to the Gantt.
@@ -214,7 +224,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const [search, setSearch] = useState('');
   // Layouts and the name/code search belong to the activity views; the other
   // views put their own tools in the toolbar slot instead.
-  const listTools = tab === 'activities' || tab === 'gantt' || tab === 'explorer';
+  const listTools = tab === 'activities' || tab === 'gantt' || tab === 'explorer' || tab === 'planner';
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   // The zoom and view settings live at the right of the status bar (App's footer holds the spot).
   const [statusSlot, setStatusSlot] = useState<HTMLElement | null>(null);
@@ -242,10 +252,13 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   const [predsOpen, setPredsOpen] = usePersistedState('programmes.predecessorsOpen', false);
   const [succsOpen, setSuccsOpen] = usePersistedState('programmes.successorsOpen', false);
   // The programme's Gantt and Table as panels, to sit beside the 3D view or the 4D Gantt.
+  // What the picked activities need (quantity, productivity, resources, codes) and the dictionaries they come from.
+  const [planningOpen, setPlanningOpen] = usePersistedState('programmes.planningOpen', false);
+  const [dictionaryOpen, setDictionaryOpen] = usePersistedState('programmes.dictionaryOpen', false);
   const [ganttPanelOpen, setGanttPanelOpen] = usePersistedState('programmes.ganttPanelOpen', false);
-  const [tablePanelOpen, setTablePanelOpen] = usePersistedState('programmes.tablePanelOpen', false);
   const [zoom, setZoom] = usePersistedState<Zoom>('schedule.zoom', 'week');
   const [ganttSettingsOpen, setGanttSettingsOpen] = useState(false);
+  const settingsRef = useDismiss<HTMLDivElement>(ganttSettingsOpen, () => setGanttSettingsOpen(false));
   const [showGanttLinks, setShowGanttLinks] = usePersistedState('schedule.showGanttLinks', false);
   const [showGanttCritical, setShowGanttCritical] = usePersistedState('schedule.showGanttCritical', true);
   const [showGanttBaseline, setShowGanttBaseline] = usePersistedState('schedule.showGanttBaseline', false);
@@ -331,9 +344,13 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
   // Declared before the early return below: a hook after it is skipped when the schedule goes away ("Rendered fewer hooks than expected").
   const [shortcutNote, setShortcutNote] = useState<string | null>(null);
 
+  const flash = (text: string) => { setShortcutNote(text); window.setTimeout(() => setShortcutNote((cur) => (cur === text ? null : cur)), 5000); };
   const handleSelect = (activity: Activity) => {
     setSelectedId(activity.id);
   };
+  // Activities and the objects linked to them in the 3D model are picked together (schedule/useSelectionSync.ts).
+  const [selectionSync, setSelectionSync] = usePersistedState('programmes.selectionSync', true);
+  useSelectionSync({ model, selectedId, onPick: handleSelect, active, enabled: selectionSync });
 
 
   if (!model) {
@@ -443,29 +460,14 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
       {shortcutNote && <div className="shortcut-note" role="status">{shortcutNote}</div>}
       <div className="filterbar schedule-toolbar">
         <div className="schedule-toolbar__left">
-          <div className="workspaces-picker" aria-label="Views selector">
-            <label className="workspaces-picker__label" htmlFor="schedule-layout-select">
-              Views
-            </label>
-            <div className="workspaces-picker__select-wrap">
-              <select id="schedule-layout-select" value={tab} onChange={(e) => onTabChange?.(e.target.value as TabId)}>
-                {visibleTabs.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.label}
-                  </option>
-                ))}
-              </select>
-              <span className="workspaces-picker__chevron">
-                <IconChevronDown />
-              </span>
-            </div>
-          </div>
+          <ViewPicker named pages={pages} page="schedule" onPage={(id) => (onPage ? onPage(id) : undefined)} tab={tab} onTab={(t) => onTabChange?.(t)} />
           {listTools && (
             <>
             <input
               className="filterbar__search"
               type="search"
-              placeholder="Search anything: ID, name, codes, UDFs, resources…"
+              placeholder="Search…"
+              title="Search anything: ID, name, codes, UDFs, resources"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
             />
@@ -483,30 +485,19 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
                 </>
               )}
               <span className="groupby-panel__title">Level:</span>
-              <select value={cfg.groupLevel} onChange={(e) => cfg.setGroupLevel(e.target.value)} title="Collapse the WBS groups to this level (All: everything open)">
-                <option value="">All</option>
-                {['0', '1', '2', '3', '4', '5', '6', '7', '8'].map((level) => (
-                  <option key={level} value={level}>
-                    {level}
-                  </option>
-                ))}
-              </select>
+              {(() => {
+                // A stepper (‹ 2 ›) instead of a drop-down: one tap to go a level up or down. "All" = everything open.
+                const level = cfg.groupLevel === '' ? -1 : Number(cfg.groupLevel);
+                const go = (n: number) => cfg.setGroupLevel(n < 0 ? '' : String(Math.min(8, n)));
+                return (
+                  <span className="ctx-stepper" role="group" aria-label="Level" title="Collapse the WBS groups to this level (All: everything open)">
+                    <button type="button" onClick={() => go(level - 1)} disabled={level < 0} aria-label="Fewer levels">‹</button>
+                    <span className="ctx-stepper__value">{level < 0 ? 'All' : level}</span>
+                    <button type="button" onClick={() => go(level + 1)} disabled={level >= 8} aria-label="More levels">›</button>
+                  </span>
+                );
+              })()}
             </div>
-          )}
-          <div className="schedule-toolbar__history">
-            <button type="button" className="btn btn--small" disabled={!undoLabel} onClick={() => undo()} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><IconUndo width={16} height={16} /></button>
-            <button type="button" className="btn btn--small" disabled={!redoLabel} onClick={() => redo()} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><IconRedo width={16} height={16} /></button>
-            <EditableStatus />
-          </div>
-          {baselineBase && <BaselineMenu model={baselineBase} />}
-          {schedules.length === 1 && schedules[0].editable && (
-            <EditTools
-              model={schedules[0]}
-              selectedId={selectedId}
-              onSelect={(id) => setSelectedId(id)}
-              onNote={(text) => { setShortcutNote(text); window.setTimeout(() => setShortcutNote((cur) => (cur === text ? null : cur)), 5000); }}
-              keys={tab === 'activities' || tab === 'gantt'}
-            />
           )}
           <div ref={setToolbarSlot} className="schedule-toolbar__slot" />
           {dayFilter && (
@@ -516,7 +507,26 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
           )}
         </div>
 
+        {/* The middle: buttons for what is picked (activities, nothing, objects in 3D). */}
+        <div className="schedule-toolbar__ctx">
+          {schedules.length === 1 && schedules[0].editable && tab !== 'planner' && (
+            <EditTools
+              model={schedules[0]}
+              selectedId={selectedId}
+              onSelect={(id) => setSelectedId(id)}
+              onNote={(text) => { setShortcutNote(text); window.setTimeout(() => setShortcutNote((cur) => (cur === text ? null : cur)), 5000); }}
+              keys={tab === 'activities' || tab === 'gantt'}
+            />
+          )}
+        </div>
+
         <div className="schedule-toolbar__right">
+          <div className="schedule-toolbar__history">
+            <button type="button" className="btn btn--small" disabled={!undoLabel} onClick={() => undo()} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><IconUndo width={16} height={16} /></button>
+            <button type="button" className="btn btn--small" disabled={!redoLabel} onClick={() => redo()} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><IconRedo width={16} height={16} /></button>
+            <EditableStatus />
+          </div>
+          {baselineBase && <BaselineMenu model={baselineBase} />}
           {drivingTarget && (
             <button className="btn btn--small" type="button" onClick={() => setDrivingTarget(null)} title="Clear the driving path">
               Driving path to {model.activities.find((x) => x.id === drivingTarget)?.code ?? ''} ✕
@@ -537,30 +547,27 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
               <IconDownload />
             </button>
           )}
+          <button className={`icon-btn${selectionSync ? ' is-on' : ''}`} type="button" aria-pressed={selectionSync} onClick={() => setSelectionSync(!selectionSync)} title={selectionSync ? 'Selection sync on: picking activities selects their objects in the 3D model, and objects picked there pick their activities. Click to turn off.' : 'Selection sync off: click to pick activities and 3D objects together'} aria-label="Selection sync with the 3D model">
+            <IconRelated width={16} height={16} />
+          </button>
           <FullscreenButton />
-          {listTools && (
-            <div className="schedule-toolbar__segmented layouts-segment">
-              <button className={`btn layouts-toggle${layoutsOpen ? ' primary' : ''}`} type="button" aria-pressed={layoutsOpen} onClick={() => setLayoutsOpen((v) => !v)} title="Save and switch named layouts of this view">
-                <span className="toolbar-button__icon"><IconBookmark /></span>
-                Layouts
-              </button>
-              <button className={`btn layouts-toggle layouts-toggle--next${detailsOpen ? ' primary' : ''}`} type="button" aria-pressed={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)} title="Show the selected activity's details (a panel: the Panels menu moves it, and shows Predecessors and Successors on their own)">
-                <span className="toolbar-button__icon"><IconSidePanel /></span>
-                Activity details
-              </button>
-              <DockMenu />
-              {!IS_SATELLITE && <button type="button" className="btn layouts-toggle layouts-toggle--next" onClick={() => openSatelliteWindow(tab)} title="Open this view in a new window (e.g. on a second screen). The windows stay in step: edits, the activity picked, the 4D date" aria-label="New window"><IconLaunch width={16} height={16} /></button>}
-            </div>
-          )}
         </div>
       </div>
 
       <div className="page-body">
         {/* Layouts, Activity details, Predecessors and Successors are panels: each sits left, bottom or right, as the Panels menu says. */}
-        {listTools && (
+        {listTools && active && (
           <>
-            <DockPanel id="progGantt" label="Programme Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>{ganttPanelOpen && ganttChart}</DockPanel>
-            <DockPanel id="progTable" label="Programme table" shown={tablePanelOpen} setShown={setTablePanelOpen}>{tablePanelOpen && activityTable}</DockPanel>
+            {/* The one Gantt panel (the same on 4D Sequencing, where it also follows the timeline): this page's filters and driving path apply. */}
+            <DockPanel id="gantt" label="Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>
+              {ganttPanelOpen && <DockGantt model={model} activities={ganttList} dimmedIds={ganttDimmed} selectedId={selectedId} highlightedIds={drivingIds ?? new Set<string>()} scrollToId={null} onSelect={handleSelect} onOpen={(a) => { handleSelect(a); setDetailsOpen(true); }} onLinkShortcut={linkShortcut} />}
+            </DockPanel>
+            <DockPanel id="planning" label="Resources & codes" shown={planningOpen} setShown={setPlanningOpen}>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><ActivityPlanningPanel model={model} selectedId={selectedId} onNote={flash} /></div>
+            </DockPanel>
+            <DockPanel id="dictionary" label="Dictionary" shown={dictionaryOpen} setShown={setDictionaryOpen}>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DictionaryPanel model={model} onNote={flash} /></div>
+            </DockPanel>
             <DockPanel id="layouts" label="Layouts" shown={layoutsOpen} setShown={setLayoutsOpen}>
               <LayoutsDock filters={filtersByView} tab={tab} importContext={model ? { catalog, filterFields } : null} />
             </DockPanel>
@@ -582,11 +589,19 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
             </DockPanel>
           </>
         )}
-        <div className="page-body__main" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+        <div className="page-body__main" style={{ display: 'flex', flexDirection: 'column', overflow: 'hidden' }} {...configFocusProps('programmes')}>
           <div style={{ flex: 1, minHeight: 0, minWidth: 0, overflow: 'auto', display: 'flex', flexDirection: 'column' }}>
           {tab === 'activities' && activityTable}
           {tab === 'wbs' && <WbsView model={model} activities={filtered} wbsPalette={wbsPalette} />}
           {tab === 'gantt' && ganttChart}
+          {tab === 'planner' && (
+            <PlannerView
+              model={model}
+              selectedId={selectedId}
+              onSelect={(a) => (a ? handleSelect(a) : setSelectedId(null))}
+              onNote={flash}
+            />
+          )}
           {tab === 'resources' && <ResourcesView model={model} activities={filtered} onSelect={handleSelect} />}
           {tab === 'calendars' && <CalendarsPanel model={model} onSelectActivity={(a) => { handleSelect(a); setDetailsOpen(true); onTabChange?.('activities'); }} />}
           {tab === 'codes' && (
@@ -629,6 +644,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
         {active && (tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
           <>
             <ConfigPanel
+              label={cfgView === 'gantt' ? 'Gantt page' : 'Programmes table'}
               onClose={() => useSidePaneStore.getState().setOpen(false)}
               colorRules={cfg.colorRules}
               onColorRulesChange={cfg.setColorRules}
@@ -667,13 +683,13 @@ function SchedulePageView({ selectedTab, onTabChange, active = true }: ScheduleP
         </select>
         <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.scrollToToday()} title="Scroll to today">Today</button>
         <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.fit()} title="Fit whole programme in view">Fit</button>
-        <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomOut()} title="Zoom out (Alt + wheel)">−</button>
-        <button className="btn btn--small" type="button" onClick={() => ganttRef.current?.zoomIn()} title="Zoom in (Alt + wheel)">+</button>
+        <button className="icon-btn icon-btn--sm" type="button" onClick={() => ganttRef.current?.zoomOut()} title="Zoom out (Alt + wheel)">−</button>
+        <button className="icon-btn icon-btn--sm" type="button" onClick={() => ganttRef.current?.zoomIn()} title="Zoom in (Alt + wheel)">+</button>
       </>
     )}
     {listTools && (
-      <div style={{ position: 'relative' }}>
-        <button className="btn btn--small" style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }} title={tab === 'gantt' ? 'Gantt and view settings' : 'View settings'} onClick={() => setGanttSettingsOpen((v) => !v)}>
+      <div style={{ position: 'relative' }} ref={settingsRef}>
+        <button className="icon-btn icon-btn--sm" title={tab === 'gantt' ? 'Gantt and view settings' : 'View settings'} onClick={() => setGanttSettingsOpen((v) => !v)}>
           <IconGear width={14} height={14} />
         </button>
         {ganttSettingsOpen && (

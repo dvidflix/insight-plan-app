@@ -11,13 +11,12 @@ import { ColourLegend } from '../components/ColourLegend';
 import { ViewerToolbar } from '../components/ViewerToolbar';
 import { useClashRunner } from './useClashRunner';
 import { useDataTableStore } from '../state/dataTableStore';
-import { DockMenu, DockPanel, DockSideView } from '../components/Dock';
+import { DockDropZones, DockPanel, DockSideView } from '../components/Dock';
 import { DOCK_DEFAULTS, useDockStore } from '../state/dockStore';
 import { ClashPanel } from '../components/ClashPanel';
 import { ViewpointsList } from '../components/ViewpointsList';
 import { useModelEdgesStore } from '../state/modelEdgesStore';
 import { useModelsStore } from '../state/modelsStore';
-import { IS_SATELLITE } from '../state/satellite';
 
 /** Combines the persistent 3D viewer shell with an optional side panel (the
     4D sequencing panel) and an optional overlay floated on top of the
@@ -25,7 +24,7 @@ import { IS_SATELLITE } from '../state/satellite';
     for the app's whole lifetime — see App.tsx, which toggles CSS visibility
     rather than unmounting it when switching tabs. `paneActive`: the Models
     page is showing, so its tabs go in the side pane. */
-export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, centerShown }: { layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean; /** A view that takes the place of the 3D view (the Programmes views), with the same docks around it. */ center?: ReactNode; centerShown?: boolean }) {
+export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, centerShown, picker }: { /** The button that chooses what the main panel shows (at the start of the toolbar). */ picker?: ReactNode; layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean; /** A view that takes the place of the 3D view (the Programmes views), with the same docks around it. */ center?: ReactNode; centerShown?: boolean }) {
   const engine = useViewerEngine();
   // The toolbar row grows when its tools wrap onto a second row: the docks' headers and the side pane's tab bar follow
   // it (--toolbar-row-h), so the bars along the top stay level. Hidden (another page showing): the default applies.
@@ -43,7 +42,7 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
     ro.observe(el);
     sync();
     return () => { ro.disconnect(); root.style.removeProperty('--toolbar-row-h'); };
-  }, []);
+  }, [centerShown]);
   // Clashes & contacts stay up to date in the background (3D & Related shows them).
   useClashRunner();
   // Models switched off in the Models list (Edges) are drawn without edge lines.
@@ -80,9 +79,9 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
   // the panels, the side panels (4D's configuration) run from the page header down, and the tools wrap onto a second row
   // when the viewer is narrow.
   return (
-    <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
-      {/* A satellite window shows programme panels only. */}
-      {!IS_SATELLITE && (
+    <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+      <DockDropZones />
+      {(
         <>
           <DockPanel id="datatable" label="Data table" shown={tableOpen} setShown={setTableOpen}><ModelDataTable /></DockPanel>
           <DockPanel id="clash" label="Clash"><ClashPanel /></DockPanel>
@@ -95,9 +94,10 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
       )}
       <DockSideView side="left" />
       <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-        <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>
+        {/* The Programmes views have their own toolbar row (with the Panels menu): this one is for the 3D view. */}
+        {!centerShown && <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>
           <div className="schedule-toolbar__left">
-            {!centerShown && <ViewerToolbar />}
+            {!centerShown && <>{picker}<ViewerToolbar /></>}
           </div>
           <div className="schedule-toolbar__right">
             {inSequence && recPhase !== 'idle' && (
@@ -107,9 +107,8 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
                 <b>Stop export</b>
               </button>
             )}
-            <DockMenu />
           </div>
-        </div>
+        </div>}
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
             <ViewerCanvas layout={effectiveLayout} />

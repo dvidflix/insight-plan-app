@@ -1,4 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
+import { IconRemove } from '../icons';
+import { useEditableGrid } from '../useEditableGrid';
 import type { Activity, ResourceAssignment, ScheduleModel } from '../../schedule/types';
 import type { Result } from '../../schedule/programmeCommands';
 import { addResource, assignResource, crewOf, daysFromProductivity, deleteResource, productivityOf, RESOURCE_TYPES, setAssignment, setProductivity, unassignResource, updateResource } from '../../schedule/planResources';
@@ -113,7 +115,7 @@ export function ActivityPlanningPanel({ model, selectedId, onNote }: { model: Sc
               {crewR
                 ? <><NumberBox label={`${r.resourceName}: units at once`} value={r.unitsPerTime ?? 0} onApply={(v) => v !== null && run('Set the crew', (m) => setAssignment(m, a.id, r.resourceId, { units: v }))} width={56} /><span className="scn-dim" title="Quantity: units × hours">× {a.durationHours} h = {Math.round(r.targetQty)}</span></>
                 : <NumberBox label={`${r.resourceName}: quantity`} value={r.targetQty} onApply={(v) => v !== null && run('Set the quantity', (m) => setAssignment(m, a.id, r.resourceId, { qty: v }))} width={70} />}
-              <button type="button" className="icon-btn" aria-label={`Take ${r.resourceName} off`} title="Take it off the picked activities" onClick={() => run('Unassign resource', (m) => unassignResource(m, ids, r.resourceId))}>✕</button>
+              <button type="button" className="icon-btn" aria-label={`Take ${r.resourceName} off`} title="Take it off the picked activities" onClick={() => run('Unassign resource', (m) => unassignResource(m, ids, r.resourceId))}><IconRemove /></button>
             </div>
           );
         })}
@@ -164,26 +166,53 @@ export function DictionaryPanel({ model, onNote }: { model: ScheduleModel; onNot
   const [typeName, setTypeName] = useState('');
   const [valueFor, setValueFor] = useState<Record<string, string>>({});
   const used = (id: string) => model.activities.filter((a) => a.resources.some((r) => r.resourceId === id)).length;
+  // Type, Available and Cost / unit typed as a spreadsheet's: range, fill down (Ctrl+D, the corner square), copy and paste; one undo step.
+  const grid = useEditableGrid({
+    rows: resources,
+    get: (col, r) => (col === 'type' ? r.type : col === 'capacity' ? (r.capacity === null || r.capacity === undefined ? '' : String(r.capacity)) : r.costPerUnit === undefined ? '' : String(r.costPerUnit)),
+    write: (col, cells) => {
+      run('Fill resources', (m) => {
+        let cur = m;
+        for (const [at, text] of cells) {
+          const r = resources[at];
+          const value = text.trim();
+          let patch: Parameters<typeof updateResource>[2];
+          if (col === 'type') {
+            const t = RESOURCE_TYPES.find((x) => x.id === value || x.label.toLowerCase() === value.toLowerCase());
+            if (!t) continue;
+            patch = { type: t.id };
+          } else if (col === 'capacity') patch = { capacity: value === '' ? null : Number(value.replace(',', '.')) };
+          else patch = { costPerUnit: value === '' ? 0 : Number(value.replace(',', '.')) };
+          if ((col !== 'type') && !Number.isFinite(Object.values(patch)[0] ?? 0)) continue;
+          const res = updateResource(cur, r.id, patch);
+          if ('error' in res) return res;
+          cur = res.model;
+        }
+        return { model: cur };
+      });
+    },
+  });
 
   return (
     <div className="plan-panel">
       <section className="plan-panel__sec">
         <div className="plan-panel__title">Resources</div>
         {resources.length > 0 && (
-          <table className="plan-panel__table">
+          <table className="plan-panel__table xgrid" {...grid.grid}>
             <thead><tr><th>Name</th><th>Type</th><th title="People or machines available at once (P6: max units per time)">Available</th><th title="Cost of one unit">Cost / unit</th><th /></tr></thead>
             <tbody>
-              {resources.map((r) => (
-                <tr key={r.id}>
+              {resources.map((r, at) => (
+                <tr key={r.id} data-line={at}>
                   <td><input className="plan-panel__text" defaultValue={r.name} key={`${r.id}:${r.name}`} aria-label="Resource name" onBlur={(e) => { if (e.target.value.trim() !== r.name) run('Rename resource', (m) => updateResource(m, r.id, { name: e.target.value })); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} /></td>
-                  <td>
+                  <td className={`xgrid__cell${grid.sel('type', at)}`} data-col="type" data-row={at}>
                     <select value={r.type} aria-label="Type" onChange={(e) => run('Change the resource type', (m) => updateResource(m, r.id, { type: e.target.value as ResourceAssignment['resourceType'] }))}>
                       {RESOURCE_TYPES.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
                     </select>
+                    {grid.handle('type', at)}
                   </td>
-                  <td><NumberBox label={`${r.name}: available`} value={r.capacity} onApply={(v) => run('Set the availability', (m) => updateResource(m, r.id, { capacity: v }))} width={60} /></td>
-                  <td><NumberBox label={`${r.name}: cost per unit`} value={r.costPerUnit ?? null} onApply={(v) => run('Set the cost', (m) => updateResource(m, r.id, { costPerUnit: v ?? 0 }))} width={64} /></td>
-                  <td><button type="button" className="icon-btn" aria-label={`Delete ${r.name}`} title={used(r.id) ? `Delete it, and take it off ${used(r.id)} activities` : 'Delete it'} onClick={() => { if (used(r.id) && !window.confirm(`${r.name} is assigned to ${used(r.id)} activities. Delete it and take it off them?`)) return; run('Delete resource', (m) => deleteResource(m, r.id)); }}>✕</button></td>
+                  <td className={`xgrid__cell${grid.sel('capacity', at)}`} data-col="capacity" data-row={at}><NumberBox label={`${r.name}: available`} value={r.capacity} onApply={(v) => run('Set the availability', (m) => updateResource(m, r.id, { capacity: v }))} width={60} />{grid.handle('capacity', at)}</td>
+                  <td className={`xgrid__cell${grid.sel('cost', at)}`} data-col="cost" data-row={at}><NumberBox label={`${r.name}: cost per unit`} value={r.costPerUnit ?? null} onApply={(v) => run('Set the cost', (m) => updateResource(m, r.id, { costPerUnit: v ?? 0 }))} width={64} />{grid.handle('cost', at)}</td>
+                  <td><button type="button" className="icon-btn" aria-label={`Delete ${r.name}`} title={used(r.id) ? `Delete it, and take it off ${used(r.id)} activities` : 'Delete it'} onClick={() => { if (used(r.id) && !window.confirm(`${r.name} is assigned to ${used(r.id)} activities. Delete it and take it off them?`)) return; run('Delete resource', (m) => deleteResource(m, r.id)); }}><IconRemove /></button></td>
                 </tr>
               ))}
             </tbody>
@@ -204,13 +233,13 @@ export function DictionaryPanel({ model, onNote }: { model: ScheduleModel; onNot
           <div key={t.id} className="plan-panel__codetype">
             <div className="plan-panel__row">
               <input className="plan-panel__text plan-panel__strong" defaultValue={t.name} key={`${t.id}:${t.name}`} aria-label="Code type" onBlur={(e) => { if (e.target.value.trim() !== t.name) run('Rename code type', (m) => renameCodeType(m, t.id, e.target.value)); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
-              <button type="button" className="icon-btn" aria-label={`Delete ${t.name}`} title="Delete the type and its values (taken off the activities)" onClick={() => { if (window.confirm(`Delete the code type “${t.name}” with its ${t.values.length} values?`)) run('Delete code type', (m) => deleteCodeType(m, t.id)); }}>✕</button>
+              <button type="button" className="icon-btn" aria-label={`Delete ${t.name}`} title="Delete the type and its values (taken off the activities)" onClick={() => { if (window.confirm(`Delete the code type “${t.name}” with its ${t.values.length} values?`)) run('Delete code type', (m) => deleteCodeType(m, t.id)); }}><IconRemove /></button>
             </div>
             <div className="plan-panel__values">
               {t.values.map((v) => (
                 <span key={v.id} className="plan-panel__chip">
                   <input defaultValue={v.value} key={`${v.id}:${v.value}`} aria-label={`${t.name} value`} size={Math.max(4, v.value.length)} onBlur={(e) => { if (e.target.value.trim() !== v.value) run('Rename code', (m) => renameCodeValue(m, t.id, v.id, e.target.value)); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
-                  <button type="button" aria-label={`Delete ${v.value}`} onClick={() => run('Delete code', (m) => deleteCodeValue(m, t.id, v.id))}>×</button>
+                  <button type="button" aria-label={`Delete ${v.value}`} onClick={() => run('Delete code', (m) => deleteCodeValue(m, t.id, v.id))}><IconRemove /></button>
                 </span>
               ))}
               <form className="plan-panel__chip plan-panel__chip--add" onSubmit={(e) => { e.preventDefault(); if (run('Add code', (m) => addCodeValue(m, t.id, valueFor[t.id] ?? ''))) setValueFor({ ...valueFor, [t.id]: '' }); }}>

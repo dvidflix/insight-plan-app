@@ -8,7 +8,7 @@ import { fmtDate } from '../../schedule/reports';
 import { useModelsStore } from '../../state/modelsStore';
 import { useLinkGroupsStore } from '../../state/linkGroupsStore';
 import { useClashStore } from '../../state/clashStore';
-import { IconDriver, IconPencil } from '../icons';
+import { IconDriver, IconRemove } from '../icons';
 import { useVisibleSchedules } from '../../state/scheduleStore';
 import { programmeKey } from '../../state/unloadedWbsStore';
 import { useActivityOverridesStore } from '../../state/activityOverridesStore';
@@ -16,12 +16,13 @@ import { commit } from '../../state/programmeHistory';
 import { resetLinkOps, setLinkOp } from '../../state/programmeEdits';
 import { reaches } from '../../schedule/linkShortcuts';
 import { ResizeHandle, useResizableWidth } from '../ResizeHandle';
+import { useCellRange } from '../useCellRange';
 
 const days = (hours: number, perDay = 8) => Math.round((hours / perDay) * 10) / 10;
 
 type Kind = 'predecessor' | 'successor';
 const REL_TYPES = ['FS', 'SS', 'FF', 'SF'] as const;
-type SortKey = 'driving' | 'id' | 'link' | 'name' | 'start' | 'finish' | 'dur' | 'float' | 'relation';
+type SortKey = 'driving' | 'id' | 'link' | 'lag' | 'name' | 'start' | 'finish' | 'dur' | 'float' | 'relation';
 interface Sort { key: SortKey; dir: 1 | -1 }
 
 /** One link as the table shows it: the activity at the other end and what is known about the link. */
@@ -38,7 +39,8 @@ interface Row {
 const COLUMNS: { key: SortKey; label: string; title?: string }[] = [
   { key: 'driving', label: '', title: 'Drives the start of the later activity' },
   { key: 'id', label: 'ID' },
-  { key: 'link', label: 'Link' },
+  { key: 'link', label: 'Type' },
+  { key: 'lag', label: 'Lag (d)', title: "Lag in days of the later activity's calendar (negative: lead)" },
   { key: 'name', label: 'Name' },
   { key: 'start', label: 'Start' },
   { key: 'finish', label: 'Finish' },
@@ -52,7 +54,8 @@ function sortValue(r: Row, key: SortKey): string | number | null {
   switch (key) {
     case 'driving': return r.driving ? 1 : 0;
     case 'id': return r.other?.code ?? '';
-    case 'link': return `${r.rel.type} ${r.rel.lagHours}`;
+    case 'link': return r.rel.type;
+    case 'lag': return r.rel.lagHours;
     case 'name': return r.other?.name ?? '';
     case 'start': return time(r.other?.earlyStart ?? r.other?.targetStart);
     case 'finish': return time(r.other?.earlyFinish ?? r.other?.targetFinish);
@@ -95,7 +98,8 @@ export function LinksPane({ activity, model, height, kind: only, onSelect }: {
     const own = visible.length === 1 ? visible[0] : visible.find((v) => activity.id.startsWith(`${v.id}:`));
     return own ? programmeKey(own) : null;
   }, [visible, activity.id]);
-  const [editing, setEditing] = useState(false);
+  // Always editable when the programme is (no edit mode to switch on); a read-only programme shows plain text.
+  const editing = origin !== null;
   const [note, setNote] = useState<string | null>(null);
   const [add, setAdd] = useState<Record<Kind, { code: string; type: (typeof REL_TYPES)[number]; lag: string }>>({
     predecessor: { code: '', type: 'FS', lag: '0' },
@@ -175,6 +179,52 @@ export function LinksPane({ activity, model, height, kind: only, onSelect }: {
       return { ...s, [kind]: next };
     });
 
+  // ---- Excel-like editing of the Type and Lag columns: fill down (Ctrl+D, drag the corner square), paste a column, copy a range ----
+  const sortedRows: Record<Kind, Row[]> = { predecessor: sortRows(rowsOf.predecessor, sorts.predecessor), successor: sortRows(rowsOf.successor, sorts.successor) };
+  const lagDaysOf = (r: Row) => days(r.rel.lagHours, perDayOf(byId.get(r.rel.succId)?.calendarId ?? null));
+  /** Sets cells of a column from text, all in one step (one undo); what is already so, or is no use, is left. */
+  const setCells = (kind: Kind, col: string, pairs: [number, string][], label: string) => {
+    if (origin === null) return;
+    const rows = sortedRows[kind];
+    let n = 0;
+    commit(label, () => {
+      for (const [i, value] of pairs) {
+        const r = rows[i];
+        if (!r) continue;
+        const base = { op: 'set' as const, pred: codeOf(r.rel.predId), succ: codeOf(r.rel.succId) };
+        if (col === 'type') {
+          const t = value.toUpperCase();
+          if (!(REL_TYPES as readonly string[]).includes(t) || t === r.rel.type) continue;
+          setLinkOp(origin, { ...base, type: t as Relationship['type'] });
+        } else {
+          const v = Number(value);
+          if (value.trim() === '' || !Number.isFinite(v)) continue;
+          const hours = Math.round(v * perDayOf(byId.get(r.rel.succId)?.calendarId ?? null) * 4) / 4;
+          if (hours === r.rel.lagHours) continue;
+          setLinkOp(origin, { ...base, lagHours: hours });
+        }
+        n++;
+      }
+    });
+    if (n) setNote(`${label}: ${n} ${n === 1 ? 'cell' : 'cells'}.`);
+  };
+  const cellsOf = (kind: Kind) => ({
+    rowCount: sortedRows[kind].length,
+    fill: (col: string, srcLo: number, srcHi: number, end: number) => {
+      const rows = sortedRows[kind];
+      const len = srcHi - srcLo + 1;
+      const pairs: [number, string][] = [];
+      for (let i = srcHi + 1; i <= end; i++) {
+        const from = rows[srcLo + ((i - srcHi - 1) % len)];
+        if (from) pairs.push([i, col === 'type' ? from.rel.type : String(lagDaysOf(from))]);
+      }
+      setCells(kind, col, pairs, 'Filled down');
+    },
+    paste: (col: string, start: number, values: string[]) => setCells(kind, col, values.map((v, k): [number, string] => [start + k, v]), 'Pasted'),
+    read: (col: string, row: number) => { const r = sortedRows[kind][row]; return !r ? '' : col === 'type' ? r.rel.type : String(lagDaysOf(r)); },
+  });
+  const grids = { predecessor: useCellRange(cellsOf('predecessor')), successor: useCellRange(cellsOf('successor')) };
+
   const relationCell = (r: Row, kind: Kind) => {
     if (r.relationText === 'not linked') return <span title="One of the two activities has no linked objects (Link Groups)">not linked</span>;
     if (!hasContacts) return <span title="No Clashes & contacts results yet (load the models and let them run)">—</span>;
@@ -191,7 +241,11 @@ export function LinksPane({ activity, model, height, kind: only, onSelect }: {
 
   const half = (kind: Kind, title: string, style?: React.CSSProperties) => {
     const sort = sorts[kind];
-    const rows = sortRows(rowsOf[kind], sort);
+    const rows = sortedRows[kind];
+    const grid = grids[kind];
+    const handle = (col: string, ri: number) => editing && grid.hasHandle(col, ri)
+      ? <span className="lp-fill" onMouseDown={grid.startFill} onDoubleClick={grid.fillToEnd} title="Drag down to fill (Ctrl+D). Double-click: to the end." />
+      : null;
     return (
       <div className="links-pane__half" style={style}>
         <div className="links-pane__title">
@@ -200,18 +254,15 @@ export function LinksPane({ activity, model, height, kind: only, onSelect }: {
             <span style={{ float: 'right', display: 'inline-flex', gap: 4, alignItems: 'center' }}>
               {note && editing && <span className="scn-dim" style={{ fontWeight: 400 }}>{note}</span>}
               {changed && editing && <button type="button" className="mini-btn" onClick={resetLinks} title="Put this activity's links back as in the imported or generated programme">Reset links</button>}
-              <button type="button" className={`mini-btn mini-btn--icon${editing ? ' is-on' : ''}`} disabled={origin === null} aria-pressed={editing} aria-label="Edit links" title={editing ? 'Stop editing the links' : 'Edit the links: type, lag, take one out, add one'} onClick={() => { setEditing(!editing); setNote(null); }}>
-                <IconPencil />
-              </button>
             </span>
           )}
         </div>
         <div className="links-pane__scroll">
-          {rows.length ? (
-            <table>
+          {(rows.length > 0 || editing) ? (
+            <table className="lp-grid" {...(editing ? grid.grid : {})}>
               <thead>
                 <tr>
-                  {editing && <th aria-label="Remove" />}
+                  <th className="lp-n" aria-label="Row">#</th>
                   {COLUMNS.map((c) => (
                     <th key={c.key} title={c.title} className="links-pane__sortable" aria-sort={sort?.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'} onClick={() => toggleSort(kind, c.key)}>
                       {c.key === 'driving' ? <IconDriver width={13} height={13} /> : c.label}{sort?.key === c.key ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}
@@ -227,19 +278,23 @@ export function LinksPane({ activity, model, height, kind: only, onSelect }: {
                   const lag = days(r.rel.lagHours, lagPerDay);
                   const perDayOther = other ? perDayOf(other.calendarId) : 8;
                   return (
-                    <tr key={`${r.rel.predId}>${r.rel.succId}:${r.rel.type}:${r.rel.lagHours}:${ri}`}>
-                      {editing && <td><button type="button" className="cols__icon cols__icon--remove" onClick={() => removeLink(r.rel)} aria-label="Take this link out" title="Take this link out">✕</button></td>}
+                    <tr key={`${r.rel.predId}>${r.rel.succId}:${r.rel.type}:${r.rel.lagHours}:${ri}`} data-line={ri}>
+                      <td className="lp-n"><span className="lp-n__num">{ri + 1}</span>{editing && <button type="button" className="lp-n__del" onClick={() => removeLink(r.rel)} aria-label="Take this link out" title="Take this link out"><IconRemove /></button>}</td>
                       <td>{r.driving && <span className="ad-driver" title="Driving: its date sets the start of the later activity"><IconDriver width={14} height={14} /></span>}</td>
                       <td>{other ? <button type="button" className="link-btn" onClick={() => onSelect(other)} title={`Go to ${other.code}`}>{other.code}</button> : (kind === 'predecessor' ? r.rel.predId : r.rel.succId)}</td>
-                      <td>
+                      <td className={`lp-type${grid.inRange('type', ri) ? ' is-sel' : ''}`}>
                         {editing ? (
-                          <span style={{ display: 'inline-flex', gap: 3 }}>
-                            <select className="lp-edit" value={r.rel.type} onChange={(e) => setLink(r.rel, { type: e.target.value as Relationship['type'] })} aria-label="Link type">
-                              {REL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-                            </select>
-                            <input className="lp-edit lp-edit--lag" type="number" step="0.25" defaultValue={lag} key={`${r.rel.lagHours}`} onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && Math.round(v * lagPerDay * 4) / 4 !== r.rel.lagHours) setLink(r.rel, { lagHours: Math.round(v * lagPerDay * 4) / 4 }); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label="Lag in days" title="Lag in days" />
-                          </span>
-                        ) : `${r.rel.type}${lag ? ` ${lag > 0 ? '+' : ''}${lag}d` : ''}`}
+                          <select className="lp-edit" data-col="type" data-row={ri} value={r.rel.type} onChange={(e) => setLink(r.rel, { type: e.target.value as Relationship['type'] })} aria-label="Link type">
+                            {REL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
+                          </select>
+                        ) : r.rel.type}
+                        {handle('type', ri)}
+                      </td>
+                      <td className={`num lp-lag${grid.inRange('lag', ri) ? ' is-sel' : ''}`}>
+                        {editing ? (
+                          <input className="lp-edit lp-edit--lag" data-col="lag" data-row={ri} type="number" step="0.25" defaultValue={lag} key={`${r.rel.lagHours}`} onBlur={(e) => { const v = Number(e.target.value); if (Number.isFinite(v) && Math.round(v * lagPerDay * 4) / 4 !== r.rel.lagHours) setLink(r.rel, { lagHours: Math.round(v * lagPerDay * 4) / 4 }); }} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} aria-label="Lag in days" title="Lag in days" />
+                        ) : (lag || '')}
+                        {handle('lag', ri)}
                       </td>
                       <td className="links-pane__name" title={other?.name}>{other?.name ?? ''}</td>
                       <td>{fmtDate(other?.earlyStart ?? other?.targetStart)}</td>
@@ -250,19 +305,23 @@ export function LinksPane({ activity, model, height, kind: only, onSelect }: {
                     </tr>
                   );
                 })}
+                {editing && (() => {
+                  const d = add[kind];
+                  const typed = model.activities.find((a) => a.code.toLowerCase() === d.code.trim().toLowerCase());
+                  return (
+                    <tr className="lp-new">
+                      <td className="lp-n"><span className="lp-n__num">＋</span></td>
+                      <td />
+                      <td><input id={`lp-new-${kind}`} className="lp-edit" list="links-pane-codes" placeholder={kind === 'predecessor' ? 'Add predecessor ID…' : 'Add successor ID…'} value={d.code} onChange={(e) => setAdd((x) => ({ ...x, [kind]: { ...x[kind], code: e.target.value } }))} onKeyDown={(e) => { if (e.key === 'Enter') addLink(kind); }} aria-label={`Activity ID to add as a ${kind}`} /></td>
+                      <td className="lp-type"><select className="lp-edit" value={d.type} onChange={(e) => setAdd((x) => ({ ...x, [kind]: { ...x[kind], type: e.target.value as (typeof REL_TYPES)[number] } }))} aria-label="Link type">{REL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></td>
+                      <td className="num lp-lag"><input className="lp-edit lp-edit--lag" type="number" step="0.25" value={d.lag} onChange={(e) => setAdd((x) => ({ ...x, [kind]: { ...x[kind], lag: e.target.value } }))} onKeyDown={(e) => { if (e.key === 'Enter') addLink(kind); }} aria-label="Lag in days" title="Lag in days" /></td>
+                      <td className="links-pane__name lp-hint" colSpan={6}>{typed ? typed.name : d.code.trim() ? 'No activity with this ID' : 'Type an ID, press Enter to link'}</td>
+                    </tr>
+                  );
+                })()}
               </tbody>
             </table>
           ) : <div className="scn-dim" style={{ padding: 10 }}>None.</div>}
-          {editing && (
-            <div className="ad-edit-bar" style={{ position: 'sticky', left: 0 }}>
-              <input className="lp-edit" style={{ width: 150 }} list="links-pane-codes" placeholder={kind === 'predecessor' ? 'Predecessor ID…' : 'Successor ID…'} value={add[kind].code} onChange={(e) => setAdd((s) => ({ ...s, [kind]: { ...s[kind], code: e.target.value } }))} onKeyDown={(e) => { if (e.key === 'Enter') addLink(kind); }} aria-label={`Activity ID to add as a ${kind}`} />
-              <select className="lp-edit" style={{ width: 54 }} value={add[kind].type} onChange={(e) => setAdd((s) => ({ ...s, [kind]: { ...s[kind], type: e.target.value as (typeof REL_TYPES)[number] } }))} aria-label="Link type">
-                {REL_TYPES.map((t) => <option key={t} value={t}>{t}</option>)}
-              </select>
-              <input className="lp-edit" style={{ width: 54 }} type="number" step="0.25" value={add[kind].lag} onChange={(e) => setAdd((s) => ({ ...s, [kind]: { ...s[kind], lag: e.target.value } }))} aria-label="Lag in days" title="Lag in days" />
-              <button type="button" className="btn btn--small" onClick={() => addLink(kind)} disabled={!add[kind].code.trim()}>+ Add</button>
-            </div>
-          )}
         </div>
       </div>
     );

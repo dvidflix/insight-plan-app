@@ -43,6 +43,7 @@ const KEEP_WHEN_ABSENT = ['scenarios.root'];
 /** Browser keys that are neither layout nor a scene's lists: the user's other data, caches, or the scenes themselves. */
 const NOT_LAYOUT = new Set([
   STORE_KEY,
+  'profiles.workspaces',
   'app.browserDataImported',
   'inputs.fileSizes',
   'inputs.fileUploads',
@@ -231,6 +232,11 @@ async function reloadSaved() {
   window.location.reload();
 }
 
+/** For workspaces (state/workspaces.ts): the layout keys as they are, written back, and the reload that makes every panel read them. */
+export const captureLayoutKeys = () => capture().settings;
+export const applyLayoutKeys = (settings: Record<string, string>) => applyKeys({ settings });
+export { reloadSaved };
+
 const newId = () => `sc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
 const uniqueName = (store: Store, base: string) => {
   let name = base;
@@ -372,6 +378,7 @@ async function prepare() {
 /** Runs first, from main.tsx: from then on the active scene follows every change to the browser's keys. */
 export function startScenes() {
   if (FREE_MODE) return; // saved arrangements are part of the licensed edition
+  if (new URLSearchParams(window.location.search).has('satellite')) return; // a second window leaves the scene to the one that opened it
   try {
     // The list is rewritten without snapshots at once when it is short of space; the move itself is async.
     ready = prepare().catch(() => undefined);

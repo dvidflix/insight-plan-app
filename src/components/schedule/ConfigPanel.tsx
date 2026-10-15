@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import type { ColumnCtx, ColumnDef } from '../../schedule/columns';
 import { countActiveFilters, type FieldFilterState } from '../../schedule/filterFields';
@@ -8,13 +8,13 @@ import { GroupPanel, type GroupRule } from './GroupPanel';
 import { SortPanel, type SortRule } from './SortPanel';
 import { GeneratedSchedulesPanel } from './GeneratedSchedulesPanel';
 import { FiltersPanel } from './FiltersPanel';
-import { SidePane } from '../SidePane';
+import { DockPanel } from '../Dock';
+import { ListConfig } from '../ListConfig';
 import { useExperimental } from '../../state/appPrefsStore';
-import { IconBookingsOpen, IconColumns, IconFilter, IconGroup, IconPalette, IconSort } from '../icons';
-
-type TabId = 'columns' | 'filters' | 'group' | 'sort' | 'color' | 'generated';
 
 interface ConfigPanelProps {
+  /** What the shared panels call this list. */
+  label: string;
   onClose: () => void;
 
   colorRules: ColorRule[];
@@ -48,11 +48,10 @@ interface ConfigPanelProps {
 /** The Programmes page's tabs in the side pane, one concern at a time: a tab
     per kind of setting (with a badge showing how much is configured). */
 export function ConfigPanel({
-  onClose, colorRules, onColorRulesChange, wbsPalette, onWbsPaletteChange, model, catalog, columnViews,
+  label, onClose, colorRules, onColorRulesChange, wbsPalette, onWbsPaletteChange, model, catalog, columnViews,
   groupRules, onGroupRulesChange, onCollapseAll, onExpandAll, groupByWbs, onToggleGroupByWbs,
   sortRules, onSortRulesChange, baseActivities, columnCtx, fieldFilters, onFieldFiltersChange,
 }: ConfigPanelProps) {
-  const [tab, setTab] = useState<TabId>('columns');
 
   const filterCount = countActiveFilters(fieldFilters);
   // Distinct values of a field over the activities in view, most common first.
@@ -74,27 +73,26 @@ export function ConfigPanel({
   }, [catalog, columnCtx, baseActivities]);
 
   const scenariosOn = useExperimental('scenarios');
-  const tabs: { id: TabId; label: string; icon: React.ReactNode; badge?: number; body: React.ReactNode }[] = [
-    { id: 'columns', label: 'Columns', icon: <IconColumns />, body: <ColumnsPanel key={columnViews.map((v) => v.id).join()} catalog={catalog} views={columnViews} calculated /> },
-    { id: 'filters', label: 'Filters', icon: <IconFilter />, badge: filterCount, body: (
-      <FiltersPanel model={model} baseActivities={baseActivities} state={fieldFilters} onChange={onFieldFiltersChange} />
-    ) },
-    { id: 'group', label: 'Group', icon: <IconGroup />, badge: groupRules.length, body: (
-      <GroupPanel bare fields={catalog} rules={groupRules} onChange={onGroupRulesChange} onClose={onClose} onCollapseAll={onCollapseAll} onExpandAll={onExpandAll} groupByWbs={groupByWbs} onToggleGroupByWbs={onToggleGroupByWbs} />
-    ) },
-    { id: 'sort', label: 'Sort', icon: <IconSort />, badge: sortRules.length, body: (
-      <SortPanel bare fields={catalog} rules={sortRules} onChange={onSortRulesChange} onClose={onClose} />
-    ) },
-    { id: 'color', label: 'Color', icon: <IconPalette />, badge: colorRules.length, body: (
-      <ColorPanel bare rules={colorRules} onChange={onColorRulesChange} onClose={onClose} wbsPalette={wbsPalette} onWbsPaletteChange={onWbsPaletteChange} fields={catalog} valuesOf={columnCtx ? valuesOf : undefined} />
-    ) },
-    ...(scenariosOn ? [{ id: 'generated' as const, label: 'Generated schedules', icon: <IconBookingsOpen />, body: <GeneratedSchedulesPanel model={model} /> }] : []),
-  ];
-  const active = tabs.find((t) => t.id === tab) ?? tabs[0];
-
+  // Columns, filters, group, sort and colour are the shared panels (ListConfig): this list fills them while it is the one set up.
   return (
-    <SidePane tabs={tabs} active={active.id} onSelect={setTab}>
-      {active.body}
-    </SidePane>
+    <>
+      <ListConfig
+        id="programmes"
+        label={label}
+        badges={{ filters: filterCount, group: groupRules.length, sort: sortRules.length, color: colorRules.length }}
+        panels={{
+          columns: <ColumnsPanel key={columnViews.map((v) => v.id).join()} catalog={catalog} views={columnViews} calculated />,
+          filters: <FiltersPanel model={model} baseActivities={baseActivities} state={fieldFilters} onChange={onFieldFiltersChange} />,
+          group: <GroupPanel bare fields={catalog} rules={groupRules} onChange={onGroupRulesChange} onClose={onClose} onCollapseAll={onCollapseAll} onExpandAll={onExpandAll} groupByWbs={groupByWbs} onToggleGroupByWbs={onToggleGroupByWbs} />,
+          sort: <SortPanel bare fields={catalog} rules={sortRules} onChange={onSortRulesChange} onClose={onClose} />,
+          color: <ColorPanel bare rules={colorRules} onChange={onColorRulesChange} onClose={onClose} wbsPalette={wbsPalette} onWbsPaletteChange={onWbsPaletteChange} fields={catalog} valuesOf={columnCtx ? valuesOf : undefined} />,
+        }}
+      />
+      {scenariosOn && (
+        <DockPanel id="generated" label="Generated schedules">
+          <div className="config-panel__body" style={{ flex: 1, minHeight: 0 }}><GeneratedSchedulesPanel model={model} /></div>
+        </DockPanel>
+      )}
+    </>
   );
 }

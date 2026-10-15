@@ -5,6 +5,7 @@ import {
   assignmentProblems, assignmentsToTsv, chainsToTsv, crewText, parseChainsPaste, crewsToTsv, parseAssignmentsPaste, parseCrewText, parseCrewsPaste, parseRatesPaste, ratesToTsv, parseTradesPaste, tradesToTsv,
 } from '../../../prs/relational';
 import { IconRemove } from '../../icons';
+import { useEditableGrid } from '../../useEditableGrid';
 import { RuleCard, useTrades, type RuleContext } from './RuleParts';
 import type { RuleKind } from './kinds';
 
@@ -21,6 +22,12 @@ function Cell({ value, onChange, list, width, type = 'text', placeholder, title 
 interface Column<T> {
   label: string;
   tip?: string;
+  /** The field of the row this column holds: the column can then be filled down, copied and pasted like a spreadsheet's. */
+  field?: keyof T & string;
+  /** A number (a blank is "not set"). */
+  numeric?: boolean;
+  /** A blank text is "not set" (the field is left out). */
+  optional?: boolean;
   render: (row: T, update: (patch: Partial<T>) => void) => ReactNode;
 }
 
@@ -50,6 +57,22 @@ function GridCard<T extends { id: string; enabled?: boolean }>({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [rows]);
 
+  // ---- Spreadsheet behaviour of the columns that name their field: range, fill down (Ctrl+D, the corner square), copy and paste.
+  const grid = useEditableGrid({
+    rows: shown,
+    get: (col, { r }) => { const f = columns[Number(col)]?.field; const v = f ? (r as Record<string, unknown>)[f] : undefined; return v === undefined || v === null ? '' : String(v); },
+    write: (col, cells) => {
+      const c = columns[Number(col)];
+      if (!c?.field) return;
+      const patches = new Map<number, unknown>();
+      for (const [at, text] of cells) {
+        const row = shown[at];
+        if (!row) continue;
+        patches.set(row.i, c.numeric ? num(text) : c.optional && text === '' ? undefined : text);
+      }
+      onRows(rows.map((x, j) => (patches.has(j) ? { ...x, [c.field as string]: patches.get(j) } : x)));
+    },
+  });
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(toTsv(rows));
@@ -93,7 +116,7 @@ function GridCard<T extends { id: string; enabled?: boolean }>({
         </div>
       )}
       <div className="rel-scroll">
-        <table className="rel-table">
+        <table className="rel-table xgrid" {...grid.grid}>
           <thead>
             <tr>
               <th aria-label="On" />
@@ -102,13 +125,17 @@ function GridCard<T extends { id: string; enabled?: boolean }>({
             </tr>
           </thead>
           <tbody>
-            {shown.map(({ r, i }) => {
+            {shown.map(({ r, i }, at) => {
               const update = (patch: Partial<T>) => onRows(rows.map((x, j) => (j === i ? { ...x, ...patch } : x)));
               const own = [...problems(r), ...((seen.get(keyOf(r)) ?? 0) > 1 ? ['The same key is used twice'] : [])];
               return (
-                <tr key={i} className={`${r.enabled === false ? 'is-off' : ''}${own.length ? ' has-problem' : ''}`} title={own.join('\n') || undefined}>
+                <tr key={i} data-line={at} className={`${r.enabled === false ? 'is-off' : ''}${own.length ? ' has-problem' : ''}`} title={own.join('\n') || undefined}>
                   <td><input type="checkbox" checked={r.enabled !== false} onChange={(e) => update({ enabled: e.target.checked ? undefined : false } as Partial<T>)} aria-label="Row on" /></td>
-                  {columns.map((c) => <td key={c.label}>{c.render(r, update)}</td>)}
+                  {columns.map((c, ci) => (
+                    c.field
+                      ? <td key={c.label} className={`xgrid__cell${grid.sel(String(ci), at)}`} data-col={ci} data-row={at}>{c.render(r, update)}{grid.handle(String(ci), at)}</td>
+                      : <td key={c.label}>{c.render(r, update)}</td>
+                  ))}
                   <td><button type="button" className="cols__icon cols__icon--remove" onClick={() => onRows(rows.filter((_, j) => j !== i))} aria-label="Delete row"><IconRemove /></button></td>
                 </tr>
               );
@@ -129,17 +156,17 @@ export function RatesTableCard({ ctx }: { ctx: RuleContext }) {
   const set = (next: RateRow[]) => ctx.change((r) => ({ ...r, rates: next }));
   const P = (r: RateRow) => r.type === 'productivity';
   const columns: Column<RateRow>[] = [
-    { label: 'ID', render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id })} width={110} /> },
-    { label: 'Type', tip: 'Days: a fixed number of days. Productivity: days worked out from a quantity. Rebar: tonnes of rebar per m³ of concrete.', render: (r, u) => (
+    { label: 'ID', field: 'id', render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id })} width={110} /> },
+    { label: 'Type', field: 'type', tip: 'Days: a fixed number of days. Productivity: days worked out from a quantity. Rebar: tonnes of rebar per m³ of concrete.', render: (r, u) => (
       <select className="rel-cell" value={r.type} onChange={(e) => u({ type: e.target.value as RateRow['type'] })}>
         <option value="days">days</option>
         <option value="productivity">productivity</option>
         <option value="rebar">rebar</option>
       </select>
     ) },
-    { label: 'Days', render: (r, u) => (r.type === 'days' ? <Cell type="number" value={r.days} onChange={(v) => u({ days: num(v) })} width={64} /> : null) },
-    { label: 'Tonnes per m³', render: (r, u) => (r.type === 'rebar' ? <Cell type="number" value={r.tonnesPerM3} onChange={(v) => u({ tonnesPerM3: num(v) })} width={72} /> : null) },
-    { label: 'Quantity', tip: 'Productivity: tonnes of rebar, m³ of concrete, the footprint area (m², a slab\'s deck), the side faces area (m², a wall\'s formwork), or a number the model carries. Areas are measured from the model\'s geometry.', render: (r, u) => P(r) ? (
+    { label: 'Days', field: 'days', numeric: true, render: (r, u) => (r.type === 'days' ? <Cell type="number" value={r.days} onChange={(v) => u({ days: num(v) })} width={64} /> : null) },
+    { label: 'Tonnes per m³', field: 'tonnesPerM3', numeric: true, render: (r, u) => (r.type === 'rebar' ? <Cell type="number" value={r.tonnesPerM3} onChange={(v) => u({ tonnesPerM3: num(v) })} width={72} /> : null) },
+    { label: 'Quantity', field: 'basis', tip: 'Productivity: tonnes of rebar, m³ of concrete, the footprint area (m², a slab\'s deck), the side faces area (m², a wall\'s formwork), or a number the model carries. Areas are measured from the model\'s geometry.', render: (r, u) => P(r) ? (
       <select className="rel-cell" value={r.basis ?? 'rebar'} onChange={(e) => u({ basis: e.target.value as RateRow['basis'] })}>
         <option value="rebar">rebar t</option>
         <option value="concrete">concrete m³</option>
@@ -148,28 +175,28 @@ export function RatesTableCard({ ctx }: { ctx: RuleContext }) {
         <option value="property">model property</option>
       </select>
     ) : null },
-    { label: 'Property set', render: (r, u) => (P(r) && r.basis === 'property' ? <Cell value={r.pset} onChange={(pset) => u({ pset: pset || undefined })} width={110} /> : null) },
-    { label: 'Property', render: (r, u) => (P(r) && r.basis === 'property' ? <Cell value={r.property} onChange={(property) => u({ property })} width={110} /> : null) },
-    { label: 'Multiply by', render: (r, u) => (P(r) && r.basis === 'property' ? <Cell type="number" value={r.factor} onChange={(v) => u({ factor: num(v) })} width={64} /> : null) },
-    { label: 'If none', tip: 'What an object without the property uses', render: (r, u) => P(r) && r.basis === 'property' ? (
+    { label: 'Property set', field: 'pset', optional: true, render: (r, u) => (P(r) && r.basis === 'property' ? <Cell value={r.pset} onChange={(pset) => u({ pset: pset || undefined })} width={110} /> : null) },
+    { label: 'Property', field: 'property', render: (r, u) => (P(r) && r.basis === 'property' ? <Cell value={r.property} onChange={(property) => u({ property })} width={110} /> : null) },
+    { label: 'Multiply by', field: 'factor', numeric: true, render: (r, u) => (P(r) && r.basis === 'property' ? <Cell type="number" value={r.factor} onChange={(v) => u({ factor: num(v) })} width={64} /> : null) },
+    { label: 'If none', field: 'fallback', tip: 'What an object without the property uses', render: (r, u) => P(r) && r.basis === 'property' ? (
       <select className="rel-cell" value={r.fallback ?? 'rebar'} onChange={(e) => u({ fallback: e.target.value as RateRow['fallback'] })}>
         <option value="rebar">rebar t</option>
         <option value="concrete">concrete m³</option>
         <option value="none">leave out</option>
       </select>
     ) : null },
-    { label: 'Man-hours per unit', render: (r, u) => (P(r) ? <Cell type="number" value={r.manhoursPerUnit} onChange={(v) => u({ manhoursPerUnit: num(v) })} width={72} /> : null) },
-    { label: 'People', tip: '0 = the people of the crew assigned with the rate', render: (r, u) => (P(r) ? <Cell type="number" value={r.people} onChange={(v) => u({ people: num(v) })} width={56} /> : null) },
-    { label: 'Shifts', render: (r, u) => (P(r) ? <Cell type="number" value={r.shifts} onChange={(v) => u({ shifts: num(v) })} width={52} /> : null) },
-    { label: 'Hours per shift', render: (r, u) => (P(r) ? <Cell type="number" value={r.hoursPerShift} onChange={(v) => u({ hoursPerShift: num(v) })} width={64} /> : null) },
-    { label: 'Round', render: (r, u) => P(r) ? (
+    { label: 'Man-hours per unit', field: 'manhoursPerUnit', numeric: true, render: (r, u) => (P(r) ? <Cell type="number" value={r.manhoursPerUnit} onChange={(v) => u({ manhoursPerUnit: num(v) })} width={72} /> : null) },
+    { label: 'People', field: 'people', numeric: true, tip: '0 = the people of the crew assigned with the rate', render: (r, u) => (P(r) ? <Cell type="number" value={r.people} onChange={(v) => u({ people: num(v) })} width={56} /> : null) },
+    { label: 'Shifts', field: 'shifts', numeric: true, render: (r, u) => (P(r) ? <Cell type="number" value={r.shifts} onChange={(v) => u({ shifts: num(v) })} width={52} /> : null) },
+    { label: 'Hours per shift', field: 'hoursPerShift', numeric: true, render: (r, u) => (P(r) ? <Cell type="number" value={r.hoursPerShift} onChange={(v) => u({ hoursPerShift: num(v) })} width={64} /> : null) },
+    { label: 'Round', field: 'rounding', render: (r, u) => P(r) ? (
       <select className="rel-cell" value={r.rounding ?? 'ceil'} onChange={(e) => u({ rounding: e.target.value as RateRow['rounding'] })}>
         <option value="ceil">up</option>
         <option value="round">nearest</option>
         <option value="none">none</option>
       </select>
     ) : null },
-    { label: 'At least (days)', render: (r, u) => (P(r) ? <Cell type="number" value={r.minDays} onChange={(v) => u({ minDays: num(v) })} width={64} /> : null) },
+    { label: 'At least (days)', field: 'minDays', numeric: true, render: (r, u) => (P(r) ? <Cell type="number" value={r.minDays} onChange={(v) => u({ minDays: num(v) })} width={64} /> : null) },
   ];
   return (
     <GridCard
@@ -197,9 +224,9 @@ export function TradesTableCard({ ctx }: { ctx: RuleContext }) {
       kind="tradeTable" rows={rows} onRows={set} toTsv={tradesToTsv} parse={parseTradesPaste}
       keyOf={(r) => r.id.trim().toUpperCase()} blank={(): TradeRow => ({ id: `TR${rows.length + 1}`, name: '', capacity: 0 })}
       columns={[
-        { label: 'Code', tip: "The trade's code in crews (SF, CP ...)", render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id: id.toUpperCase() })} width={70} /> },
-        { label: 'Name', render: (r, u) => <Cell value={r.name} onChange={(name) => u({ name })} width={200} placeholder="Steel fixers" /> },
-        { label: 'People per day', tip: "The site's capacity of this trade: written to P6 as the resource's max units per time, and the limit the programme is levelled to", render: (r, u) => <Cell type="number" value={r.capacity} onChange={(v) => u({ capacity: num(v) ?? 0 })} width={80} /> },
+        { label: 'Code', field: 'id', tip: "The trade's code in crews (SF, CP ...)", render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id: id.toUpperCase() })} width={70} /> },
+        { label: 'Name', field: 'name', render: (r, u) => <Cell value={r.name} onChange={(name) => u({ name })} width={200} placeholder="Steel fixers" /> },
+        { label: 'People per day', field: 'capacity', numeric: true, tip: "The site's capacity of this trade: written to P6 as the resource's max units per time, and the limit the programme is levelled to", render: (r, u) => <Cell type="number" value={r.capacity} onChange={(v) => u({ capacity: num(v) ?? 0 })} width={80} /> },
         { label: 'Crews', tip: 'How many crews use this trade', render: (r) => <span className="scn-dim">{used(r.id) || ''}</span> },
       ]}
       problems={(r) => [...(!r.id.trim() ? ['A code is needed'] : [])]}
@@ -238,10 +265,10 @@ export function CrewsTableCard({ ctx }: { ctx: RuleContext }) {
       kind="crewTable" rows={rows} onRows={set} toTsv={crewsToTsv} parse={parseKeeping}
       keyOf={(r) => r.id.trim().toUpperCase()} blank={(): CrewTemplate => ({ id: `CREW-${rows.length + 1}`, trades: [] })}
       columns={[
-        { label: 'ID', render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id })} width={150} /> },
+        { label: 'ID', field: 'id', render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id })} width={150} /> },
         { label: 'Crew', tip: 'Trade code and people per day, separated by commas', render: (r, u) => <CrewCell row={r} update={u} /> },
-        { label: 'Subcontractor', tip: 'The company the crew belongs to: it is part of the name of the crew resource in the programme', render: (r, u) => <Cell value={r.subcontractor} onChange={(subcontractor) => u({ subcontractor: subcontractor || undefined })} width={150} placeholder="Concrete Sub" /> },
-        { label: 'Crews available', tip: 'How many crews of this kind there are (the most that can work at once). Empty: not limited. The programme gets a resource for it, with this count as its limit: the Equipment tab of Resources shows the days over it.', render: (r, u) => <Cell type="number" value={r.available} onChange={(v) => u({ available: num(v) })} width={72} /> },
+        { label: 'Subcontractor', field: 'subcontractor', optional: true, tip: 'The company the crew belongs to: it is part of the name of the crew resource in the programme', render: (r, u) => <Cell value={r.subcontractor} onChange={(subcontractor) => u({ subcontractor: subcontractor || undefined })} width={150} placeholder="Concrete Sub" /> },
+        { label: 'Crews available', field: 'available', numeric: true, tip: 'How many crews of this kind there are (the most that can work at once). Empty: not limited. The programme gets a resource for it, with this count as its limit: the Equipment tab of Resources shows the days over it.', render: (r, u) => <Cell type="number" value={r.available} onChange={(v) => u({ available: num(v) })} width={72} /> },
       ]}
       problems={(r) => [
         ...(!r.id.trim() ? ['An ID is needed'] : []),
@@ -267,22 +294,22 @@ export function ChainsTableCard({ ctx }: { ctx: RuleContext }) {
         kind="chainTable" rows={rows} onRows={set} toTsv={chainsToTsv} parse={parseChainsPaste}
         keyOf={chainKey} blank={(): ChainRow => ({ id: '|', group: '', order: rows.length + 1, phase: '' })}
         columns={[
-          { label: 'Group', tip: 'The group whose pours get this chain; empty = every pour', render: (r, u) => <Cell value={r.group} list="chain-groups" onChange={(group) => u({ group })} width={130} /> },
-          { label: 'Order', tip: 'The place of the activity in the chain', render: (r, u) => <Cell type="number" value={r.order} onChange={(v) => u({ order: num(v) ?? 0 })} width={52} /> },
-          { label: 'Phase', render: (r, u) => <Cell value={r.phase} list="chain-phases" onChange={(phase) => u({ phase })} width={150} /> },
-          { label: 'Suffix', tip: 'The end of the activity ID (-R); empty: the initials of the phase', render: (r, u) => <Cell value={r.suffix} onChange={(suffix) => u({ suffix: suffix || undefined })} width={60} /> },
+          { label: 'Group', field: 'group', tip: 'The group whose pours get this chain; empty = every pour', render: (r, u) => <Cell value={r.group} list="chain-groups" onChange={(group) => u({ group })} width={130} /> },
+          { label: 'Order', field: 'order', numeric: true, tip: 'The place of the activity in the chain', render: (r, u) => <Cell type="number" value={r.order} onChange={(v) => u({ order: num(v) ?? 0 })} width={52} /> },
+          { label: 'Phase', field: 'phase', render: (r, u) => <Cell value={r.phase} list="chain-phases" onChange={(phase) => u({ phase })} width={150} /> },
+          { label: 'Suffix', field: 'suffix', optional: true, tip: 'The end of the activity ID (-R); empty: the initials of the phase', render: (r, u) => <Cell value={r.suffix} onChange={(suffix) => u({ suffix: suffix || undefined })} width={60} /> },
           { label: 'Name', tip: 'The end of the activity name; empty: the phase', render: (r, u) => <Cell value={r.label} onChange={(label) => u({ label: label || undefined })} width={150} /> },
-          { label: 'Material', tip: 'Rebar: the pour\'s rebar tonnes go on this activity. Concrete: its volume.', render: (r, u) => (
+          { label: 'Material', field: 'material', optional: true, tip: 'Rebar: the pour\'s rebar tonnes go on this activity. Concrete: its volume.', render: (r, u) => (
             <select className="rel-cell" value={r.material ?? ''} onChange={(e) => u({ material: (e.target.value || undefined) as ChainRow['material'] })}>
               <option value="">none</option>
               <option value="rebar">rebar</option>
               <option value="concrete">concrete</option>
             </select>
           ) },
-          { label: 'Follows', tip: 'The phases it waits for: "Decking@80, Under Slab" = 80 % of Decking done (it starts that far into it) and Under Slab finished. Empty: the activity before it, finished.', render: (r, u) => <Cell value={r.follows} list="chain-phases" onChange={(follows) => u({ follows: follows || undefined })} width={190} placeholder="the one before" /> },
+          { label: 'Follows', field: 'follows', optional: true, tip: 'The phases it waits for: "Decking@80, Under Slab" = 80 % of Decking done (it starts that far into it) and Under Slab finished. Empty: the activity before it, finished.', render: (r, u) => <Cell value={r.follows} list="chain-phases" onChange={(follows) => u({ follows: follows || undefined })} width={190} placeholder="the one before" /> },
           { label: 'Finish after', tip: 'With a share below 100 %: it also cannot finish before what it follows does (finish-to-finish)', render: (r, u) => <input type="checkbox" checked={!!r.finishAfter} onChange={(e) => u({ finishAfter: e.target.checked || undefined })} aria-label="Finish after" /> },
           { label: 'Gates', tip: 'What follows the pour (the objects standing on it, the slab above) waits for this activity, as the contact links and the slab links take it. Empty: the Concrete.', render: (r, u) => <input type="checkbox" checked={!!r.gates} onChange={(e) => u({ gates: e.target.checked || undefined })} aria-label="Gates what follows" /> },
-          { label: 'Priority', tip: 'Where a pour is in several groups with a chain, the highest priority decides', render: (r, u) => <Cell type="number" value={r.priority} onChange={(v) => u({ priority: num(v) })} width={60} /> },
+          { label: 'Priority', field: 'priority', numeric: true, tip: 'Where a pour is in several groups with a chain, the highest priority decides', render: (r, u) => <Cell type="number" value={r.priority} onChange={(v) => u({ priority: num(v) })} width={60} /> },
         ]}
         problems={(r) => [
           ...(!r.phase.trim() ? ['A phase is needed'] : []),

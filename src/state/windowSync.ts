@@ -59,8 +59,36 @@ channel.onmessage = (e: MessageEvent<Message>) => {
   handlers.get(m.type)?.forEach((fn) => fn(m.data));
 };
 
-/** Opens a satellite window on a Programmes view. */
-export function openSatelliteWindow(view: string) {
+/** Where a satellite window is on the screen, and what it shows (kept by a workspace, state/workspaces.ts). */
+export interface WindowInfo {
+  view: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+/** The satellite windows this window opened and that are still open. */
+const opened = new Map<string, { win: Window; view: string }>();
+export const WINDOWS_EVENT = 'ip-windows';
+
+const bounds = (win: Window) => ({ x: Math.round(win.screenX), y: Math.round(win.screenY), w: Math.round(win.outerWidth), h: Math.round(win.outerHeight) });
+
+/** The satellite windows open now, with where they are. */
+export function satelliteWindows(): WindowInfo[] {
+  const out: WindowInfo[] = [];
+  for (const { win, view } of opened.values()) if (!win.closed) out.push({ view, ...bounds(win) });
+  return out;
+}
+
+/** Closes the satellite windows this window opened. */
+export function closeSatelliteWindows() {
+  for (const { win } of opened.values()) if (!win.closed) win.close();
+  opened.clear();
+}
+
+/** Opens a satellite window on a Programmes view; at `at` when given. False when the browser blocked it. */
+export function openSatelliteWindow(view: string, at?: Partial<WindowInfo>): boolean {
   const group = crypto.randomUUID();
   groups.add(group);
   try {
@@ -73,9 +101,30 @@ export function openSatelliteWindow(view: string) {
   url.hash = '';
   url.searchParams.set('satellite', group);
   url.searchParams.set('view', view);
-  const w = window.open(url.toString(), `insight-plan-${group}`, `popup=yes,width=${Math.round(window.screen.availWidth * 0.8)},height=${Math.round(window.screen.availHeight * 0.85)}`);
-  if (!w) window.alert('The browser blocked the new window. Allow pop-ups for this site and try again.');
+  const w = at?.w ?? Math.round(window.screen.availWidth * 0.8);
+  const h = at?.h ?? Math.round(window.screen.availHeight * 0.85);
+  const place = at?.x !== undefined && at?.y !== undefined ? `,left=${at.x},top=${at.y}` : '';
+  const win = window.open(url.toString(), `insight-plan-${group}`, `popup=yes,width=${w},height=${h}${place}`);
+  if (!win) {
+    groups.delete(group);
+    if (!at) window.alert('The browser blocked the new window. Allow pop-ups for this site and try again.');
+    return false;
+  }
+  opened.set(group, { win, view });
+  window.dispatchEvent(new Event(WINDOWS_EVENT));
+  return true;
 }
+
+// Windows the user closes or moves: noticed a moment later (a workspace keeps where they are).
+let lastWindows = '[]';
+setInterval(() => {
+  if (opened.size === 0 && lastWindows === '[]') return;
+  for (const [group, { win }] of opened) if (win.closed) opened.delete(group);
+  const now = JSON.stringify(satelliteWindows());
+  if (now === lastWindows) return;
+  lastWindows = now;
+  window.dispatchEvent(new Event(WINDOWS_EVENT));
+}, 1500);
 
 // ---- Programme edits ----
 

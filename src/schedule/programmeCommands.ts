@@ -1,6 +1,8 @@
 import { recomputeCpm } from './cpm';
 import type { ScheduleCalendar } from './calendar';
-import type { Activity, ActivityType, ScheduleModel, WbsNode } from './types';
+import type { Activity, ActivityType, RelationType, ScheduleModel, WbsNode } from './types';
+import type { ElementSummary } from '../viewer/types';
+import { objectFieldValue, type LinkGroup } from './linkGroups';
 
 /** Changes to the structure of a programme edited in place: activities added and taken out, WBS nodes added, renamed, moved and taken
     out, activities moved between WBS nodes. Each returns the new model (the old one is not changed), or an `error` to show. Activities
@@ -107,6 +109,44 @@ export function deleteActivities(m: ScheduleModel, ids: Iterable<string>): Resul
   if (removed === 0) return { error: 'No activity to delete.' };
   const relationships = m.relationships.filter((r) => !gone.has(r.predId) && !gone.has(r.succId));
   return { model: calculated({ ...m, activities, relationships }), removed };
+}
+
+/** Dissolves activities: they are taken out and the logic they carried stays. Each of their predecessors is linked to each of their
+    successors (finish to start, the two lags added), unless the two are linked already or the link would close a loop. */
+export function dissolveActivities(m: ScheduleModel, ids: Iterable<string>): Result<{ removed: number; bridged: number }> {
+  const gone = new Set([...ids].filter((id) => m.activities.some((a) => a.id === id)));
+  if (gone.size === 0) return { error: 'No activity to dissolve.' };
+  let rels = m.relationships;
+  let bridged = 0;
+  const leadsTo = (from: string, to: string, list: typeof rels): boolean => {
+    const next = new Map<string, string[]>();
+    for (const r of list) (next.get(r.predId) ?? next.set(r.predId, []).get(r.predId)!).push(r.succId);
+    const seen = new Set<string>();
+    const stack = [from];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (id === to) return true;
+      if (seen.has(id)) continue;
+      seen.add(id);
+      stack.push(...(next.get(id) ?? []));
+    }
+    return false;
+  };
+  // One at a time, so dissolving B and C in A → B → C → D leaves A → D.
+  for (const id of gone) {
+    const ins = rels.filter((r) => r.succId === id);
+    const outs = rels.filter((r) => r.predId === id);
+    rels = rels.filter((r) => r.succId !== id && r.predId !== id);
+    for (const i of ins) {
+      for (const o of outs) {
+        if (i.predId === o.succId || rels.some((r) => r.predId === i.predId && r.succId === o.succId) || leadsTo(o.succId, i.predId, rels)) continue;
+        rels = [...rels, { predId: i.predId, succId: o.succId, type: 'FS', lagHours: i.lagHours + o.lagHours }];
+        bridged++;
+      }
+    }
+  }
+  const activities = m.activities.filter((a) => !gone.has(a.id));
+  return { model: calculated({ ...m, activities, relationships: rels }), removed: gone.size, bridged };
 }
 
 /** A new WBS node under `parentId` (null: a top node). */
@@ -234,4 +274,70 @@ export function deleteCalendar(m: ScheduleModel, id: string): Result {
   const using = m.activities.filter((a) => a.calendarId === id).length;
   if (using) return { error: `“${cal.name}” is used by ${using.toLocaleString()} ${using === 1 ? 'activity' : 'activities'}: give ${using === 1 ? 'it' : 'them'} another calendar first.` };
   return { model: { ...m, calendars: m.calendars.filter((c) => c !== cal) } };
+}
+
+export interface TasksFromObjects {
+  /** One task for each object (else one task for all of them). */
+  perObject: boolean;
+  days: number;
+  /** Default: the calendar of the activity they go after. */
+  calendarId?: string | null;
+  /** Chain the new tasks with this relation (null: no links between them). */
+  chain: RelationType | null;
+  /** Goes after this activity: it takes its WBS node, and the first new task is linked from it. */
+  after?: string;
+  wbsId?: string | null;
+  /** What the work is (Install, Construct, Remove, Temporary...): the word the task name starts with. */
+  workType?: string;
+  /** A task, or a milestone (default: a task). */
+  type?: ActivityType;
+}
+
+/** New tasks from objects picked in the 3D model, linked to them the way the programme links tasks to objects: through the Link
+    Group, whose matching rules say which task field holds which object property. Each new task gets the object's value in
+    the field of every rule of the group (its Name or Activity ID, a user field or an activity code the programme has), so the group
+    finds its object by itself. Fields the programme cannot hold are listed in `notes`. */
+export function addTasksFromObjects(m: ScheduleModel, objects: ElementSummary[], group: LinkGroup | null, o: TasksFromObjects): Result<{ ids: string[]; notes: string[] }> {
+  if (objects.length === 0) return { error: 'Select objects in the 3D model first.' };
+  const notes = new Set<string>();
+  const groups = o.perObject ? objects.map((el) => [el]) : [objects];
+  let model = m;
+  const ids: string[] = [];
+  for (const parts of groups) {
+    const first = parts[0];
+    const name = parts.length > 1 ? `${first.name || first.category} (+${parts.length - 1})` : first.name || first.category;
+    const added = addActivity(model, { name, after: ids[ids.length - 1] ?? o.after, wbsId: o.wbsId, days: o.days, type: o.type });
+    if ('error' in added) return added;
+    model = added.model;
+    const id = added.id;
+    let patch: Partial<Activity> = o.calendarId ? { calendarId: o.calendarId, durationHours: o.days * (model.calendars.find((c) => c.id === o.calendarId)?.hoursPerDay || 8) } : {};
+    if (patch.durationHours !== undefined) patch.remainingDurationHours = patch.durationHours;
+    for (const rule of group?.matchRules ?? []) {
+      const value = [...new Set(parts.map((el) => objectFieldValue(el, rule.objectPropertySet, rule.objectAttribute).trim()).filter(Boolean))].join(rule.taskSeparators?.[0] ?? ', ');
+      if (!value) { notes.add(`The object has no ${rule.objectPropertySet}${rule.objectAttribute ? `.${rule.objectAttribute}` : ''} to match.`); continue; }
+      const field = rule.taskField;
+      const current = model.activities.find((a) => a.id === id)!;
+      if (field === '_name') patch = { ...patch, name: value };
+      else if (field === '_code') {
+        if (model.activities.some((a) => a.code.toLowerCase() === value.toLowerCase())) notes.add(`An activity with the ID “${value}” exists already: the new task keeps ${current.code}.`);
+        else patch = { ...patch, code: value };
+      } else if ((model.udfTypes ?? []).some((t) => t.label === field)) patch = { ...patch, udf: { ...(patch.udf ?? current.udf), [field]: value } };
+      else if ((model.activityCodeCatalog ?? []).some((t) => t.name === field && t.values.some((v) => v.value === value))) patch = { ...patch, activityCodes: { ...(patch.activityCodes ?? current.activityCodes), [field]: value } };
+      else notes.add(`The programme has no field “${field}” holding “${value}”: add that user field or activity code value first.`);
+    }
+    // The work type leads the name ("Install 1HDAB - L1 - Walls"), unless a rule matches on the name: it would stop matching.
+    if (o.workType?.trim()) {
+      if (group?.matchRules.some((r) => r.taskField === '_name')) notes.add('The group matches on the task name, so the work type is not put in front of it.');
+      else patch = { ...patch, name: `${o.workType.trim()} ${patch.name ?? name}` };
+    }
+    model = { ...model, activities: model.activities.map((a) => (a.id === id ? { ...a, ...patch } : a)) };
+    ids.push(id);
+  }
+  const relationships = [...model.relationships];
+  const link = (predId: string, succId: string) => relationships.push({ predId, succId, type: o.chain ?? 'FS', lagHours: 0 });
+  if (o.chain) {
+    if (o.after) link(o.after, ids[0]);
+    for (let i = 1; i < ids.length; i++) link(ids[i - 1], ids[i]);
+  }
+  return { model: calculated({ ...model, relationships }), ids, notes: [...notes] };
 }

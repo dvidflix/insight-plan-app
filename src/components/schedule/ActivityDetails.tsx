@@ -1,10 +1,10 @@
 import { hoursPerDayOf } from '../../schedule/hoursPerDay';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useSelectionStore } from '../../state/selectionStore';
 import { usePropertyQueueStore } from '../../state/propertyQueueStore';
 import type { Activity, ResourceAssignment, ScheduleModel } from '../../schedule/types';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
-import { IconList, IconPencil, IconRoadSurface } from '../icons';
+import { IconRoadSurface } from '../icons';
 import { applyVirtualResources } from '../../schedule/virtualResources';
 import { ActivityNote } from './ActivityNote';
 import { relationDetail, sharedContactIndex } from '../../schedule/activityRelation';
@@ -185,18 +185,21 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
   const calendarsById = useMemo(() => new Map(model.calendars.map((c) => [c.id, c])), [model.calendars]);
   const perDayOf = (calendarId: string | null) => hoursPerDayOf(calendarId, calendarsById);
   const perDay = perDayOf(activity.calendarId);
-  const [editing, setEditing] = useState(false);
+  // The fields are always editable (when there is one programme to keep the edit with): each change is kept as it is made.
+  const editing = origin !== null;
   const [draft, setDraft] = useState({ name: '', days: '', calendarId: '', status: 'not-started' as Activity['status'], actualStart: '', actualFinish: '', remainingDays: '', constraintType: '', constraintDate: '' });
-  useEffect(() => setEditing(false), [activity.id]);
-  const startEdit = () => {
+  // The fields show the activity as it is now: again after each edit, undo and a different activity.
+  useEffect(() => {
     setDraft({
       name: activity.name, days: String(days(activity.durationHours, perDay)), calendarId: activity.calendarId ?? '',
       status: activity.status, actualStart: toInput(activity.actualStart), actualFinish: toInput(activity.actualFinish),
       remainingDays: String(days(activity.remainingDurationHours, perDay)), constraintType: activity.constraintType ?? '', constraintDate: toInput(activity.constraintDate),
     });
-    setEditing(true);
-  };
-  const saveEdit = () => {
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activity]);
+  /** Keeps what the fields say (`next`: the fields with the change just made, before the state has it). */
+  const saveEdit = (next: typeof draft = draft) => {
+    const draft = next;
     if (origin === null) return;
     const patch: Partial<Activity> = {};
     if (draft.name.trim() && draft.name !== activity.name) patch.name = draft.name.trim();
@@ -243,12 +246,29 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
       patch.constraintDate = draft.constraintType ? fromInput(draft.constraintDate) ?? activity.constraintDate : null;
     }
     if (Object.keys(patch).length) commit(`Edit ${activity.code}`, () => setEdits(origin, new Map([[activity.code, patch]])));
-    setEditing(false);
   };
   const resetEdits = () => {
     if (origin !== null) commit(`Reset ${activity.code}`, () => resetProgrammeEdits(origin, [activity.code]));
-    setEditing(false);
   };
+  /** A field that is chosen from a list or a date: kept at once. */
+  const pick = (change: Partial<typeof draft>) => {
+    const next = { ...draft, ...change };
+    setDraft(next);
+    saveEdit(next);
+  };
+  /** A field that is typed: kept when it is left or Enter is pressed; Escape puts back what it was. */
+  const typed = (key: 'name' | 'days' | 'remainingDays') => ({
+    onBlur: () => { if (cancelled.current) cancelled.current = false; else saveEdit(); },
+    onKeyDown: (e: React.KeyboardEvent<HTMLInputElement>) => {
+      if (e.key === 'Enter') e.currentTarget.blur();
+      else if (e.key === 'Escape') {
+        cancelled.current = true;
+        setDraft((d) => ({ ...d, [key]: key === 'name' ? activity.name : String(days(key === 'days' ? activity.durationHours : activity.remainingDurationHours, perDay)) }));
+        e.currentTarget.blur();
+      }
+    },
+  });
+  const cancelled = useRef(false);
 
   const codes = Object.entries(activity.activityCodes);
   const udfs = Object.entries(activity.udf);
@@ -272,61 +292,44 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
 
   return (
     <div className="activity-details">
-      <div className="side-pane__bar scn-dock__bar">
-        <span className="layouts-dock__title">
-          <IconList /> Activity
-        </span>
-        <button
-          type="button"
-          className={`side-pane__hide layouts-dock__close${editing ? ' is-on' : ''}`}
-          title={origin === null ? 'Editing needs a single programme (or a combined one from files)' : editing ? 'Stop editing' : 'Edit this activity: name, original duration, calendar'}
-          aria-label="Edit activity"
-          aria-pressed={editing}
-          disabled={origin === null}
-          onClick={() => (editing ? setEditing(false) : startEdit())}
-        >
-          <IconPencil />
-        </button>
-      </div>
-
       <CollapsibleSection title="Details" flush open={sections.isOpen('details')} onToggle={() => sections.toggle('details')}>
         {grid([
           ['Code', activity.code],
-          ['Name', editing ? <input className="ad-edit" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} aria-label="Name" /> : activity.name],
+          ['Name', editing ? <input className="ad-edit" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} {...typed('name')} aria-label="Name" /> : activity.name],
           ['Activity type', TYPE_LABEL[activity.type] ?? activity.type],
           ['Status', editing
             ? (
-              <select className="ad-edit" value={draft.status} onChange={(e) => setDraft({ ...draft, status: e.target.value as Activity['status'] })} aria-label="Status">
+              <select className="ad-edit" value={draft.status} onChange={(e) => pick({ status: e.target.value as Activity['status'] })} aria-label="Status">
                 {STATUS_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
               </select>
             )
             : activity.status],
           ...((editing && draft.status !== 'not-started' ? [
-            ['Actual start', <input key="as" className="ad-edit" type="date" value={draft.actualStart} onChange={(e) => setDraft({ ...draft, actualStart: e.target.value })} aria-label="Actual start" />],
-            ...(draft.status === 'completed' ? [['Actual finish', <input key="af" className="ad-edit" type="date" value={draft.actualFinish} onChange={(e) => setDraft({ ...draft, actualFinish: e.target.value })} aria-label="Actual finish" />]] : []),
+            ['Actual start', <input key="as" className="ad-edit" type="date" value={draft.actualStart} onChange={(e) => pick({ actualStart: e.target.value })} aria-label="Actual start" />],
+            ...(draft.status === 'completed' ? [['Actual finish', <input key="af" className="ad-edit" type="date" value={draft.actualFinish} onChange={(e) => pick({ actualFinish: e.target.value })} aria-label="Actual finish" />]] : []),
           ] : []) as [string, ReactNode][]),
           ['WBS', activity.wbsPath || '—'],
           ['Calendar', editing
             ? (
-              <select className="ad-edit" value={draft.calendarId} onChange={(e) => setDraft({ ...draft, calendarId: e.target.value })} aria-label="Calendar">
+              <select className="ad-edit" value={draft.calendarId} onChange={(e) => pick({ calendarId: e.target.value })} aria-label="Calendar">
                 {!activity.calendarId && <option value="">—</option>}
                 {model.calendars.map((c) => <option key={c.id} value={c.id}>{c.name || c.id}</option>)}
               </select>
             )
             : activity.calendarId ? (model.calendars.find((c) => c.id === activity.calendarId)?.name || activity.calendarId) : '—'],
           ['Original duration (d)', editing
-            ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.days} onChange={(e) => setDraft({ ...draft, days: e.target.value })} onKeyDown={(e) => { if (e.key === 'Enter') saveEdit(); if (e.key === 'Escape') setEditing(false); }} aria-label="Original duration in days" />
+            ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.days} onChange={(e) => setDraft({ ...draft, days: e.target.value })} {...typed('days')} aria-label="Original duration in days" />
             : days(activity.durationHours, perDay)],
           ['Remaining duration (d)', editing && draft.status === 'in-progress'
-            ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.remainingDays} onChange={(e) => setDraft({ ...draft, remainingDays: e.target.value })} aria-label="Remaining duration in days" />
+            ? <input className="ad-edit" type="number" min={0} step="0.25" value={draft.remainingDays} onChange={(e) => setDraft({ ...draft, remainingDays: e.target.value })} {...typed('remainingDays')} aria-label="Remaining duration in days" />
             : days(activity.remainingDurationHours, perDay)],
           ...((editing ? [['Constraint', (
             <span key="cs" style={{ display: 'inline-flex', gap: 3 }}>
-              <select className="ad-edit" value={draft.constraintType} onChange={(e) => setDraft({ ...draft, constraintType: e.target.value })} aria-label="Constraint">
+              <select className="ad-edit" value={draft.constraintType} onChange={(e) => pick({ constraintType: e.target.value })} aria-label="Constraint">
                 {draft.constraintType && !CONSTRAINT_OPTIONS.some(([id]) => id === draft.constraintType) && <option value={draft.constraintType}>{constraintName(draft.constraintType)}</option>}
                 {CONSTRAINT_OPTIONS.map(([id, label]) => <option key={id} value={id}>{label}</option>)}
               </select>
-              {draft.constraintType && draft.constraintType !== 'CS_ALAP' && <input className="ad-edit" type="date" value={draft.constraintDate} onChange={(e) => setDraft({ ...draft, constraintDate: e.target.value })} aria-label="Constraint date" />}
+              {draft.constraintType && draft.constraintType !== 'CS_ALAP' && <input className="ad-edit" type="date" value={draft.constraintDate} onChange={(e) => pick({ constraintDate: e.target.value })} aria-label="Constraint date" />}
             </span>
           )]] : []) as [string, ReactNode][]),
           ['Float (d)', activity.totalFloatHours !== null ? days(activity.totalFloatHours, perDay) : '—'],
@@ -337,12 +340,10 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Primary resource', activity.primaryResource || '—'],
           ['Critical', activity.isCritical ? 'Yes' : 'No'],
         ])}
-        {(editing || edited) && (
+        {edited && (
           <div className="ad-edit-bar">
-            {editing && <button type="button" className="btn btn--small primary" onClick={saveEdit}>Save</button>}
-            {editing && <button type="button" className="btn btn--small" onClick={() => setEditing(false)}>Cancel</button>}
-            {edited && <span className="ad-edit-bar__note" title="Kept with the project on top of the programme, so re-importing or regenerating it keeps this edit">Edited</span>}
-            {edited && <button type="button" className="btn btn--small" onClick={resetEdits} title="Put this activity back as in the imported or generated programme">Reset</button>}
+            <span className="ad-edit-bar__note" title="Kept with the project on top of the programme, so re-importing or regenerating it keeps this edit">Edited</span>
+            <button type="button" className="btn btn--small" onClick={resetEdits} title="Put this activity back as in the imported or generated programme">Reset</button>
           </div>
         )}
         <button
