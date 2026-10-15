@@ -54,15 +54,26 @@ export function scrollDoubleWithCtrl(el: HTMLElement): () => void {
       el.scrollBy({ left: by.x, top: by.y });
       return;
     }
-    if (e.altKey || !smooth) return;
-    // With Ctrl the glide goes the set number of times as far.
-    const factor = by ? useTableStyleStore.getState().ctrlScrollFactor : 1;
-    if (e.deltaMode === 0 && Math.abs(e.deltaY) < 30 && Math.abs(e.deltaX) < 30) {
-      // A trackpad glides on its own; Ctrl still stretches it (and keeps the browser from zooming the page).
-      if (by) { e.preventDefault(); el.scrollBy({ left: by.x, top: by.y }); }
+    if (e.altKey) return;
+    const unit = e.deltaMode === 1 ? LINE_PX : e.deltaMode === 2 ? 800 : 1;
+    // Shift + wheel scrolls sideways: the vertical turn becomes a horizontal one.
+    const sideways = e.shiftKey && !by;
+    const dX = sideways ? e.deltaX || e.deltaY : e.deltaX;
+    const dY = sideways ? 0 : e.deltaY;
+    if (sideways && !smooth) {
+      e.preventDefault();
+      el.scrollBy({ left: dX * unit });
       return;
     }
-    const unit = e.deltaMode === 1 ? LINE_PX : e.deltaMode === 2 ? 800 : 1;
+    if (!smooth) return;
+    // With Ctrl the glide goes the set number of times as far.
+    const factor = by ? useTableStyleStore.getState().ctrlScrollFactor : 1;
+    if (e.deltaMode === 0 && Math.abs(dY) < 30 && Math.abs(dX) < 30) {
+      // A trackpad glides on its own; Ctrl still stretches it (and keeps the browser from zooming the page).
+      if (by) { e.preventDefault(); el.scrollBy({ left: by.x, top: by.y }); }
+      else if (sideways) { e.preventDefault(); el.scrollBy({ left: dX * unit }); }
+      return;
+    }
     const now = performance.now();
     gain = now - lastTick < SPIN_MS ? Math.min(MAX_GAIN, gain + 0.25) : 1;
     lastTick = now;
@@ -70,8 +81,8 @@ export function scrollDoubleWithCtrl(el: HTMLElement): () => void {
     // A glide in progress goes on from where it is heading; a new one starts from where the scroller is.
     if (!frame) target = { x: el.scrollLeft, y: el.scrollTop };
     target = {
-      x: Math.max(0, Math.min(el.scrollWidth - el.clientWidth, target.x + e.deltaX * unit * gain * factor)),
-      y: Math.max(0, Math.min(el.scrollHeight - el.clientHeight, target.y + e.deltaY * unit * gain * factor)),
+      x: Math.max(0, Math.min(el.scrollWidth - el.clientWidth, target.x + dX * unit * gain * factor)),
+      y: Math.max(0, Math.min(el.scrollHeight - el.clientHeight, target.y + dY * unit * gain * factor)),
     };
     last = { x: el.scrollLeft, y: el.scrollTop };
     if (!frame) frame = requestAnimationFrame(step);

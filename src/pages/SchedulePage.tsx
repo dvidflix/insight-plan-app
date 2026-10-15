@@ -60,6 +60,7 @@ import { DockGantt } from '../components/sequence/DockGantt';
 import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditableStatus } from '../components/schedule/EditableStatus';
 import { EditTools } from '../components/schedule/EditTools';
+import { LevelStepper } from '../components/schedule/LevelStepper';
 import { PlannerView } from '../components/schedule/PlannerView';
 import { ActivityPlanningPanel, DictionaryPanel } from '../components/schedule/PlanningPanels';
 import { BaselineMenu } from '../components/schedule/BaselineMenu';
@@ -504,18 +505,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
                 </>
               )}
               <span className="groupby-panel__title">Level:</span>
-              {(() => {
-                // A stepper (‹ 2 ›) instead of a drop-down: one tap to go a level up or down. "All" = everything open.
-                const level = cfg.groupLevel === '' ? -1 : Number(cfg.groupLevel);
-                const go = (n: number) => cfg.setGroupLevel(n < 0 ? '' : String(Math.min(8, n)));
-                return (
-                  <span className="ctx-stepper" role="group" aria-label="Level" title="Collapse the WBS groups to this level (All: everything open)">
-                    <button type="button" onClick={() => go(level - 1)} disabled={level < 0} aria-label="Fewer levels">‹</button>
-                    <span className="ctx-stepper__value">{level < 0 ? 'All' : level}</span>
-                    <button type="button" onClick={() => go(level + 1)} disabled={level >= 8} aria-label="More levels">›</button>
-                  </span>
-                );
-              })()}
+              <LevelStepper value={cfg.groupLevel} onChange={cfg.setGroupLevel} />
             </div>
           )}
           {/* The planning tools, in a menu, next to the level: they follow it instead of sitting in a place of their own. */}
@@ -579,16 +569,6 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
         {/* Layouts, Activity details, Predecessors and Successors are panels: each sits left, bottom or right, as the Panels menu says. */}
         {listTools && active && (
           <>
-            {/* The one Gantt panel (the same on 4D Sequencing, where it also follows the timeline): this page's filters and driving path apply. */}
-            <DockPanel id="gantt" label="Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>
-              {ganttPanelOpen && <DockGantt model={model} activities={ganttList} dimmedIds={ganttDimmed} selectedId={selectedId} highlightedIds={drivingIds ?? new Set<string>()} scrollToId={null} onSelect={handleSelect} onOpen={(a) => { handleSelect(a); setDetailsOpen(true); }} onLinkShortcut={linkShortcut} onLagChange={lagChange} />}
-            </DockPanel>
-            <DockPanel id="planning" label="Resources & codes" shown={planningOpen} setShown={setPlanningOpen}>
-              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><ActivityPlanningPanel model={model} selectedId={selectedId} onNote={flash} /></div>
-            </DockPanel>
-            <DockPanel id="dictionary" label="Dictionary" shown={dictionaryOpen} setShown={setDictionaryOpen}>
-              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DictionaryPanel model={model} onNote={flash} /></div>
-            </DockPanel>
             <DockPanel id="layouts" label="Layouts" shown={layoutsOpen} setShown={setLayoutsOpen}>
               <LayoutsDock filters={filtersByView} tab={tab} importContext={model ? { catalog, filterFields } : null} />
             </DockPanel>
@@ -602,11 +582,21 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
             <DockPanel id="links" label="Predecessors & successors" shown={linksOpen} setShown={setLinksOpen}>
               {selected ? <LinksPane activity={selected} model={model} onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its links.</div>}
             </DockPanel>
+            <DockPanel id="planning" label="Resources & codes" shown={planningOpen} setShown={setPlanningOpen}>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><ActivityPlanningPanel model={model} selectedId={selectedId} onNote={flash} /></div>
+            </DockPanel>
             <DockPanel id="predecessors" label="Predecessors" shown={predsOpen} setShown={setPredsOpen}>
               {selected ? <LinksPane activity={selected} model={model} kind="predecessor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its predecessors.</div>}
             </DockPanel>
             <DockPanel id="successors" label="Successors" shown={succsOpen} setShown={setSuccsOpen}>
               {selected ? <LinksPane activity={selected} model={model} kind="successor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its successors.</div>}
+            </DockPanel>
+            {/* The one Gantt panel (the same on 4D Sequencing, where it also follows the timeline): this page's filters and driving path apply. */}
+            <DockPanel id="gantt" label="Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>
+              {ganttPanelOpen && <DockGantt model={model} activities={ganttList} dimmedIds={ganttDimmed} selectedId={selectedId} highlightedIds={drivingIds ?? new Set<string>()} scrollToId={null} onSelect={handleSelect} onOpen={(a) => { handleSelect(a); setDetailsOpen(true); }} onLinkShortcut={linkShortcut} onLagChange={lagChange} />}
+            </DockPanel>
+            <DockPanel id="dictionary" label="Dictionary" shown={dictionaryOpen} setShown={setDictionaryOpen}>
+              <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DictionaryPanel model={model} onNote={flash} /></div>
             </DockPanel>
           </>
         )}
@@ -628,6 +618,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
           {tab === 'codes' && (
             <ActivityCodesView
               model={model}
+              onNote={flash}
               onFilterActivities={(byType) => {
                 setViewFilters('table', (prev) => {
                   const selections = { ...prev.selections };

@@ -17,7 +17,15 @@ import { ColumnsPanel } from '../schedule/ColumnsPanel';
 import { GroupPanel } from '../schedule/GroupPanel';
 import { SortPanel } from '../schedule/SortPanel';
 import { ColorPanel } from '../schedule/ColorPanel';
-import { IconTune } from '../icons';
+import { IconCopy, IconDownload, IconRedo, IconTune, IconUndo } from '../icons';
+import { LevelStepper } from '../schedule/LevelStepper';
+import { EditTools } from '../schedule/EditTools';
+import { EditableStatus } from '../schedule/EditableStatus';
+import { BaselineMenu } from '../schedule/BaselineMenu';
+import { useScheduleStore } from '../../state/scheduleStore';
+import { redo, undo, useProgrammeHistory } from '../../state/programmeHistory';
+import { exportGanttXlsx } from '../../schedule/exportGanttXlsx';
+import { makeGanttEditor } from '../../schedule/ganttEdit';
 
 const ZOOM_LABEL: Record<Zoom, string> = { hour: 'Hours', day: 'Days', week: 'Weeks', month: 'Months', quarter: 'Quarters', year: 'Years' };
 
@@ -58,6 +66,23 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
   const [collapseAll, setCollapseAll] = useState(0);
   const [expandAll, setExpandAll] = useState(0);
   const date = useSequenceTimelineStore((s) => s.date);
+  // The same header as the Gantt page: search, level, the planning tools, undo / redo, baselines, copy and export. They work on the
+  // programme when there is one (the one the page shows), and the cells of the chart are edited in place.
+  const schedules = useScheduleStore((s) => s.schedules);
+  const single = schedules.length === 1 ? schedules[0] : null;
+  const [note, setNote] = useState<string | null>(null);
+  const flash = (text: string) => { setNote(text); window.setTimeout(() => setNote((cur) => (cur === text ? null : cur)), 5000); };
+  const editor = useMemo(() => makeGanttEditor(single, flash), [single]);
+  const undoLabel = useProgrammeHistory((h) => h.undos[h.undos.length - 1]?.label ?? null);
+  const redoLabel = useProgrammeHistory((h) => h.redos[h.redos.length - 1]?.label ?? null);
+  const baselineBase = single && single.dbProgrammeId !== undefined ? single : null;
+  const exportGantt = () => {
+    const data = ref.current?.getExport();
+    if (data) exportGanttXlsx(data, `Gantt ${new Date().toISOString().slice(0, 10)}.xlsx`);
+  };
+  const copyRows = () => {
+    ref.current?.copyTable().then((n) => flash(`Copied ${n} rows with their headings: paste into Excel, change them there, copy them back and paste in the Gantt (Ctrl+V).`), () => flash('The browser did not allow copying to the clipboard.'));
+  };
   const valuesOf = useMemo(() => {
     const cache = new Map<string, { value: string; count: number }[]>();
     return (fieldId: string) => {
@@ -117,8 +142,21 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
 
   return (
     <div className="dockgantt" {...configFocusProps('gantt')}>
+      {note && <div className="shortcut-note" role="status">{note}</div>}
       <div className="dockgantt__bar">
         <input className="filterbar__search dockgantt__search" type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Search anything: ID, name, codes, UDFs, resources…" title="Matches any value of a task: ID, name, WBS, activity codes, user defined fields, resources. Several terms: separate with commas." />
+        <span className="groupby-panel__title">Level:</span>
+        <LevelStepper value={set.groupLevel} onChange={set.setGroupLevel} />
+        {single?.editable && <EditTools model={single} selectedId={selectedId} onSelect={(id) => { const a = single.activities.find((x) => x.id === id); if (a) onSelect(a); }} onNote={flash} keys />}
+        <span style={{ flex: 1 }} />
+        <button type="button" className="btn btn--small" disabled={!undoLabel} onClick={() => undo()} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><IconUndo width={16} height={16} /></button>
+        <button type="button" className="btn btn--small" disabled={!redoLabel} onClick={() => redo()} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><IconRedo width={16} height={16} /></button>
+        <EditableStatus />
+        {baselineBase && <BaselineMenu model={baselineBase} />}
+        <button type="button" className="icon-btn" onClick={copyRows} title="Copy the rows to the clipboard to paste into Excel. Change them there, copy them back and paste them in the Gantt (Ctrl+V): rows are matched by Activity ID and only what changed is set"><IconCopy /></button>
+        <button type="button" className="icon-btn" onClick={exportGantt} title="Export the Gantt to Excel as it is shown"><IconDownload /></button>
+      </div>
+      <div className="dockgantt__bar">
         <select value={basis} onChange={(e) => setBasis(e.target.value as 'planned' | 'actual')} title="Date basis: which dates drive the 4D playback" aria-label="Date basis">
           <option value="planned">Planned</option>
           <option value="actual">Actual</option>
@@ -182,6 +220,7 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
           dimmedIds={dimmedIds}
           onLinkShortcut={onLinkShortcut}
           onLagChange={onLagChange}
+          editor={editor}
         />
       </div>
     </div>

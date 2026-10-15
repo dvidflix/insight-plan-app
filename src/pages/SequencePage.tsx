@@ -10,6 +10,7 @@ import { useLinkGroupsStore } from '../state/linkGroupsStore';
 import { useAppearanceStore } from '../state/appearanceStore';
 import { useSequenceTimelineStore, type StepUnit } from '../state/sequenceTimelineStore';
 import { useScenarioStore } from '../state/scenarioStore';
+import { useActivitySelectionStore } from '../state/activitySelectionStore';
 import { useSelectionStore } from '../state/selectionStore';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { activityFinishMs, activityStartMs, progressAt, scheduleRange, statusInPeriod, type SequenceStatus } from '../schedule/linking';
@@ -313,6 +314,12 @@ export function SequencePanel() {
     setGanttSelectedId(focusActivityId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedElementIds, focusActivityId, selectOnPick]);
+
+  // The activity picked in a Gantt or Table (here, or in another window of the group) is the one picked in this Gantt too.
+  const pickedAnchor = useActivitySelectionStore((s) => s.anchor);
+  useEffect(() => {
+    if (pickedAnchor) setGanttSelectedId(pickedAnchor);
+  }, [pickedAnchor]);
 
   // Ctrl+Shift+F: the timeline jumps to the day the activity picked in the Gantt starts.
   const ganttPickRef = useRef<string | null>(null);

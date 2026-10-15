@@ -713,7 +713,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
                 title={c.text(a, columnCtx)}
                 style={{ ...cellStyle(c), justifyContent: c.align ? 'flex-end' : undefined }}
                 onClick={() => setCurCol(c.id)}
-                onDoubleClick={(e) => { if (editor?.editable && editor.canEdit(a, c.id)) { e.stopPropagation(); startEdit(a, c.id); } }}
+                onDoubleClick={(e) => { if (editor?.editable && editor.canEdit(a, c.id)) { e.stopPropagation(); jumpToActivity(a); startEdit(a, c.id); } }}
               >
                 {editing ? (
                   <SheetCellInput sheet={sheet} align={c.align} />

@@ -1,7 +1,7 @@
 import { FEATURES } from '../features';
 import { blockedWindows, openBlockedWindows, useWorkspaces, workspaceActions, workspaceDirty } from '../state/workspaces';
 import { UpdateChip } from './UpdateChip';
-import { IconPlus, IconLaunch, IconRemove } from './icons';
+import { IconAddCircleOutline, IconLaunch, IconRemove } from './icons';
 
 /** The workspaces (Inputs, Custom, ...), in the view picker's menu: a workspace keeps how the app is set up, exactly, when you save it
     (state/workspaces.ts). One of them can be the one the app starts with. Also the new window, the windows the browser blocked, and the
@@ -33,7 +33,7 @@ export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; 
                 if (name) { close(); void workspaceActions.add(name); }
               }}
             >
-              <IconPlus width={16} height={16} />
+              <IconAddCircleOutline width={18} height={18} />
             </button>
           )}
         </div>
@@ -93,7 +93,7 @@ export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; 
               type="button"
               className={`ws-ws__add ws-ws__save${dirty ? ' is-dirty' : ''}`}
               disabled={!active || !dirty}
-              title={`Keep how the app is now in "${active?.name ?? ''}": its page, panels, columns, filters and second windows`}
+              title={`Keep how the app is now in "${active?.name ?? ''}": its page, panels, columns, filters, viewpoints and lists, and second windows`}
               onClick={() => void workspaceActions.save()}
             >
               {dirty ? 'Save changes to this workspace ●' : '✓ Workspace saved'}

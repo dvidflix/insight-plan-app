@@ -113,3 +113,27 @@ export function assignCode(m: ScheduleModel, activityIds: string[], typeName: st
   const done = patchActivities(model, patches);
   return 'error' in done ? done : { model: done.model, changed: done.changed };
 }
+
+/** Puts a code under another of the same type (null: at the top), as P6's code hierarchy: indent and outdent. */
+export function moveCodeValue(m: ScheduleModel, typeId: string, valueId: string, parentId: string | null): Result {
+  const t = catalogOf(m).find((x) => x.id === typeId);
+  const v = t?.values.find((x) => x.id === valueId);
+  if (!t || !v) return { error: 'That code is not in the programme.' };
+  if (parentId !== null && !t.values.some((x) => x.id === parentId)) return { error: 'That parent code is not in the type.' };
+  // Not under itself, or under one of its own descendants.
+  for (let at: string | null = parentId; at !== null; at = t.values.find((x) => x.id === at)?.parentId ?? null) {
+    if (at === valueId) return { error: 'A code cannot go under itself or under its own codes.' };
+  }
+  if (v.parentId === parentId) return { model: m };
+  return { model: withCatalog(m, catalogOf(m).map((x) => (x === t ? { ...t, values: t.values.map((y) => (y === v ? { ...y, parentId } : y)) } : x))) };
+}
+
+/** The activity codes of the activities of the programme (by the types' names) as the value ids they hold: how many have each. */
+export function codeUsage(m: ScheduleModel, typeName: string): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const a of m.activities) {
+    const v = a.activityCodes[typeName];
+    if (v) counts.set(v, (counts.get(v) ?? 0) + 1);
+  }
+  return counts;
+}

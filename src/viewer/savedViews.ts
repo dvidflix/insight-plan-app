@@ -212,37 +212,53 @@ export async function openViewpoint(engine: ViewerEngine, vp: OBC.Viewpoint, tra
   const settings = useViewSettingsStore.getState();
   const page = settings.activePage;
   const jobs: Promise<unknown>[] = [];
-  if (a.sections) {
-    vp.setClippingState(true);
-    vp.setClippingVisibility(true);
+  // The viewer shows the frame it had until the new state is complete: applying visibility, style and colours goes in steps (all
+  // shown, then the hidden ones taken out, the colours put back a moment later), and drawing in between flashed the whole
+  // building in its own colours.
+  const renderer = engine.world.renderer;
+  const wasOn = renderer ? renderer.enabled : true;
+  if (renderer) renderer.enabled = false;
+  try {
+    if (a.sections) {
+      vp.setClippingState(true);
+      vp.setClippingVisibility(true);
+    }
+    if (a.visibility) jobs.push(vp.applyVisibility().then(() => engine.onExternalVisibilityChange.trigger()));
+    if (a.selection && vp.selectionComponents.size > 0) {
+      jobs.push(vp.getSelectionMap().then((map) => highlighter.highlightByID('select', map, true, false)));
+    }
+    const patch: Partial<ViewSettings> = {};
+    if (a.style && data.style) patch.style = data.style;
+    if (a.display && data.display) Object.assign(patch, data.display);
+    if (a.placement && data.placement) {
+      patch.storeySlides = { ...data.placement.storeySlides };
+      const { setOffset } = useModelPlacementStore.getState();
+      for (const [name, offset] of Object.entries(data.placement.offsets)) setOffset(name, offset);
+    }
+    if (Object.keys(patch).length) settings.patch(page, 'main', patch);
+    if (a.timeline && data.timeline && page === 'sequence') {
+      const t = useSequenceTimelineStore.getState();
+      t.setPlaying(false);
+      t.setBasis(data.timeline.basis);
+      t.setDate(data.timeline.date);
+    }
+    await Promise.all(jobs);
+    // The colours and the 4D appearance are put back by effects that run after the state changes: let them finish first.
+    await new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => window.setTimeout(resolve, 120))));
+  } finally {
+    if (renderer) {
+      renderer.enabled = wasOn;
+      renderer.needsUpdate = true;
+    }
   }
-  if (a.visibility) jobs.push(vp.applyVisibility().then(() => engine.onExternalVisibilityChange.trigger()));
-  if (a.selection && vp.selectionComponents.size > 0) {
-    jobs.push(vp.getSelectionMap().then((map) => highlighter.highlightByID('select', map, true, false)));
-  }
-  const patch: Partial<ViewSettings> = {};
-  if (a.style && data.style) patch.style = data.style;
-  if (a.display && data.display) Object.assign(patch, data.display);
-  if (a.placement && data.placement) {
-    patch.storeySlides = { ...data.placement.storeySlides };
-    const { setOffset } = useModelPlacementStore.getState();
-    for (const [name, offset] of Object.entries(data.placement.offsets)) setOffset(name, offset);
-  }
-  if (Object.keys(patch).length) settings.patch(page, 'main', patch);
-  if (a.timeline && data.timeline && page === 'sequence') {
-    const t = useSequenceTimelineStore.getState();
-    t.setPlaying(false);
-    t.setBasis(data.timeline.basis);
-    t.setDate(data.timeline.date);
-  }
+  // The camera last, so its move (or its jump) is drawn with the new state.
   if (a.camera) {
     const camera = engine.world.camera;
     camera.projection.set(vp.projection);
     const p = vp.position;
     const d = vp.direction;
-    jobs.push(camera.controls.setLookAt(p.x, p.y, p.z, p.x + d.x * 80, p.y + d.y * 80, p.z + d.z * 80, transition));
+    await camera.controls.setLookAt(p.x, p.y, p.z, p.x + d.x * 80, p.y + d.y * 80, p.z + d.z * 80, transition);
   }
-  await Promise.all(jobs);
 }
 
 /** The viewpoints, in creation order; re-renders when they change (added, updated, renamed, deleted, BCF import). */

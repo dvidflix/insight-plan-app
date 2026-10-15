@@ -232,9 +232,24 @@ async function reloadSaved() {
   window.location.reload();
 }
 
-/** For workspaces (state/workspaces.ts): the layout keys as they are, written back, and the reload that makes every panel read them. */
-export const captureLayoutKeys = () => capture().settings;
-export const applyLayoutKeys = (settings: Record<string, string>) => applyKeys({ settings });
+/** For workspaces (state/workspaces.ts): everything a scene holds, the layout keys and the viewer's lists, in one record (ALL_MARK says
+    the lists are in it: a workspace saved before that has only layout, and opening it leaves the lists alone). */
+const ALL_MARK = '__workspace.all';
+export const captureLayoutKeys = () => {
+  const { settings, data } = capture();
+  return { ...settings, ...data, [ALL_MARK]: '1' };
+};
+export const applyLayoutKeys = (saved: Record<string, string>) => {
+  const settings: Record<string, string> = {};
+  const data: Record<string, string> = {};
+  for (const [k, v] of Object.entries(saved)) {
+    if (isDataKey(k)) data[k] = v;
+    else if (isLayoutKey(k) && k !== ALL_MARK) settings[k] = v;
+  }
+  applyKeys(saved[ALL_MARK] ? { settings, data } : { settings });
+};
+/** Whether a browser key is part of what a workspace keeps. */
+export const isWorkspaceKey = (key: string) => isLayoutKey(key) || isDataKey(key);
 export { reloadSaved };
 
 const newId = () => `sc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;

@@ -238,7 +238,7 @@ function PaneBody({ children }: { children: ReactNode }) {
 export function ModelDockPanels({ page, views, colour }: { page: 'model' | 'sequence'; views?: ReactNode; colour?: boolean }) {
   return (
     <>
-      <DockPanel id="related" label="3D & Related"><PaneBody><RelatedTab page={page} /></PaneBody></DockPanel>
+      <DockPanel id="related" label="3D"><PaneBody><RelatedTab page={page} /></PaneBody></DockPanel>
       <DockPanel id="tree" label="Tree"><PaneBody><SelectionTreeTab /></PaneBody></DockPanel>
       <DockPanel id="properties" label="Properties"><PaneBody><PropertiesTab /></PaneBody></DockPanel>
       <DockPanel id="search" label="Sets"><PaneBody><SearchSetsPanel player={page === 'model'} /></PaneBody></DockPanel>

@@ -6,14 +6,14 @@
 
     The first is Inputs, the second Custom; more can be added. Like scenes (state/scenes.ts), which this builds on, the layout is a
     snapshot of the browser's layout keys: switching writes the other workspace's keys back and reloads the page, which is what makes
-    every panel read its saved state again. Unlike scenes, a workspace holds only layout: viewpoints, topics, programmes and the rest
-    are the same in all of them.
+    every panel read its saved state again. A workspace keeps the layout and the viewer's lists too (viewpoints, search sets, markers,
+    topics...), each its own; programmes and the project's other data are the same in all of them.
 
     Where it is kept: the short list (names, page, view, windows, the default) in localStorage, where the app reads it before it
     starts; the layout snapshots in IndexedDB, one per workspace. */
 
 import { useSyncExternalStore } from 'react';
-import { applyLayoutKeys, captureLayoutKeys, isLayoutKey, reloadSaved } from './scenes';
+import { applyLayoutKeys, captureLayoutKeys, isWorkspaceKey, reloadSaved } from './scenes';
 import { IS_SATELLITE } from './satellite';
 import { closeSatelliteWindows, openSatelliteWindow, satelliteWindows, WINDOWS_EVENT, type WindowInfo } from './windowSync';
 
@@ -219,7 +219,7 @@ export function startWorkspaces() {
     // Any write to a layout key means the workspace has changes to save.
     const rawRemove = Storage.prototype.removeItem;
     const note = (storage: Storage, key: string) => {
-      if (storage === localStorage && key !== KEY && key !== LIVE_KEY && !switching && isLayoutKey(key)) markDirty();
+      if (storage === localStorage && key !== KEY && key !== LIVE_KEY && !switching && isWorkspaceKey(key)) markDirty();
     };
     const set = Storage.prototype.setItem;
     Storage.prototype.setItem = function (key: string, value: string) {
@@ -281,7 +281,7 @@ export const workspaceActions = {
     await enter(id);
   },
 
-  /** Keeps how the app is now in the workspace you are in: its layout, page, Programmes view and second windows. */
+  /** Keeps how the app is now in the workspace you are in: its layout, viewer lists, page, Programmes view and second windows. */
   async save() {
     if (!cache) return;
     const w = workspaces.active();

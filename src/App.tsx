@@ -5,7 +5,8 @@ import { initialView, noteView } from './state/workspaces';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { useDockStore } from './state/dockStore';
-import { IS_SATELLITE, SATELLITE_VIEW } from './state/satellite';
+import { IS_SATELLITE, SATELLITE_PAGE, SATELLITE_VIEW } from './state/satellite';
+import { reportView } from './state/windowSync';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
 import { SettingsSync } from './components/SettingsMenu';
@@ -56,6 +57,8 @@ import { ResizeHandle, useResizableWidth } from './components/ResizeHandle';
 import { usePersistedState } from './utils/persistedState';
 import { StoredModelsNotes, useStoredModels } from './components/StoredModelsPanel';
 import { ModelsRestoreSync } from './components/ModelsRestoreSync';
+import { SatelliteModelsSync } from './components/SatelliteModelsSync';
+import { WindowSelectionSync } from './components/WindowSelectionSync';
 import type { StoredModel } from './db/modelsApi';
 import { filterXerTables, filterXmlText } from './schedule/exportFilter';
 import { ProgrammeDownload, type DownloadFormat } from './components/ProgrammeDownload';
@@ -159,7 +162,7 @@ const mayLeave = (from: PageId, to: PageId) => {
 
 export default function App() {
   const [page, setPageRaw] = useState<PageId>(() => {
-    if (IS_SATELLITE) return 'schedule';
+    if (IS_SATELLITE) return PAGES.some((p) => p.id === SATELLITE_PAGE) ? (SATELLITE_PAGE as PageId) : 'schedule';
     // The workspace you were in opens on its page.
     const ws = initialView()?.page;
     if (PAGES.some((p) => p.id === ws)) return ws as PageId;
@@ -263,6 +266,8 @@ export default function App() {
   const [scheduleTab, setScheduleTab] = useState<ScheduleTabId>((IS_SATELLITE && SATELLITE_VIEW ? SATELLITE_VIEW : initialView()?.tab ?? 'gantt') as ScheduleTabId);
   // The workspace keeps the page and view it is on.
   useEffect(() => { noteView(page, scheduleTab); }, [page, scheduleTab]);
+  // A second window says what it shows, so the workspace opens it there again.
+  useEffect(() => { if (IS_SATELLITE) reportView(page === 'schedule' ? scheduleTab : `page:${page}`); }, [page, scheduleTab]);
   // Applying a layout (Programmes > Layouts) also opens the view it was saved on.
   const layoutRevision = useScheduleLayoutsStore((s) => s.revision);
   useEffect(() => {
@@ -282,6 +287,8 @@ export default function App() {
       <SettingsSync />
       <CustomFieldsSync />
       <DuplicateTabSync />
+      {!FEATURES.browserData && <SatelliteModelsSync />}
+      <WindowSelectionSync />
       <FullScreenOnStart />
       {/* The side pane runs the full window height, beside the top bar too. */}
       <div className="app-frame">

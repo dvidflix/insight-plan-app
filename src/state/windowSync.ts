@@ -2,7 +2,7 @@ import { useScheduleStore } from './scheduleStore';
 import { useActivityOverridesStore } from './activityOverridesStore';
 import { useSequenceTimelineStore } from './sequenceTimelineStore';
 import type { ScheduleModel } from '../schedule/types';
-import { IS_SATELLITE, SATELLITE_GROUP } from './satellite';
+import { IS_SATELLITE, SATELLITE_GROUP, SATELLITE_ID } from './satellite';
 
 /** Windows that talk to each other: the one that opened a satellite window ("Open in a new window") and the satellite,
     over a BroadcastChannel. Programme edits (and undo), the activity picked and the 4D date go both ways, so the Gantt can
@@ -49,6 +49,9 @@ export function onWindowMessage<T>(type: string, fn: (data: T) => void): () => v
   set.add(h);
   return () => { set.delete(h); };
 }
+
+/** Whether this window opened the satellite windows of `group` (it answers for them). */
+export const ownsGroup = (group: string) => !IS_SATELLITE && groups.has(group);
 
 /** True while this window has other windows to keep in step. */
 export const hasLinkedWindows = () => targets().length > 0;
@@ -105,6 +108,7 @@ export function openSatelliteWindow(view: string, at?: Partial<WindowInfo>): boo
   url.hash = '';
   url.searchParams.set('satellite', group);
   url.searchParams.set('view', view);
+  url.searchParams.set('wid', id);
   const w = at?.w ?? Math.round(window.screen.availWidth * 0.8);
   const h = at?.h ?? Math.round(window.screen.availHeight * 0.85);
   const place = at?.x !== undefined && at?.y !== undefined ? `,left=${at.x},top=${at.y}` : '';
@@ -213,4 +217,18 @@ useSequenceTimelineStore.subscribe((s) => {
 onWindowMessage<number | null>('date', (d) => {
   lastDate = d;
   if (d !== null) useSequenceTimelineStore.getState().setDate(d);
+});
+
+// ---- What a second window shows (kept with the workspace) ----
+
+/** A second window tells the one that opened it what it shows now: a Programmes view, or a page (page:sequence), so the workspace
+    opens it there next time. */
+export function reportView(view: string) {
+  if (IS_SATELLITE && SATELLITE_ID) sendToWindows('view', { id: SATELLITE_ID, view });
+}
+onWindowMessage<{ id: string; view: string }>('view', ({ id, view }) => {
+  const w = opened.get(id);
+  if (!w || w.view === view) return;
+  w.view = view;
+  window.dispatchEvent(new Event(WINDOWS_EVENT));
 });
