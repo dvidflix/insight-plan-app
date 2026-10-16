@@ -285,15 +285,14 @@ export function LinksPane({ activity, model, height, kind: only, dockId, onSelec
       : null;
     return (
       <div className="links-pane__half" style={style}>
-        <div className="links-pane__title">
-          {title} ({rows.length}) <span className="scn-dim" style={{ fontWeight: 400 }}>· {activity.code}</span>
-          {(only ? true : kind === 'successor') && (
+        {(only ? true : kind === 'successor') && editing && (note || changed) && (
+          <div className="links-pane__title">
             <span style={{ float: 'right', display: 'inline-flex', gap: 4, alignItems: 'center' }}>
-              {note && editing && <span className="scn-dim" style={{ fontWeight: 400 }}>{note}</span>}
-              {changed && editing && <button type="button" className="mini-btn" onClick={resetLinks} title="Put this activity's links back as in the imported or generated programme">Reset links</button>}
+              {note && <span className="scn-dim" style={{ fontWeight: 400 }}>{note}</span>}
+              {changed && <button type="button" className="mini-btn" onClick={resetLinks} title="Put this activity's links back as in the imported or generated programme">Reset links</button>}
             </span>
-          )}
-        </div>
+          </div>
+        )}
         <div className="links-pane__scroll">
           {(rows.length > 0 || editing) ? (
             <table className={`lp-grid${vis('index') ? '' : ' lp-noindex'}`} {...(editing ? grid.grid : {})}>
@@ -302,7 +301,7 @@ export function LinksPane({ activity, model, height, kind: only, dockId, onSelec
                   {vis('index') && <th className="lp-n" aria-label="Row">#</th>}
                   {shownColumns.map((c) => (
                     <th key={c.key} title={c.title} className="links-pane__sortable" aria-sort={sort?.key === c.key ? (sort.dir === 1 ? 'ascending' : 'descending') : 'none'} onClick={() => toggleSort(kind, c.key)}>
-                      {c.key === 'driving' ? <IconDriver width={13} height={13} /> : c.label}{sort?.key === c.key ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}
+                      {c.key === 'driving' ? <IconDriver width={13} height={13} /> : c.key === 'id' ? (kind === 'predecessor' ? 'Predecessor ID' : 'Successor ID') : c.label}{sort?.key === c.key ? (sort.dir === 1 ? ' ▲' : ' ▼') : ''}
                     </th>
                   ))}
                   {!vis('index') && <th className="lp-end" aria-label="Take out" />}

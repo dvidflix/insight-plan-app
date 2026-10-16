@@ -381,7 +381,7 @@ export default function App() {
       {/* Pages with docks hold their settings as panels (Settings is one of them); the others keep the side pane. */}
       {!viewerVisible && <SidePaneHost />}
       {page === 'home' && <SettingsDock />}
-      <FilesDock page={page} />
+      {page === 'home' && <FilesDock page={page} />}
       <ListConfigPanels />
       {inputsOpen && <InputsDialog onClose={() => setInputsOpen(false)} />}
       <AutoLinkGenerator />
@@ -956,6 +956,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
           <div className="inputs-panel__main">
             {modelError && <div className="inputs-panel__error">{modelError}</div>}
             {scheduleError && <div className="inputs-panel__error">{scheduleError}</div>}
+            <StoredModelsNotes actions={storedActions} />
             {Object.entries(scheduleBusy).map(([name, { label, fraction }]) => (
               <div key={name} className="inputs-panel__busy">
                 <span>{label} {name}… {Math.round(fraction * 100)}%</span>
@@ -987,7 +988,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
             {rows.length > 0 && (
               <>
                 {/* (A button would also "click" on Space's release: kept from doing so.) */}
-                <div style={{ overflowX: 'auto', outline: 'none' }} tabIndex={0} onKeyDown={onRowsKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }} aria-label="Files: arrow keys move, Shift or Ctrl select several, Space hides or shows the selected">
+                <div style={{ outline: 'none' }} tabIndex={0} onKeyDown={onRowsKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }} aria-label="Files: arrow keys move, Shift or Ctrl select several, Space hides or shows the selected">
                 <table className="inputs-table inputs-table--aligned" style={tableStyle}>
                   <InputsColgroup columns={shownColumns} />
                   <thead>
@@ -1160,7 +1161,6 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
                 </div>
               </>
             )}
-            <StoredModelsNotes actions={storedActions} />
           </div>
         </div>
       </div>

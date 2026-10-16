@@ -28,11 +28,13 @@ export function useStoredModels() {
   }, [root, refresh]);
 
   const open = async (m: StoredModel) => {
-    if (!root) return;
+    if (!root) { setMessage('Open the project database first: models are opened from its model store.'); return; }
     setBusy(m.name);
-    setMessage(null);
+    setMessage(`Opening ${m.name}…`);
     try {
-      const { info, fast } = await loadStoredModel(engine, root, m.name, m.ifcHash);
+      // The 3D viewer starts in the background; if it never does, say so rather than wait for ever.
+      const stuck = new Promise<never>((_, no) => window.setTimeout(() => no(new Error(`${m.name} did not open: the 3D viewer did not answer. Reload the page and try again.`)), 90000));
+      const { info, fast } = await Promise.race([loadStoredModel(engine, root, m.name, m.ifcHash), stuck]);
       addModel(info);
       setMessage(`${m.name} opened${fast ? ' from its converted copy' : ' (converted from the IFC; the copy is kept for next time)'}.`);
       void refresh(root);
