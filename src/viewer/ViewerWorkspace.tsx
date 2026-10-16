@@ -11,9 +11,12 @@ import { ColourLegend } from '../components/ColourLegend';
 import { ViewerToolbar } from '../components/ViewerToolbar';
 import { useClashRunner } from './useClashRunner';
 import { useDataTableStore } from '../state/dataTableStore';
+import { PanelsButton } from '../components/ViewPicker';
+import { useHeaderSlotStore } from '../state/headerSlotStore';
 import { DockDropZones, DockPanel, DockSideView } from '../components/Dock';
 import { DOCK_DEFAULTS, useDockStore } from '../state/dockStore';
 import { ClashPanel } from '../components/ClashPanel';
+import { SectionsPanel, SectionsSync } from '../components/SectionsPanel';
 import { ViewpointsList } from '../components/ViewpointsList';
 import { useModelEdgesStore } from '../state/modelEdgesStore';
 import { useModelsStore } from '../state/modelsStore';
@@ -24,7 +27,7 @@ import { useModelsStore } from '../state/modelsStore';
     for the app's whole lifetime — see App.tsx, which toggles CSS visibility
     rather than unmounting it when switching tabs. `paneActive`: the Models
     page is showing, so its tabs go in the side pane. */
-export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, centerShown, picker }: { /** The button that chooses what the main panel shows (at the start of the toolbar). */ picker?: ReactNode; layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean; /** A view that takes the place of the 3D view (the Programmes views), with the same docks around it. */ center?: ReactNode; centerShown?: boolean }) {
+export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, centerShown, picker, search }: { /** The global search, at the right end of the toolbar. */ search?: React.ReactNode; /** The button that chooses what the main panel shows (at the start of the toolbar). */ picker?: ReactNode; layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean; /** A view that takes the place of the 3D view (the Programmes views), with the same docks around it. */ center?: ReactNode; centerShown?: boolean }) {
   const engine = useViewerEngine();
   // The toolbar row grows when its tools wrap onto a second row: the docks' headers and the side pane's tab bar follow
   // it (--toolbar-row-h), so the bars along the top stay level. Hidden (another page showing): the default applies.
@@ -79,8 +82,9 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
   // the panels, the side panels (4D's configuration) run from the page header down, and the tools wrap onto a second row
   // when the viewer is narrow.
   return (
-    <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0, position: 'relative' }}>
       <DockDropZones />
+      <SectionsSync />
       {(
         <>
           <DockPanel id="datatable" label="Data table" shown={tableOpen} setShown={setTableOpen}><ModelDataTable /></DockPanel>
@@ -92,10 +96,9 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
           </DockPanel>
         </>
       )}
-      <DockSideView side="left" />
-      <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
-        {/* The Programmes views have their own toolbar row (with the Panels menu): this one is for the 3D view. */}
-        {!centerShown && <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>
+      {/* The toolbar runs across the whole width: the docks on the sides start below it. The Programmes page puts its own here. */}
+      <div ref={useHeaderSlotStore.getState().setEl} className="viewer-header" />
+      {!centerShown && <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>
           <div className="schedule-toolbar__left">
             {!centerShown && <>{picker}<ViewerToolbar /></>}
           </div>
@@ -107,12 +110,17 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
                 <b>Stop export</b>
               </button>
             )}
+            {search}
+            <PanelsButton />
           </div>
         </div>}
+      <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
+      <DockSideView side="left" />
         <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, minHeight: 0 }}>
           <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
             <ViewerCanvas layout={effectiveLayout} />
             {overlay}
+            {!centerShown && <SectionsPanel />}
             {/* The 3D view keeps its size underneath (a hidden canvas would lose its aspect ratio). */}
             {center !== undefined && (
               <div style={centerShown ? { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', zIndex: 5 } : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
@@ -123,13 +131,14 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
             {!inSequence && paneActive && <ColourLegend />}
           </div>
           <DockSideView side="bottom" />
+          <div ref={useHeaderSlotStore.getState().setFooter} className="viewer-footer" />
         </div>
-      </div>
       <DockSideView side="right" />
       {panel}
       {!inSequence && paneActive && <ModelConfigPanel />}
       {/* Models > Colour applies while the Models page shows (4D colours its own way). */}
       {!inSequence && paneActive && <ModelColorSync />}
+      </div>
     </div>
   );
 }

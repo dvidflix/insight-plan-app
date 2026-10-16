@@ -1,5 +1,6 @@
 import { useMarkersStore } from '../state/markersStore';
 import { useFocusStore } from '../state/focusStore';
+import { useSectionsStore } from '../state/sectionsStore';
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -60,7 +61,7 @@ function Btn({ icon: I, tip, active, disabled, onClick, ownGesture, size = 20 }:
 // from a toolbar it also hides the app's top bar (the page tabs), for the
 // most room; leaving full screen any way (Esc, F11) brings it back. One
 // state for every toolbar showing the button (3D viewer, Programmes).
-const useFullscreenStore = create<{ on: boolean }>(() => ({
+export const useFullscreenStore = create<{ on: boolean }>(() => ({
   on: !!document.fullscreenElement && document.body.classList.contains('viewer-fullscreen'),
 }));
 function setTopBarHidden(hidden: boolean) {
@@ -70,7 +71,7 @@ function setTopBarHidden(hidden: boolean) {
 document.addEventListener('fullscreenchange', () => {
   if (!document.fullscreenElement) setTopBarHidden(false);
 });
-function toggleFullscreen() {
+export function toggleFullscreen() {
   if (useFullscreenStore.getState().on) {
     setTopBarHidden(false);
     if (document.fullscreenElement) void document.exitFullscreen().catch(() => {});
@@ -296,6 +297,11 @@ export function ViewerToolbar() {
     engine.setActiveTool(next);
     setToolState(next);
   };
+  // The Sections panel's close button ends the tool as well.
+  const sectionsOpen = useSectionsStore((s) => s.open);
+  useEffect(() => {
+    if (!sectionsOpen && engine.getActiveTool() === 'section') { engine.setActiveTool('select'); setToolState('select'); }
+  }, [engine, sectionsOpen]);
   const pickMeasure = (m: MeasureChoice) => {
     setMeasureId(m.id);
     if (m.mode && m.kind !== 'point') engine.setMeasureMode(m.kind, m.mode);
@@ -556,10 +562,14 @@ export function ViewerToolbar() {
       />
       <Split
         icon={IconSection}
-        tip="Section: double-click the model to cut it there. Delete removes the plane under the cursor."
+        tip="Sections: add horizontal, vertical or cross cuts, cut at a level, and save sets. Double-click the model to cut it there; Delete removes the plane under the cursor."
         menuTip="Section planes"
         active={tool === 'section'}
-        onClick={() => setTool(tool === 'section' ? 'select' : 'section')}
+        onClick={() => {
+          const on = tool !== 'section';
+          setTool(on ? 'section' : 'select');
+          useSectionsStore.getState().setOpen(on);
+        }}
         items={[
           { key: 'cut', label: 'Planes cut the model', checked: engine.isInitialized && engine.sectionsActive, keepOpen: true, disabled: !hasSections, onClick: () => engine.setSectionsActive(!engine.sectionsActive) },
           { key: 'handles', label: 'Show the planes', checked: engine.isInitialized && engine.sectionHandlesVisible, keepOpen: true, onClick: () => engine.setSectionHandlesVisible(!engine.sectionHandlesVisible) },

@@ -16,8 +16,9 @@ import { configureSun, markBaseMaterials, patchAllConcrete, refreshMaterialClass
 import { SkyBackdrop } from './skyBackdrop';
 import { extractGrids, extractStoreys, type IfcGridData, type IfcStoreyData } from './ifcGrids';
 import { gridDimensions, spacingText } from './gridDimensions';
-import { gridCutPlane, levelCutPlane, planeToScene, type SectionCuts } from './sectionPlanes';
+import { gridCutPlane, levelCutPlane, planeToScene, sectionFromPlane, sectionPlane, type Section, type SectionCuts } from './sectionPlanes';
 import { useSectionCutsStore } from '../state/sectionCutsStore';
+import { useSectionsStore } from '../state/sectionsStore';
 import { MarkerLayer } from './markerLayer';
 import { ConstructionPlaneLayer } from './constructionPlaneLayer';
 import type { ConstructionPlane } from '../state/constructionPlanesStore';
@@ -2198,6 +2199,33 @@ export class ViewerEngine {
     clipper.list.onItemDeleted.add(changed);
     clipper.list.onCleared.add(changed);
     const clipStyler = components.get(OBCF.ClipStyler);
+    // A section's disc was dragged in the view: the panel's numbers follow.
+    clipper.onAfterDrag.add((plane) => {
+      for (const [sectionId, planeId] of this.sectionPlaneIds) {
+        if (this.clipper.list.get(planeId) !== plane) continue;
+        const section = useSectionsStore.getState().sections.find((x) => x.id === sectionId);
+        if (!section) return;
+        const g = this.globalOffset();
+        // Scene (x, y up, z south) back to project axes (x east, y north, z up).
+        const n = plane.normal;
+        const o = plane.origin;
+        const moved = sectionFromPlane(section.orient, { normal: [n.x, -n.z, n.y], point: [o.x + g.x, -o.z + g.y, o.y + g.z] }, section.flip);
+        this.sectionSigs.delete(sectionId); // re-apply, so a tilt of a horizontal or vertical plane is straightened
+        this.onSectionMoved.trigger({ id: sectionId, ...moved });
+        return;
+      }
+    });
+    // A plane deleted in the view (Delete key) leaves the panel's list too.
+    clipper.list.onItemDeleted.add((planeId) => {
+      for (const [sectionId, id] of this.sectionPlaneIds) {
+        if (id !== planeId) continue;
+        this.sectionPlaneIds.delete(sectionId);
+        this.sectionSigs.delete(sectionId);
+        this.hiddenSectionPlanes.delete(planeId);
+        useSectionsStore.getState().remove(sectionId);
+        return;
+      }
+    });
     clipper.onAfterCreate.add((plane) => {
       for (const [id, p] of clipper.list) {
         if (p === plane) clipStyler.createFromClipping(id, { world, link: true, items: this.sectionItems() ?? undefined });
@@ -2464,8 +2492,9 @@ export class ViewerEngine {
   setSectionsActive(on: boolean) {
     this.sectionsOn = on;
     for (const [id, plane] of this.clipper.list) {
-      plane.enabled = on && !this.previewPlaneIds.has(id);
-      plane.visible = on && this.clipper.visible;
+      const hidden = this.hiddenSectionPlanes.has(id);
+      plane.enabled = on && !hidden && !this.previewPlaneIds.has(id);
+      plane.visible = on && !hidden && this.clipper.visible;
     }
     this.onToolContentChange.trigger();
   }
@@ -2483,6 +2512,10 @@ export class ViewerEngine {
   clearSections() {
     this.clipper.deleteAll();
     this.cutPlaneIds = [];
+    this.sectionPlaneIds.clear();
+    this.sectionSigs.clear();
+    this.hiddenSectionPlanes.clear();
+    useSectionsStore.getState().clear();
     useSectionCutsStore.getState().clearAll();
     this.onToolContentChange.trigger();
   }
@@ -2540,6 +2573,78 @@ export class ViewerEngine {
       this.onToolContentChange.trigger();
     });
     return this.cutChain;
+  }
+
+  // ---- Sections panel: any number of planes, kept in step with useSectionsStore ----
+  /** Section id -> clipper plane id, and the plane's last applied settings (to skip what did not change). */
+  private sectionPlaneIds = new Map<string, string>();
+  private sectionSigs = new Map<string, string>();
+  private hiddenSectionPlanes = new Set<string>();
+  private sectionChain: Promise<void> = Promise.resolve();
+  /** A section's disc was dragged in the view: its new offset and rotation. */
+  readonly onSectionMoved = new OBC.Event<{ id: string; offset: number; rotate: number }>();
+
+  /** The loaded models' extent in project axes (metres), for the sliders; null while there is none. */
+  sectionRanges(): { x: [number, number]; y: [number, number]; z: [number, number] } | null {
+    const box = this.modelsBox();
+    if (!box) return null;
+    const g = this.globalOffset();
+    return {
+      x: [box.min.x + g.x, box.max.x + g.x],
+      y: [-box.max.z + g.y, -box.min.z + g.y],
+      z: [box.min.y + g.z, box.max.y + g.z],
+    };
+  }
+
+  /** Makes the clipping planes match the Sections panel's sections: adds, moves and removes what differs. */
+  syncSections(sections: Section[], solid: boolean, handle: 'move' | 'rotate'): Promise<void> {
+    this.sectionChain = this.sectionChain.then(async () => {
+      const world = this._world;
+      if (!world) return;
+      const clipStyler = this.components.get(OBCF.ClipStyler);
+      const wanted = new Set(sections.map((s) => s.id));
+      for (const [sectionId, planeId] of [...this.sectionPlaneIds]) {
+        if (wanted.has(sectionId)) continue;
+        this.sectionPlaneIds.delete(sectionId);
+        this.sectionSigs.delete(sectionId);
+        this.hiddenSectionPlanes.delete(planeId);
+        await this.clipper.delete(world, planeId);
+      }
+      const g = this.globalOffset();
+      for (const s of sections) {
+        const scene = planeToScene(sectionPlane(s), g);
+        const normal = new THREE.Vector3(...scene.normal);
+        const point = new THREE.Vector3(...scene.point);
+        let planeId = this.sectionPlaneIds.get(s.id);
+        let plane = planeId ? this.clipper.list.get(planeId) : undefined;
+        if (!plane) {
+          planeId = this.clipper.createFromNormalAndCoplanarPoint(world, normal, point);
+          plane = this.clipper.list.get(planeId);
+          if (!plane) continue;
+          this.sectionPlaneIds.set(s.id, planeId);
+          this.sectionSigs.set(s.id, `${s.orient}|${s.offset}|${s.rotate}|${s.flip}`);
+        } else {
+          const sig = `${s.orient}|${s.offset}|${s.rotate}|${s.flip}`;
+          if (this.sectionSigs.get(s.id) !== sig) {
+            plane.setFromNormalAndCoplanarPoint(normal, point);
+            this.sectionSigs.set(s.id, sig);
+          }
+        }
+        if (s.hidden) this.hiddenSectionPlanes.add(planeId!); else this.hiddenSectionPlanes.delete(planeId!);
+        plane.enabled = !s.hidden && this.sectionsOn;
+        plane.visible = !s.hidden && this.sectionsOn && this.clipper.visible;
+        try { plane.controls.setMode(handle === 'rotate' ? 'rotate' : 'translate'); } catch { /* the controls follow on the next change */ }
+        // The solid face of the cut: on for every plane, or removed.
+        const has = clipStyler.list.has(planeId!);
+        if (solid && !has) clipStyler.createFromClipping(planeId!, { world, link: true, items: this.sectionItems(true) ?? undefined });
+        else if (!solid && has) {
+          try { clipStyler.list.get(planeId!)?.dispose(); clipStyler.list.delete(planeId!); } catch { /* already gone */ }
+        } else if (solid && has) void clipStyler.list.get(planeId!)?.update();
+      }
+      this.onToolContentChange.trigger();
+      void this.forceUpdate();
+    });
+    return this.sectionChain;
   }
 
   dispose() {

@@ -13,3 +13,12 @@ export function ToolbarSlot({ children }: { children: ReactNode }) {
   if (slot) return createPortal(children, slot);
   return <div className="schedule-view-toolbar">{children}</div>;
 }
+
+/** The spot at the left of the Programmes toolbar (beside the view button, where the Gantt's Level is). */
+export const ToolbarLeftSlotContext = createContext<HTMLElement | null>(null);
+
+/** Renders a view's control in the left of the toolbar; outside the page (no slot), in place. */
+export function ToolbarLeftSlot({ children }: { children: ReactNode }) {
+  const slot = useContext(ToolbarLeftSlotContext);
+  return slot ? createPortal(children, slot) : <>{children}</>;
+}

@@ -4,7 +4,12 @@ import { ViewPicker } from './components/ViewPicker';
 import { initialView, noteView } from './state/workspaces';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { useDockStore } from './state/dockStore';
+import { setHomeDock, useDockStore } from './state/dockStore';
+import { createPortal } from 'react-dom';
+import { useFilesCountStore, useTableCountStore } from './state/tableCountStore';
+import { GlobalSearch } from './components/GlobalSearch';
+import { useHeaderSlotStore } from './state/headerSlotStore';
+import { DockPanel, DockToolbar } from './components/Dock';
 import { IS_SATELLITE, SATELLITE_PAGE, SATELLITE_VIEW } from './state/satellite';
 import { reportView } from './state/windowSync';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
@@ -35,14 +40,20 @@ import { hasMadeChoice, useProgrammeChoiceStore } from './state/programmeChoiceS
 import { programmeKey } from './state/unloadedWbsStore';
 import { usePendingImportsStore } from './state/pendingImportsStore';
 import { inputsSetter, useInputsJobsStore } from './state/inputsJobsStore';
-import { IconSidePanel, IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData, IconRemove, IconClose, IconPencil } from './components/icons';
+import { IconChevronDown, IconChevronLeft, IconPlus, IconBook, IconInfoOutlined, IconCheckboxUnchecked, IconCube, IconDownloadFile, IconEye, IconEyeOff, IconSync, IconFolder, IconHome, IconGantt, IconSchema, IconSplit, IconTimeline, IconDashboard, IconExternalData, IconRemove, IconClose, IconPencil } from './components/icons';
 import { FileDrop } from './components/FileDrop';
 import { SCHEDULE_ACCEPT, buildScheduleModel, parseScheduleFile, xmlScheduleTables } from './schedule/loadSchedule';
 import { buildXerSchedule, indexXerFile, isXer, type ImportProgress, type XerIndex } from './schedule/importSchedule';
 import { ProjectPicker } from './components/schedule/ProjectPicker';
 import { experimentalOn, useAppPrefsStore } from './state/appPrefsStore';
 import { useRecordingStore } from './state/recordingStore';
+import { setLiveCounts, touchScene } from './state/scenes';
+import { useActivitySelectionStore } from './state/activitySelectionStore';
+import { takeDroppedFiles } from './state/fileDrop';
+import { restoreStatus } from './state/restoreStatus';
+import { useHomeSelection } from './state/homeSelection';
 import { DbStatusChip } from './components/ProjectDbPanel';
+import { WorkspaceStatus } from './components/WorkspaceBar';
 import { FEATURES } from './features';
 import { fileSizeOf, rememberFileSize, rememberModelFile, uploadOf } from './state/modelFiles';
 import { useModelPlacementStore } from './state/modelPlacementStore';
@@ -50,9 +61,13 @@ import modelIcon from './icons/BuildingSMART_RGB_Icon_colour_v3.jpg';
 import programmeIcon from './icons/window_15139098.png';
 import { DEFAULT_INPUT_COLUMNS, buildCombinedGroups, buildGroups, passesFilters, useInputDetailsStore, valuesOfFile, type GroupNode } from './state/inputDetailsStore';
 import { pushToSeaTable, DetailValue, GroupHeaderRow, ColumnResizer, InputsColgroup, InputsStatusBar, useInputsTableStyle } from './components/InputDetails';
-import { InputsSidePane } from './components/InputsSidePane';
+import { HomePage } from './pages/HomePage';
+import { EditableStatus } from './components/schedule/EditableStatus';
+import { InputsTools } from './components/InputsTools';
+import { OverflowMenu, ToolPopover } from './components/TablePopovers';
 import type { PushFile } from './seatable/filesClient';
-import { FileDetails, type FileSummary } from './components/FileDetails';
+import { type FileSummary } from './components/FileDetails';
+import { DetailsPane } from './components/DetailsPane';
 import { ResizeHandle, useResizableWidth } from './components/ResizeHandle';
 import { usePersistedState } from './utils/persistedState';
 import { StoredModelsNotes, useStoredModels } from './components/StoredModelsPanel';
@@ -80,13 +95,14 @@ const shipped = import.meta.env.VITE_EDITION === 'web' || import.meta.env.VITE_E
 const TimelinesPage = shipped ? () => null : lazy(() => import('./pages/TimelinesPage').then((m) => ({ default: m.TimelinesPage })));
 const WikiPage = shipped ? () => null : lazy(() => import('./pages/WikiPage').then((m) => ({ default: m.WikiPage })));
 
-type PageId = 'inputs' | 'model' | 'schedule' | 'scenarios' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki' | 'help';
+type PageId = 'home' | 'inputs' | 'model' | 'schedule' | 'scenarios' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki' | 'help';
 
 /** Ctrl+Alt + key (KeyboardEvent.code) -> the page it opens. */
 const PAGE_SHORTCUTS: Record<string, PageId> = { KeyP: 'inputs', KeyQ: 'model', KeyU: 'schedule', KeyW: 'sequence' };
 
 const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
-  { id: 'inputs', label: 'Inputs', icon: <IconFolder /> },
+  { id: 'home', label: 'Home', icon: <IconHome /> },
+  { id: 'inputs', label: 'Files', icon: <IconFolder /> },
   { id: 'model', label: 'Models', icon: <IconCube /> },
   { id: 'schedule', label: 'Programmes', icon: <IconGantt /> },
   { id: 'scenarios', label: 'Scenarios', icon: <IconSplit /> },
@@ -161,6 +177,24 @@ const mayLeave = (from: PageId, to: PageId) => {
 };
 
 export default function App() {
+  // What a scene says it holds: the activities, objects and models loaded when it was saved.
+  useEffect(() => {
+    setLiveCounts(() => {
+      // Models and programmes come back a moment after the page: until they have, what is loaded is not what the scene holds.
+      const root = useProjectDbStore.getState().db?.root;
+      if (root && !restoreStatus.done(root)) return {};
+      const models = useModelsStore.getState().models;
+      return {
+        models: models.length,
+        objects: models.reduce((n, m) => n + (m.elementCount ?? 0), 0),
+        activities: useScheduleStore.getState().schedules.reduce((n, m) => n + m.activities.length, 0),
+        programme: useScheduleStore.getState().schedules[0]?.project.name,
+      };
+    });
+    // Once they are back, the scene takes the numbers and files as they are.
+    const off = restoreStatus.onChange(() => window.setTimeout(touchScene, 1500));
+    return () => { setLiveCounts(null); off(); };
+  }, []);
   const [page, setPageRaw] = useState<PageId>(() => {
     if (IS_SATELLITE) return PAGES.some((p) => p.id === SATELLITE_PAGE) ? (SATELLITE_PAGE as PageId) : 'schedule';
     // The workspace you were in opens on its page.
@@ -169,9 +203,9 @@ export default function App() {
     // Settings › Layout profiles › Open on.
     try {
       const saved = localStorage.getItem('app.startPage');
-      return PAGES.some((p) => p.id === saved) ? (saved as PageId) : 'inputs';
+      return PAGES.some((p) => p.id === saved) ? (saved as PageId) : 'home';
     } catch {
-      return 'inputs';
+      return 'home';
     }
   });
   // The External data and Dashboards frames stay loaded once opened.
@@ -182,7 +216,7 @@ export default function App() {
   const pageRef = useRef(page);
   pageRef.current = page;
   // Which page's docks (panels around the 3D view, or around the programme views) are showing.
-  useEffect(() => { useDockStore.getState().setHost(page === 'model' || page === 'sequence' || page === 'schedule' ? 'viewer' : null); }, [page]);
+  useEffect(() => { setHomeDock(page === 'home'); useDockStore.getState().setHost(page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' ? 'viewer' : null); }, [page]);
   const setPage = (next: PageId | ((current: PageId) => PageId)) => {
     const from = pageRef.current;
     const to = typeof next === 'function' ? next(from) : next;
@@ -275,8 +309,15 @@ export default function App() {
     if (tab) setScheduleTab(tab as ScheduleTabId);
   }, [layoutRevision]);
   // Models, 4D Sequencing and Programmes are one workspace: the 3D view's shell and docks, with the Programmes views taking the 3D view's place.
-  const viewerVisible = page === 'model' || page === 'sequence' || page === 'schedule';
+  const viewerVisible = page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home';
 
+  // On the pages with docks the status bar sits under the centre only, so the docks on the sides run down to the bottom of the page.
+  const footerEl = useHeaderSlotStore((h) => h.footer);
+  const statusBar = (
+    <>
+      {page === 'home' ? <footer className="app-statusbar"><span>The scene you are in is saved as you work.</span><HomeFilesCount /><span className="app-statusbar__tools" /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? null : <StatusBar page={page} />}
+    </>
+  );
   return (
     <ViewerEngineProvider>
       <ThemeSync />
@@ -296,7 +337,7 @@ export default function App() {
         {IS_SATELLITE
           ? !viewerVisible && <header className="ws-bar"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></header>
           // No bar along the top: Programmes, Models and 4D hold the picker in their own toolbar; the other pages get it as a small button in the corner.
-          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && <div className="ws-float"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></div>}
+          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && page !== 'home' && <div className="ws-float"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></div>}
         <div className="app-body">
           <div
             style={
@@ -312,13 +353,19 @@ export default function App() {
             }
           >
             <ViewerWorkspace
-              picker={<ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} />}
+              picker={<ViewPicker named hideSearch pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} />}
+              search={<GlobalSearch pages={pages} onPage={goPage} onTab={setScheduleTab} />}
               layout={page === 'sequence' ? 'sequence' : 'model'}
               paneActive={page === 'model'}
               panel={page === 'sequence' ? <SequencePanel /> : <FourDSetupPanel />}
               overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
-              center={page === 'schedule' || visited.has('schedule') ? <SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={goPage} /> : undefined}
-              centerShown={page === 'schedule'}
+              center={
+                <>
+                  {(page === 'schedule' || visited.has('schedule')) && <div style={{ display: page === 'schedule' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}><SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={goPage} /></div>}
+                  {page === 'home' && <HomePage search={<GlobalSearch pages={pages} onPage={goPage} onTab={setScheduleTab} />} picker={<ViewPicker named hideSearch hideView pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} />} />}
+                </>
+              }
+              centerShown={page === 'schedule' || page === 'home'}
             />
           </div>
           {page === 'inputs' && <InputsPage />}
@@ -329,17 +376,30 @@ export default function App() {
           {visited.has('external') && <ExternalPage target="seatable" active={page === 'external'} />}
           {visited.has('dashboards') && <ExternalPage target="superset" active={page === 'dashboards'} />}
         </div>
-        {page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? null : <StatusBar page={page} />}
+        {footerEl && viewerVisible ? createPortal(statusBar, footerEl) : statusBar}
       </div>
       {/* Pages with docks hold their settings as panels (Settings is one of them); the others keep the side pane. */}
       {!viewerVisible && <SidePaneHost />}
-      <SettingsDock />
+      {page === 'home' && <SettingsDock />}
+      <FilesDock page={page} />
       <ListConfigPanels />
       {inputsOpen && <InputsDialog onClose={() => setInputsOpen(false)} />}
       <AutoLinkGenerator />
       {FEATURES.scenarios && scenariosOn && <ScenarioSync loadOnly />}
       </div>
     </ViewerEngineProvider>
+  );
+}
+
+/** Files as a panel of the docks: open at the bottom on Home, and on the other pages from the Panels menu. Left, bottom or right as chosen. */
+function FilesDock({ page }: { page: PageId }) {
+  const [onHome, setOnHome] = usePersistedState('files.openHome', true);
+  const [elsewhere, setElsewhere] = usePersistedState('files.openElsewhere', false);
+  const home = page === 'home';
+  return (
+    <DockPanel id="files" label="Files" shown={home ? onHome : elsewhere} setShown={home ? setOnHome : setElsewhere}>
+      <InputsPage inDock />
+    </DockPanel>
   );
 }
 
@@ -380,7 +440,7 @@ function InputsDialog({ onClose }: { onClose: () => void }) {
   );
 }
 
-function InputsPage() {
+function InputsPage({ inDock = false }: { inDock?: boolean }) {
   const inputBtns = useRowButtons<InputButton>('inputs.hiddenButtons');
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
@@ -496,10 +556,12 @@ function InputsPage() {
   const filters = useInputDetailsStore((s) => s.filters);
   const isOpenRow = (r: InputRow) => !r.unloaded && !r.hidden && (r.kind !== 'programme' || !!r.programme?.schedule);
   const formatOfRow = (r: InputRow) => (r.programme?.db?.sourceFormat ?? /\.([a-z0-9]+)$/i.exec(r.name)?.[1] ?? '').toUpperCase();
-  const visibleRows = useMemo(
-    () => (Object.keys(filters).length === 0 ? rows : rows.filter((r) => isOpenRow(r) || passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, filters, detailValues))),
-    [rows, filters, detailValues],
-  );
+  // The scene chosen on Home (not the one you are in): its saved Files filters stand in for the ones set now.
+  const sceneFilters = useHomeSelection((s) => s.filters);
+  const visibleRows = useMemo(() => {
+    const on = sceneFilters ?? filters;
+    return Object.keys(on).length === 0 ? rows : rows.filter((r) => isOpenRow(r) || passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, on, detailValues));
+  }, [rows, filters, detailValues, sceneFilters]);
   // Groups, outermost level first.
   const tree = useMemo(() => {
     const rules = groupRules;
@@ -531,7 +593,7 @@ function InputsPage() {
   const [selectedKeys, setSelectedKeys] = useState<Set<string>>(new Set());
   const rowId = (r: InputRow) => `${r.kind}-${r.key}`;
   // The File details pane (the selected files, else the current one).
-  const [detailsOpen, setDetailsOpen] = usePersistedState('inputs.detailsOpen', false);
+  const [detailsOpen, setDetailsOpen] = usePersistedState('inputs.detailsOpen', true);
   const detailsWidth = useResizableWidth('inputs.detailsWidth', 320, 260, 640);
   const detailFiles = useMemo<FileSummary[]>(() => {
     const keys = selectedKeys.size ? selectedKeys : new Set(activeKey ? [activeKey] : []);
@@ -838,272 +900,287 @@ function InputsPage() {
   const handleFileByKind = (file: File) =>
     /\.(ifc|frag)$/i.test(file.name) ? handleModelFile(file) : /\.(glb|gltf)$/i.test(file.name) ? handleContextFile(file) : handleScheduleFile(file);
 
+  // Files dropped on Home (anywhere on the page) are loaded here, once this panel is open.
+  const handleFileRef = useRef(handleFile);
+  handleFileRef.current = handleFile;
+  useEffect(() => {
+    const run = () => { for (const f of takeDroppedFiles()) void handleFileRef.current(f); };
+    run();
+    window.addEventListener('ip-drop-files', run);
+    return () => window.removeEventListener('ip-drop-files', run);
+  }, []);
+
+  // The count of files goes to Home's status bar.
+  const filesText = `${visibleRows.length === rows.length ? rows.length : `${visibleRows.length} of ${rows.length}`} file${rows.length === 1 ? '' : 's'}`;
+  useEffect(() => {
+    useFilesCountStore.getState().set(filesText);
+    return () => useFilesCountStore.getState().set(null);
+  }, [filesText]);
+
   const xerPick = xerPicks[0];
   const closeXerPick = () => setXerPicks((q) => q.slice(1));
 
   return (
     <div className={`inputs-page${detailsOpen ? ' inputs-page--details' : ''}`}>
+      <DockToolbar id="files">
       <div className="inputs-panel__header inputs-bar">
-        <span>Models and programmes</span>
-        <span className="inputs-panel__count">{rows.length}</span>
+        <button type="button" className="icon-btn inputs-fold" onClick={() => { const d = useDockStore.getState(); d.setFolded(d.sideOf('files') === 'closed' ? 'bottom' : (d.sideOf('files') as 'left' | 'bottom' | 'right'), true); }} title="Fold the Files panel away" aria-label="Fold the Files panel away"><IconChevronDown width={16} height={16} /></button>
         <span className="inputs-panel__spacer" />
-        {dbOpen && (
-          <button
-            type="button"
-            className="mini-btn"
-            onClick={() => {
-              const name = window.prompt('Name for the new programme:')?.trim();
-              if (!name) return;
-              const start = window.prompt('Start date (YYYY-MM-DD):', new Date().toISOString().slice(0, 10))?.trim();
-              if (start) void newProgramme(name, start);
-            }}
-            title="Start an empty programme to build in the app, saved to the project database"
-          >
-            New programme
-          </button>
-        )}
-        {rows.length > 0 && (
-          <>
-            <button className="mini-btn mini-btn--icon" onClick={syncAll} title="Sync all" aria-label="Sync all"><IconSync /></button>
-            <RowButtonsChooser compact buttons={INPUT_BUTTONS} rb={inputBtns} title="Choose which buttons show on each row" />
-          </>
-        )}
-        <div className="schedule-toolbar__segmented layouts-segment">
-          <button className={`btn layouts-toggle${detailsOpen ? ' primary' : ''}`} type="button" aria-pressed={detailsOpen} onClick={() => setDetailsOpen(!detailsOpen)} title="Show the selected file's details and edit them: discipline, building, status, notes ...">
-            <span className="toolbar-button__icon"><IconSidePanel /></span>
-            File details
-          </button>
-        </div>
+        <span className="tp-row inputs-add">
+          <ToolPopover icon={<IconPlus width={18} height={18} />} label="Add files" iconOnly={false} width={360}>
+            <FileDrop label="Drop files here or click to upload" hint={`Models: .ifc, .frag · Site context (terrain, surroundings): .glb · Programmes: P6 .xer / .xml, MS Project .xml (File › Save As › XML), Excel .xlsx / .xls / .csv${dbOpen ? ' — programmes are imported into the project database' : ''}`} accept={`.ifc,.frag,.glb,.gltf,${SCHEDULE_ACCEPT},.mpp`} multiple onFile={handleFile} />
+          </ToolPopover>
+        </span>
+        <InputsTools onCollapseAll={collapseAllGroups} onExpandAll={expandAllGroups} />
+        {rows.length > 0 && <RowButtonsChooser compact buttons={INPUT_BUTTONS} rb={inputBtns} title="Choose which buttons show on each row" />}
+        <OverflowMenu
+          items={[
+            {
+              label: 'New programme',
+              hidden: !dbOpen,
+              onClick: () => {
+                const name = window.prompt('Name for the new programme:')?.trim();
+                if (!name) return;
+                const start = window.prompt('Start date (YYYY-MM-DD):', new Date().toISOString().slice(0, 10))?.trim();
+                if (start) void newProgramme(name, start);
+              },
+            },
+            { label: 'Sync all', icon: <IconSync />, hidden: rows.length === 0, onClick: syncAll },
+          ]}
+        />
       </div>
-      <InputsSidePane onCollapseAll={collapseAllGroups} onExpandAll={expandAllGroups} />
+      </DockToolbar>
       <div className="inputs-panel">
         <div className="inputs-panel__body">
-          <FileDrop
-            label="Drop files here or click to upload"
-            hint={`Models: .ifc, .frag · Site context (terrain, surroundings): .glb · Programmes: P6 .xer / .xml, MS Project .xml (File › Save As › XML), Excel .xlsx / .xls / .csv${dbOpen ? ' — programmes are imported into the project database' : ''}`}
-            accept={`.ifc,.frag,.glb,.gltf,${SCHEDULE_ACCEPT},.mpp`}
-            multiple
-            onFile={handleFile}
-          />
-          {modelError && <div className="inputs-panel__error">{modelError}</div>}
-          {scheduleError && <div className="inputs-panel__error">{scheduleError}</div>}
-          {Object.entries(scheduleBusy).map(([name, { label, fraction }]) => (
-            <div key={name} className="inputs-panel__busy">
-              <span>{label} {name}… {Math.round(fraction * 100)}%</span>
-              <progress value={fraction} max={1} />
-            </div>
-          ))}
-          {xerPick && (
-            <ProjectPicker
-              fileName={xerPick.file.name}
-              projects={xerPick.index.projects}
-              onCancel={closeXerPick}
-              onLoad={(ids) => {
-                closeXerPick();
-                void loadXer(xerPick.file, xerPick.index, ids);
-              }}
-            />
-          )}
-          {(pendingModels.length > 0 || pendingSchedules.length > 0) && (
-            <div className="pending-imports">
-              <div className="pending-imports__title">Waiting for {pendingModels.length + pendingSchedules.length} file{pendingModels.length + pendingSchedules.length === 1 ? '' : 's'} from an imported configuration</div>
-              {[...pendingModels, ...pendingSchedules].map((m) => (
-                <div key={m.name} className="pending-imports__item">
-                  <span className="pending-imports__name">{m.name}</span>
-                  {m.path && <span className="pending-imports__path">{m.path}</span>}
-                </div>
-              ))}
-            </div>
-          )}
-          {rows.length > 0 && (
-            <>
-              {/* (A button would also "click" on Space's release: kept from doing so.) */}
-              <div style={{ overflowX: 'auto', outline: 'none' }} tabIndex={0} onKeyDown={onRowsKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }} aria-label="Files: arrow keys move, Shift or Ctrl select several, Space hides or shows the selected">
-              <table className="inputs-table inputs-table--aligned" style={tableStyle}>
-                <InputsColgroup columns={shownColumns} />
-                <thead>
-                  <tr>
-                    <th aria-label="Open, hide / show" />
-                    {shownColumns.map((col) => headerCell(col))}
-                    <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Action</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {sections.flatMap((section) => {
-                    const colSpan = 2 + shownColumns.length;
-                    const node = section.node;
-                    const header = !node
-                      ? []
-                      : [<GroupHeaderRow key={`group-${node.key}`} collapseKey={node.key} group={node.value} level={node.level} count={node.items.length} colSpan={colSpan} allSelected={node.items.length > 0 && node.items.every((r) => selectedKeys.has(rowId(r)))} onSelect={() => selectGroup(node.items)} />];
-                    return [...header, ...section.items.map((row) => {
-                    const { hidden } = row;
-                    const p = row.programme;
-                    const db = p?.db ?? null;
-                    const loading = db ? dbLoading[db.id] : undefined;
-                    return (
-                      <tr
-                        key={`${node?.key ?? ""}|${row.kind}-${row.key}`}
-                        id={`inputs-row-${rowId(row)}`}
-                        style={hidden ? { opacity: 0.5 } : undefined}
-                        className={`inputs-row${node ? ' inputs-in-folder' : ''}${selectedKeys.has(rowId(row)) ? ' is-active' : ''}${activeKey === rowId(row) ? ' is-current' : ''}`}
-                        onClick={(e) => { if (!(e.target as HTMLElement).closest('button, input, select, a, label')) pickRow(row, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }); }}
-                      >
-                        <td>
-                          <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                            {row.unloaded && row.stored ? (
-                              inputBtns.shown('open') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.open(row.stored!)} aria-label="Open" title="Open the model">
-                                <IconCheckboxUnchecked width={16} height={16} />
-                              </button>
-                            ) : (
-                              inputBtns.shown('hide') && <button
-                                className="mini-btn mini-btn--icon"
-                                onClick={() => toggleRowHidden(row)}
-                                title={hidden ? 'Show — unload without removing' : 'Hide — unload without removing'}
-                                aria-label={hidden ? 'Show' : 'Hide'}
-                              >
-                                {hidden ? <IconEyeOff /> : <IconEye />}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                        {shownColumns.map((col) => {
-                          switch (col) {
-                            case 'type': return (<td key={col} className="inputs-table__type">
-                          <img className="inputs-table__icon" src={row.kind === 'programme' ? programmeIcon : modelIcon} alt={KIND_LABEL[row.kind]} title={KIND_LABEL[row.kind]} />
-                        </td>);
-                        case 'name': return (<td key={col}>
-                          {row.name}
-                          {db?.baselineOf != null && <span className="source-chip" title="A baseline saved of another programme: the programme as it was when it was saved. Choose it in the Baselines menu of Programmes to see what moved.">Baseline</span>}
-                          {db?.editable && <span className="source-chip" title="Edited in place: your changes are saved to the project database as you make them, and the programme can be exported as an XER.">Editable</span>}
-                          {row.context && (
-                            <span className="source-chip" title="Site context mesh: not part of 4D. Move it (metres, project axes) to line it up with the models.">
-                              glTF
-                            </span>
-                          )}
-                          {row.context && (
-                            <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4, fontSize: 11 }} title="Move the mesh, in metres: X east, Y north, Z up">
-                              Move
-                              {(['x', 'y', 'z'] as const).map((axis) => (
-                                <label key={axis} style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
-                                  {axis.toUpperCase()}
-                                  <input
-                                    type="number"
-                                    step="any"
-                                    style={{ width: 64 }}
-                                    value={row.context!.offset[axis]}
-                                    onChange={(e) => {
-                                      const offset = { ...row.context!.offset, [axis]: Number(e.target.value) || 0 };
-                                      ctx().setOffset(row.key, offset);
-                                      engine.contexts.setOffset(row.key, offset);
-                                    }}
-                                  />
-                                </label>
-                              ))}
-                            </div>
-                          )}
-                          {p && (db ? (
-                            <span className="source-chip" title={db.sourceFormat === 'p6db' ? `Read live from ${db.sourcePath}` : `In the project database (ip_programme.id = ${db.id})`}>
-                              {db.kind === 'scenario' ? 'Scenario' : db.sourceFormat === 'p6db' ? 'P6 database' : db.sourceFormat.toUpperCase()}
-                            </span>
-                          ) : (
-                            dbOpen && <span className="source-chip source-chip--file" title="Loaded from a file before the project database was open, so not in it">file only</span>
-                          ))}
-                          {row.stored && !row.unloaded && <span className="source-chip" title="Kept in the project database's model store">in database</span>}
-                          {row.stored && !row.stored.cached && <span className="source-chip source-chip--file" title="No converted copy yet: opening it converts the IFC (the copy is kept for next time)">converts the IFC</span>}
-                          {loading !== undefined && <span className="source-chip source-chip--busy">loading {Math.round(loading * 100)}%</span>}
-                        </td>);
-                        case 'items': return <td key={col} className="inputs-table__centre">{row.unloaded ? '' : row.items.toLocaleString()}</td>
-                        case 'bounds': return (<td key={col} className="inputs-table__bounds inputs-table__centre">
-                          {row.bounds ? (
-                            <>
-                              <div>Min {row.bounds.min.map((v) => v.toFixed(1)).join(', ')}</div>
-                              <div>Max {row.bounds.max.map((v) => v.toFixed(1)).join(', ')}</div>
-                            </>
-                          ) : ''}
-                        </td>);
-                        case 'size': return <td key={col} className="inputs-table__centre">{row.size === null ? '' : formatBytes(row.size)}</td>
-                        case 'uploaded': return <td key={col} className="inputs-table__centre">{row.uploaded === null ? '' : new Date(row.uploaded).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
-                        case 'version': return <td key={col} className="inputs-table__centre">{row.version === null ? '' : `v${row.version}`}</td>
-                            default: return <td key={col} className="inputs-table__detail"><DetailValue item={row.name} field={col} /></td>;
-                          }
-                        })}
-                        <td style={{ textAlign: 'right' }}>
-                          <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
-                            {row.stored && inputBtns.shown('versions') && row.stored.versions > 0 && <button type="button" className="mini-btn" onClick={() => void storedActions.showVersions(row.stored!)} title={`${row.stored.versions} earlier IFC${row.stored.versions === 1 ? '' : 's'} (kept when an edit or a new file replaces the model)`}>{row.stored.versions}</button>}
-                            {row.unloaded && row.stored ? (
-                              <>
-                                {inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
-                                  <IconDownloadFile width={16} height={16} />
-                                </button>}
-                                {inputBtns.shown('remove') && <button type="button" className="cols__icon cols__icon--remove" onClick={() => void storedActions.remove(row.stored!)} title="Remove from the project database's model store" aria-label="Remove from the model store"><IconRemove /></button>}
-                              </>
-                            ) : (<>
-                            {row.stored && inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
-                              <IconDownloadFile width={16} height={16} />
-                            </button>}
-                            {inputBtns.shown('download') && (p ? (
-                              <ProgrammeDownload canXml={!!p.db?.scenario && !!p.db?.stem} disabled={!p.db && !p.schedule} onDownload={(f) => void downloadProgramme(p, f)} />
-                            ) : <span style={{ width: 44 }} aria-hidden />)}
-                            {inputBtns.shown('edit') && db && !db.editable && db.sourceFormat !== 'p6db' && <button
-                              type="button"
-                              className="mini-btn"
-                              onClick={() => {
-                                const name = window.prompt('Name for the editable copy:', `${db.name} (editable)`)?.trim();
-                                if (name) void makeEditableCopy(db, name);
-                              }}
-                              title="Make a copy of this programme that you can edit in place: add, change and link activities, saved to the project database and exported to P6 as an XER. This one stays as it is."
-                              aria-label="Make an editable copy"
-                            >
-                              Edit copy
-                            </button>}
-                            {inputBtns.shown('sync') && <button
-                              className="mini-btn mini-btn--icon"
-                              disabled={row.context ? true : p ? !p.schedule : false}
-                              onClick={() => (p ? p.schedule && syncSchedule(p.schedule.id) : syncModel(row.key))}
-                              title="Sync — show this in the other tabs"
-                              aria-label="Sync"
-                            >
-                              <IconSync />
-                            </button>}
-                            {inputBtns.shown('remove') && <button
-                              className="cols__icon cols__icon--remove"
-                              onClick={() => {
-                                const what = db ? `Delete "${row.name}" from the project database? This cannot be undone.` : `Remove "${row.name}" from the app?`;
-                                if (!window.confirm(what)) return;
-                                if (row.context) (engine.contexts.remove(row.key), ctx().remove(row.key));
-                                else if (p) (db ? void removeProgramme(db) : removeSchedule(row.key));
-                                else void removeModelEverywhere(row.key);
-                              }}
-                              title={db ? 'Delete from the project database' : 'Remove from the app'}
-                              aria-label={db ? 'Delete' : 'Remove'}
-                            >
-                              <IconRemove />
-                            </button>}
-                            </>)}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                    })];
-                  })}
-                </tbody>
-              </table>
+          <div className="inputs-panel__side" ref={inDock ? (el) => useHomeSelection.getState().setSideEl(el) : undefined} />
+          <div className="inputs-panel__main">
+            {modelError && <div className="inputs-panel__error">{modelError}</div>}
+            {scheduleError && <div className="inputs-panel__error">{scheduleError}</div>}
+            {Object.entries(scheduleBusy).map(([name, { label, fraction }]) => (
+              <div key={name} className="inputs-panel__busy">
+                <span>{label} {name}… {Math.round(fraction * 100)}%</span>
+                <progress value={fraction} max={1} />
               </div>
-            </>
-          )}
-          <StoredModelsNotes actions={storedActions} />
+            ))}
+            {xerPick && (
+              <ProjectPicker
+                fileName={xerPick.file.name}
+                projects={xerPick.index.projects}
+                onCancel={closeXerPick}
+                onLoad={(ids) => {
+                  closeXerPick();
+                  void loadXer(xerPick.file, xerPick.index, ids);
+                }}
+              />
+            )}
+            {(pendingModels.length > 0 || pendingSchedules.length > 0) && (
+              <div className="pending-imports">
+                <div className="pending-imports__title">Waiting for {pendingModels.length + pendingSchedules.length} file{pendingModels.length + pendingSchedules.length === 1 ? '' : 's'} from an imported configuration</div>
+                {[...pendingModels, ...pendingSchedules].map((m) => (
+                  <div key={m.name} className="pending-imports__item">
+                    <span className="pending-imports__name">{m.name}</span>
+                    {m.path && <span className="pending-imports__path">{m.path}</span>}
+                  </div>
+                ))}
+              </div>
+            )}
+            {rows.length > 0 && (
+              <>
+                {/* (A button would also "click" on Space's release: kept from doing so.) */}
+                <div style={{ overflowX: 'auto', outline: 'none' }} tabIndex={0} onKeyDown={onRowsKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }} aria-label="Files: arrow keys move, Shift or Ctrl select several, Space hides or shows the selected">
+                <table className="inputs-table inputs-table--aligned" style={tableStyle}>
+                  <InputsColgroup columns={shownColumns} />
+                  <thead>
+                    <tr>
+                      <th aria-label="Open, hide / show" />
+                      {shownColumns.map((col) => headerCell(col))}
+                      <th style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sections.flatMap((section) => {
+                      const colSpan = 2 + shownColumns.length;
+                      const node = section.node;
+                      const header = !node
+                        ? []
+                        : [<GroupHeaderRow key={`group-${node.key}`} collapseKey={node.key} group={node.value} level={node.level} count={node.items.length} colSpan={colSpan} allSelected={node.items.length > 0 && node.items.every((r) => selectedKeys.has(rowId(r)))} onSelect={() => selectGroup(node.items)} />];
+                      return [...header, ...section.items.map((row) => {
+                      const { hidden } = row;
+                      const p = row.programme;
+                      const db = p?.db ?? null;
+                      const loading = db ? dbLoading[db.id] : undefined;
+                      return (
+                        <tr
+                          key={`${node?.key ?? ""}|${row.kind}-${row.key}`}
+                          id={`inputs-row-${rowId(row)}`}
+                          style={hidden ? { opacity: 0.5 } : undefined}
+                          className={`inputs-row${node ? ' inputs-in-folder' : ''}${selectedKeys.has(rowId(row)) ? ' is-active' : ''}${activeKey === rowId(row) ? ' is-current' : ''}`}
+                          onClick={(e) => { if (!(e.target as HTMLElement).closest('button, input, select, a, label')) pickRow(row, { shift: e.shiftKey, ctrl: e.ctrlKey || e.metaKey }); }}
+                        >
+                          <td>
+                            <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+                              {row.unloaded && row.stored ? (
+                                inputBtns.shown('open') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.open(row.stored!)} aria-label="Open" title="Open the model">
+                                  <IconCheckboxUnchecked width={16} height={16} />
+                                </button>
+                              ) : (
+                                inputBtns.shown('hide') && <button
+                                  className="mini-btn mini-btn--icon"
+                                  onClick={() => toggleRowHidden(row)}
+                                  title={hidden ? 'Show — unload without removing' : 'Hide — unload without removing'}
+                                  aria-label={hidden ? 'Show' : 'Hide'}
+                                >
+                                  {hidden ? <IconEyeOff /> : <IconEye />}
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                          {shownColumns.map((col) => {
+                            switch (col) {
+                              case 'type': return (<td key={col} className="inputs-table__type">
+                            <img className="inputs-table__icon" src={row.kind === 'programme' ? programmeIcon : modelIcon} alt={KIND_LABEL[row.kind]} title={KIND_LABEL[row.kind]} />
+                          </td>);
+                          case 'name': return (<td key={col}>
+                            {row.name}
+                            {db?.baselineOf != null && <span className="source-chip" title="A baseline saved of another programme: the programme as it was when it was saved. Choose it in the Baselines menu of Programmes to see what moved.">Baseline</span>}
+                            {db?.editable && <span className="source-chip" title="Edited in place: your changes are saved to the project database as you make them, and the programme can be exported as an XER.">Editable</span>}
+                            {row.context && (
+                              <span className="source-chip" title="Site context mesh: not part of 4D. Move it (metres, project axes) to line it up with the models.">
+                                glTF
+                              </span>
+                            )}
+                            {row.context && (
+                              <div style={{ display: 'flex', gap: 4, alignItems: 'center', marginTop: 4, fontSize: 11 }} title="Move the mesh, in metres: X east, Y north, Z up">
+                                Move
+                                {(['x', 'y', 'z'] as const).map((axis) => (
+                                  <label key={axis} style={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+                                    {axis.toUpperCase()}
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      style={{ width: 64 }}
+                                      value={row.context!.offset[axis]}
+                                      onChange={(e) => {
+                                        const offset = { ...row.context!.offset, [axis]: Number(e.target.value) || 0 };
+                                        ctx().setOffset(row.key, offset);
+                                        engine.contexts.setOffset(row.key, offset);
+                                      }}
+                                    />
+                                  </label>
+                                ))}
+                              </div>
+                            )}
+                            {p && (db ? (
+                              <span className="source-chip" title={db.sourceFormat === 'p6db' ? `Read live from ${db.sourcePath}` : `In the project database (ip_programme.id = ${db.id})`}>
+                                {db.kind === 'scenario' ? 'Scenario' : db.sourceFormat === 'p6db' ? 'P6 database' : db.sourceFormat.toUpperCase()}
+                              </span>
+                            ) : (
+                              dbOpen && <span className="source-chip source-chip--file" title="Loaded from a file before the project database was open, so not in it">file only</span>
+                            ))}
+                            {row.stored && !row.unloaded && <span className="source-chip" title="Kept in the project database's model store">in database</span>}
+                            {row.stored && !row.stored.cached && <span className="source-chip source-chip--file" title="No converted copy yet: opening it converts the IFC (the copy is kept for next time)">converts the IFC</span>}
+                            {loading !== undefined && <span className="source-chip source-chip--busy">loading {Math.round(loading * 100)}%</span>}
+                          </td>);
+                          case 'items': return <td key={col} className="inputs-table__centre">{row.unloaded ? '' : row.items.toLocaleString()}</td>
+                          case 'bounds': return (<td key={col} className="inputs-table__bounds inputs-table__centre">
+                            {row.bounds ? (
+                              <>
+                                <div>Min {row.bounds.min.map((v) => v.toFixed(1)).join(', ')}</div>
+                                <div>Max {row.bounds.max.map((v) => v.toFixed(1)).join(', ')}</div>
+                              </>
+                            ) : ''}
+                          </td>);
+                          case 'size': return <td key={col} className="inputs-table__centre">{row.size === null ? '' : formatBytes(row.size)}</td>
+                          case 'uploaded': return <td key={col} className="inputs-table__centre">{row.uploaded === null ? '' : new Date(row.uploaded).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' })}</td>
+                          case 'version': return <td key={col} className="inputs-table__centre">{row.version === null ? '' : `v${row.version}`}</td>
+                              default: return <td key={col} className="inputs-table__detail"><DetailValue item={row.name} field={col} /></td>;
+                            }
+                          })}
+                          <td style={{ textAlign: 'right' }}>
+                            <div style={{ display: 'flex', gap: 4, justifyContent: 'flex-end', alignItems: 'center' }}>
+                              {row.stored && inputBtns.shown('versions') && row.stored.versions > 0 && <button type="button" className="mini-btn" onClick={() => void storedActions.showVersions(row.stored!)} title={`${row.stored.versions} earlier IFC${row.stored.versions === 1 ? '' : 's'} (kept when an edit or a new file replaces the model)`}>{row.stored.versions}</button>}
+                              {row.unloaded && row.stored ? (
+                                <>
+                                  {inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
+                                    <IconDownloadFile width={16} height={16} />
+                                  </button>}
+                                  {inputBtns.shown('remove') && <button type="button" className="cols__icon cols__icon--remove" onClick={() => void storedActions.remove(row.stored!)} title="Remove from the project database's model store" aria-label="Remove from the model store"><IconRemove /></button>}
+                                </>
+                              ) : (<>
+                              {row.stored && inputBtns.shown('export') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.exportIfc(row.stored!)} aria-label="Export IFC" title="Export IFC: download the stored IFC, with the edits made in the app">
+                                <IconDownloadFile width={16} height={16} />
+                              </button>}
+                              {inputBtns.shown('download') && (p ? (
+                                <ProgrammeDownload canXml={!!p.db?.scenario && !!p.db?.stem} disabled={!p.db && !p.schedule} onDownload={(f) => void downloadProgramme(p, f)} />
+                              ) : <span style={{ width: 44 }} aria-hidden />)}
+                              {inputBtns.shown('edit') && db && !db.editable && db.sourceFormat !== 'p6db' && <button
+                                type="button"
+                                className="mini-btn"
+                                onClick={() => {
+                                  const name = window.prompt('Name for the editable copy:', `${db.name} (editable)`)?.trim();
+                                  if (name) void makeEditableCopy(db, name);
+                                }}
+                                title="Make a copy of this programme that you can edit in place: add, change and link activities, saved to the project database and exported to P6 as an XER. This one stays as it is."
+                                aria-label="Make an editable copy"
+                              >
+                                Edit copy
+                              </button>}
+                              {inputBtns.shown('sync') && <button
+                                className="mini-btn mini-btn--icon"
+                                disabled={row.context ? true : p ? !p.schedule : false}
+                                onClick={() => (p ? p.schedule && syncSchedule(p.schedule.id) : syncModel(row.key))}
+                                title="Sync — show this in the other tabs"
+                                aria-label="Sync"
+                              >
+                                <IconSync />
+                              </button>}
+                              {inputBtns.shown('remove') && <button
+                                className="cols__icon cols__icon--remove"
+                                onClick={() => {
+                                  const what = db ? `Delete "${row.name}" from the project database? This cannot be undone.` : `Remove "${row.name}" from the app?`;
+                                  if (!window.confirm(what)) return;
+                                  if (row.context) (engine.contexts.remove(row.key), ctx().remove(row.key));
+                                  else if (p) (db ? void removeProgramme(db) : removeSchedule(row.key));
+                                  else void removeModelEverywhere(row.key);
+                                }}
+                                title={db ? 'Delete from the project database' : 'Remove from the app'}
+                                aria-label={db ? 'Delete' : 'Remove'}
+                              >
+                                <IconRemove />
+                              </button>}
+                              </>)}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                      })];
+                    })}
+                  </tbody>
+                </table>
+                </div>
+              </>
+            )}
+            <StoredModelsNotes actions={storedActions} />
+          </div>
         </div>
       </div>
+      {!detailsOpen && <button type="button" className="inputs-details__reopen" onClick={() => setDetailsOpen(true)} title="Show the scene and file details" aria-label="Show details"><IconChevronLeft width={14} height={14} /></button>}
       {detailsOpen && (
         <div className="inputs-details">
           <ResizeHandle onMouseDown={detailsWidth.startDrag(true)} />
           <div className="panel" style={{ width: detailsWidth.width, flexShrink: 0 }}>
-            <FileDetails files={detailFiles} onClose={() => setDetailsOpen(false)} />
+            <DetailsPane files={detailFiles} onClose={() => setDetailsOpen(false)} />
           </div>
         </div>
       )}
     </div>
   );
+}
+
+/** Home's status bar: how many files the Files panel shows. */
+function HomeFilesCount() {
+  const text = useFilesCountStore((t) => t.text);
+  return text ? <span>{text}</span> : null;
 }
 
 interface InputRow {
@@ -1140,7 +1217,20 @@ interface ProgrammeRow {
   db: DbProgramme | null;
 }
 
+/** How many activities are picked in the Gantt or the Table (nothing when none), with a button to clear them. */
+function PickedStatus() {
+  const picked = useActivitySelectionStore((s) => s.ids.size);
+  if (picked === 0) return null;
+  return (
+    <span className="status-picked">
+      Picked: <strong>{picked}</strong>
+      <button type="button" className="status-picked__clear" onClick={() => useActivitySelectionStore.getState().clear()} title="Clear the selection" aria-label="Clear the selection"><IconClose width={10} height={10} /></button>
+    </span>
+  );
+}
+
 function StatusBar({ page }: { page: PageId }) {
+  const tableCount = useTableCountStore((t) => t.text);
   const models = useModelsStore((s) => s.models);
   const selectedModelId = useModelsStore((s) => s.selectedModelId);
   const scheduleModel = useActiveSchedule();
@@ -1149,7 +1239,7 @@ function StatusBar({ page }: { page: PageId }) {
   const activeModel = models.find((m) => m.modelId === selectedModelId) ?? models[0] ?? null;
 
   if (page === 'schedule') {
-    if (!scheduleModel) return <footer className="app-statusbar">No programme loaded<DbStatusChip /></footer>;
+    if (!scheduleModel) return <footer className="app-statusbar">No programme loaded<DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer>;
     const total = scheduleModel.activities.length;
     return (
       <footer className="app-statusbar">
@@ -1165,13 +1255,17 @@ function StatusBar({ page }: { page: PageId }) {
         <span>
           Critical: <strong>{scheduleModel.activities.filter((a) => a.isCritical).length}</strong>
         </span>
+        <PickedStatus />
         <span>
           Data date: <strong>{scheduleModel.project.dataDate?.toLocaleDateString() ?? '—'}</strong>
         </span>
         {scheduleModel.computedFloat && <span>Float: recomputed (calendar-aware)</span>}
         <span id="schedule-statusbar-tools" className="app-statusbar__tools" />
+        {tableCount && <span>{tableCount}</span>}
         <ScheduleHotkey />
+        <EditableStatus />
         <DbStatusChip />
+        <WorkspaceStatus readOnly={IS_SATELLITE} />
       </footer>
     );
   }
@@ -1191,8 +1285,10 @@ function StatusBar({ page }: { page: PageId }) {
           </span>
         </>
       )}
+      {tableCount && <span>{tableCount}</span>}
       <ScheduleHotkey />
       <DbStatusChip />
+      <WorkspaceStatus readOnly={IS_SATELLITE} />
     </footer>
   );
 }

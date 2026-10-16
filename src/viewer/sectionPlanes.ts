@@ -54,7 +54,52 @@ export function planeToScene(plane: CutPlane, offset: { x: number; y: number; z:
   return { normal: [nx, nz, -ny], point: [x - offset.x, z - offset.z, -(y - offset.y)] };
 }
 
-export const cutLabel = (s: SectionCuts): string | null => {
+/** A section of the Sections panel: a plane that can be added several at a time. Horizontal faces up (z), Vertical
+    faces east / west (x), Cross faces north / south (y); the offset is metres along that axis in project coordinates. */
+export type SectionOrient = 'horizontal' | 'vertical' | 'cross';
+
+export interface Section {
+  id: string;
+  orient: SectionOrient;
+  offset: number;
+  /** Degrees about the vertical axis (Vertical and Cross only). */
+  rotate: number;
+  /** false (default): keeps the lower / west / south side. */
+  flip: boolean;
+  hidden: boolean;
+}
+
+export const SECTION_ORIENT_LABEL: Record<SectionOrient, string> = { horizontal: 'Horizontal', vertical: 'Vertical', cross: 'Cross' };
+
+const AXIS: Record<SectionOrient, Vec3> = { horizontal: [0, 0, 1], vertical: [1, 0, 0], cross: [0, 1, 0] };
+
+/** The section's axis in project coordinates, turned by its rotation. */
+function sectionAxis(orient: SectionOrient, rotateDeg: number): Vec3 {
+  const [x, y, z] = AXIS[orient];
+  if (orient === 'horizontal') return [x, y, z];
+  const r = (rotateDeg * Math.PI) / 180;
+  return [x * Math.cos(r) - y * Math.sin(r), x * Math.sin(r) + y * Math.cos(r), 0];
+}
+
+export function sectionPlane(s: Pick<Section, 'orient' | 'offset' | 'rotate' | 'flip'>): CutPlane {
+  const a = sectionAxis(s.orient, s.rotate);
+  const sign = s.flip ? 1 : -1;
+  return { normal: [a[0] * sign, a[1] * sign, a[2] * sign], point: [a[0] * s.offset, a[1] * s.offset, a[2] * s.offset] };
+}
+
+/** Reads a dragged plane back into offset and rotation (the inverse of sectionPlane). */
+export function sectionFromPlane(orient: SectionOrient, plane: CutPlane, flip: boolean): { offset: number; rotate: number } {
+  const sign = flip ? 1 : -1;
+  const a: Vec3 = [plane.normal[0] * sign, plane.normal[1] * sign, plane.normal[2] * sign];
+  const offset = plane.point[0] * a[0] + plane.point[1] * a[1] + plane.point[2] * a[2];
+  if (orient === 'horizontal') return { offset: plane.point[2], rotate: 0 };
+  const base = AXIS[orient];
+  let rotate = ((Math.atan2(a[1], a[0]) - Math.atan2(base[1], base[0])) * 180) / Math.PI;
+  rotate = ((((rotate + 180) % 360) + 360) % 360) - 180;
+  return { offset, rotate: Math.round(rotate * 10) / 10 };
+}
+
+export const cutLabel =(s: SectionCuts): string | null => {
   const parts = [s.grid.name && `grid ${s.grid.name}`, s.level.name && `level ${s.level.name}`].filter(Boolean);
   return parts.length ? parts.join(' + ') : null;
 };

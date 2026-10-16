@@ -1,3 +1,8 @@
+import { DockToolbar } from './Dock';
+import { DataTableListConfig } from './DataTablePanel';
+import { ListTools } from './ListConfig';
+import { OverflowMenu } from './TablePopovers';
+import { useTableCountStore } from '../state/tableCountStore';
 import { useRowPx } from '../state/tableStyleStore';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as OBC from '@thatopen/components';
@@ -16,7 +21,8 @@ import { downloadCsv } from '../utils/csv';
 import { useTwin } from './useTwin';
 import { withUnit } from '../viewer/units';
 import { ExpandCollapseToggle } from './ExpandCollapseToggle';
-import { IconCheckboxChecked, IconChevronRight, IconDownloadFile, IconExpandMore, IconPin, IconTotals, IconTune } from './icons';
+import { useDockStore } from '../state/dockStore';
+import { IconCheckboxChecked, IconChevronLeft, IconChevronRight, IconDownloadFile, IconExpandMore, IconPin, IconSearch, IconTotals, IconTune } from './icons';
 
 const BASE_ROW_H = 24;
 const OVERSCAN = 10;
@@ -113,7 +119,6 @@ export function ModelDataTable() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
-  const settingsOn = useSettingsPaneStore((s) => s.target === 'datatable');
   const { open, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setWidth, patch, configure, presets, applyPreset } = useDataTableStore();
 
   const [search, setSearch] = useState('');
@@ -436,20 +441,26 @@ export function ModelDataTable() {
 
   // ---- render ------------------------------------------------------------
   // Off (the Data table tab's switch, or ▼ here): nothing under the 3D view.
-  if (!open) return null;
 
   const first = Math.max(0, Math.floor(scrollTop / ROW_H) - OVERSCAN);
   const last = Math.min(items.length, Math.ceil((scrollTop + viewH) / ROW_H) + OVERSCAN);
   const visible = items.slice(first, last);
   const selectedShown = shown.reduce((n, r) => n + (selected.has(r.key) ? 1 : 0), 0);
 
+  // The count of rows goes to the status bar.
+  const countText = (shown.length === scoped.length ? `${scoped.length.toLocaleString()} elements` : `${shown.length.toLocaleString()} of ${scoped.length.toLocaleString()} elements`) + (selectedShown > 0 ? ` · ${selectedShown.toLocaleString()} selected` : '');
+  useEffect(() => {
+    useTableCountStore.getState().set(countText);
+    return () => useTableCountStore.getState().set(null);
+  }, [countText]);
+
+  if (!open) return null;
+
   return (
     <div className="mdt mdt--docked">
+      <DataTableListConfig />
+      <DockToolbar id="datatable">
       <div className="mdt__bar">
-        <span className="mdt__count">
-          {shown.length === scoped.length ? `${scoped.length.toLocaleString()} elements` : `${shown.length.toLocaleString()} of ${scoped.length.toLocaleString()}`}
-          {selectedShown > 0 && ` · ${selectedShown.toLocaleString()} selected`}
-        </span>
         <select className="mdt__scope" value={scope} disabled={!!pinnedKeys} onChange={(e) => patch({ scope: e.target.value as DataTableScope })} title="Which objects the table lists">
           <option value="all">All objects</option>
           <option value="visible">Visible objects</option>
@@ -472,7 +483,6 @@ export function ModelDataTable() {
             {presets.map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
           </select>
         )}
-        <input className="mdt__search" type="search" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} />
         {groupRules.length > 0 && (
           <span className="mdt__group-actions">
             <ExpandCollapseToggle
@@ -483,15 +493,24 @@ export function ModelDataTable() {
             />
           </span>
         )}
+        <button type="button" className="mdt__fold" onClick={() => useDockStore.getState().setFolded('bottom', true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: 'rotate(-90deg)' }} /></button>
         <div className="mdt__actions">
-          <button className="btn btn--small" type="button" onClick={selectShown} disabled={shown.length === 0} title="Select every row currently shown" aria-label="Select all"><IconCheckboxChecked width={16} height={16} /></button>
-          <button className="btn btn--small" type="button" onClick={exportCsv} disabled={shown.length === 0 || columns.length === 0} title={`Export the ${shown.length.toLocaleString()} rows shown, with the shown columns, to a CSV file (search and filters applied)`} aria-label="Export CSV"><IconDownloadFile width={16} height={16} /></button>
-          <button className={`btn btn--small${totals ? ' primary' : ''}`} type="button" aria-pressed={totals} aria-label="Totals and subtotals" onClick={() => patch({ totals: !totals })} title={totals ? 'Hide the totals row and the subtotals' : 'Show a totals row under the table and a subtotal on each group row. Number columns are summed by default; click a total to pick sum, average, min, max, count or none for that column.'}><IconTotals width={16} height={16} /></button>
-          <span className="mdt__sep" />
-          <button className={`btn btn--small mdt__configure${settingsOn ? ' primary' : ''}`} aria-label="Configure" aria-pressed={settingsOn} type="button" onClick={() => { if (settingsOn) useSettingsPaneStore.getState().setTarget('none'); else { useSettingsPaneStore.getState().setTarget('datatable'); configure(); } }} title={`Columns, filters, grouping, sorting and row colours: the side pane's Data table tab${summary ? `
-Now: ${summary}` : ''}`}><IconTune width={16} height={16} /></button>
+          <ListTools id="datatable" />
+          <span className="panels-btn mdt__more">
+            <OverflowMenu
+              items={[
+                { label: 'Select all rows', icon: <IconCheckboxChecked width={16} height={16} />, disabled: shown.length === 0, onClick: selectShown, title: 'Select every row currently shown' },
+                { label: 'Export CSV', icon: <IconDownloadFile width={16} height={16} />, disabled: shown.length === 0 || columns.length === 0, onClick: exportCsv, title: 'Export the ' + shown.length.toLocaleString() + ' rows shown, with the shown columns, to a CSV file (search and filters applied)' },
+                { label: 'Totals', icon: <IconTotals width={16} height={16} />, checked: totals, onClick: () => patch({ totals: !totals }), title: 'A totals row under the table and a subtotal on each group row; click a total to pick sum, average, min, max, count or none for that column' },
+                { label: '-1', separator: true, onClick: () => {} },
+                { label: 'Saved lists and twin models…', icon: <IconTune width={16} height={16} />, onClick: () => { useSettingsPaneStore.getState().setTarget('datatable'); configure(); }, title: summary ? 'Now: ' + summary : 'Set up the table' },
+              ]}
+            />
+          </span>
+          <span className="gs mdt__gs"><IconSearch width={14} height={14} /><input className="gs__input" type="text" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search the table" /></span>
         </div>
       </div>
+      </DockToolbar>
 
       <div className="mdt__scroll" ref={scrollRef} onScroll={(e) => setScrollTop((e.target as HTMLDivElement).scrollTop)}>
         <div style={{ width: Math.max(totalW, 1), minWidth: '100%' }}>

@@ -12,12 +12,12 @@ import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { activityFinishMs, activityStartMs } from '../../schedule/linking';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { configFocusProps } from '../../state/listConfigStore';
-import { ListConfig, openConfig } from '../ListConfig';
+import { ListConfig, ListTools } from '../ListConfig';
 import { ColumnsPanel } from '../schedule/ColumnsPanel';
 import { GroupPanel } from '../schedule/GroupPanel';
 import { SortPanel } from '../schedule/SortPanel';
 import { ColorPanel } from '../schedule/ColorPanel';
-import { IconCopy, IconDownload, IconRedo, IconTune, IconUndo } from '../icons';
+import { IconCopy, IconDownload, IconRedo, IconUndo } from '../icons';
 import { LevelStepper } from '../schedule/LevelStepper';
 import { EditTools } from '../schedule/EditTools';
 import { EditableStatus } from '../schedule/EditableStatus';
@@ -173,7 +173,7 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
         {options.map(([label, on, setter, tip]) => (
           <button key={label} type="button" className={`tags__chip${on ? ' active' : ''}`} aria-pressed={on} title={tip} onClick={() => setter(!on)}>{label}</button>
         ))}
-        <button type="button" className="icon-btn icon-btn--sm" aria-label="Gantt settings" title="Set up the Gantt: columns, group, sort, colour" onClick={() => openConfig('gantt')}><IconTune width={16} height={16} /></button>
+        <ListTools id="gantt" iconOnly />
         <ExpandCollapseToggle className="btn btn--small" onCollapse={() => setCollapseAll((n) => n + 1)} onExpand={() => setExpandAll((n) => n + 1)} />
       </div>
       <ListConfig

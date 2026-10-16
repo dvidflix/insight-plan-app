@@ -11886,6 +11886,10 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .inputs-page > .inputs-bar { grid-column: 1 / -1; position: sticky; top: 0; z-index: 3; display: flex; align-items: center; justify-content: flex-start; gap: 8px; background: var(--n-e6e6e6); border-bottom: 1px solid rgba(60, 64, 68, 0.18); min-height: 38px; box-sizing: border-box; padding: 3px 0 3px 12px; font-size: 14px; }
 .inputs-bar .layouts-segment { margin-left: 4px; }
 .inputs-page--details { grid-template-columns: minmax(0, 1fr) auto; }
+/* Details folded away: the slim bar stays in the second column, full height (it was falling into a row of its own and halving the panel's height) */
+.inputs-page:not(.inputs-page--details) { grid-template-columns: minmax(0, 1fr) auto; }
+.inputs-page > .inputs-details__reopen { grid-column: 2; align-self: stretch; height: auto; width: 30px; box-sizing: border-box; border-left: 1px solid var(--border); background: var(--bg-soft); justify-content: center; align-items: center; padding: 0; }
+.inputs-page > .inputs-details__reopen:hover { background: rgb(var(--accent-rgb) / 0.12); }
 .inputs-details { display: flex; align-self: stretch; min-height: 0; }
 .inputs-details > .panel { border-left: 1px solid var(--border); }
 .file-details__section { padding: 6px 10px; font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); background: var(--bg-soft); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
@@ -13064,7 +13068,8 @@ body.viewer-fullscreen .ws-float { display: none; }
 .ws-streams__label { padding: 4px 8px; }
 
 .ws-ws__head { display: flex; align-items: center; justify-content: space-between; padding-bottom: 2px; }
-.ws-ws__new { width: 22px; height: 22px; min-width: 22px; margin: -2px 0; color: var(--text-dim); }
+.ws-ws__new { width: 30px; height: 30px; min-width: 30px; margin: -4px 0; color: var(--text-dim); }
+.ws-ws__new svg { width: 24px; height: 24px; }
 .ws-ws__new:hover { color: var(--accent-strong, #1b7f4b); }
 .ws-ws__saves .ws-ws__add { justify-content: flex-start; }
 
@@ -13107,3 +13112,814 @@ body.viewer-fullscreen .ws-float { display: none; }
 .pp__calc { white-space: nowrap; min-width: 72px; }
 .pp__add { display: flex; gap: 6px; align-items: center; }
 .pp__add select { flex: 1; min-width: 0; width: auto; cursor: pointer; }
+
+/* Workspaces | Scenes tabs in the picker's first column, and the files list that takes the views' and panels' place with Scenes. */
+.ws-ws__tabs { display: inline-flex; gap: 2px; }
+.ws-ws__tabs button { border: 0; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 4px; cursor: pointer; }
+.ws-ws__tabs button:hover { background: rgba(0, 0, 0, 0.06); }
+.ws-ws__tabs button.is-on { background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong, #1b7f4b); font-weight: 600; }
+.ws-files { flex: 1 1 auto; min-width: 560px; border-left: 1px solid var(--border); padding-left: 14px; display: flex; flex-direction: column; gap: 8px; }
+.ws-files__hint { font-size: 12px; color: var(--text-dim); padding-top: 4px; }
+.ws-files__cols { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; align-items: start; }
+.ws-files__col { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.ws-files__title { font-size: 12px; font-weight: 600; padding: 4px 0; border-bottom: 1px solid var(--border); margin-bottom: 2px; }
+.ws-files__title span { font-weight: 400; color: var(--text-dim); margin-left: 4px; }
+.ws-files__none { font-size: 12px; padding: 4px 6px; }
+.ws-files__row { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 6px; border: 0; border-radius: 6px; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; text-align: left; cursor: pointer; }
+.ws-files__row:hover:not(:disabled) { background: rgba(0, 0, 0, 0.06); }
+.ws-files__row.is-on { color: var(--text); background: rgb(var(--accent-rgb) / 0.12); }
+.ws-files__box { flex: none; width: 16px; height: 16px; border: 1px solid var(--border); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; background: var(--bg, #fff); }
+.ws-files__row.is-on .ws-files__box { background: var(--accent-strong, #1b7f4b); border-color: var(--accent-strong, #1b7f4b); color: #fff; }
+.ws-files__name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-ws__top { padding: 4px 10px 4px 14px; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.ws-ws__top .ws-ws__new { margin: 0; }
+.ws-ws__top { gap: 8px; }
+.ws-ws__top .ws-ws__tabs { flex: 1 1 auto; gap: 4px; }
+.ws-ws__top .ws-ws__tabs button { flex: 1 1 0; min-height: 28px; text-align: center; }
+.ws-page__col > .ws-ws__top { padding: 0; border-bottom: 0; margin-bottom: 0; }
+.ws-page__cols > .ws-page__col:first-child { padding-top: 0; }
+.ws-page__col > .ws-ws__top { padding: 0; border-bottom: 0; margin-bottom: 0; }
+.ws-page__cols > .ws-page__col:first-child { padding-top: 0; }
+
+/* The files list of the Scenes tab: search, type chips, group, then rows that are selected with the mouse and loaded with Space. */
+.ws-files { width: 640px; max-width: 70vw; }
+.ws-files__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding-top: 2px; }
+.ws-files__search { flex: 1 1 160px; min-width: 120px; height: 26px; }
+.ws-files__chips { display: inline-flex; gap: 2px; }
+.ws-files__chips button { border: 1px solid var(--border); background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; padding: 2px 8px; border-radius: 12px; cursor: pointer; }
+.ws-files__chips button.is-on { background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong, #1b7f4b); border-color: transparent; font-weight: 600; }
+.ws-files__group { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); }
+.ws-files__group select { height: 26px; font: inherit; font-size: 12px; }
+.ws-files__hint { font-size: 12px; color: var(--text-dim); padding: 0; display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline; }
+.ws-files__keys { margin-left: auto; font-size: 11px; opacity: 0.8; }
+.ws-files__list { display: flex; flex-direction: column; max-height: min(60vh, 560px); overflow: auto; outline: none; border-top: 1px solid var(--border); padding-top: 4px; }
+.ws-files__ghead { display: flex; align-items: center; gap: 6px; min-height: 26px; font-size: 12px; font-weight: 600; background: rgba(0, 0, 0, 0.04); border-radius: 4px; margin-top: 2px; }
+.ws-files__fold { border: 0; background: transparent; cursor: pointer; width: 18px; color: var(--text-dim); }
+.ws-files__gname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-files__count { font-weight: 400; color: var(--text-dim); }
+.ws-files__ghead .cols__link { margin-left: auto; margin-right: 6px; }
+.ws-files__none { padding: 8px 6px; font-size: 12px; }
+.ws-files__row { display: flex; align-items: center; gap: 8px; min-height: 26px; padding: 0 6px; border-radius: 6px; font-size: 12px; color: var(--text-dim); cursor: default; user-select: none; }
+.ws-files__row:hover { background: rgba(0, 0, 0, 0.05); }
+.ws-files__row.is-on { color: var(--text); }
+.ws-files__row.is-selected { background: rgb(var(--accent-rgb) / 0.16); }
+.ws-files__row.is-current { box-shadow: inset 2px 0 0 var(--accent); }
+.ws-files__list:focus-visible .ws-files__row.is-current { outline: 1px solid var(--accent); outline-offset: -1px; }
+.ws-files__box { flex: none; width: 16px; height: 16px; padding: 0; border: 1px solid var(--border); border-radius: 4px; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; line-height: 1; background: var(--bg, #fff); color: #fff; cursor: pointer; }
+.ws-files__row.is-on .ws-files__box { background: var(--accent-strong, #1b7f4b); border-color: var(--accent-strong, #1b7f4b); }
+.ws-files__name { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-files__kind { flex: none; font-size: 11px; color: var(--text-dim); opacity: 0.8; }
+
+/* The top bar's three buttons: scene, workspace, view. */
+.ws-top { display: inline-flex; align-items: center; gap: 4px; }
+.ws-top__btn { border: 1px solid var(--border); background: var(--bg-elevated, #fff); }
+.ws-top__btn.is-on { background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong, #1b7f4b); border-color: transparent; }
+.ws-top .ws-page__name { max-width: 160px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Home: the scenes as tiles or a list. */
+.home { flex: 1; min-width: 0; overflow: auto; padding: 18px 24px 32px; display: flex; flex-direction: column; gap: 14px; background: var(--bg); }
+.home__head { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.home__head h1 { margin: 0; font-size: 20px; }
+.home__sub { color: var(--text-dim); font-size: 12px; }
+.home__spacer { flex: 1 1 auto; }
+.home__search { height: 28px; min-width: 180px; }
+.home__seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.home__seg button { border: 0; background: transparent; padding: 4px 8px; cursor: pointer; color: var(--text-dim); display: inline-flex; }
+.home__seg button.is-on { background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong, #1b7f4b); }
+.home__error { color: var(--danger); font-size: 12px; }
+.home__empty { color: var(--text-dim); padding: 24px 0; }
+.home__tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 12px; }
+.home__tile { border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--bg-elevated, #fff); display: flex; flex-direction: column; gap: 8px; min-height: 110px; cursor: pointer; }
+.home__tile:hover { border-color: var(--accent); }
+.home__tile.is-here { border-color: var(--accent-strong, #1b7f4b); box-shadow: inset 3px 0 0 var(--accent-strong, #1b7f4b); }
+.home__tilehead { display: flex; align-items: center; gap: 6px; }
+.home__name { flex: 1 1 auto; font-weight: 600; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home__rename { flex: 1 1 auto; min-width: 0; }
+.home__meta { font-size: 12px; color: var(--text-dim); flex: 1 1 auto; }
+.home__foot { display: flex; align-items: center; justify-content: space-between; font-size: 11px; color: var(--text-dim); }
+.home__chip { font-size: 11px; padding: 1px 8px; margin-left: 8px; border-radius: 10px; background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong, #1b7f4b); font-weight: 600; }
+.home__morewrap { position: relative; display: inline-flex; }
+.home__more { width: 26px; height: 26px; font-size: 18px; line-height: 1; }
+.home__menu { position: absolute; right: 0; top: 100%; z-index: 30; min-width: 190px; padding: 4px; background: var(--bg-elevated, #fff); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); display: flex; flex-direction: column; }
+.home__menu button { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 8px; border-radius: 4px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.home__menu button:hover { background: rgba(0, 0, 0, 0.06); }
+.home__menu .is-danger { color: var(--danger); }
+.home__list { width: 100%; border-collapse: collapse; font-size: 13px; }
+.home__list th { text-align: left; font-weight: 600; font-size: 12px; color: var(--text-dim); padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.home__list td { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.home__list tr.is-here td { background: rgb(var(--accent-rgb) / 0.08); }
+.home__list .home__name { font-weight: 500; }
+.home__actions { text-align: right; white-space: nowrap; }
+.home__foottip { font-size: 12px; color: var(--text-dim); }
+.home__bar { margin: -12px 0 0 -8px; }
+
+/* SeaTable-style table tools: a button per tool with its popover under it, and the three dots for the rest. */
+.tp-row { display: inline-flex; align-items: center; gap: 2px; margin-left: 8px; }
+.tp { position: relative; display: inline-flex; }
+.tp__btn { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 10px; border: 0; border-radius: 6px; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.tp__btn:hover, .tp__btn.is-open { background: rgba(0, 0, 0, 0.07); }
+.tp__btn.is-active { background: rgb(var(--accent-rgb) / 0.16); color: var(--accent-strong, #1b7f4b); }
+.tp__btn--dots { font-size: 18px; line-height: 1; padding: 0 8px; }
+.tp__pop { position: absolute; top: calc(100% + 4px); left: 0; z-index: 70; max-width: calc(100vw - 16px); max-height: min(70vh, 640px); overflow: auto; padding: 10px; background: var(--bg-elevated, #fff); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); box-sizing: border-box; }
+.tp__menu { width: auto; min-width: 180px; padding: 4px; display: flex; flex-direction: column; }
+.tp__menu button { display: flex; align-items: center; gap: 8px; border: 0; background: transparent; padding: 7px 10px; border-radius: 4px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.tp__menu button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.06); }
+
+/* The one search box (Ctrl K): scenes, files, views, panels and actions. */
+.gs { position: relative; display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated, #fff); color: var(--text-dim); margin-left: 4px; }
+.gs:focus-within { border-color: var(--accent); color: var(--text); }
+.gs__input { border: 0; outline: none; background: transparent; font: inherit; font-size: 13px; width: 150px; color: var(--text); }
+.gs__input:focus { width: 240px; }
+.gs__list { position: absolute; left: 0; top: calc(100% + 4px); z-index: 80; width: 380px; max-width: calc(100vw - 16px); max-height: min(60vh, 520px); overflow: auto; padding: 4px; background: var(--bg-elevated, #fff); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); }
+.gs__group { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); padding: 8px 8px 2px; }
+.gs__hit { display: flex; align-items: baseline; gap: 8px; width: 100%; border: 0; background: transparent; padding: 6px 8px; border-radius: 4px; font: inherit; font-size: 13px; text-align: left; cursor: pointer; color: var(--text); }
+.gs__hit.is-at { background: rgb(var(--accent-rgb) / 0.14); }
+.gs__label { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gs__hint { flex: none; font-size: 11px; color: var(--text-dim); }
+.gs__none { padding: 10px 8px; font-size: 12px; color: var(--text-dim); }
+
+/* A scene's picture on Home. */
+.home__thumb { display: block; width: 100%; aspect-ratio: 16 / 9; object-fit: cover; border-radius: 6px; background: rgba(0, 0, 0, 0.05); }
+.home__thumb--none { display: flex; align-items: center; justify-content: center; color: var(--text-dim); }
+.home__thumbcell { width: 96px; }
+.home__thumbcell .home__thumb { width: 88px; }
+
+/* The search box: one grey pill, the input inside it plain (the app's input styles stay off it). */
+.gs { border: 0; background: rgba(0, 0, 0, 0.06); border-radius: 8px; height: 30px; padding: 0 10px; margin-left: 6px; }
+.gs:focus-within { background: var(--bg-elevated, #fff); box-shadow: 0 0 0 1px var(--accent); }
+.gs .gs__input { border: 0; outline: 0; box-shadow: none; background: transparent; padding: 0; margin: 0; height: auto; min-width: 0; width: 150px; font-size: 13px; }
+.gs .gs__input:focus { width: 230px; box-shadow: none; }
+.ws-top__btn:not(:has(.ws-page__name)) { padding: 0 8px; }
+.home__ws { max-width: 420px; border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; background: var(--bg-elevated, #fff); }
+.home__ws .ws-ws { margin: 0; padding: 0; border: 0; }
+.schedule-toolbar .filterbar__search { border: 0; background: rgba(0, 0, 0, 0.06); border-radius: 8px; height: 30px; padding: 0 10px; outline: 0; }
+.schedule-toolbar .filterbar__search:focus { background: var(--bg-elevated, #fff); box-shadow: 0 0 0 1px var(--accent); }
+
+/* One look for both search boxes: a white rounded field with a thin border; the inputs inside carry nothing of their own. */
+.gs { background: var(--bg-elevated, #fff) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; height: 30px; box-shadow: none !important; }
+.gs:focus-within { border-color: var(--accent) !important; }
+.gs input.gs__input, .gs input.gs__input[type="text"] { all: unset; box-sizing: border-box; width: 150px; min-width: 0; height: 100%; font-size: 13px; color: var(--text); cursor: text; }
+.gs input.gs__input:focus { width: 230px; }
+.gs input.gs__input::placeholder { color: var(--text-dim); }
+.schedule-toolbar .filterbar__search { background: var(--bg-elevated, #fff) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; height: 30px; box-shadow: none !important; }
+.schedule-toolbar .filterbar__search:focus { border-color: var(--accent) !important; }
+
+/* The top-left buttons fill the toolbar's height and are wider; the view's chevron comes first, and bigger. */
+.ws-top { align-self: stretch; gap: 6px; }
+.ws-top > .ws-page { display: flex; align-self: stretch; }
+.ws-top .ws-page__btn, .ws-top .ws-top__btn { height: 100%; min-height: 34px; padding: 0 16px; gap: 8px; border-radius: 8px; }
+.ws-top .ws-page__btn svg { width: 20px; height: 20px; }
+.ws-top .ws-page__btn svg.ws-page__chev { width: 16px; height: 16px; margin-left: -4px; color: var(--text-dim); }
+.ws-top .ws-page__btn svg:last-child:not(.ws-page__chev) { width: 20px; height: 20px; color: inherit; }
+
+/* The search: the white field is the input itself, the magnifier sits inside it. */
+.gs { position: relative; display: inline-flex; align-items: center; height: auto; padding: 0 !important; margin-left: 6px; background: none !important; border: 0 !important; box-shadow: none !important; align-self: center; }
+.gs > svg { position: absolute; left: 10px; width: 16px; height: 16px; pointer-events: none; color: var(--text-dim); }
+.gs input.gs__input, .gs input.gs__input[type="text"] { all: revert; box-sizing: border-box; height: 30px; width: 190px; padding: 0 10px 0 32px !important; font: inherit; font-size: 13px; color: var(--text); background: var(--bg-elevated, #fff) !important; border: 1px solid var(--border) !important; border-radius: 8px !important; outline: 0; box-shadow: none !important; }
+.gs input.gs__input:focus { width: 250px; border-color: var(--accent) !important; }
+.gs__chip { margin-left: 6px; height: 24px; max-width: 180px; padding: 0 10px; border: 0; border-radius: 12px; background: rgb(var(--accent-rgb) / 0.16); color: var(--accent-strong, #1b7f4b); font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.gs__chip:hover { background: rgb(var(--accent-rgb) / 0.26); }
+
+/* The Home button: a square with the icon centred, the same room around it on every side, at the left edge. */
+.ws-top > .ws-top__btn[aria-label="Home"] { aspect-ratio: 1 / 1; width: auto; min-width: 34px; padding: 0; justify-content: center; margin-left: 4px; }
+.ws-top > .ws-top__btn[aria-label="Home"] svg { width: 20px; height: 20px; }
+
+/* Home: a square the full height of the bar, flush at its left edge, no padding, a bigger icon. */
+.ws-top > .ws-top__btn[aria-label="Home"] { align-self: stretch; height: auto; aspect-ratio: 1 / 1; min-width: 40px; padding: 0 !important; margin: 0; border-radius: 0; }
+.ws-top > .ws-top__btn[aria-label="Home"] svg { width: 24px; height: 24px; }
+
+/* Zero padding around the Home button: the toolbar gives it no room on the left, top or bottom, so it fills the corner. */
+.schedule-toolbar, .viewer-toolbar-row { padding-top: 0 !important; padding-bottom: 0 !important; padding-left: 0 !important; }
+.schedule-toolbar__left { padding-left: 0 !important; margin-left: 0 !important; }
+.ws-top { margin: 0 !important; padding: 0 !important; gap: 6px; }
+.ws-top > .ws-top__btn[aria-label="Home"] { border: 0; border-right: 1px solid var(--border); margin: 0 !important; }
+.ws-top > .ws-top__btn[aria-label="Home"] { aspect-ratio: auto; min-width: 52px; }
+
+/* The view menu shows views only: the stream's name and its views, two columns. */
+.ws-page__menu--streams { flex-direction: column; align-items: stretch; }
+.ws-streams { border-left: 0; padding-left: 0; }
+.ws-streams__row { grid-template-columns: 130px 260px; }
+.ws-page__menu--streams .ws-foot { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; position: static; }
+.tp__tick { margin-left: auto; padding-left: 12px; color: var(--accent-strong, #1b7f4b); }
+
+/* The tools for the picked activities, after the search box. */
+.sel-tools { display: inline-flex; align-items: center; gap: 2px; margin-left: 6px; padding: 0 4px; height: 30px; border-radius: 8px; background: rgb(var(--accent-rgb) / 0.12); }
+.sel-tools__count { display: inline-flex; align-items: center; gap: 6px; border: 0; background: transparent; font: inherit; font-size: 12px; font-weight: 600; color: var(--accent-strong, #1b7f4b); padding: 0 6px; cursor: pointer; }
+.sel-tools__btn { width: 28px; height: 28px; }
+.sel-tools__unlink { position: relative; display: inline-flex; opacity: 0.8; }
+.sel-tools__unlink::after { content: ''; position: absolute; left: -1px; right: -1px; top: 50%; border-top: 2px solid currentColor; transform: rotate(-45deg); }
+.tp__menu button span:not(.tp__tick) { white-space: nowrap; } .tp__menu { min-width: 190px; }
+
+/* The table tools and the three dots on the right: squares the full height of the bar, no padding, a slightly bigger icon. */
+.schedule-toolbar__right { padding-right: 0 !important; align-self: stretch; }
+.schedule-toolbar__right .tp-row { align-self: stretch; gap: 0; margin-left: 0; }
+.schedule-toolbar__right .tp { align-self: stretch; }
+.schedule-toolbar__right .tp__btn { height: 100%; min-width: 40px; padding: 0 !important; justify-content: center; border-radius: 0; gap: 4px; }
+.schedule-toolbar__right .tp__btn:has(span) { padding: 0 8px !important; }
+.schedule-toolbar__right .tp__btn svg { width: 20px; height: 20px; }
+.schedule-toolbar__view { display: inline-flex; align-items: center; gap: 6px; align-self: center; margin-right: 6px; }
+.schedule-toolbar__view select { height: 30px; }
+
+/* The header of the viewer workspace: the toolbar across the whole width; the docks on the sides start below it and run to the bottom. */
+.viewer-header:empty { display: none; }
+.viewer-header { flex: none; min-width: 0; }
+
+/* The right of the toolbar: flush, full-height squares in one colour, a thin vertical line between the groups (zoom | view settings | table tools | more). */
+.schedule-toolbar__right { gap: 0 !important; align-items: stretch; }
+.schedule-toolbar__view { align-self: stretch; gap: 0; margin: 0; align-items: stretch; }
+.schedule-toolbar__view > .groupby-panel__title { display: flex; align-items: center; padding: 0 8px 0 10px; }
+.schedule-toolbar__view select,
+.schedule-toolbar__view .btn,
+.schedule-toolbar__view .icon-btn,
+.schedule-toolbar__right .tp__btn { height: 100% !important; min-height: 0 !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; color: var(--text); display: inline-flex; align-items: center; justify-content: center; }
+.schedule-toolbar__view select { padding: 0 8px !important; }
+.schedule-toolbar__view .btn { min-width: 48px; }
+.schedule-toolbar__view .icon-btn, .schedule-toolbar__right .tp__btn { min-width: 40px; }
+.schedule-toolbar__view select:hover, .schedule-toolbar__view .btn:hover, .schedule-toolbar__view .icon-btn:hover, .schedule-toolbar__right .tp__btn:hover { background: rgba(0, 0, 0, 0.07) !important; }
+.schedule-toolbar__right .tp__btn.is-active { background: rgb(var(--accent-rgb) / 0.16) !important; }
+.schedule-toolbar__view > div { align-self: stretch; display: flex; }
+/* The lines between the groups. */
+.schedule-toolbar__view, .schedule-toolbar__right .tp-row { border-right: 1px solid var(--border); }
+.schedule-toolbar__right .tp-row { border-left: 1px solid var(--border); }
+.schedule-toolbar__right .tp-row:last-of-type { border-right: 1px solid var(--border); }
+
+/* The level stepper: flush, full-height squares in the bar's colour, a thin line either side. */
+.schedule-toolbar .groupby-panel { align-self: stretch; padding: 0 !important; margin: 0 !important; gap: 0; align-items: stretch; background: transparent !important; border: 0 !important; }
+.schedule-toolbar .ctx-stepper { align-self: stretch; display: inline-flex; align-items: stretch; gap: 0; padding: 0 !important; margin: 0 !important; border: 0 !important; border-left: 1px solid var(--border) !important; border-right: 1px solid var(--border) !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; }
+.schedule-toolbar .ctx-stepper button { height: 100%; min-height: 0; min-width: 40px; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; display: inline-flex; align-items: center; justify-content: center; font-size: 16px; }
+.schedule-toolbar .ctx-stepper button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.07) !important; }
+.schedule-toolbar .ctx-stepper > :not(button) { display: inline-flex; align-items: center; justify-content: center; min-width: 40px; padding: 0 !important; font-weight: 600; }
+
+/* No room under the buttons: the bar is exactly as tall as its tallest button, and both halves stretch to it. */
+.schedule-toolbar { align-items: stretch !important; align-content: stretch; row-gap: 0 !important; min-height: 36px !important; height: auto !important; padding: 0 !important; }
+.schedule-toolbar__left, .schedule-toolbar__right { align-self: stretch !important; height: auto !important; min-height: 0 !important; padding-bottom: 0 !important; margin-bottom: 0 !important; row-gap: 0 !important; }
+.schedule-toolbar__left { align-items: center; }
+.schedule-toolbar__right { align-items: stretch; }
+.schedule-toolbar__view, .schedule-toolbar__right .tp-row, .schedule-toolbar__right .tp { align-self: stretch; margin-bottom: 0 !important; }
+.schedule-toolbar__right .tp__btn, .schedule-toolbar__view .btn, .schedule-toolbar__view select, .schedule-toolbar__view .icon-btn { height: 100% !important; margin: 0 !important; }
+.tp__heading { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; color: var(--text-dim); padding: 8px 10px 2px; } .tp__menu .tp__heading:first-child { padding-top: 4px; }
+.tp__pop { overflow-x: hidden; }
+.tp__sep { height: 1px; margin: 6px 4px; background: var(--border); } .tp__menu .tp__heading { padding-top: 4px; }
+.tp__menu button.is-indented { padding-left: 26px; }
+.viewer-footer { flex: none; min-width: 0; } .viewer-footer:empty { display: none; }
+
+/* The view button: square corners, the full height of the bar, the bar's colour, a thin line after it. */
+.ws-top > .ws-page { align-self: stretch; }
+.ws-top .ws-page > .ws-page__btn { height: 100% !important; min-height: 0 !important; border: 0 !important; border-right: 1px solid var(--border) !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; }
+.ws-top .ws-page > .ws-page__btn:hover, .ws-top .ws-page > .ws-page__btn.is-open { background: rgba(0, 0, 0, 0.07) !important; }
+.ws-top { gap: 0 !important; }
+.ws-top .ws-page > .ws-page__btn { padding: 0 28px 0 16px !important; }
+.tp__glyph { display: inline-flex; align-items: center; justify-content: center; width: 16px; font-size: 16px; line-height: 1; }
+
+/* The view menu: the stream names as labels, every view in one column, rows tall enough to hit easily. */
+.ws-page__menu--streams { width: 260px; min-width: 260px; padding: 6px; }
+.ws-views { display: flex; flex-direction: column; }
+.ws-views__group + .ws-views__group { border-top: 1px solid var(--border); margin-top: 6px; padding-top: 6px; }
+.ws-views__label { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: var(--text-dim); padding: 6px 10px 4px; }
+.ws-views .ws-row { height: 38px; min-height: 38px; box-sizing: border-box; }
+.ws-views .ws-row__name { height: 100%; gap: 10px; padding: 0 10px; font-size: 14px; }
+.ws-views .ws-row__name svg { width: 18px; height: 18px; }
+
+/* The Panels button: at the right end of the bar, full height, generously wide, a line before it, like Home on the left. */
+.panels-btn { display: inline-flex; align-self: stretch; border-left: 1px solid var(--border); }
+.panels-btn .tp { align-self: stretch; }
+.panels-btn .tp__btn { height: 100% !important; min-width: 140px; padding: 0 22px !important; gap: 10px; font-weight: 600; }
+.ws-views__heads { display: flex; justify-content: flex-end; padding: 2px 10px 0; }
+.tp__pop .ws-views .ws-row { height: 34px; min-height: 34px; }
+.tp__pop .ws-views .ws-row__name { font-size: 13px; }
+.panels-btn .tp__pop { left: auto !important; right: 0; }
+.tp__menu button.is-indented { padding-left: 10px; } .tp__menu button.tp__noicon { padding-left: 34px; }
+
+/* The bottom dock: the tabs and the panel's own toolbar in one row. Buttons use the main header's style: flush, full-height squares in the bar's colour, thin lines between the groups. */
+.dock--bottom .dock__panel-tools { flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; align-self: stretch; margin-left: 10px; border-left: 1px solid var(--border); overflow: hidden; }
+.dock--bottom .dock__panel-tools:empty { display: none; }
+.dock--bottom .dock__panel-tools .mdt__bar { flex: 1 1 auto; display: flex; align-items: stretch; gap: 0; padding: 0 !important; margin: 0 !important; border: 0 !important; background: transparent !important; min-width: 0; }
+.dock--bottom .dock__panel-tools .mdt__bar > *, .dock--bottom .dock__panel-tools .mdt__actions { align-self: stretch; }
+.dock--bottom .dock__panel-tools .mdt__count { display: flex; align-items: center; padding: 0 12px; font-size: 12px; color: var(--text-dim); white-space: nowrap; border-right: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .mdt__actions { margin-left: auto; display: flex; align-items: stretch; gap: 0; border-left: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .btn, .dock--bottom .dock__panel-tools .vtb-btn, .dock--bottom .dock__panel-tools select, .dock--bottom .dock__panel-tools .mdt__configure { height: 100% !important; min-width: 40px; padding: 0 12px !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
+.dock--bottom .dock__panel-tools .btn:hover, .dock--bottom .dock__panel-tools .vtb-btn:hover, .dock--bottom .dock__panel-tools select:hover { background: rgba(0, 0, 0, 0.07) !important; }
+.dock--bottom .dock__panel-tools .btn.primary, .dock--bottom .dock__panel-tools .vtb-btn.is-on { background: rgb(var(--accent-rgb) / 0.16) !important; color: var(--accent-strong, #1b7f4b); }
+.dock--bottom .dock__panel-tools .mdt__search { align-self: center; height: 30px; border: 1px solid var(--border) !important; border-radius: 8px !important; background: var(--bg-elevated, #fff) !important; margin: 0 8px; min-width: 140px; }
+.dock--bottom .dock__panel-tools .mdt__sep { width: 1px; background: var(--border); align-self: stretch; margin: 0; }
+.dock--bottom .dock__head .seq-righttabs { flex: 0 1 auto; }
+
+/* The search boxes are pills; the line between the tabs and the panel's toolbar sits right against the tabs. */
+.gs input.gs__input, .gs input.gs__input[type="text"] { border-radius: 999px !important; padding-left: 34px !important; }
+.gs > svg { left: 12px; }
+.dock--bottom .dock__panel-tools .mdt__search, .mdt__search { border-radius: 999px !important; padding: 0 14px !important; }
+.dock--bottom .dock__panel-tools { margin-left: 0; }
+.dock--bottom .dock__head .seq-righttabs { margin-right: 0; padding-right: 0; }
+
+/* The search box on the right of the toolbar: a full-height line to its left, like the groups beside it. */
+.schedule-toolbar__right > .gs { align-self: stretch; margin-left: 0; padding: 0 10px 0 10px !important; border-left: 1px solid var(--border) !important; }
+.schedule-toolbar__right > .gs > svg { left: 22px; }
+
+/* The line to the left of the search is drawn by the box itself, top to bottom of the bar. */
+.schedule-toolbar__right > .gs { align-self: stretch !important; height: auto !important; min-height: 0 !important; border-left: 0 !important; }
+.schedule-toolbar__right > .gs::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--border); }
+
+/* The table tools and the three dots: wider squares. */
+.schedule-toolbar__right .tp__btn, .schedule-toolbar__view .icon-btn { min-width: 52px; }
+
+/* The Sections panel: floats at the top right of the 3D view. */
+.sec-panel { position: absolute; top: 10px; right: 10px; z-index: 20; width: 300px; max-height: calc(100% - 20px); overflow-y: auto; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); padding: 10px 12px 12px; font-size: 12px; color: var(--text); }
+.sec-panel__head { display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.sec-panel__count { background: var(--accent-dim); color: var(--accent-strong); border-radius: 999px; padding: 0 7px; font-size: 11px; font-weight: 600; }
+.sec-icon { background: none; border: 0; padding: 3px; border-radius: 5px; cursor: pointer; color: var(--text-dim); display: inline-flex; }
+.sec-icon:hover:not(:disabled) { color: var(--text); background: rgb(var(--accent-rgb) / 0.1); }
+.sec-icon:disabled { opacity: 0.35; cursor: default; }
+.sec-label { margin: 12px 0 5px; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); }
+.sec-row { display: flex; gap: 6px; align-items: center; margin-top: 6px; }
+.sec-row--wrap { flex-wrap: wrap; }
+.sec-add { flex: 1; }
+.sec-card { margin-top: 12px; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-panel); }
+.sec-card__head { margin-bottom: 8px; }
+.sec-seg { width: 100%; }
+.sec-seg button { flex: 1; }
+.sec-field { display: flex; align-items: center; gap: 8px; margin-top: 9px; }
+.sec-field > span:first-child { width: 58px; color: var(--text-dim); flex-shrink: 0; }
+.sec-field input[type='range'] { flex: 1; min-width: 0; accent-color: var(--accent); }
+.sec-field--between { justify-content: space-between; }
+.sec-field--between > span:first-child { width: auto; color: var(--text); display: flex; flex-direction: column; gap: 2px; }
+.sec-field small { color: var(--text-dim); font-size: 11px; }
+.sec-num { width: 62px; text-align: right; }
+.sec-num--text { width: 40px; text-align: right; color: var(--text); }
+.sec-list { display: flex; flex-direction: column; gap: 4px; }
+.sec-item { display: flex; align-items: center; gap: 4px; padding: 4px 6px 4px 9px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; background: var(--bg-panel); }
+.sec-item.active { border-color: var(--accent); background: var(--accent-dim); }
+.sec-item.off .sec-item__name { opacity: 0.5; }
+.sec-item__name { flex: 1; font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* The bottom dock's header looks like the main header: the same grey bar, flush full-height squares, thin lines between the groups. */
+.dock--bottom .dock__head { background: var(--n-e6e6e6); border-bottom: 1px solid rgba(60, 64, 68, 0.18); height: 44px; min-height: 44px; padding: 0; gap: 0; align-items: stretch; }
+.dock--bottom .dock__head .seq-righttabs { align-self: stretch; display: flex; align-items: stretch; gap: 0; padding: 0; margin: 0; }
+.dock--bottom .dock__head .config-tab { height: 100%; padding: 0 18px; border: 0; border-right: 1px solid var(--border); border-radius: 0; background: transparent; display: inline-flex; align-items: center; font-size: 13px; }
+.dock--bottom .dock__head .config-tab:hover { background: rgba(0, 0, 0, 0.07); }
+.dock--bottom .dock__head .config-tab.active { background: var(--bg-elevated, #fff); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+.dock--bottom .dock__panel-tools { border-left: 0; align-items: stretch; }
+.dock--bottom .dock__panel-tools .mdt__bar { align-items: stretch; }
+.dock--bottom .dock__panel-tools select { min-width: 120px; padding: 0 12px !important; border-right: 1px solid var(--border) !important; }
+.dock--bottom .dock__panel-tools .vtb-btn { border-right: 1px solid var(--border) !important; min-width: 44px; }
+.dock--bottom .dock__panel-tools .mdt__search { align-self: center; margin: 0 10px; min-width: 200px; }
+.dock--bottom .dock__panel-tools .btn, .dock--bottom .dock__panel-tools .mdt__configure { min-width: 52px; }
+.dock--bottom .dock__panel-tools .mdt__actions { border-left: 1px solid var(--border); }
+.dock--bottom .dock__tools { align-self: stretch; align-items: stretch; gap: 0; border-left: 1px solid var(--border); margin-left: 0; }
+.dock--bottom .dock__tools .dock__tool { height: 100%; width: 44px; min-width: 44px; border: 0; border-radius: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; margin: 0; }
+.dock--bottom .dock__tools .dock__tool + .dock__tool { border-left: 1px solid var(--border); }
+.dock--bottom .dock__tools .dock__tool:hover { background: rgba(0, 0, 0, 0.07); }
+.mdt__more { border-left: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .mdt__actions .tp-row { border-left: 0; border-right: 0; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn { min-width: 52px; }
+.dock--bottom .dock__panel-tools { overflow: visible !important; } .dock--bottom .dock__head { overflow: visible; position: relative; z-index: 5; }
+/* In the bottom dock the popovers open upward (there is no room under them) and are not clipped by the dock. */
+.dock--bottom { overflow: visible; }
+.dock--bottom .tp__pop { top: auto; bottom: calc(100% + 4px); }
+
+/* One height for the main header and the headers of the panels. */
+:root { --header-h: 38px; }
+.schedule-toolbar, .viewer-toolbar-row { min-height: var(--header-h) !important; height: var(--header-h) !important; box-sizing: border-box; }
+.dock__head:not(.is-stacked), .dock--bottom .dock__head, .dock--bottom .seq-righthead, .dock--left .seq-righthead, .dock--right .seq-righthead { height: var(--header-h) !important; min-height: var(--header-h) !important; box-sizing: border-box; }
+.dock__head.is-stacked { height: max(var(--header-h), 66px); }
+
+/* Icon buttons in the headers are true squares: as wide as the header is tall. */
+.ws-top > .ws-top__btn[aria-label="Home"],
+.schedule-toolbar__right .tp-row .tp__btn,
+.schedule-toolbar__right .tp__btn--dots,
+.schedule-toolbar__view .icon-btn,
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn,
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn--dots,
+.dock--bottom .dock__panel-tools .vtb-btn,
+.dock--bottom .dock__tools .dock__tool { width: var(--header-h) !important; min-width: var(--header-h) !important; padding: 0 !important; aspect-ratio: auto; }
+.schedule-toolbar .ctx-stepper button { width: var(--header-h); min-width: var(--header-h); }
+
+/* The tab names sit in the middle of the header, top to bottom. */
+.dock__head .seq-righttabs .config-tab, .dock__head:not(.is-stacked) .seq-righttabs .config-tab { padding-top: 0 !important; padding-bottom: 0 !important; height: 100%; display: inline-flex; align-items: center; line-height: 1; }
+.dock__head .seq-righttabs { align-items: stretch; }
+
+/* The panel header, spot on the main header: the tabs never shrink away (the panel's tools give way instead), and the tool group has its lines on both sides. */
+.dock--bottom .dock__head .seq-righttabs { flex: 0 0 auto !important; overflow: visible !important; }
+.dock--bottom .dock__panel-tools { flex: 1 1 0; margin-left: 0; border-left: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .mdt__actions { border-left: 0; margin-left: auto; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp-row { border-left: 1px solid var(--border); border-right: 1px solid var(--border); margin: 0; }
+.dock--bottom .dock__panel-tools .mdt__more { border-left: 0; }
+.dock--bottom .dock__panel-tools .mdt__search { margin: 0 12px; min-width: 180px; flex: 0 1 260px; }
+.dock--bottom .dock__tools { border-left: 1px solid var(--border); }
+.dock--bottom .dock__head, .dock--bottom .dock__panel-tools, .dock--bottom .dock__panel-tools .mdt__bar { height: var(--header-h); }
+
+/* Panel header tools: the same flat, full-height, square buttons as the main header's (no rounded chips). */
+.dock--bottom .dock__panel-tools .mdt__actions .tp-row { align-self: stretch; gap: 0; margin: 0; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp { align-self: stretch; display: inline-flex; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn { height: 100% !important; min-height: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; gap: 4px; justify-content: center; color: var(--text); background: transparent; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn:hover, .dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-open { background: rgba(0, 0, 0, 0.07) !important; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-active { background: rgb(var(--accent-rgb) / 0.16) !important; color: var(--accent-strong, #1b7f4b); }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn svg { width: 20px; height: 20px; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn:has(span) { width: auto !important; padding: 0 10px !important; }
+
+/* Panel search: same box as the main header's (icon, 190px, grows to 250px on focus), first in the right-hand tool group. */
+.dock--bottom .dock__panel-tools .mdt__actions .mdt__gs { align-self: stretch; margin: 0; padding: 0 10px !important; position: relative; }
+.dock--bottom .dock__panel-tools .mdt__actions .mdt__gs::before { content: ''; position: absolute; left: 0; top: 0; bottom: 0; width: 1px; background: var(--border); }
+.dock--bottom .dock__panel-tools .mdt__actions .mdt__gs > svg { left: 22px; }
+.dock--bottom .dock__panel-tools .mdt__actions .mdt__gs input.gs__input { width: 190px; transition: width 0.15s; }
+.dock--bottom .dock__panel-tools .mdt__actions .mdt__gs input.gs__input:focus { width: 250px; }
+
+/* Expand/collapse groups: a flat, full-height square between the List dropdown and the search box. */
+.dock--bottom .dock__panel-tools .mdt__group-actions { align-self: stretch; display: inline-flex; align-items: stretch; margin: 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .mdt__group-actions .btn { height: 100% !important; width: var(--header-h) !important; min-width: var(--header-h) !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; }
+.dock--bottom .dock__panel-tools .mdt__group-actions .btn:hover { background: rgba(0, 0, 0, 0.07) !important; }
+.dock--bottom .dock__panel-tools .mdt__group-actions .btn svg { width: 20px; height: 20px; }
+
+/* Fold button: in the bottom dock it fills the space between the List dropdown and the search box (the dock's own fold button hides). */
+.mdt__fold { display: none; }
+.dock--bottom .dock__panel-tools .mdt__fold { display: inline-flex; flex: 1 1 0; min-width: var(--header-h); align-items: center; justify-content: center; align-self: stretch; padding: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--text-dim); cursor: pointer; }
+.dock--bottom .dock__panel-tools .mdt__fold:hover { background: rgba(0, 0, 0, 0.07); color: var(--accent-strong); }
+.dock--bottom .dock__panel-tools .mdt__fold svg { width: var(--icon-row); height: var(--icon-row); }
+.dock--bottom .dock__head:has(.mdt__fold) .dock__tool[aria-label="Fold away"] { display: none; }
+
+/* Panel header tools: no count and no active tint, like the main header's. */
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn > span { display: none; }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-active { background: transparent !important; color: var(--text); }
+.dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-active:hover, .dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-open { background: rgba(0, 0, 0, 0.07) !important; }
+
+/* The Level stepper's lines run the full height of the header: its wrapper stretches too. */
+.schedule-toolbar .groupby-panel { align-self: stretch; align-items: stretch; margin-top: 0; margin-bottom: 0; padding-top: 0; padding-bottom: 0; }
+.schedule-toolbar .groupby-panel > .groupby-panel__title, .schedule-toolbar .groupby-panel > select { align-self: center; }
+
+/* Menu items are regular weight. */
+.tp__menu button, .tp__menu button span { font-weight: 400 !important; }
+
+/* Fold strip: fills the space between the tabs (left) and the close button (right) */
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .seq-righttabs { flex: 0 1 auto; }
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools { flex: 1 1 0; min-width: 0; margin-left: 0; align-self: stretch; }
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool--fold { flex: 1 1 0; width: auto !important; min-width: 0 !important; height: 100%; }
+
+/* The Home button: wider than a square */
+.ws-top > .ws-top__btn[aria-label="Home"] { width: 72px !important; min-width: 72px !important; }
+
+/* Bottom dock: the panel toolbar (when it has one) takes the free space; otherwise the fold strip does, with the close button at the far right */
+.dock--bottom .dock__head .seq-righttabs { flex: 0 0 auto !important; }
+.dock--bottom .dock__head .dock__panel-tools { flex: 999 1 0; }
+.dock--bottom .dock__head .dock__tools { flex: 1 1 0; min-width: 0; align-self: stretch; }
+.dock--bottom .dock__head .dock__tools .dock__tool--fold { flex: 1 1 0; width: auto !important; min-width: 0 !important; }
+.dock--bottom .dock__head .dock__tools .dock__tool:not(.dock__tool--fold) { flex: 0 0 auto; }
+.dock--bottom .dock__head .dock__tools { min-width: var(--header-h); }
+
+/* The Predecessors / Successors Columns button: a slim strip at the left of the panel (in the bottom dock it moves up into the header row) */
+.links-pane__tools { flex: 0 0 auto; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
+.links-pane__tools:empty { display: none; }
+
+/* Bottom dock, Predecessors & successors: tabs | fold strip (fills) | Columns | close, the Columns button the size of the Data table's */
+.dock--bottom .dock__head:has(.links-tools) .dock__tools { display: contents; }
+.dock--bottom .dock__head:has(.links-tools) .dock__tool--fold { order: 1; flex: 1 1 0; height: 100%; align-self: stretch; }
+.dock--bottom .dock__head:has(.links-tools) .dock__panel-tools { order: 2; flex: 0 0 auto; }
+.dock--bottom .dock__head:has(.links-tools) .dock__tool:not(.dock__tool--fold) { order: 3; height: 100%; align-self: stretch; border-left: 1px solid var(--border); }
+
+/* Activity Codes: compact rows (the Assign and icon buttons no taller than the text) */
+.activity-codes-view .data-table td, .activity-codes-view .data-table th { --row-pad: 1px; padding-top: 1px; padding-bottom: 1px; }
+.activity-codes-view .data-table tbody tr { height: 26px; }
+.activity-codes-view .data-table .btn, .activity-codes-view .data-table .btn--small { height: 22px !important; min-height: 0 !important; padding: 0 10px !important; line-height: 1; font-size: 12px; }
+.activity-codes-view .data-table .icon-btn { width: 22px; height: 22px; min-height: 0; padding: 0; }
+.activity-codes-view .data-table .icon-btn svg { width: 16px; height: 16px; }
+.activity-codes-view .data-table input[type="checkbox"] { margin: 0; }
+
+/* The tool buttons (Filter, Sort, Group, Columns, Color) show no count and no tint when something is set */
+.tp__btn > span { display: none; }
+.tp__btn:has(span):not(.tp__btn--dots) { width: auto; }
+.tp__btn.is-active { background: transparent !important; color: var(--text) !important; }
+.tp__btn.is-active:hover, .tp__btn.is-open { background: rgba(0, 0, 0, 0.07) !important; }
+.panels-btn .tp__btn > span { display: inline; }
+.panels-btn .tp__btn.is-active { background: revert !important; }
+
+/* Beats the toolbars' own active tint: no background on a tool button that has something set or is open; only hover shows one */
+.schedule-toolbar__right .tp__btn.is-active, .schedule-toolbar__right .tp__btn.is-open, .dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-active, .dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-open, .tp .tp__btn.is-active, .tp .tp__btn.is-open { background: transparent !important; color: var(--text) !important; }
+.schedule-toolbar__right .tp__btn.is-active:hover, .schedule-toolbar__right .tp__btn.is-open:hover, .dock--bottom .dock__panel-tools .mdt__actions .tp__btn.is-open:hover, .tp .tp__btn.is-active:hover, .tp .tp__btn.is-open:hover { background: rgba(0, 0, 0, 0.07) !important; }
+
+/* Home: the same header as the other pages (grey bar, header height, square dividers, search last), the scenes below it */
+.home { padding: 0 0 32px; gap: 0; }
+.home > *:not(.home__bar) { margin-left: 24px; margin-right: 24px; }
+.home > .home__bar, .viewer-header > .home__bar { margin: 0; flex: 0 0 auto; height: var(--header-h); min-height: var(--header-h); }
+.home__head { margin-top: 14px; margin-bottom: 10px; }
+.home__bar .home__seg { align-self: stretch; border: 0; border-radius: 0; border-left: 1px solid var(--border); }
+.home__bar .home__seg button { width: var(--header-h); height: 100%; padding: 0; justify-content: center; border-radius: 0; color: var(--text); }
+.home__bar .home__seg button:hover { background: rgba(0, 0, 0, 0.07); }
+.home__bar .home__seg button.is-on { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); color: var(--text); }
+.home__tool { align-self: stretch; display: inline-flex; align-items: center; gap: 8px; height: 100%; padding: 0 16px; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--text); font: inherit; font-size: 13px; cursor: pointer; white-space: nowrap; }
+.home__tool:hover { background: rgba(0, 0, 0, 0.07); }
+.home__tool--primary { font-weight: 600; color: var(--accent-strong, #1b7f4b); }
+.home__bar .home__search { align-self: center; height: 30px; min-width: 200px; margin: 0 10px; border-radius: 999px; padding: 0 14px; }
+.home__bar .schedule-toolbar__right { border-left: 0; }
+
+/* Files panel at the bottom: its bar joins the tabs in one header row, as the Data table's does */
+.dock--bottom .dock__panel-tools .inputs-bar { flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; gap: 0; background: transparent; border: 0; padding: 0; min-height: 0; height: var(--header-h); font-size: 13px; }
+.dock--bottom .dock__panel-tools .inputs-bar > span:first-child { align-self: center; padding: 0 10px 0 14px; font-weight: 600; white-space: nowrap; }
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-panel__count { align-self: center; margin-right: 8px; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp-row { align-self: stretch; gap: 0; margin: 0; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn, .dock--bottom .dock__panel-tools .inputs-bar .tp__btn--dots { width: var(--header-h) !important; min-width: var(--header-h) !important; height: 100% !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent; box-shadow: none; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn:hover, .dock--bottom .dock__panel-tools .inputs-bar .tp__btn--dots:hover { background: rgba(0, 0, 0, 0.07) !important; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn svg { width: 20px; height: 20px; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp, .dock--bottom .dock__panel-tools .inputs-bar .panels-btn { display: flex; align-self: stretch; }
+.dock--bottom .dock__panel-tools .inputs-bar .layouts-segment { margin: 0; align-self: stretch; display: flex; border-left: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle { height: 100%; border: 0; border-radius: 0; background: transparent; box-shadow: none; padding: 0 16px; }
+.dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle:hover { background: rgba(0, 0, 0, 0.07); }
+.dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle.primary { box-shadow: inset 0 -2px 0 var(--accent); color: var(--text); }
+
+/* Home bar: the picker's buttons run the full height of the bar */
+.home__bar { align-items: stretch !important; box-sizing: border-box; }
+.home__bar > .schedule-toolbar__left { align-self: stretch; display: flex; align-items: stretch; height: 100%; padding: 0 !important; }
+.home__bar .ws-top { align-self: stretch; height: 100%; }
+.home__bar .ws-top > .ws-top__btn[aria-label="Home"], .home__bar .ws-top > .ws-page, .home__bar .ws-top .ws-page > .ws-page__btn { height: 100% !important; align-self: stretch; }
+.home__bar > .schedule-toolbar__right { align-self: stretch; height: 100%; align-items: stretch; }
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-panel__spacer { flex: 1 1 0; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp-row { border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+.home > .home__bar, .viewer-header > .home__bar { display: flex; flex-wrap: nowrap !important; align-items: stretch !important; justify-content: space-between; overflow: visible; }
+.home__bar > .schedule-toolbar__left { flex: 0 1 auto; min-width: 0; }
+.home__bar > .schedule-toolbar__right { display: flex; flex: 0 1 auto; margin-left: auto; min-width: 0; flex-wrap: nowrap !important; gap: 0 !important; align-items: stretch; }
+.home__bar .home__search { flex: 0 1 220px; min-width: 120px; }
+.home__bar .gs { align-self: center; margin: 0 10px; }
+.home__seg { flex: 0 0 auto; display: inline-flex; }
+
+/* Home: the list fits between its side margins, the scene search is a pill like the global one, the workspaces sit apart from the scenes */
+.home > .home__list { width: calc(100% - 48px); box-sizing: border-box; }
+.home > .home__tiles { box-sizing: border-box; }
+.home__bar .home__search { align-self: center; height: 30px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elevated, #fff); padding: 0 14px; font: inherit; font-size: 13px; }
+.home > .home__ws { margin-top: 18px; }
+.home__list .home__actions { white-space: nowrap; text-align: right; }
+.home__bar .home__seg { display: flex; align-items: stretch; height: 100%; }
+.home__bar .home__seg button { display: inline-flex; align-items: center; justify-content: center; }
+.home__bar .home__seg button svg { width: 20px; height: 20px; }
+
+/* The workspace chip of the status bar: a popover that opens upward */
+.ws-status { position: relative; display: inline-flex; align-items: center; flex-shrink: 0; }
+.app-statusbar .db-chip + .ws-status { margin-left: 12px; }
+.app-statusbar > .ws-status:last-child:not(:only-child) { margin-left: 0; }
+.ws-status__btn { display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elevated, #fff); color: var(--text); font: inherit; font-size: 11px; cursor: pointer; }
+.ws-status__btn:hover, .ws-status__btn.is-open { background: rgba(0, 0, 0, 0.07); }
+.ws-status__pop { position: absolute; right: 0; bottom: calc(100% + 6px); z-index: 80; width: 300px; max-height: 70vh; overflow: auto; padding: 8px; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated, #fff); box-shadow: 0 6px 24px rgba(0, 0, 0, 0.18); color: var(--text); font-size: 13px; }
+.ws-status__pop .ws-ws { margin: 0; padding: 0; border: 0; }
+
+/* Files panel header: the row-buttons chooser and the More menu are the same header-high squares as the tool buttons, with no tint */
+.dock--bottom .dock__panel-tools .inputs-bar .ss__cols { display: flex !important; align-self: stretch; }
+.dock--bottom .dock__panel-tools .inputs-bar .ss__cols > button, .dock--bottom .dock__panel-tools .inputs-bar .mini-btn--icon { width: var(--header-h); min-width: var(--header-h); height: 100%; padding: 0; margin: 0; border: 0; border-radius: 0; background: transparent !important; box-shadow: none; display: inline-flex; align-items: center; justify-content: center; color: var(--text); }
+.dock--bottom .dock__panel-tools .inputs-bar .ss__cols > button:hover { background: rgba(0, 0, 0, 0.07) !important; }
+.dock--bottom .dock__panel-tools .inputs-bar .ss__cols > button svg { width: 20px; height: 20px; }
+.dock--bottom .dock__panel-tools .inputs-bar > .tp, .dock--bottom .dock__panel-tools .inputs-bar > span:has(> .tp), .dock--bottom .dock__panel-tools .inputs-bar .tp:has(.tp__btn--dots) { border-left: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn--dots { font-size: 22px; }
+
+/* Side docks: the fold and close buttons are fixed header-high squares at the right end (the wide fold strip is for the bottom dock) */
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .seq-righttabs { flex: 1 1 0; }
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools { flex: 0 0 auto; margin-left: auto; gap: 0; align-self: stretch; }
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool,
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool--fold { flex: 0 0 var(--header-h); width: var(--header-h) !important; min-width: var(--header-h) !important; height: 100%; padding: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; }
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool:hover { background: rgba(0, 0, 0, 0.07); }
+
+/* Side docks: the buttons run to the very edge, no space to the right of the cross */
+.dock:not(.dock--bottom) .dock__head { padding-right: 0 !important; }
+.dock:not(.dock--bottom) .dock__head .dock__tools { margin-right: 0 !important; padding-right: 0 !important; }
+
+/* The Panels button is 140px in all (its divider included); the dock's fold and close buttons are 70px each, so together they match it exactly */
+:root { --panels-w: 140px; }
+.panels-btn:not(.mdt__more) { width: var(--panels-w); min-width: var(--panels-w); box-sizing: border-box; flex: 0 0 var(--panels-w); }
+.panels-btn:not(.mdt__more) .tp, .panels-btn:not(.mdt__more) .tp__btn { width: 100% !important; min-width: 0 !important; box-sizing: border-box; justify-content: center; }
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool,
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool--fold { box-sizing: border-box; flex: 0 0 calc(var(--panels-w) / 2); width: calc(var(--panels-w) / 2) !important; min-width: calc(var(--panels-w) / 2) !important; }
+:root { --panels-w: 100px; }
+
+/* Home tiles: the picture across the top, a soft shadow in place of a border, the numbers with their icons, a full-width Open */
+.home__tiles { grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 22px; padding: 4px 4px 12px; }
+.home__tile { border: 0; border-radius: 16px; padding: 0; gap: 0; overflow: hidden; background: var(--bg-elevated, #fff); box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12); transition: box-shadow 0.15s, transform 0.15s; }
+.home__tile:hover { border: 0; box-shadow: 0 6px 22px rgba(0, 0, 0, 0.2); transform: translateY(-2px); }
+.home__tile.is-here { border: 0; box-shadow: 0 0 0 2px var(--accent-strong, #1b7f4b), 0 4px 18px rgba(0, 0, 0, 0.16); }
+.home__tile > .home__thumb { border-radius: 0; aspect-ratio: 16 / 9; width: 100%; }
+.home__tilebody { display: flex; flex-direction: column; gap: 10px; padding: 14px 16px 16px; flex: 1 1 auto; }
+.home__tilebody .home__chip { align-self: flex-start; margin: 0; padding: 3px 10px; font-size: 11px; background: rgba(0, 0, 0, 0.07); color: var(--text); }
+.home__tilebody .home__chip--here { background: rgb(var(--accent-rgb) / 0.16); color: var(--accent-strong, #1b7f4b); }
+.home__tilebody .home__name { font-size: 20px; font-weight: 600; line-height: 1.2; }
+.home__stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; color: var(--text); }
+.home__stats span { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.home__stats svg { color: var(--text-dim); flex-shrink: 0; }
+.home__stats b { font-weight: 600; }
+.home__tilebody .home__meta { font-size: 12px; color: var(--text-dim); flex: 1 1 auto; }
+.home__open { width: 100%; height: 36px; border: 0; border-radius: 10px; background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong, #1b7f4b); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; }
+.home__open:hover:not(:disabled) { background: rgb(var(--accent-rgb) / 0.26); }
+.home__open:disabled { background: rgba(0, 0, 0, 0.06); color: var(--text-dim); cursor: default; }
+
+/* ===== Files panel: the drop zone on the side, the table beside it ===== */
+.inputs-panel__body { display: flex; align-items: stretch; min-height: 0; }
+.inputs-panel__side { flex: 0 0 200px; width: 200px; display: flex; padding: 10px; box-sizing: border-box; border-right: 1px solid var(--border); }
+.inputs-panel__side .dropzone { height: auto; min-height: 120px; flex: 1 1 auto; padding: 14px 10px; border-radius: 10px; border-width: 2px; gap: 4px; }
+.inputs-panel__side .dropzone__icon { width: 34px; height: 34px; margin-bottom: 2px; }
+.inputs-panel__side .dropzone__label { font-size: 13px; }
+.inputs-panel__side .dropzone__hint { display: none; }
+.inputs-panel__main { flex: 1 1 0; min-width: 0; display: flex; flex-direction: column; overflow: auto; }
+
+/* ===== Files panel header: every button the same header-high square, a divider before each group ===== */
+.dock--bottom .dock__panel-tools .inputs-bar > .inputs-panel__count { align-self: center; margin: 0 8px 0 14px; padding: 2px 10px; font-weight: 600; font-size: 12px; white-space: nowrap; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp-row { border-right: 0; }
+.dock--bottom .dock__panel-tools .inputs-bar > .tp-row, .dock--bottom .dock__panel-tools .inputs-bar > .ss__cols, .dock--bottom .dock__panel-tools .inputs-bar > span:has(.tp__btn--dots), .dock--bottom .dock__panel-tools .inputs-bar > .layouts-segment { border-left: 1px solid var(--border); }
+.dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle { width: var(--header-h); min-width: var(--header-h); padding: 0 !important; justify-content: center; gap: 0; }
+.dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle svg, .dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle .toolbar-button__icon svg { width: 20px; height: 20px; }
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-details__label { display: none; }
+/* Files panel: the table and the scene beside it use all the space, no padding around them */
+.dock__body > .inputs-page .inputs-panel__main { padding: 0; gap: 0; }
+.dock__body > .inputs-page .inputs-panel__side { padding: 10px; }
+.dock__body > .inputs-page .inputs-panel__main > div[tabindex] { overflow-x: auto; }
+/* Buttons keep their size (an icon is header-high wide, Add files is as wide as its label); an empty tools strip takes no room */
+.dock--bottom .dock__panel-tools .inputs-bar .tp, .dock--bottom .dock__panel-tools .inputs-bar .tp-row, .dock--bottom .dock__panel-tools .inputs-bar .ss__cols, .dock--bottom .dock__panel-tools .inputs-bar .layouts-segment { flex: 0 0 auto; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn:has(span):not(.tp__btn--dots) { width: auto !important; padding: 0 14px !important; }
+.dock--bottom .dock__head .dock__tools:empty { display: none; }
+/* Centre every button's content (icon and label) both ways in the header row */
+.dock--bottom .dock__panel-tools .inputs-bar { align-items: stretch; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp, .dock--bottom .dock__panel-tools .inputs-bar .tp-row, .dock--bottom .dock__panel-tools .inputs-bar .ss__cols, .dock--bottom .dock__panel-tools .inputs-bar .layouts-segment, .dock--bottom .dock__panel-tools .inputs-bar > span:has(> .tp) { align-items: center; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn, .dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle, .dock--bottom .dock__panel-tools .inputs-bar .ss__cols > button { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn svg, .dock--bottom .dock__panel-tools .inputs-bar .layouts-toggle svg { display: block; flex: 0 0 auto; margin: 0; }
+.dock--bottom .dock__panel-tools .inputs-bar .tp__btn--dots, .dock--bottom .dock__panel-tools .inputs-bar .tp:has(.tp__btn--dots) .tp__btn { width: var(--header-h) !important; min-width: var(--header-h) !important; }
+
+/* ===== Home: wide, short cards ===== */
+.home { position: relative; }
+.home__tiles { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 16px; padding: 4px 4px 12px; }
+.home__tile { flex-direction: row; align-items: stretch; min-height: 104px; border-radius: 14px; }
+.home__thumbwrap { flex: 0 0 140px; width: 140px; display: flex; }
+.home__thumbwrap .home__thumb { width: 100%; height: 100%; min-height: 104px; aspect-ratio: auto; border-radius: 0; object-fit: cover; }
+.home__thumb--none { font-size: 30px; font-weight: 700; letter-spacing: 1px; }
+.home__tilebody { flex: 1 1 auto; min-width: 0; gap: 4px; padding: 12px 14px; justify-content: center; }
+.home__tilebody .home__name { font-size: 17px; }
+.home__tilehead { gap: 4px; }
+.home__pin { color: #e0a100; font-size: 14px; line-height: 1; }
+.home__prog { font-size: 12px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.home__stats { gap: 4px 12px; font-size: 13px; }
+.home__stats i { display: none; font-style: normal; color: var(--text-dim); }
+.home__stats--none { color: var(--text-dim); font-size: 12px; }
+.home__tilebody .home__meta { flex: 0 0 auto; display: flex; align-items: center; justify-content: space-between; font-size: 12px; min-height: 20px; }
+.home__tilebody .home__chip--here { margin: 0; }
+.home__openhint { opacity: 0; font-weight: 600; color: var(--accent-strong, #1b7f4b); transition: opacity 0.12s; }
+.home__tile:hover .home__openhint { opacity: 1; }
+.home__tile.is-here { grid-column: span 2; }
+.home__tile.is-here .home__thumbwrap { flex-basis: 220px; width: 220px; }
+.home__tile.is-here .home__stats i { display: inline; }
+.home__tile.is-here .home__name { font-size: 20px; }
+@media (max-width: 760px) { .home__tile.is-here { grid-column: auto; } }
+
+/* A file dragged over Home: the whole window takes it */
+.home__drop { position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center; background: rgb(var(--accent-rgb) / 0.12); border: 3px dashed var(--accent); pointer-events: none; }
+.home__drop > div { padding: 24px 40px; border-radius: 16px; background: var(--bg-elevated, #fff); box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2); font-size: 22px; font-weight: 600; text-align: center; }
+.home__drop small { display: block; margin-top: 6px; font-size: 13px; font-weight: 400; color: var(--text-dim); }
+
+/* Files panel: the side column and the table side by side (the body was a column) */
+.inputs-page > .inputs-panel > .inputs-panel__body { flex-direction: row; gap: 0; padding: 0; align-items: stretch; }
+.inputs-panel__main { gap: 10px; padding: 10px 12px; box-sizing: border-box; }
+.inputs-panel__main > * { flex-shrink: 0; }
+
+/* Home cards: the picture across the top, the name under it */
+.home__tiles { grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 16px; }
+.home__tile { flex-direction: column; min-height: 0; }
+.home__thumbwrap, .home__tile.is-here .home__thumbwrap { flex: 0 0 auto; width: 100%; }
+.home__thumbwrap .home__thumb { aspect-ratio: 2.1 / 1; min-height: 0; height: auto; }
+.home__tilebody { padding: 10px 14px 12px; justify-content: flex-start; }
+.home__tile.is-here { grid-column: auto; }
+.home__tile.is-here .home__stats i { display: none; }
+.home__tile.is-here .home__name, .home__tilebody .home__name { font-size: 16px; }
+
+/* Tile: the More button sits on the picture's corner so the title has the whole line (and wraps rather than cuts) */
+.home__tile { position: relative; overflow: visible; }
+.home__thumbwrap .home__thumb { border-radius: 14px 14px 0 0; }
+.home__tilemore { position: absolute; top: 8px; right: 8px; z-index: 5; }
+.home__tilemore .home__more { background: rgba(255, 255, 255, 0.85); border-radius: 8px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); opacity: 0; transition: opacity 0.12s; }
+.home__tile:hover .home__more, .home__tilemore .home__more[aria-expanded="true"], .home__more:focus-visible { opacity: 1; }
+.home__tilebody .home__name { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+
+/* Files in a dock: the page is as tall as the panel; the table scrolls inside it, the drop zone stays put and fills the visible height */
+.dock__body > .inputs-page { height: 100%; overflow: hidden; align-items: stretch; align-content: stretch; grid-auto-rows: minmax(0, 1fr); }
+.dock__body > .inputs-page:has(> .inputs-bar) { grid-template-rows: auto minmax(0, 1fr); }
+.dock__body > .inputs-page > .inputs-panel { height: 100%; min-height: 0; display: flex; flex-direction: column; }
+.dock__body > .inputs-page > .inputs-panel > .inputs-panel__body { flex: 1 1 0; min-height: 0; overflow: hidden; }
+.dock__body > .inputs-page .inputs-panel__side { overflow: hidden; }
+.dock__body > .inputs-page .inputs-panel__main { overflow: auto; }
+
+/* A tile with its menu open (or under the mouse, lifted) stays above the tiles after it, so the menu is not cut by the next row */
+.home__tile:hover { z-index: 2; }
+.home__tile:has(.home__more[aria-expanded="true"]) { z-index: 30; }
+
+/* The Home button: the bar's line runs under it; green and thicker when Home is the page */
+.ws-top > .ws-top__btn[aria-label="Home"] { box-shadow: inset 0 -1px 0 rgba(60, 64, 68, 0.18); }
+.ws-top > .ws-top__btn[aria-label="Home"].is-on { box-shadow: inset 0 -2px 0 var(--accent); }
+
+/* Tile corner: "You are in" (bigger) on the scene you are in, an Open button on the others when the mouse is over them; More beside it */
+.home__tilemore { display: flex; align-items: center; gap: 6px; }
+.home__tilemore .home__chip--here { margin: 0; padding: 6px 14px; font-size: 13px; font-weight: 600; border-radius: 999px; background: var(--bg-elevated, #fff); color: var(--accent-strong, #1b7f4b); box-shadow: 0 1px 6px rgba(0, 0, 0, 0.2); }
+.home__openpill { height: 30px; padding: 0 16px; border: 0; border-radius: 999px; background: var(--accent-strong, #1b7f4b); color: #fff; font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25); opacity: 0; transition: opacity 0.12s; }
+.home__tile:hover .home__openpill, .home__openpill:focus-visible { opacity: 1; }
+.home__openpill:hover { filter: brightness(1.1); }
+
+/* The scene you are in: its tile at the top right of the grid, a little bigger than the others */
+.home__tiles { grid-auto-flow: row dense; }
+.home__tile.is-here { grid-column: -2 / -1; grid-row: 1; box-shadow: 0 0 0 2px var(--accent-strong, #1b7f4b), 0 8px 26px rgba(0, 0, 0, 0.2); }
+.home__tile.is-here .home__thumbwrap .home__thumb { aspect-ratio: 16 / 9; }
+.home__tile.is-here .home__tilebody { padding: 14px 16px 16px; gap: 6px; }
+.home__tile.is-here .home__name, .home__tile.is-here .home__tilebody .home__name { font-size: 19px; }
+.home__tile.is-here .home__stats { font-size: 14px; }
+.home__tilebody .home__meta { gap: 8px; justify-content: flex-start; }
+.home__tilebody .home__chip--here { padding: 3px 10px; font-size: 12px; }
+@media (max-width: 760px) { .home__tile.is-here { grid-column: auto; } }
+
+/* Home: a click chooses the scene (its files are listed below); the chosen tile is at the top right, a little bigger, with Open; the others show Select on hover */
+.home__barinfo { align-self: center; margin-left: 14px; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.home__head { margin-top: 10px; margin-bottom: 0; min-height: 0; }
+.home__tile.is-here:not(.is-selected) { grid-column: auto; grid-row: auto; box-shadow: 0 2px 14px rgba(0, 0, 0, 0.12); }
+.home__tile.is-here:not(.is-selected) .home__thumbwrap .home__thumb { aspect-ratio: 2.1 / 1; }
+.home__tile.is-here:not(.is-selected) .home__name, .home__tile.is-here:not(.is-selected) .home__tilebody .home__name { font-size: 16px; }
+.home__tile.is-selected { grid-column: -2 / -1; grid-row: 1; box-shadow: 0 0 0 2px var(--accent-strong, #1b7f4b), 0 8px 26px rgba(0, 0, 0, 0.2); }
+.home__tile.is-selected .home__thumbwrap .home__thumb { aspect-ratio: 16 / 9; }
+.home__tile.is-selected .home__tilebody { padding: 14px 16px 16px; gap: 6px; }
+.home__tile.is-selected .home__name, .home__tile.is-selected .home__tilebody .home__name { font-size: 19px; }
+.home__tile.is-selected .home__stats { font-size: 14px; }
+.home__openpill.is-shown { opacity: 1; height: 32px; padding: 0 20px; }
+.home__selectpill { height: 28px; padding: 0 14px; border: 0; border-radius: 999px; background: var(--bg-elevated, #fff); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; box-shadow: 0 1px 6px rgba(0, 0, 0, 0.25); opacity: 0; transition: opacity 0.12s; }
+.home__tile:hover .home__selectpill, .home__selectpill:focus-visible { opacity: 1; }
+.home__selectpill:hover { background: rgb(var(--accent-rgb) / 0.2); }
+.home__list tr.is-selected { background: rgb(var(--accent-rgb) / 0.12); }
+.inputs-scene-chip { align-self: center; margin: 0 8px; padding: 2px 10px; border: 1px solid var(--border); border-radius: 999px; background: var(--bg-elevated, #fff); color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.inputs-scene-chip:hover { background: rgba(0, 0, 0, 0.07); }
+
+/* Files panel: the chosen scene's card in the left column (nothing there, no column), "Add files" as a popover from the header */
+.inputs-panel__side { flex: 0 0 270px; width: 270px; display: block; padding: 12px; overflow: auto; }
+.inputs-panel__side:empty { display: none; }
+.home__sidecard { width: 100%; }
+.home__sidecard .home__tile { width: 100%; grid-column: auto; grid-row: auto; }
+.home__sidecard .home__thumbwrap .home__thumb { aspect-ratio: 16 / 9; }
+.tp__pop .dropzone { height: 170px; min-height: 170px; border-radius: 10px; border-width: 2px; padding: 14px; }
+.tp__pop .dropzone__hint { display: block; font-size: 12px; }
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-add { border-left: 1px solid var(--border); }
+
+/* Files header "Add files": the same button as Home's "New scene" (a plus, the words, green) */
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-add .tp__btn { width: auto !important; min-width: 0 !important; padding: 0 16px !important; gap: 8px; }
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-add .tp__btn > span { display: inline !important; font-size: 13px; font-weight: 600; color: var(--accent-strong, #1b7f4b); }
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-add .tp__btn svg { width: 18px; height: 18px; color: var(--accent-strong, #1b7f4b); }
+.dock--bottom .dock__panel-tools .inputs-bar .inputs-add { border-right: 1px solid var(--border); }
+
+/* Baselines: a header button like the others (square corners, full height, a divider), ahead of the tool buttons */
+.schedule-toolbar__right .baseline-menu { align-self: stretch; display: inline-flex; border-left: 1px solid var(--border); position: relative; }
+.schedule-toolbar__right .baseline-menu > .btn { height: 100% !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; color: var(--text); padding: 0 16px; font-size: 13px; font-weight: 500; }
+.schedule-toolbar__right .baseline-menu > .btn:hover { background: rgba(0, 0, 0, 0.07) !important; }
+.schedule-toolbar__right .baseline-menu > .btn.primary { box-shadow: inset 0 -2px 0 var(--accent) !important; }
+
+/* Dock tabs that do not fit even as icons in their own row: one dropdown box */
+.dock__head .dock__tabselect { flex: 1 1 auto; min-width: 0; width: 100%; height: calc(100% - 8px); margin: 4px 8px; padding: 0 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated, #fff); color: var(--text); font: inherit; font-size: 13px; font-weight: 600; }
+
+
+/* Row numbers off: the first column is not there at all, so Driver and ID take the first two places; the remove button is a narrow column at the end of the row */
+.links-pane .lp-noindex th:nth-child(1), .links-pane .lp-noindex td:nth-child(1) { left: 0; width: 28px; min-width: 28px; max-width: 28px; padding: 0; text-align: center; box-shadow: none; background: var(--bg-panel); }
+.links-pane .lp-noindex th:nth-child(2), .links-pane .lp-noindex td:nth-child(2) { position: sticky; left: 28px; width: auto; min-width: 60px; max-width: none; padding: 0 8px; text-align: left; box-shadow: 1px 0 0 var(--text-dim); z-index: 1; background: var(--bg-panel); }
+.links-pane .lp-noindex th:nth-child(3), .links-pane .lp-noindex td:nth-child(3) { position: static; left: auto; min-width: 0; box-shadow: none; z-index: auto; background: transparent; }
+.links-pane .lp-noindex thead th:nth-child(-n+2) { z-index: 3; background: var(--bg-soft); }
+.links-pane .lp-noindex thead th:nth-child(3) { z-index: auto; background: var(--bg-soft); }
+.links-pane .lp-grid .lp-end { width: 30px; padding: 0; text-align: center; }
+.links-pane .lp-end__del { width: 100%; height: 100%; border: 0; background: transparent; color: var(--danger, #b3261e); cursor: pointer; opacity: 0.45; }
+.links-pane tr:hover .lp-end__del, .links-pane .lp-end__del:focus-visible { opacity: 1; }
+.links-pane .lp-end__del svg { width: 14px; height: 14px; vertical-align: middle; }
+
+/* Status bar: how many activities are picked */
+.status-picked { display: inline-flex; align-items: center; gap: 6px; padding: 1px 4px 1px 10px; border-radius: 999px; background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong, #1b7f4b); }
+.status-picked strong { color: inherit; }
+.status-picked__clear { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; border: 0; border-radius: 50%; background: transparent; color: inherit; cursor: pointer; }
+.status-picked__clear:hover { background: rgba(0, 0, 0, 0.1); }
+
+/* ---- Home: scene details pane, groups, and the Panels button ---- */
+.home__body { display: flex; align-items: flex-start; gap: 16px; flex: 1 1 auto; min-height: 0; }
+.home__main { flex: 1 1 auto; min-width: 0; }
+.home__details { flex: 0 0 300px; width: 300px; align-self: stretch; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated, #fff); overflow: auto; }
+.home__group { padding: 10px 0 6px; }
+.home__group .inputs-folder__toggle { font-size: 14px; }
+.home__main .home__tiles { margin-bottom: 6px; }
+.home__list .inputs-folder td { padding: 0; background: var(--bg-soft); }
+.home__list .inputs-folder .home__group { padding: 6px 8px; }
+.scene-details__add { display: flex; gap: 6px; padding: 8px 10px; }
+.scene-details__add .ad-edit { flex: 1 1 auto; border: 1px solid var(--border); }
+.scene-details__drop { margin-left: 4px; vertical-align: middle; }
+.panels-menu { display: flex; flex-direction: column; gap: 2px; padding: 6px; }
+.details-tabs { display: flex; align-items: stretch; gap: 0; position: sticky; top: 0; z-index: 2; }
+.details-tabs__tab { flex: 1 1 0; min-width: 0; border: 0; background: transparent; padding: 0 14px; font: inherit; font-size: 13px; font-weight: 600; color: var(--text-dim); cursor: pointer; }
+.details-tabs__tab:hover { color: var(--text); }
+.details-tabs__tab.is-on { color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.details-tabs .layouts-dock__close { align-self: center; }
+.inputs-details__reopen { align-self: stretch; flex: 0 0 18px; width: 18px; border: 0; border-left: 1px solid var(--border); background: var(--bg-soft); color: var(--text-dim); cursor: pointer; padding: 0; display: flex; align-items: flex-start; justify-content: center; padding-top: 12px; }
+.inputs-details__reopen:hover { background: rgb(var(--accent-rgb) / 0.12); color: var(--text); }
+/* Home header: the tools run straight into the search, no gap */
+.home__bar .gs { margin: 0 10px 0 0; }
+.home__bar .tp-row { margin-left: 0; gap: 0; align-self: stretch; align-items: stretch; }
+/* The fold button: a header-high square with a divider, at the far right of the bar, like the details panes' */
+.inputs-bar .inputs-fold { align-self: stretch; height: auto; flex: 0 0 var(--header-h); width: var(--header-h); min-width: var(--header-h); order: 100; border-radius: 0; border: 0; border-left: 1px solid var(--border); background: transparent; }
+.inputs-bar .inputs-fold:hover { background: rgba(0, 0, 0, 0.07); }
+.dock .inputs-bar { padding: 0 !important; height: 100%; min-height: 0; align-items: stretch; }
+.dock .inputs-bar .inputs-fold { height: 100%; margin: 0; padding: 0; }
+/* Collapsed details pane: a slim strip with the chevron at the bottom */
+.inputs-details__reopen { flex-basis: 30px; width: 30px; align-items: flex-end; padding: 0 0 14px; background: var(--bg); }
+
+/* Home: the Settings button is as wide as it is tall, like the Home button. */
+.home__settings { width: var(--hit); min-width: var(--hit); justify-content: center; padding: 0; }
+/* Home: the Settings button is a header-high square, its icon the size of the view buttons'. */
+.home__bar .home__settings { align-self: stretch; height: 100%; width: calc(var(--panels-w) / 2); min-width: calc(var(--panels-w) / 2); border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; }
+.home__bar .home__settings svg { width: 20px; height: 20px; }
+.home__bar .home__settings:hover { background: rgba(0, 0, 0, 0.07); }
+.home__bar .home__settings.is-on { background: transparent; box-shadow: inset 0 -2px 0 var(--accent); color: var(--text); }
+/* Home: the General settings panel has no fold button, only close. */
+.app-frame:has(.home__bar) .dock[data-active="settings"] .dock__tool--fold { visibility: hidden; pointer-events: none; }

@@ -25,6 +25,7 @@ export function FileDrop({ label, hint, accept, multiple, onFile }: FileDropProp
   return (
     <div
       className={`dropzone${over ? ' dropzone--over' : ''}`}
+      title={hint}
       role="button"
       tabIndex={0}
       onClick={() => inputRef.current?.click()}

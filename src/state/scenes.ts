@@ -44,6 +44,7 @@ const KEEP_WHEN_ABSENT = ['scenarios.root'];
 const NOT_LAYOUT = new Set([
   STORE_KEY,
   'profiles.workspaces',
+  'scenes.details',
   'app.browserDataImported',
   'inputs.fileSizes',
   'inputs.fileUploads',
@@ -63,6 +64,12 @@ const NOT_LAYOUT = new Set([
   'schedule.autoLinks',
   'schedule.calcColumns',
   'schedule.activityOverrides',
+  // Home's own arrangement is the same in every scene and workspace.
+  'home.view',
+  'home.chosen',
+  'home.dock',
+  'inputs.detailsTab',
+  'inputs.detailsOpen',
 ]);
 
 /** Which part of a scene a browser key belongs to (exported for the tests). */
@@ -81,6 +88,14 @@ export interface SceneCounts {
   viewpoints: number;
   topics: number;
   markers: number;
+  /** What was loaded when it was last saved (the models and programmes themselves are in the project, not in the scene). */
+  activities?: number;
+  objects?: number;
+  models?: number;
+  /** The programme loaded (its project name). */
+  programme?: string;
+  /** The files loaded (models, site context, programmes), by name: what Home lists in the Files panel for the scene. */
+  files?: string[];
 }
 
 /** A scene as the list knows it (its snapshot is in IndexedDB). */
@@ -90,6 +105,10 @@ export interface Scene {
   savedAt: string;
   /** What its lists hold; absent for a scene without lists (from an old layout profile). */
   counts?: SceneCounts;
+  /** A small picture of the scene (a JPEG data URL), shown on its tile on Home. */
+  thumb?: string;
+  /** Kept at the top of Home. */
+  pinned?: boolean;
 }
 
 interface Store {
@@ -135,7 +154,7 @@ function read(): Store {
     const parsed = JSON.parse(localStorage.getItem(STORE_KEY) ?? 'null') as { scenes?: Scene[]; profiles?: Scene[]; activeId?: string | null } | null;
     const raw = Array.isArray(parsed?.scenes) ? parsed!.scenes! : Array.isArray(parsed?.profiles) ? parsed!.profiles! : [];
     // (An old list still holds snapshots until the start-up move: only the short fields are used.)
-    const scenes = raw.map((s) => ({ id: s.id, name: s.name, savedAt: s.savedAt, counts: s.counts }));
+    const scenes = raw.map((s): Scene => ({ id: s.id, name: s.name, savedAt: s.savedAt, counts: s.counts, ...(s.thumb ? { thumb: s.thumb } : {}), ...(s.pinned ? { pinned: true } : {}) }));
     return { scenes, activeId: parsed?.activeId && scenes.some((s) => s.id === parsed.activeId) ? parsed.activeId : null };
   } catch {
     return { scenes: [], activeId: null };
@@ -172,8 +191,13 @@ function countIn(data: Record<string, string> | undefined, key: string, prop: st
     return 0;
   }
 }
-const countsOf = (data: Record<string, string> | undefined): SceneCounts | undefined =>
-  data ? { viewpoints: countIn(data, 'viewer.viewpoints', 'records'), topics: countIn(data, 'models.topics', 'topics'), markers: countIn(data, 'viewer.markers', 'markers') } : undefined;
+/** Counts of what is loaded now (activities, objects, models), given by the app; the scene's own lists are counted from its keys. */
+let liveCounts: (() => Partial<SceneCounts>) | null = null;
+export function setLiveCounts(fn: (() => Partial<SceneCounts>) | null) { liveCounts = fn; }
+/** Saves the active scene now (counts and the files list): for when what is loaded has just changed without a layout key changing. */
+export function touchScene() { if (!suspended) timer = window.setTimeout(() => void sync().catch(() => undefined), 300); }
+const countsOf = (data: Record<string, string> | undefined, live = true): SceneCounts | undefined =>
+  data ? { viewpoints: countIn(data, 'viewer.viewpoints', 'records'), topics: countIn(data, 'models.topics', 'topics'), markers: countIn(data, 'viewer.markers', 'markers'), ...(live ? liveCounts?.() : undefined) } : undefined;
 
 // While a scene's keys are being written back (or the page is about to reload), the writes are not autosaved.
 let suspended = false;
@@ -192,7 +216,7 @@ async function sync(): Promise<void> {
   const now = capture();
   await putSnap(id, now);
   const fresh = read();
-  fresh.scenes = fresh.scenes.map((s) => (s.id === id ? { ...s, savedAt: new Date().toISOString(), counts: countsOf(now.data) } : s));
+  fresh.scenes = fresh.scenes.map((s) => (s.id === id ? { ...s, savedAt: new Date().toISOString(), counts: { ...s.counts, ...countsOf(now.data) } as SceneCounts } : s));
   write(fresh);
 }
 
@@ -323,6 +347,42 @@ export const scenes = {
     write(store);
   },
 
+  /** Sets the scene's picture (a data URL), or takes it off (null). */
+  async setThumb(id: string, thumb: string | null) {
+    await ready;
+    const store = read();
+    store.scenes = store.scenes.map((s) => {
+      if (s.id !== id) return s;
+      const { thumb: _old, ...rest } = s;
+      return thumb ? { ...rest, thumb } : rest;
+    });
+    write(store);
+  },
+
+  /** The Files filters a scene was saved with (Project: SZC…), read from its snapshot; null when it has none saved. */
+  async fileFilters(id: string): Promise<Record<string, string[]> | null> {
+    await ready;
+    const snap = await getSnap(id);
+    try {
+      const f = (JSON.parse(snap?.settings['models.fileDetails'] ?? 'null') as { state?: { filters?: Record<string, string[]> } } | null)?.state?.filters;
+      return f && Object.keys(f).length ? f : null;
+    } catch {
+      return null;
+    }
+  },
+
+  /** Pins the scene to the top of Home, or lets it go. */
+  async setPinned(id: string, pinned: boolean) {
+    await ready;
+    const store = read();
+    store.scenes = store.scenes.map((s) => {
+      if (s.id !== id) return s;
+      const { pinned: _old, ...rest } = s;
+      return pinned ? { ...rest, pinned: true } : rest;
+    });
+    write(store);
+  },
+
   /** Downloads one scene (layout and lists) as a JSON file. */
   async exportScene(id: string) {
     await ready;
@@ -330,7 +390,7 @@ export const scenes = {
     const scene = read().scenes.find((s) => s.id === id);
     const snap = scene ? await getSnap(id) : undefined;
     if (!scene || !snap) return;
-    const payload = { kind: SCENE_KIND, version: VERSION, name: scene.name, savedAt: scene.savedAt, settings: snap.settings, data: snap.data };
+    const payload = { kind: SCENE_KIND, version: VERSION, name: scene.name, savedAt: scene.savedAt, settings: snap.settings, data: snap.data, thumb: scene.thumb };
     const url = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' }));
     const a = document.createElement('a');
     a.href = url;
@@ -341,7 +401,7 @@ export const scenes = {
 
   /** Adds the scene in a JSON file to the list (not opened). Layout profile files from before are read too. */
   async importScene(file: File): Promise<Scene> {
-    let parsed: { kind?: string; name?: unknown; settings?: unknown; data?: unknown };
+    let parsed: { kind?: string; name?: unknown; settings?: unknown; data?: unknown; thumb?: unknown };
     try {
       parsed = JSON.parse(await file.text());
     } catch {
@@ -362,7 +422,7 @@ export const scenes = {
       settings: pick(parsed.settings, isLayoutKey),
       data: parsed.data && typeof parsed.data === 'object' ? pick(parsed.data, isDataKey) : undefined,
     };
-    const scene: Scene = { id: newId(), name: uniqueName(store, base), savedAt: new Date().toISOString(), counts: countsOf(snap.data) };
+    const scene: Scene = { id: newId(), name: uniqueName(store, base), savedAt: new Date().toISOString(), counts: countsOf(snap.data, false), ...(typeof parsed.thumb === 'string' && parsed.thumb.startsWith('data:image/') && parsed.thumb.length < 200000 ? { thumb: parsed.thumb } : {}) };
     await putSnap(scene.id, snap);
     store.scenes = [...store.scenes, scene];
     write(store);
@@ -377,7 +437,8 @@ async function prepare() {
   const old = (Array.isArray(raw?.scenes) ? raw!.scenes! : Array.isArray(raw?.profiles) ? raw!.profiles! : []) as (Scene & Partial<Snapshot>)[];
   for (const s of old) if (s.settings) await putSnap(s.id, { settings: s.settings, data: s.data });
   const store: Store = {
-    scenes: old.map((s) => ({ id: s.id, name: s.name, savedAt: s.savedAt, counts: s.data ? countsOf(s.data) : s.counts })),
+    // (The picture and the pin are kept: they are part of the short list, not of the snapshot.)
+    scenes: old.map((s): Scene => ({ id: s.id, name: s.name, savedAt: s.savedAt, counts: s.data ? countsOf(s.data, false) : s.counts, ...(s.thumb ? { thumb: s.thumb } : {}), ...(s.pinned ? { pinned: true } : {}) })),
     activeId: raw?.activeId && old.some((s) => s.id === raw.activeId) ? raw.activeId : null,
   };
   if (!store.activeId) {

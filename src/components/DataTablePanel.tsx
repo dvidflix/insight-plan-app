@@ -15,6 +15,7 @@ import { FieldPicker, RuleRows, newRuleId, type PickField } from './schedule/Fie
 import { ConditionEditor } from './SearchSetsPanel';
 import { useIndexTick, useModelFields } from './modelFields';
 import { InfoTip } from './InfoTip';
+import { ListConfig } from './ListConfig';
 
 const TABS: { id: DataTableTab; label: string }[] = [
   { id: 'columns', label: 'Columns' },
@@ -130,6 +131,92 @@ export function DataTablePanel() {
         {tab === 'color' && <ColorPanel bare fields={fields} valuesOf={valuesOf} rules={colorRules} onChange={(r) => patch({ colorRules: r })} onClose={() => {}} />}
       </div>
     </div>
+  );
+}
+
+/** The Data table's tools (Filter, Sort, Group, Columns, Color) for the toolbar of the table: the same bodies as the setup panel, given to the
+    popovers through ListConfig. Mounted with the table, so they are there whether or not the setup panel is up. */
+export function DataTableListConfig() {
+  const engine = useViewerEngine();
+  const models = useModelsStore((s) => s.models);
+  const tick = useIndexTick();
+  const store = useDataTableStore();
+  const { columns, setColumns, filters, filterMatch, groupRules, sortRules, colorRules, patch } = store;
+  const baseFields = useModelFields();
+  const twin = useTwin();
+  // With a twin model, every property of its objects can be a column, filter, group, sort key or colour too.
+  const fields = useMemo(() => {
+    if (!twin.active) return baseFields;
+    const keys = new Set<string>();
+    for (const e of engine.getIndexes().get(twin.b!.modelId)?.elements.values() ?? []) for (const k of Object.keys(e.props)) keys.add(k);
+    const own = baseFields.filter((f) => (f.group === ATTRIBUTES ? f.id !== `${ATTRIBUTES}.Model` : keys.has(f.id)));
+    return [...baseFields, ...own.map((f) => ({ ...f, id: TWIN_PREFIX + f.id, label: `Twin · ${f.label}`, group: `Twin · ${f.group ?? 'Other'}` }))];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [baseFields, twin.active, twin.b]);
+
+  // Twin layout of the Columns tab: each property with the main model's and the twin's checkbox.
+  const twinColumns = useMemo(() => {
+    if (!twin.active) return null;
+    const keysOf = (modelId: string) => {
+      const keys = new Set<string>();
+      for (const e of engine.getIndexes().get(modelId)?.elements.values() ?? []) for (const k of Object.keys(e.props)) keys.add(k);
+      return keys;
+    };
+    const a = keysOf(twin.a!.modelId);
+    const b = keysOf(twin.b!.modelId);
+    const isAttr = (id: string) => id.startsWith(`${ATTRIBUTES}.`);
+    const hasOwn = (id: string) => (isAttr(id) ? true : a.has(id));
+    const hasTwin = (id: string) => (isAttr(id) ? id !== `${ATTRIBUTES}.Model` : b.has(id));
+    const listed = baseFields.filter((f) => hasOwn(f.id) || hasTwin(f.id));
+    return { listed, hasOwn, twinOf: (id: string) => (hasTwin(id) ? TWIN_PREFIX + id : null) };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [twin.active, twin.a, twin.b, baseFields, tick]);
+
+  const valuesOf = useMemo(() => {
+    const cache = new Map<string, { value: string; count: number }[]>();
+    return (field: string) => {
+      let list = cache.get(field);
+      if (!list) {
+        const counts = new Map<string, number>();
+        const isTwin = field.startsWith(TWIN_PREFIX);
+        const key = isTwin ? field.slice(TWIN_PREFIX.length) : field;
+        const indexes = isTwin ? [engine.getIndexes().get(twin.b?.modelId ?? '')].filter((x) => !!x) : [...engine.getIndexes().values()];
+        for (const index of indexes) for (const e of index!.elements.values()) {
+          const v = elementValue(e, key);
+          counts.set(v, (counts.get(v) ?? 0) + 1);
+        }
+        list = [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
+        cache.set(field, list);
+      }
+      return list;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [engine, models, tick, twin.b]);
+
+  const badges = { columns: columns.length, filters: filters.filter((c) => conditionTest(c)).length, group: groupRules.length, sort: sortRules.length, color: colorRules.length };
+  return (
+    <ListConfig
+      id="datatable"
+      label="Data table"
+      badges={badges}
+      panels={{
+        columns: (
+          <ColumnsPanel
+            catalog={fields.map((f) => ({ id: f.id, label: f.label, group: f.group ?? 'Other' }))}
+            listed={twinColumns?.listed.map((f) => ({ id: f.id, label: f.label, group: f.group ?? 'Other' }))}
+            twin={twinColumns ? { titles: ['Main model', 'Twin'], hints: [twin.a!.name, twin.b!.name], twinOf: twinColumns.twinOf, hasOwn: twinColumns.hasOwn } : undefined}
+            views={[{ id: 'table', label: 'Data table', selected: columns, defaults: DEFAULT_COLUMNS, onChange: setColumns }]}
+            presets={[]}
+            groupOrder={[ATTRIBUTES]}
+            closedGroups={[]}
+          />
+        ),
+        filters: <FiltersTab fields={fields} filters={filters} match={filterMatch} onChange={(pp) => patch(pp)} />,
+        group: <GroupPanel bare fields={fields} rules={groupRules} onChange={(r) => patch({ groupRules: r })} onClose={() => {}} onCollapseAll={() => store.setGroupsCollapsed(true)} onExpandAll={() => store.setGroupsCollapsed(false)} />,
+        sort: <SortPanel bare fields={fields} rules={sortRules} onChange={(r) => patch({ sortRules: r })} onClose={() => {}} />,
+        color: <ColorPanel bare fields={fields} valuesOf={valuesOf} rules={colorRules} onChange={(r) => patch({ colorRules: r })} onClose={() => {}} />,
+      }}
+    />
   );
 }
 

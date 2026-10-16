@@ -186,7 +186,8 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
   const [scroll, setScroll] = useState({ top: 0, left: 0 });
   const [view, setView] = useState({ w: 900, h: 600 });
-  const [customPx, setCustomPx] = useState<number | null>(null);
+  // The zoomed-in / out scale (the buttons, Alt + wheel, Fit) is kept, so a workspace and a scene remember it.
+  const [customPx, setCustomPx] = usePersistedState<number | null>('schedule.zoomPx', null);
   const [tip, setTip] = useState<Tip | null>(null);
   /** A link's lag being dragged: which link and how far (px). */
   const [lagDrag, setLagDrag] = useState<{ key: string; dx: number } | null>(null);
@@ -366,7 +367,12 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   const xFor = (ms: number) => ((ms - rangeStartMs) / DAY_MS) * pxPerDay;
 
   // A preset picked from the toolbar drops any wheel-zoom/fit override.
-  useEffect(() => setCustomPx(null), [zoom]);
+  const lastZoom = useRef(zoom);
+  useEffect(() => {
+    if (lastZoom.current === zoom) return; // (not on opening: the kept scale stays)
+    lastZoom.current = zoom;
+    setCustomPx(null);
+  }, [zoom, setCustomPx]);
 
   // Keeps whatever date is under the pointer (or the viewport centre) fixed
   // while the scale changes. Captured during render — before the DOM commit

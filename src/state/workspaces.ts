@@ -42,6 +42,7 @@ const EVENT = 'ip-workspaces';
 const LIVE_KEY = 'ws.live';
 const VIEW_KEY = 'ws.view';
 const SESSION_KEY = 'ws.session';
+const ENTER_KEY = 'ws.enterDefault';
 
 // ---- IndexedDB: one layout snapshot per workspace ----
 
@@ -99,6 +100,8 @@ export const workspaces = {
 };
 
 let startView: { page: string; tab: string | null } | null | undefined;
+/** The app was just started (a new tab or window, not a reload): it opens on Home. */
+let freshStart = false;
 /** What the app opens on: the page and Programmes view of the workspace it was switched to, else where it was left (null: no workspaces yet). */
 export function initialView(): { page: string; tab: string | null } | null {
   if (IS_SATELLITE) return null;
@@ -109,6 +112,9 @@ export function initialView(): { page: string; tab: string | null } | null {
       if (raw) {
         startView = JSON.parse(raw);
         sessionStorage.removeItem(VIEW_KEY);
+      } else if (freshStart) {
+        // The app always starts on Home: from there a scene opens in its default workspace.
+        startView = { page: 'home', tab: null };
       } else {
         const live = localStorage.getItem(LIVE_KEY);
         if (live) startView = JSON.parse(live);
@@ -160,7 +166,8 @@ export function noteView(page: string, tab: string | null) {
   live = { page, tab };
   try { localStorage.setItem(LIVE_KEY, JSON.stringify(live)); } catch { /* not kept */ }
   const w = workspaces.active();
-  if (w && (w.page !== page || w.tab !== tab)) markDirty();
+  // (Home is the way into a workspace, not a page of one: being there changes nothing in it.)
+  if (w && page !== 'home' && (w.page !== page || w.tab !== tab)) markDirty();
 }
 
 /** Opens the windows of the workspace; the ones the browser blocks are kept for a click. */
@@ -182,6 +189,13 @@ const sameLayout = (a: Record<string, string>, b: Record<string, string>) => {
   const kb = Object.keys(b).sort();
   return ka.length === kb.length && ka.every((k, i) => k === kb[i] && a[k] === b[k]);
 };
+
+/** The page and view a workspace keeps: where you are, but never Home (that is where you pick a scene, not part of the workspace). */
+function workPage(view: { page: string; tab: string | null } | null, w: Workspace | null | undefined): { page: string; tab: string | null } {
+  if (view && view.page !== 'home') return view;
+  if (w && w.page !== 'home') return { page: w.page, tab: w.tab };
+  return { page: 'schedule', tab: 'gantt' };
+}
 
 /** Goes to a workspace: its layout keys are written back and the page reloads. */
 async function enter(id: string) {
@@ -207,14 +221,27 @@ export function startWorkspaces() {
   try {
     quietUntil = Date.now() + 2500;
     if (!cache) {
-      let start = 'inputs';
-      try { start = localStorage.getItem('app.startPage') || 'inputs'; } catch { /* the default */ }
-      const inputs: Workspace = { id: newId(), name: 'Inputs', page: 'inputs', tab: null, windows: [], fixed: true };
-      const custom: Workspace = { id: newId(), name: 'Custom', page: start === 'inputs' ? 'model' : start, tab: null, windows: [] };
-      const layout = captureLayoutKeys();
-      void putLayout(inputs.id, layout).catch(() => undefined);
-      void putLayout(custom.id, layout).catch(() => undefined);
-      write({ items: [inputs, custom], activeId: start === 'inputs' ? inputs.id : custom.id });
+      let start = 'home';
+      try { start = localStorage.getItem('app.startPage') || 'home'; } catch { /* the default */ }
+      const custom: Workspace = { id: newId(), name: 'Custom', page: start === 'home' || start === 'inputs' ? 'model' : start, tab: null, windows: [] };
+      void putLayout(custom.id, captureLayoutKeys()).catch(() => undefined);
+      write({ items: [custom], activeId: custom.id });
+    }
+    // A workspace saved while Home was showing opens on the Gantt (Home is not a page of a workspace).
+    if (cache && cache.items.some((w) => w.page === 'home' && !w.fixed)) {
+      write({ ...cache, items: cache.items.map((w) => (w.page === 'home' && !w.fixed ? { ...w, page: 'schedule', tab: w.tab ?? 'gantt' } : w)) });
+    }
+    // The Inputs / Home workspace of earlier versions is gone: Home is a page of its own now, not a workspace.
+    if (cache && cache.items.length > 1 && cache.items.some((w) => w.fixed)) {
+      const gone = cache.items.filter((w) => w.fixed);
+      const rest = cache.items.filter((w) => !w.fixed);
+      for (const w of gone) void delLayout(w.id).catch(() => undefined);
+      write({
+        ...cache,
+        items: rest,
+        activeId: rest.some((w) => w.id === cache!.activeId) ? cache.activeId : rest[0].id,
+        defaultId: rest.some((w) => w.id === cache!.defaultId) ? cache.defaultId : null,
+      });
     }
     // Any write to a layout key means the workspace has changes to save.
     const rawRemove = Storage.prototype.removeItem;
@@ -234,7 +261,6 @@ export function startWorkspaces() {
     // Closing the app closes the second windows (they open again with the workspace, as it was saved).
     window.addEventListener('pagehide', () => { if (!switching) closeSatelliteWindows(); });
 
-    // A new session (a new tab, or the app started again) goes to the default workspace, as it was saved.
     let fresh = false;
     try {
       fresh = !sessionStorage.getItem(SESSION_KEY);
@@ -242,13 +268,20 @@ export function startWorkspaces() {
     } catch {
       // not a new session as far as we know
     }
-    const def = cache?.defaultId ? cache.items.find((w) => w.id === cache!.defaultId) : undefined;
-    if (fresh && def) {
+    // Opening a scene from Home (asked for before the reload) goes to the default workspace, as it was saved: its page and second windows.
+    let enterDefault = false;
+    try {
+      enterDefault = sessionStorage.getItem(ENTER_KEY) === '1';
+      sessionStorage.removeItem(ENTER_KEY);
+    } catch {
+      // no
+    }
+    const def = enterDefault && cache?.defaultId ? cache.items.find((w) => w.id === cache!.defaultId) : undefined;
+    if (def) {
       void (async () => {
         const saved = await getLayout(def.id).catch(() => undefined);
         // Already in it, with the layout as saved: nothing to put back.
         if (cache!.activeId === def.id && saved && sameLayout(saved, captureLayoutKeys())) {
-          startView = { page: def.page, tab: def.tab };
           if (def.windows.length) openWindows(def.windows);
           return;
         }
@@ -256,6 +289,9 @@ export function startWorkspaces() {
       })();
       return;
     }
+    // The app starts on Home with no second windows: a scene opened from there goes to the default workspace and opens them.
+    freshStart = fresh && !enterDefault;
+    if (freshStart) return;
     // The second windows of the workspace the app opens in.
     window.setTimeout(() => {
       const w = workspaces.active();
@@ -274,6 +310,19 @@ const uniqueName = (list: List, base: string) => {
   return name;
 };
 
+/** Opening a scene from Home: the next load goes to the default workspace (its page, its Programmes view and its second windows), as a new session does.
+    False when no workspace is the default: then the app stays where it is. */
+export function openDefaultWorkspace(): boolean {
+  const def = cache?.defaultId ? cache.items.find((w) => w.id === cache!.defaultId) : undefined;
+  if (!def) return false;
+  try {
+    // The page it opens on (read before the start-up check below can say): the workspace's own page and Programmes view.
+    sessionStorage.setItem(VIEW_KEY, JSON.stringify({ page: def.page, tab: def.tab }));
+    sessionStorage.setItem(ENTER_KEY, '1');
+  } catch { /* it opens where it was */ }
+  return true;
+}
+
 export const workspaceActions = {
   /** Goes to a workspace: the page reloads with its saved layout. What you changed in the one you leave is lost unless you saved it. */
   async switchTo(id: string) {
@@ -287,7 +336,7 @@ export const workspaceActions = {
     const w = workspaces.active();
     if (!w) return;
     await putLayout(w.id, captureLayoutKeys());
-    const view = live ?? { page: w.page, tab: w.tab };
+    const view = workPage(live, w);
     const windows = satelliteWindows();
     dirty = false;
     write({ ...cache, items: cache.items.map((x) => (x.id === w.id ? { ...x, page: view.page, tab: view.tab, windows } : x)) });
@@ -298,7 +347,7 @@ export const workspaceActions = {
     if (!cache) return;
     const list = cache;
     const here = workspaces.active();
-    const view = live ?? { page: here?.page ?? 'model', tab: here?.tab ?? null };
+    const view = workPage(live, here);
     const ws: Workspace = { id: newId(), name: uniqueName(list, name.trim() || 'Workspace'), page: view.page, tab: view.tab, windows: satelliteWindows() };
     await putLayout(ws.id, captureLayoutKeys());
     dirty = false;

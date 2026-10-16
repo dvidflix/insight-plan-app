@@ -16,6 +16,10 @@ import modelGeometrySvg from '../icons/model-geometry-outline.svg?raw';
 import cameraSvg from '../icons/camera.svg?raw';
 import filterSvg from '../icons/filter.svg?raw';
 import pencilSvg from '../icons/pencil.svg?raw';
+import homeSvg from '../icons/home.svg?raw';
+import blocksFourSvg from '../icons/blocks-four-outline.svg?raw';
+import moreHorizontalSvg from '../icons/more-horizontal.svg?raw';
+import moreVertSvg from '../icons/more-vert.svg?raw';
 import chevronLeftSvg from '../icons/chevron-left.svg?raw';
 import chevronRightSvg from '../icons/chevron-right.svg?raw';
 import firstPageSvg from '../icons/first-page.svg?raw';
@@ -512,3 +516,8 @@ export const IconTotals = (p: SVGProps<SVGSVGElement>) => (
     <path d="M18 5H6l6.5 7L6 19h12" />
   </svg>
 );
+
+export const IconHome = svgIcon(homeSvg);
+export const IconBlocksFour = svgIcon(blocksFourSvg);
+export const IconMoreHorizontal = svgIcon(moreHorizontalSvg);
+export const IconMoreVert = svgIcon(moreVertSvg);

@@ -122,7 +122,7 @@ export const useInputDetailsStore = create<InputDetailsState>()(
           }
           return { values: next, fields: s.fields.includes(field) ? s.fields : [...s.fields, field], pending: [...new Set([...s.pending, ...keys])] };
         });
-        if (!FEATURES.seatable || !experimentalOn('seatableFiles')) return { ok: true, message: 'Kept here only (SeaTable file details are off: Settings > Experimental features).' };
+        if (!FEATURES.seatable || !experimentalOn('seatableFiles')) return { ok: true, message: '' }; // (kept here: nothing to say while SeaTable is off)
         try {
           const r = await updateFileDetails(files.map((name) => ({ name, field, values: clean })));
           set((s) => ({ pending: s.pending.filter((k) => !keys.includes(k)) }));

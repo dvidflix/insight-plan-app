@@ -36,7 +36,7 @@ export function BaselineMenu({ model }: { model: ScheduleModel }) {
   };
 
   return (
-    <span className="schedule-toolbar__edit-wbs" ref={boxRef}>
+    <span className="schedule-toolbar__edit-wbs baseline-menu" ref={boxRef}>
       <button type="button" className={`btn btn--small${chosen !== null ? ' primary' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)} title="Save the programme as a baseline, and choose the baseline it is shown against">
         Baselines ▾
       </button>

@@ -10,9 +10,8 @@ import { resolveRuleColor } from '../schedule/ColorPanel';
 import { applyFieldFilters, buildFilterFields } from '../../schedule/filterFields';
 import { useCalcFilterFields } from '../../schedule/calculatedColumns';
 import { spreadColumns } from '../../schedule/periodShare';
-import { IconTune } from '../icons';
 import { configFocusProps } from '../../state/listConfigStore';
-import { openConfig } from '../ListConfig';
+import { ListTools } from '../ListConfig';
 import { useTasksSettingsStore } from '../../state/tasksSettingsStore';
 
 export type TasksMode = 'active' | 'starting' | 'finishing';
@@ -120,9 +119,7 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
           <span className="tasks__count" title={`${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} in this period`}>· {tasks.length.toLocaleString()}</span>
         </div>
         <div className="tasks__tools">
-          <button type="button" className="icon-btn" aria-label="Tasks settings" title="Set up the Tasks: columns, filters, group, sort, colour" onClick={() => openConfig('tasks')}>
-            <IconTune />
-          </button>
+          <ListTools id="tasks" iconOnly />
           <div className="heat__tabs" role="tablist">
             {MODES.map((m) => (
               <button key={m.id} type="button" role="tab" aria-selected={mode === m.id} title={m.title} className={mode === m.id ? 'active' : ''} onClick={() => setMode(m.id)}>{m.label}</button>

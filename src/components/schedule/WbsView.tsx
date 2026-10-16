@@ -1,11 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { LevelStepper } from './LevelStepper';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { buildLoading } from '../../schedule/resourceLoading';
 import { applyVirtualResources, virtualCatalog } from '../../schedule/virtualResources';
 import { usePersistedState } from '../../utils/persistedState';
 import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { IconArrowDown, IconArrowUp, IconDownload } from '../icons';
-import { ToolbarSlot } from './ToolbarSlot';
+import { ToolbarLeftSlot, ToolbarSlot } from './ToolbarSlot';
+import { OverflowMenu, ToolPopover } from '../TablePopovers';
+import { ColumnsPanel } from './ColumnsPanel';
+import { IconColumns } from '../icons';
 import { useScheduleStore } from '../../state/scheduleStore';
 import { inUnloadedWbs, programmeKey, useUnloadedWbsStore } from '../../state/unloadedWbsStore';
 import { ResourceWbsTable, WBS_NAME_COL, wbsColumns, type WbsTableHandle, type WbsTableState } from './ResourceWbsTable';
@@ -30,8 +34,6 @@ export function WbsView({ model, activities, wbsPalette }: WbsViewProps) {
   const [widths, setWidths] = usePersistedState<Record<string, number>>('schedule.wbsColumnWidths', {});
   const [level, setLevel] = usePersistedState<string>('schedule.wbsLevel', '');
   const [query, setQuery] = useState('');
-  const [pickerOpen, setPickerOpen] = useState(false);
-  const pickerRef = useRef<HTMLSpanElement>(null);
   // WBS branches unloaded from the programme (see unloadedWbsStore): still listed here, greyed, so they can be loaded again.
   const key = programmeKey(model);
   const unloaded = useUnloadedWbsStore((s) => s.byProgramme[key]) ?? NONE;
@@ -60,17 +62,17 @@ export function WbsView({ model, activities, wbsPalette }: WbsViewProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activities.length]);
 
-  useEffect(() => {
-    if (!pickerOpen) return;
-    const away = (e: MouseEvent) => {
-      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) setPickerOpen(false);
-    };
-    document.addEventListener('mousedown', away);
-    return () => document.removeEventListener('mousedown', away);
-  }, [pickerOpen]);
-
   return (
     <div className="wbs-view">
+      <ToolbarLeftSlot>
+        <LevelStepper
+          value={level}
+          onChange={(v) => {
+            setLevel(v);
+            ref.current?.setLevel(v === '' ? null : Number(v));
+          }}
+        />
+      </ToolbarLeftSlot>
       <ToolbarSlot>
         <input
           className="filterbar__search"
@@ -86,49 +88,27 @@ export function WbsView({ model, activities, wbsPalette }: WbsViewProps) {
         </div>
         <ExpandCollapseToggle className="btn btn--small" onCollapse={() => { setLevel(''); ref.current?.collapseAll(); }} onExpand={() => { setLevel(''); ref.current?.expandAll(); }} />
         {state.hasOrder && <button type="button" className="btn btn--small" onClick={() => ref.current?.resetOrder()} title="Back to the programme's WBS order">Reset order</button>}
-        <span className="rv-filter" ref={pickerRef}>
-          <button type="button" className="btn btn--small" aria-expanded={pickerOpen} onClick={() => setPickerOpen((o) => !o)} title="Choose the columns shown">
-            Columns{hidden.length ? ` (${optional.length - hidden.filter((h) => optional.some((c) => c.id === h)).length}/${optional.length})` : ''} ▾
-          </button>
-          {pickerOpen && (
-            <div className="rv-filter__pop rv-filter__pop--left" role="dialog" aria-label="Columns">
-              <div className="rv-filter__list">
-                {optional.map((c) => (
-                  <label key={c.id} className="rv-filter__item">
-                    <input type="checkbox" checked={!hidden.includes(c.id)} onChange={() => setHidden(hidden.includes(c.id) ? hidden.filter((h) => h !== c.id) : [...hidden, c.id])} />
-                    <span className="rv-filter__label" title={c.label}>{c.label}</span>
-                  </label>
-                ))}
-              </div>
-              <div className="rv-result__actions">
-                <button type="button" className="mini-btn" onClick={() => setHidden([])}>Show all</button>
-                <button type="button" className="mini-btn" onClick={() => setHidden(optional.map((c) => c.id))}>WBS only</button>
-                <button type="button" className="mini-btn" onClick={() => setWidths({})}>Reset widths</button>
-              </div>
-            </div>
-          )}
+        <span className="tp-row">
+          <ToolPopover icon={<IconColumns width={16} height={16} />} label="Columns" width={380}>
+            <ColumnsPanel
+              catalog={optional.map((c) => ({ id: c.id, label: c.label, group: 'WBS columns' }))}
+              views={[{ id: 'wbs', label: 'WBS', selected: optional.filter((c) => !hidden.includes(c.id)).map((c) => c.id), defaults: optional.map((c) => c.id), onChange: (ids) => setHidden(optional.filter((c) => !ids.includes(c.id)).map((c) => c.id)) }]}
+              presets={[
+                { id: 'all', label: 'All', ids: optional.map((c) => c.id) },
+                { id: 'wbs', label: 'WBS only', ids: [] },
+              ]}
+              groupOrder={['WBS columns']}
+              closedGroups={[]}
+            />
+          </ToolPopover>
         </span>
-        <div className="groupby-panel">
-          <span className="groupby-panel__title">Level:</span>
-          <select
-            value={level}
-            onChange={(e) => {
-              setLevel(e.target.value);
-              ref.current?.setLevel(e.target.value === '' ? null : Number(e.target.value));
-            }}
-            title="Open the WBS down to this level (All: everything open)"
-          >
-            <option value="">All</option>
-            {[0, 1, 2, 3, 4, 5, 6, 7, 8].map((n) => <option key={n} value={String(n)}>{n}</option>)}
-          </select>
-        </div>
         {unloaded.length > 0 && (
           <button type="button" className="btn btn--small" onClick={() => clearUnloaded(key)} title={`${unloaded.length} WBS unloaded from this programme (their activities are out of every view). Click to load them all again.`}>
             {unloaded.length} unloaded · Load all
           </button>
         )}
         <span style={{ flex: 1 }} />
-        <button type="button" className="icon-btn" onClick={() => ref.current?.exportXlsx()} title="Export to Excel as shown: the WBS tree with its columns and order, grouped (outline levels), collapsed levels folded" aria-label="Export to Excel"><IconDownload /></button>
+        <OverflowMenu items={[{ label: 'Export to Excel', icon: <IconDownload width={16} height={16} />, onClick: () => ref.current?.exportXlsx(), title: 'Export to Excel as shown: the WBS tree with its columns and order, grouped (outline levels), collapsed levels folded' }]} />
       </ToolbarSlot>
       <ResourceWbsTable
         ref={ref}

@@ -161,7 +161,7 @@ export function SidePaneDock({ id, label, children }: { id: DockPanelId; label: 
 export function SettingsDock() {
   const timeline = useSidePaneStore((s) => s.timelineSettings);
   return (
-    <DockPanel id="settings" label="Settings">
+    <DockPanel id="settings" label="General settings">
       <div className="config-panel__body side-pane__settings" style={{ flex: 1, minHeight: 0 }}><SettingsPanel timeline={timeline} /></div>
     </DockPanel>
   );

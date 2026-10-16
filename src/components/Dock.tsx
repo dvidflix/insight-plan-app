@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentTy
 import { createPortal } from 'react-dom';
 import { activeTargetId, useListConfigStore } from '../state/listConfigStore';
 import { activeOn, isShowing, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus } from './icons';
+import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus, IconFolder } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
 export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -33,6 +33,7 @@ export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement
   fourD: IconSchema,
   planning: IconList,
   dictionary: IconTune,
+  files: IconFolder,
   cfgColumns: IconColumns,
   cfgFilters: IconFilter,
   cfgGroup: IconGroup,
@@ -68,6 +69,15 @@ export function DockPanel({ id, label, shown, setShown, host = 'viewer', childre
   return keep ? createPortal(children, parked) : null;
 }
 
+/** A panel's own toolbar: in the bottom dock it joins the tabs in one header row, elsewhere it stays at the top of the panel. */
+export function DockToolbar({ id, children }: { id: DockPanelId; children: ReactNode }) {
+  const side = useDockStore((s) => { const p = s.placement[id] ?? DOCK_DEFAULTS[id]; return p === 'closed' ? null : p; });
+  const here = useDockStore((s) => !!side && activeOn(s, side) === id);
+  const slot = useDockStore((s) => (side === 'bottom' ? s.tools.bottom : null));
+  if (side === 'bottom' && here && slot) return createPortal(children, slot);
+  return <>{children}</>;
+}
+
 /** A tiny picture of a window with one side filled: where a panel goes. */
 export function SideIcon({ side, size = 16 }: { side: DockSide | 'main'; size?: number }) {
   const fill = side === 'main' ? { x: 3, y: 3, w: 10, h: 10 } : side === 'left' ? { x: 2, y: 2, w: 5, h: 12 } : side === 'right' ? { x: 9, y: 2, w: 5, h: 12 } : { x: 2, y: 9, w: 12, h: 5 };
@@ -79,7 +89,7 @@ export function SideIcon({ side, size = 16 }: { side: DockSide | 'main'; size?: 
   );
 }
 
-const LIMITS: Record<DockSide, [number, number]> = { left: [260, 1100], right: [260, 1100], bottom: [140, 720] };
+const LIMITS: Record<DockSide, [number, number]> = { left: [260, 1100], right: [260, 1100], bottom: [300, 720] };
 
 /** One dock: its tabs, a move / close menu, and the body its panels are drawn into. Nothing when it holds no panel. */
 export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?: DockHost }) {
@@ -90,8 +100,9 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
   const size = useDockStore((s) => s.size[side]);
   const folded = useDockStore((s) => s.folded[side]);
   const setBody = useDockStore((s) => s.setBody);
-  const tabs = useMemo(() => panelsOn({ entries, placement }, side), [entries, placement, side]);
-  const active = activeOn({ entries, placement, active: activeRaw }, side);
+  const order = useDockStore((s) => s.order);
+  const tabs = useMemo(() => panelsOn({ entries, placement, order }, side), [entries, placement, order, side]);
+  const active = activeOn({ entries, placement, active: activeRaw, order }, side);
   const drag = useRef<{ from: number; size: number } | null>(null);
 
   // Tabs that don't fit with their names are drawn as icons (names stay as tooltips). The width the named tabs
@@ -112,15 +123,18 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
   };
   const [compact, setCompact] = useState(false);
   const [stacked, setStacked] = useState(false);
+  // Not even the icons fit in the row of their own: the tabs become a dropdown box.
+  const [dropdown, setDropdown] = useState(false);
   const tabKey = tabs.map((t) => t.id + t.label).join('|');
   useLayoutEffect(() => {
     namedWidth.current = 0;
     iconWidth.current = 0;
     toolsWidth.current = 0;
-    if (!compact && !stacked) return;
+    if (!compact && !stacked && !dropdown) return;
     if (spend()) {
       setCompact(false);
       setStacked(false);
+      setDropdown(false);
     }
     // Starts again from the names only when the tabs change; what it reads is the state at that moment.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -135,15 +149,22 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
       if (!compact) namedWidth.current = el.scrollWidth;
       // The tools' width is taken while they share the row: stacked, they have a row of their own and measuring then would
       // make the room look bigger, so the layout would flip back and forth for ever.
-      if (!stacked) toolsWidth.current = toolsEl.current?.offsetWidth ?? toolsWidth.current;
+      // (The fold button stretches to fill the row, so the width is that of the buttons at their own size, not the strip's.)
+      if (!stacked && toolsEl.current) {
+        const btns = Array.from(toolsEl.current.querySelectorAll<HTMLElement>('button:not(.dock__tool--fold)'));
+        const one = btns[0]?.offsetWidth || 26;
+        toolsWidth.current = (btns.length + 1) * one;
+      }
       const room = head.clientWidth - toolsWidth.current - 16;
       if (compact && !stacked) iconWidth.current = el.scrollWidth;
       const nextCompact = namedWidth.current > room;
       const nextStacked = compact && iconWidth.current > room;
-      if (nextCompact === compact && nextStacked === stacked) return;
+      const nextDropdown = nextStacked && iconWidth.current > head.clientWidth - 16;
+      if (nextCompact === compact && nextStacked === stacked && nextDropdown === dropdown) return;
       if (!spend()) return;
       setCompact(nextCompact);
       setStacked(nextStacked);
+      setDropdown(nextDropdown);
     };
     measure();
     const ro = new ResizeObserver(measure);
@@ -194,21 +215,30 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
   return (
     <>
       {side !== 'left' && handle}
-      <aside className={`config-panel seq-panel dock dock--${side}`} style={horizontal ? { height: size, width: 'auto', marginTop: 0 } : { width: size, minWidth: 0 }}>
+      <aside data-active={active ?? undefined} className={`config-panel seq-panel dock dock--${side}`} style={horizontal ? { height: size, width: 'auto', marginTop: 0 } : { width: size, minWidth: 0 }}>
         <div className={`filter-sidebar-header seq-righthead dock__head${stacked ? ' is-stacked' : ''}`} ref={headEl}>
           <div className={`config-tabs seq-righttabs${compact ? ' is-compact' : ''}`} role="tablist" ref={tabsEl}>
-            {tabs.map((t) => {
-              const TabIcon = TAB_ICONS[t.id];
-              return (
-                <button key={t.id} type="button" role="tab" aria-selected={active === t.id} aria-label={t.label} title={compact ? `${t.label} (drag to the left, bottom or right to move it)` : 'Drag to the left, bottom or right to move it'} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => store().setDragging(t.id), 0); }} onDragEnd={() => store().setDragging(null)} className={`config-tab${active === t.id ? ' active' : ''}`} onClick={() => store().select(side, t.id)}>
-                  {compact && TabIcon ? <TabIcon className="dock__tabicon" /> : t.label}
-                </button>
-              );
-            })}
+            {dropdown ? (
+              <select className="dock__tabselect" value={active ?? ''} onChange={(e) => store().select(side, e.target.value as typeof tabs[number]['id'])} aria-label="Panel">
+                {tabs.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
+              </select>
+            ) : (
+              <>
+              {tabs.map((t) => {
+                const TabIcon = TAB_ICONS[t.id];
+                return (
+                  <button key={t.id} type="button" role="tab" aria-selected={active === t.id} aria-label={t.label} title={compact ? `${t.label} (drag to the left, bottom or right to move it)` : 'Drag to the left, bottom or right to move it'} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => store().setDragging(t.id), 0); }} onDragEnd={() => store().setDragging(null)} className={`config-tab${active === t.id ? ' active' : ''}`} onClick={() => store().select(side, t.id)}>
+                    {compact && TabIcon ? <TabIcon className="dock__tabicon" /> : t.label}
+                  </button>
+                );
+              })}
+              </>
+            )}
           </div>
+          <span className="dock__panel-tools" ref={(el) => store().setTools(side, el)} />
           <span className="dock__tools" ref={toolsEl}>
-            <button type="button" className="icon-btn dock__tool" onClick={() => store().setFolded(side, true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: side === 'right' ? 'rotate(180deg)' : side === 'left' ? undefined : 'rotate(-90deg)' }} /></button>
-            {active && <button type="button" className="icon-btn dock__tool" onClick={() => store().close(active)} title={`Close ${entries[active]?.label ?? 'the panel'} (the Panels menu brings it back)`} aria-label="Close panel"><IconClose /></button>}
+            {active !== 'files' && <button type="button" className="icon-btn dock__tool dock__tool--fold" onClick={() => store().setFolded(side, true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: side === 'right' ? 'rotate(180deg)' : side === 'left' ? undefined : 'rotate(-90deg)' }} /></button>}
+            {active && active !== 'files' && <button type="button" className="icon-btn dock__tool" onClick={() => store().close(active)} title={`Close ${entries[active]?.label ?? 'the panel'} (the Panels menu brings it back)`} aria-label="Close panel"><IconClose /></button>}
           </span>
         </div>
         <div className="dock__body" ref={(el) => { if (el) setBody(side, el); }} />

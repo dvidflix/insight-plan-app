@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useDismiss } from '../components/useDismiss';
 import { createPortal } from 'react-dom';
 import { ActivityTable, type ActivityTableHandle } from '../components/schedule/ActivityTable';
 import { GanttChart, ZOOMS, type GanttHandle, type Zoom } from '../components/schedule/GanttChart';
 import { ResourcesView } from '../components/schedule/ResourcesView';
 import { WbsView } from '../components/schedule/WbsView';
-import { FullscreenButton } from '../components/ViewerToolbar';
+import { toggleFullscreen, useFullscreenStore } from '../components/ViewerToolbar';
+import { OverflowMenu } from '../components/TablePopovers';
 import { ChecksView } from '../components/schedule/ChecksView';
 import { CalendarHeatmap, type DayFilter } from '../components/schedule/CalendarHeatmap';
 import { ExplorerView, type ExplorerPanelDef } from '../components/schedule/ExplorerView';
@@ -51,14 +51,17 @@ import { drivingPath } from '../schedule/drivingPath';
 import { clearPendingFilters, peekPendingFilters, useScheduleLayoutsStore } from '../state/scheduleLayoutsStore';
 import type { Activity, ActivityCodeTypeDef, ScheduleModel } from '../schedule/types';
 import { mergeResourceCatalogs } from '../schedule/mergeSchedules';
-import { IconCopy, IconDownload, IconGear, IconUndo, IconRedo, IconRelated } from '../components/icons';
+import { IconCopy, IconDownload, IconFullscreen, IconUndo, IconRedo, IconRelated } from '../components/icons';
 import { DockPanel } from '../components/Dock';
 import { hasLinkedWindows, onWindowMessage, sendToWindows } from '../state/windowSync';
 import { useSelectionSync } from '../schedule/useSelectionSync';
-import { ViewPicker, type PageItem } from '../components/ViewPicker';
+import { useTableSearchStore } from '../state/tableSearchStore';
+import { useHeaderSlotStore } from '../state/headerSlotStore';
+import { ListTools } from '../components/ListConfig';
+import { GlobalSearch } from '../components/GlobalSearch';
+import { PanelsButton, ViewPicker, type PageItem } from '../components/ViewPicker';
 import { DockGantt } from '../components/sequence/DockGantt';
-import { ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
-import { EditableStatus } from '../components/schedule/EditableStatus';
+import { ToolbarLeftSlotContext, ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditTools } from '../components/schedule/EditTools';
 import { LevelStepper } from '../components/schedule/LevelStepper';
 import { PlannerView } from '../components/schedule/PlannerView';
@@ -224,14 +227,23 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
   const [layoutsOpen, setLayoutsOpen] = usePersistedState('programmes.layoutsOpen', false);
   const activityTableRef = useRef<ActivityTableHandle>(null);
   const ganttRef = useRef<GanttHandle>(null);
-  const [search, setSearch] = useState('');
+  // The words the table is narrowed to come from the search box in the top bar ("Filter this table").
+  const search = useTableSearchStore((t) => t.query);
   // Layouts and the name/code search belong to the activity views; the other
   // views put their own tools in the toolbar slot instead.
+  const fullscreenOn = useFullscreenStore((st) => st.on);
+  // The toolbar runs across the whole width above the docks (the header of the viewer workspace), while this page shows.
+  const headerSlot = useHeaderSlotStore((h) => h.el);
   const listTools = tab === 'activities' || tab === 'gantt' || tab === 'explorer' || tab === 'planner';
+  useEffect(() => {
+    useTableSearchStore.getState().setAvailable(listTools && active);
+    return () => useTableSearchStore.getState().setAvailable(false);
+  }, [listTools, active]);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
+  const [leftSlot, setLeftSlot] = useState<HTMLElement | null>(null);
   // The zoom and view settings live at the right of the status bar (App's footer holds the spot).
+  // The zoom and the view settings sit in the toolbar, on the right, before the table tools.
   const [statusSlot, setStatusSlot] = useState<HTMLElement | null>(null);
-  useEffect(() => { setStatusSlot(document.getElementById('schedule-statusbar-tools')); });
   useProgrammeHistoryKeys();
   const undoLabel = useProgrammeHistory((h) => h.undos[h.undos.length - 1]?.label ?? null);
   const redoLabel = useProgrammeHistory((h) => h.redos[h.redos.length - 1]?.label ?? null);
@@ -244,6 +256,19 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
     if (hasLinkedWindows()) sendToWindows('activity', id);
   };
   useEffect(() => onWindowMessage<string | null>('activity', (id) => setSelectedIdLocal(id)), []);
+  // The search box (Ctrl K) takes you to an activity: its programme, the Gantt, the row picked and in view.
+  useEffect(() => {
+    const go = (e: Event) => {
+      const { id, scheduleId } = (e as CustomEvent<{ id: string; scheduleId?: string }>).detail;
+      if (scheduleId) useScheduleStore.setState({ selectedId: scheduleId });
+      setSelectedIdLocal(id);
+      onTabChange?.('gantt');
+      window.setTimeout(() => ganttRef.current?.scrollToRow(id), 250);
+    };
+    window.addEventListener('ip-goto-activity', go);
+    return () => window.removeEventListener('ip-goto-activity', go);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   // Curtain: filters fade rows back instead of removing them. Driving path: the chain driving one activity.
   const [curtain, setCurtain] = usePersistedState('schedule.curtain', false);
   const [drivingTarget, setDrivingTarget] = useState<string | null>(null);
@@ -260,8 +285,6 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
   const [dictionaryOpen, setDictionaryOpen] = usePersistedState('programmes.dictionaryOpen', false);
   const [ganttPanelOpen, setGanttPanelOpen] = usePersistedState('programmes.ganttPanelOpen', false);
   const [zoom, setZoom] = usePersistedState<Zoom>('schedule.zoom', 'week');
-  const [ganttSettingsOpen, setGanttSettingsOpen] = useState(false);
-  const settingsRef = useDismiss<HTMLDivElement>(ganttSettingsOpen, () => setGanttSettingsOpen(false));
   const [showGanttLinks, setShowGanttLinks] = usePersistedState('schedule.showGanttLinks', false);
   const [showGanttCritical, setShowGanttCritical] = usePersistedState('schedule.showGanttCritical', true);
   const [showGanttBaseline, setShowGanttBaseline] = usePersistedState('schedule.showGanttBaseline', false);
@@ -473,97 +496,95 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
     },
   ];
 
+  const toolbarEl = (
+        <div className="filterbar schedule-toolbar">
+          <div className="schedule-toolbar__left">
+            <ViewPicker named pages={pages} page="schedule" onPage={(id) => (onPage ? onPage(id) : undefined)} tab={tab} onTab={(t) => onTabChange?.(t)}
+              hideSearch
+            afterView={<>
+      <span ref={setStatusSlot} className="schedule-toolbar__view" />
+      <span ref={setLeftSlot} className="groupby-panel" style={tab === 'wbs' ? undefined : { display: 'none' }} />
+        {(tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
+          <div className="groupby-panel">
+            {tab === 'explorer' && (
+              <>
+                <span className="groupby-panel__title">Set up:</span>
+                <select value={explorerView} onChange={(e) => setExplorerView(e.target.value as ListView)} title="Which view the side pane (columns, filters, group, sort, colour) and the level below set up">
+                  <option value="table">Activity table</option>
+                  <option value="gantt">Gantt</option>
+                </select>
+              </>
+            )}
+            <LevelStepper value={cfg.groupLevel} onChange={cfg.setGroupLevel} />
+          </div>
+        )}
+            {/* The planning tools, in a menu, after the WBS level and the Zoom: they follow them instead of sitting in a place of their own. */}
+            {schedules.length === 1 && schedules[0].editable && tab !== 'planner' && (
+              <EditTools
+                model={schedules[0]}
+                selectedId={selectedId}
+                onSelect={(id) => setSelectedId(id)}
+                onNote={(text) => { setShortcutNote(text); window.setTimeout(() => setShortcutNote((cur) => (cur === text ? null : cur)), 5000); }}
+                keys={tab === 'activities' || tab === 'gantt'}
+              />
+            )}
+              </>}
+            />
+          </div>
+  
+          <div className="schedule-toolbar__right">
+            {baselineBase && <BaselineMenu model={baselineBase} />}
+            {listTools && (
+              <>
+              <ListTools id="programmes" />
+              </>
+            )}
+            <div ref={setToolbarSlot} className="schedule-toolbar__slot" />
+            {dayFilter && (
+              <button className="btn btn--small" type="button" onClick={() => setDayFilter(null)} title="Clear day filter">
+                Day: {dayFilterLabel} ✕
+              </button>
+            )}
+            {drivingTarget && (
+              <button className="btn btn--small" type="button" onClick={() => setDrivingTarget(null)} title="Clear the driving path">
+                Driving path to {model.activities.find((x) => x.id === drivingTarget)?.code ?? ''} ✕
+              </button>
+            )}
+            {/* Undo, copy, download, selection sync and full screen: one menu. */}
+            <OverflowMenu
+              items={[
+                { label: 'View', heading: true, hidden: !listTools, onClick: () => {} },
+                { label: 'Relationship links', checked: showGanttLinks, hidden: tab !== 'gantt', onClick: () => setShowGanttLinks(!showGanttLinks) },
+                { label: 'Critical path', checked: showGanttCritical, hidden: tab !== 'gantt', onClick: () => setShowGanttCritical(!showGanttCritical), title: 'Highlight the critical path' },
+                { label: 'Baseline bars', checked: showGanttBaseline, hidden: tab !== 'gantt', onClick: () => setShowGanttBaseline(!showGanttBaseline), title: 'Show the target (baseline) bars' },
+                { label: 'Names beside bars', checked: showGanttLabels, hidden: tab !== 'gantt', onClick: () => setShowGanttLabels(!showGanttLabels) },
+                { label: 'Curtain', checked: curtain, hidden: !listTools, onClick: () => setCurtain(!curtain), title: 'Filters and the driving path fade the other rows back instead of removing them' },
+                { label: 'Totals', icon: <span className="tp__glyph" aria-hidden>Σ</span>, checked: showTotals, hidden: !listTools, onClick: () => setShowTotals(!showTotals), title: 'Totals row and group subtotals; pick how each column sums up in the totals row' },
+                { label: '-3', separator: true, onClick: () => {} },
+              { label: 'Copy rows', icon: <IconCopy width={16} height={16} />, hidden: !(tab === 'gantt' || tab === 'activities'), onClick: copyGantt, title: 'Copy the rows to the clipboard to paste into Excel. Change them there, copy them back and paste them here (Ctrl+V in the Gantt): rows are matched by Activity ID and only what changed is set' },
+                { label: 'Download CSV', icon: <IconDownload width={16} height={16} />, hidden: tab !== 'activities', onClick: () => activityTableRef.current?.download() },
+                { label: 'Export to Excel', icon: <IconDownload width={16} height={16} />, hidden: tab !== 'gantt', onClick: exportGantt, title: 'Export the Gantt to Excel as it is shown: its columns, grouping, subtotals and folded groups' },
+                { label: '-4', separator: true, onClick: () => {} },
+                { label: 'Undo', icon: <IconUndo width={16} height={16} />, disabled: !undoLabel, onClick: () => undo(), title: undoLabel ? 'Undo: ' + undoLabel + ' (Ctrl+Z)' : 'Nothing to undo' },
+                { label: 'Redo', icon: <IconRedo width={16} height={16} />, disabled: !redoLabel, onClick: () => redo(), title: redoLabel ? 'Redo: ' + redoLabel + ' (Ctrl+Y)' : 'Nothing to redo' },
+                { label: '-2', separator: true, onClick: () => {} },
+                { label: 'Sync with 3D', icon: <IconRelated width={16} height={16} />, checked: selectionSync, onClick: () => setSelectionSync(!selectionSync), title: 'Picking activities selects their objects in the 3D model, and objects picked there pick their activities' },
+                { label: fullscreenOn ? 'Exit full screen' : 'Full screen', icon: <IconFullscreen width={16} height={16} />, onClick: toggleFullscreen },
+              ]}
+            />
+            <GlobalSearch pages={pages} onPage={(id) => (onPage ? onPage(id) : undefined)} onTab={(t) => onTabChange?.(t)} />
+          <PanelsButton />
+          </div>
+        </div>
+  );
+
   return (
     <ToolbarSlotContext.Provider value={toolbarSlot}>
+    <ToolbarLeftSlotContext.Provider value={leftSlot}>
     <div className="page">
       {error && <div style={{ color: 'var(--danger)', padding: '0 12px' }}>{error}</div>}
       {shortcutNote && <div className="shortcut-note" role="status">{shortcutNote}</div>}
-      <div className="filterbar schedule-toolbar">
-        <div className="schedule-toolbar__left">
-          <ViewPicker named pages={pages} page="schedule" onPage={(id) => (onPage ? onPage(id) : undefined)} tab={tab} onTab={(t) => onTabChange?.(t)} />
-          {listTools && (
-            <>
-            <input
-              className="filterbar__search"
-              type="search"
-              placeholder="Search…"
-              title="Search anything: ID, name, codes, UDFs, resources"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-            />
-            </>
-          )}
-          {(tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
-            <div className="groupby-panel">
-              {tab === 'explorer' && (
-                <>
-                  <span className="groupby-panel__title">Set up:</span>
-                  <select value={explorerView} onChange={(e) => setExplorerView(e.target.value as ListView)} title="Which view the side pane (columns, filters, group, sort, colour) and the level below set up">
-                    <option value="table">Activity table</option>
-                    <option value="gantt">Gantt</option>
-                  </select>
-                </>
-              )}
-              <span className="groupby-panel__title">Level:</span>
-              <LevelStepper value={cfg.groupLevel} onChange={cfg.setGroupLevel} />
-            </div>
-          )}
-          {/* The planning tools, in a menu, next to the level: they follow it instead of sitting in a place of their own. */}
-          {schedules.length === 1 && schedules[0].editable && tab !== 'planner' && (
-            <EditTools
-              model={schedules[0]}
-              selectedId={selectedId}
-              onSelect={(id) => setSelectedId(id)}
-              onNote={(text) => { setShortcutNote(text); window.setTimeout(() => setShortcutNote((cur) => (cur === text ? null : cur)), 5000); }}
-              keys={tab === 'activities' || tab === 'gantt'}
-            />
-          )}
-          <div ref={setToolbarSlot} className="schedule-toolbar__slot" />
-          {dayFilter && (
-            <button className="btn btn--small" type="button" onClick={() => setDayFilter(null)} title="Clear day filter">
-              Day: {dayFilterLabel} ✕
-            </button>
-          )}
-        </div>
-
-        <div className="schedule-toolbar__right">
-          <div className="schedule-toolbar__history">
-            <button type="button" className="btn btn--small" disabled={!undoLabel} onClick={() => undo()} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><IconUndo width={16} height={16} /></button>
-            <button type="button" className="btn btn--small" disabled={!redoLabel} onClick={() => redo()} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><IconRedo width={16} height={16} /></button>
-            <EditableStatus />
-          </div>
-          {baselineBase && <BaselineMenu model={baselineBase} />}
-          {drivingTarget && (
-            <button className="btn btn--small" type="button" onClick={() => setDrivingTarget(null)} title="Clear the driving path">
-              Driving path to {model.activities.find((x) => x.id === drivingTarget)?.code ?? ''} ✕
-            </button>
-          )}
-          {tab === 'activities' && (
-            <button
-              className="icon-btn"
-              type="button"
-              onClick={() => activityTableRef.current?.download()}
-              title="Download as CSV"
-            >
-              <IconDownload />
-            </button>
-          )}
-          {(tab === 'gantt' || tab === 'activities') && (
-            <button className="icon-btn" type="button" onClick={copyGantt} title="Copy the rows to the clipboard to paste into Excel. Change them there, copy them back and paste them here (Ctrl+V in the Gantt): rows are matched by Activity ID and only what changed is set">
-              <IconCopy />
-            </button>
-          )}
-          {tab === 'gantt' && (
-            <button className="icon-btn" type="button" onClick={exportGantt} title="Export the Gantt to Excel as it is shown: its columns, grouping, subtotals and folded groups">
-              <IconDownload />
-            </button>
-          )}
-          <button className={`icon-btn${selectionSync ? ' is-on' : ''}`} type="button" aria-pressed={selectionSync} onClick={() => setSelectionSync(!selectionSync)} title={selectionSync ? 'Selection sync on: picking activities selects their objects in the 3D model, and objects picked there pick their activities. Click to turn off.' : 'Selection sync off: click to pick activities and 3D objects together'} aria-label="Selection sync with the 3D model">
-            <IconRelated width={16} height={16} />
-          </button>
-          <FullscreenButton />
-        </div>
-      </div>
+      {headerSlot && active ? createPortal(toolbarEl, headerSlot) : toolbarEl}
 
       <div className="page-body">
         {/* Layouts, Activity details, Predecessors and Successors are panels: each sits left, bottom or right, as the Panels menu says. */}
@@ -580,16 +601,16 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
               ) : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its details.</div>}
             </DockPanel>
             <DockPanel id="links" label="Predecessors & successors" shown={linksOpen} setShown={setLinksOpen}>
-              {selected ? <LinksPane activity={selected} model={model} onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its links.</div>}
+              {selected ? <LinksPane activity={selected} model={model} dockId="links" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its links.</div>}
             </DockPanel>
             <DockPanel id="planning" label="Resources & codes" shown={planningOpen} setShown={setPlanningOpen}>
               <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><ActivityPlanningPanel model={model} selectedId={selectedId} onNote={flash} /></div>
             </DockPanel>
             <DockPanel id="predecessors" label="Predecessors" shown={predsOpen} setShown={setPredsOpen}>
-              {selected ? <LinksPane activity={selected} model={model} kind="predecessor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its predecessors.</div>}
+              {selected ? <LinksPane activity={selected} model={model} kind="predecessor" dockId="predecessors" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its predecessors.</div>}
             </DockPanel>
             <DockPanel id="successors" label="Successors" shown={succsOpen} setShown={setSuccsOpen}>
-              {selected ? <LinksPane activity={selected} model={model} kind="successor" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its successors.</div>}
+              {selected ? <LinksPane activity={selected} model={model} kind="successor" dockId="successors" onSelect={handleSelect} /> : <div className="scn-dim" style={{ padding: 10 }}>Click an activity to see its successors.</div>}
             </DockPanel>
             {/* The one Gantt panel (the same on 4D Sequencing, where it also follows the timeline): this page's filters and driving path apply. */}
             <DockPanel id="gantt" label="Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>
@@ -685,8 +706,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
       {statusSlot && createPortal(<>
     {tab === 'gantt' && (
       <>
-        <span className="groupby-panel__title">Zoom: </span>
-        <select value={zoom} onChange={(e) => setZoom(e.target.value as Zoom)}>
+        <select value={zoom} onChange={(e) => setZoom(e.target.value as Zoom)} title="Zoom: the time scale of the Gantt (Alt + wheel zooms too)" aria-label="Zoom">
           {ZOOMS.map((z) => (
             <option key={z} value={z}>
               {z[0].toUpperCase() + z.slice(1)}
@@ -699,53 +719,8 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
         <button className="icon-btn icon-btn--sm" type="button" onClick={() => ganttRef.current?.zoomIn()} title="Zoom in (Alt + wheel)">+</button>
       </>
     )}
-    {listTools && (
-      <div style={{ position: 'relative' }} ref={settingsRef}>
-        <button className="icon-btn icon-btn--sm" title={tab === 'gantt' ? 'Gantt and view settings' : 'View settings'} onClick={() => setGanttSettingsOpen((v) => !v)}>
-          <IconGear width={14} height={14} />
-        </button>
-        {ganttSettingsOpen && (
-          <div
-            style={{
-              position: 'absolute', bottom: '110%', right: 0, zIndex: 40, width: 240,
-              background: 'var(--bg-elevated)', border: '1px solid var(--border)', borderRadius: 8, padding: 10,
-            }}
-          >
-            {tab === 'gantt' && (
-              <>
-                <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', marginBottom: 6 }}>Gantt</div>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                  <input type="checkbox" checked={showGanttLinks} onChange={(e) => setShowGanttLinks(e.target.checked)} />
-                  Show relationship links
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                  <input type="checkbox" checked={showGanttCritical} onChange={(e) => setShowGanttCritical(e.target.checked)} />
-                  Highlight critical path
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                  <input type="checkbox" checked={showGanttBaseline} onChange={(e) => setShowGanttBaseline(e.target.checked)} />
-                  Show target (baseline) bars
-                </label>
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-                  <input type="checkbox" checked={showGanttLabels} onChange={(e) => setShowGanttLabels(e.target.checked)} />
-                  Show names beside bars
-                </label>
-              </>
-            )}
-            <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase', margin: tab === 'gantt' ? '8px 0 6px' : '0 0 6px' }}>Rows</div>
-            <label title="Curtain: filters and the driving path fade the other rows back instead of removing them" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-              <input type="checkbox" checked={curtain} onChange={(e) => setCurtain(e.target.checked)} />
-              Curtain (fade filtered rows)
-            </label>
-            <label title="Totals row and group subtotals; pick how each column sums up (sum, average, min, max, dates, spans) in the totals row" style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '4px 0', fontSize: 13 }}>
-              <input type="checkbox" checked={showTotals} onChange={(e) => setShowTotals(e.target.checked)} />
-              Σ Totals
-            </label>
-          </div>
-        )}
-      </div>
-    )}
       </>, statusSlot)}
+    </ToolbarLeftSlotContext.Provider>
     </ToolbarSlotContext.Provider>
   );
 }

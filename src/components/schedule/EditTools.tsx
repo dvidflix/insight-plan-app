@@ -186,10 +186,6 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
       <button type="button" className={`btn btn--small ctx-menu__btn${menu ? ' is-open' : ''}`} aria-expanded={menu} aria-haspopup="menu" aria-label="Planning tools" title="Planning tools: add, link, progress, split, dissolve, schedule, delete, 3D, WBS" onClick={() => setMenu(!menu)}>
         <IconMenu width={18} height={18} />
       </button>
-      {/* What the tools in the menu act on. */}
-      <span className="ctx-label" title="What the tools in the menu act on">
-        {count === 0 ? 'Nothing picked' : count === 1 ? (model.activities.find((a) => a.id === ids()[0])?.code ?? '1 activity') : `${count} activities`}
-      </span>
       {menu && (
       <div className="ctx-menu__panel" role="menu" onClick={closeOnAction}>
       {count <= 1 && (

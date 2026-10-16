@@ -5,6 +5,7 @@ import { useModelStoreState } from '../state/modelStoreState';
 import { useProjectDbStore } from '../state/projectDbStore';
 import { fetchSettings, saveSetting } from '../db/api';
 import { loadStoredModel } from '../viewer/modelStore';
+import { restoreStatus } from '../state/restoreStatus';
 
 const KEY = 'loadedModels';
 
@@ -34,6 +35,7 @@ export function ModelsRestoreSync({ enabled = true }: { /** False: not yet (a se
       } catch {
         // The Inputs page still lists the stored models to open by hand.
       } finally {
+        restoreStatus.mark(root);
         setRestoredFor(root);
       }
     })();

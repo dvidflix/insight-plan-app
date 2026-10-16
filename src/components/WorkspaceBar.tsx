@@ -1,12 +1,75 @@
+import { useEffect, useRef, useState } from 'react';
 import { FEATURES } from '../features';
 import { blockedWindows, openBlockedWindows, useWorkspaces, workspaceActions, workspaceDirty } from '../state/workspaces';
 import { UpdateChip } from './UpdateChip';
 import { PackageUpdateChip } from './PackageUpdateChip';
-import { IconAddCircleOutline, IconLaunch, IconRemove } from './icons';
+import { IconAddCircleOutline, IconChevronDown, IconLaunch, IconRemove, IconScenes } from './icons';
 
-/** The workspaces (Inputs, Custom, ...), in the view picker's menu: a workspace keeps how the app is set up, exactly, when you save it
-    (state/workspaces.ts). One of them can be the one the app starts with. Also the new window, the windows the browser blocked, and the
-    update. There is no bar along the top. */
+/** The second button of the top bar: the workspace you are in (a dot when it has changes not saved) and a menu to switch, add, save and
+    choose the one the app starts with. */
+export function WorkspaceButton({ readOnly = false }: { readOnly?: boolean }) {
+  const list = useWorkspaces();
+  const dirty = workspaceDirty();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  const active = list?.items.find((w) => w.id === list.activeId);
+  if (!list) return null;
+  return (
+    <div className="ws-page" ref={root}>
+      <button type="button" className={`ws-page__btn ws-top__btn${open ? ' is-open' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-label="Workspaces" title={`Workspace: ${active?.name ?? ''}. The page, panels and second windows as you saved them`}>
+        <IconScenes width={16} height={16} />
+        <span className="ws-page__name">{active?.name ?? 'Workspace'}{dirty && <span className="ws-ws__dirty" title="Changes not saved yet"> ●</span>}</span>
+        <IconChevronDown width={12} height={12} />
+      </button>
+      {open && (
+        <div className="ws-page__menu" role="menu" style={{ minWidth: 260 }}>
+          <WorkspaceMenu close={() => setOpen(false)} readOnly={readOnly} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The workspace chip of the status bar: the workspace you are in (a dot when it has changes not saved); a click opens the list above it. */
+export function WorkspaceStatus({ readOnly = false }: { readOnly?: boolean }) {
+  const list = useWorkspaces();
+  const dirty = workspaceDirty();
+  const [open, setOpen] = useState(false);
+  const root = useRef<HTMLSpanElement>(null);
+  useEffect(() => {
+    if (!open) return;
+    const away = (e: MouseEvent) => { if (!root.current?.contains(e.target as Node)) setOpen(false); };
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', away);
+    document.addEventListener('keydown', esc);
+    return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
+  }, [open]);
+  if (!list) return null;
+  const active = list.items.find((w) => w.id === list.activeId);
+  return (
+    <span className="ws-status" ref={root}>
+      <button type="button" className={`ws-status__btn${open ? ' is-open' : ''}`} onClick={() => setOpen(!open)} aria-expanded={open} aria-haspopup="menu" aria-label="Workspaces" title="Workspaces: the page, panels and second windows you work with. Switch, add or save one.">
+        <IconScenes width={14} height={14} />
+        <span>{active?.name ?? 'Workspace'}{dirty && <span className="ws-ws__dirty" title="Changes not saved yet"> ●</span>}</span>
+        <IconChevronDown width={10} height={10} style={{ transform: 'rotate(180deg)' }} />
+      </button>
+      {open && (
+        <div className="ws-status__pop" role="menu">
+          <WorkspaceMenu close={() => setOpen(false)} readOnly={readOnly} />
+        </div>
+      )}
+    </span>
+  );
+}
+
 export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; /** A second window: it shows the workspaces, and they are changed in the main window. */ readOnly?: boolean }) {
   const list = useWorkspaces();
   const dirty = workspaceDirty();
@@ -19,7 +82,7 @@ export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; 
   };
 
   return (
-    <div className="ws-ws">
+    <div className="ws-ws" style={{ marginTop: 0, paddingTop: 0 }}>
       <div className="ws-page__group">
         <div className="ws-page__head ws-ws__head">
           <span>Workspaces</span>
@@ -34,7 +97,7 @@ export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; 
                 if (name) { close(); void workspaceActions.add(name); }
               }}
             >
-              <IconAddCircleOutline width={18} height={18} />
+              <IconAddCircleOutline width={24} height={24} />
             </button>
           )}
         </div>

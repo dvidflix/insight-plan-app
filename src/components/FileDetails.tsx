@@ -1,6 +1,7 @@
-import { useEffect, useMemo, useState } from 'react';
-import { IconClose, IconList } from './icons';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useInputDetailsStore } from '../state/inputDetailsStore';
+import { FEATURES } from '../features';
+import { experimentalOn } from '../state/appPrefsStore';
 
 /** The Inputs page's File details pane (like the Programmes page's Activity details): the selected file's own facts, and its details
     (the fields of SeaTable's "Insight Plan Files": Discipline, Building, Status ...) to edit. With several files selected a field shows the
@@ -31,7 +32,8 @@ function FieldEditor({ field, files, listId }: { field: string; files: string[];
   const [draft, setDraft] = useState(shared.text);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
   useEffect(() => { setDraft(shared.text); setNote(null); }, [shared.text, shared.mixed, files.join('|')]);
-  const unsaved = files.some((f) => pending.includes(`${f}\u0001${field}`));
+  const seatable = FEATURES.seatable && experimentalOn('seatableFiles');
+  const unsaved = seatable && files.some((f) => pending.includes(`${f}\u0001${field}`));
 
   const commit = async () => {
     if (shared.mixed ? draft === '' : draft === shared.text) return; // nothing typed: the files stay as they are
@@ -47,12 +49,12 @@ function FieldEditor({ field, files, listId }: { field: string; files: string[];
         <input {...common} list={listId} onChange={(e) => setDraft(e.target.value)} onBlur={() => void commit()} onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }} />
       )}
       {unsaved && !note && <div className="file-details__note is-warn">Not written to SeaTable yet</div>}
-      {note && <div className={`file-details__note${note.ok ? '' : ' is-warn'}`} role="status">{note.text}</div>}
+      {note && note.text && <div className={`file-details__note${note.ok ? '' : ' is-warn'}`} role="status">{note.text}</div>}
     </>
   );
 }
 
-export function FileDetails({ files, onClose }: { files: FileSummary[]; onClose: () => void }) {
+export function FileDetails({ files, bar }: { files: FileSummary[]; bar: ReactNode }) {
   const fields = useInputDetailsStore((s) => s.fields);
   const values = useInputDetailsStore((s) => s.values);
   const names = useMemo(() => files.map((f) => f.name), [files]);
@@ -79,10 +81,7 @@ export function FileDetails({ files, onClose }: { files: FileSummary[]; onClose:
 
   return (
     <div className="activity-details file-details">
-      <div className="side-pane__bar scn-dock__bar">
-        <span className="layouts-dock__title"><IconList /> File details{files.length > 1 ? ` (${files.length} files)` : ''}</span>
-        <button type="button" className="side-pane__hide layouts-dock__close" title="Close file details" aria-label="Close file details" onClick={onClose}><IconClose /></button>
-      </div>
+      {bar}
       {files.length === 0 ? (
         <div className="scn-dim file-details__empty">Click a file to see and edit its details. Shift or Ctrl select several: what you type goes to all of them.</div>
       ) : (

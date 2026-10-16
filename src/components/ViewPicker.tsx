@@ -1,14 +1,17 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { useAppPrefsStore } from '../state/appPrefsStore';
-import { DOCK_DEFAULTS, DOCK_SIDES, SIDE_LABEL, useDockStore, type DockPanelId, type DockSide } from '../state/dockStore';
+import { DOCK_DEFAULTS, DOCK_SIDES, panelOrder, SIDE_LABEL, useDockStore, type DockPanelId, type DockSide } from '../state/dockStore';
 import { SCHEDULE_TABS, type TabId } from '../pages/SchedulePage';
 import { SideIcon, TAB_ICONS } from './Dock';
 import { IS_SATELLITE } from '../state/satellite';
 import { usePersistedState } from '../utils/persistedState';
 import { openSatelliteWindow } from '../state/windowSync';
 import { blockedWindows } from '../state/workspaces';
-import { WindowsFooter, WorkspaceMenu } from './WorkspaceBar';
-import { IconChecklist, IconChevronDown, IconDashboard, IconEyeOff, IconGantt, IconLineGraph, IconList, IconPencil, IconSchema, IconShortText, IconGridTable, IconSplit, IconTagOutline, IconTimeline, IconTree, IconTwoPane } from './icons';
+import { WindowsFooter } from './WorkspaceBar';
+import { scenes } from '../state/scenes';
+import { GlobalSearch } from './GlobalSearch';
+import { ToolPopover } from './TablePopovers';
+import { IconChecklist, IconChevronDown, IconDashboard, IconEyeOff, IconHome, IconGantt, IconLineGraph, IconList, IconPencil, IconSchema, IconShortText, IconSidePanel, IconGridTable, IconSplit, IconTagOutline, IconTimeline, IconTree, IconTwoPane } from './icons';
 
 export interface PageItem {
   id: string;
@@ -32,19 +35,19 @@ type Group = 'Inputs' | 'Planning' | 'Models' | 'Tools';
 /** The first column is Inputs (its page, its tools, the workspaces). The other three are a table read across: a row per stream
     (Planning, Models, Tools: analysis, the settings and the other pages), with the stream's name, then the views it can show in the main window, then its panels, so
     the panels line up with the stream they belong to. */
-const STREAMS: Group[] = ['Planning', 'Models', 'Tools'];
+const STREAMS: Group[] = ['Models', 'Planning', 'Tools'];
 
 const VIEW_GROUP: Record<TabId, Group> = {
   gantt: 'Planning', activities: 'Planning', planner: 'Planning', wbs: 'Planning', codes: 'Planning', resources: 'Planning',
   calendars: 'Planning', heatmap: 'Planning', lookahead: 'Planning',
   compare: 'Tools', concrete: 'Tools', checks: 'Tools', reports: 'Tools', explorer: 'Tools', network: 'Tools', ppc: 'Tools', montecarlo: 'Tools', whatif: 'Tools',
-  bulkedit: 'Inputs', renumber: 'Inputs', anonymise: 'Inputs',
+  bulkedit: 'Tools', renumber: 'Tools', anonymise: 'Tools',
 };
 
 const PANEL_GROUP: Partial<Record<DockPanelId, Group>> = {
-  details: 'Planning', links: 'Planning', predecessors: 'Planning', successors: 'Planning', layouts: 'Planning', planning: 'Planning', gantt: 'Planning',
+  details: 'Planning', links: 'Planning', predecessors: 'Planning', successors: 'Planning', layouts: 'Planning', planning: 'Planning', gantt: 'Planning', resources: 'Planning', scenarios: 'Planning', recipes: 'Planning', rules: 'Planning', dictionary: 'Planning', generated: 'Planning',
   related: 'Models', tree: 'Models', properties: 'Models', search: 'Models', views: 'Models', viewpoints: 'Models', colour: 'Models', clash: 'Models',
-  datatable: 'Models', topics: 'Models', fourD: 'Models', tasks: 'Models', resources: 'Models', scenarios: 'Models', recipes: 'Models', rules: 'Models',
+  datatable: 'Models', files: 'Models', topics: 'Models', fourD: 'Models', tasks: 'Models',
   checks: 'Tools', compare: 'Tools',
 };
 
@@ -119,7 +122,7 @@ function PickerRow({ row, close, backTo3D }: { row: Row; close: () => void; back
     main window, or in the left, bottom or right pane. Rows are grouped by what they are about (the programme, the 3D / 4D view,
     analysis, tools). On a Programmes view it sits in that view's toolbar, so a second window can change its view too (it has no
     pages: `pages` is empty there). */
-export function ViewPicker({ pages, page, onPage, tab, onTab, named = false }: { /** Shows the name of what is showing beside the icon. */ named?: boolean; pages: PageItem[]; page: string; onPage: (id: string) => void; tab: TabId; onTab: (id: TabId) => void }) {
+function ViewMenu({ pages, page, onPage, tab, onTab, named = false }: PickerProps) {
   const experimental = useAppPrefsStore((s) => s.experimental);
   const entries = useDockStore((s) => s.entries);
   const [menu, setMenu] = useState(false);
@@ -193,9 +196,9 @@ export function ViewPicker({ pages, page, onPage, tab, onTab, named = false }: {
   const rows = useMemo(() => {
     const out: Row[] = [];
     // Inputs is the first column's big button; Planning and Models are the streams' buttons; the views are rows below.
-    for (const p of pages.filter((x) => x.id !== 'schedule' && x.id !== 'inputs')) {
+    for (const p of pages.filter((x) => x.id !== 'schedule' && x.id !== 'home' && x.id !== 'inputs')) {
       out.push({
-        key: `page:${p.id}`, label: p.label, icon: p.icon, group: p.id === 'model' || p.id === 'sequence' ? 'Models' : 'Tools',
+        key: `page:${p.id}`, label: p.label, icon: p.icon, group: p.id === 'model' || p.id === 'sequence' ? 'Models' : p.id === 'inputs' ? 'Inputs' : 'Tools',
         main: { on: p.id === page, run: () => onPage(p.id) },
       });
     }
@@ -209,7 +212,7 @@ export function ViewPicker({ pages, page, onPage, tab, onTab, named = false }: {
       });
     }
     for (const e of Object.values(entries)) {
-      if (!e) continue;
+      if (!e || e.id === 'settings' || e.id === 'files') continue; // General settings and Files belong to Home: no row in the picker
       const PanelIcon = TAB_ICONS[e.id];
       out.push({ key: `panel:${e.id}`, label: e.label, icon: PanelIcon ? <PanelIcon width={16} height={16} /> : null, group: PANEL_GROUP[e.id] ?? 'Tools', panel: e.id, leaveMain: e.id === 'gantt' && page === 'schedule' && tab === 'gantt' });
     }
@@ -227,75 +230,120 @@ export function ViewPicker({ pages, page, onPage, tab, onTab, named = false }: {
   return (
     <div className="ws-page" ref={root}>
       <button type="button" className={`ws-page__btn${menu ? ' is-open' : ''}${!IS_SATELLITE && blockedWindows().length > 0 ? ' has-alert' : ''}`} onClick={() => setMenu(!menu)} aria-expanded={menu} aria-label="What the main window shows, and the panes around it" title={`Showing: ${here}. Choose what shows: as the main window, or in a left, bottom or right pane`}>
+        <IconChevronDown className="ws-page__chev" width={16} height={16} />
         {hereIcon}
         {named && <span className="ws-page__name">{here}</span>}
-        <IconChevronDown width={12} height={12} />
       </button>
       {menu && (
         <div className="ws-page__menu ws-page__menu--streams" role="menu" ref={menuEl} style={shift ? { left: shift } : undefined}>
-          <div className="ws-page__cols">
-          <div className="ws-page__col">
-            {(() => {
-              const item = pages.find((p) => p.id === 'inputs');
-              const list = inGroup('Inputs');
-              return (
-                <div className="ws-page__group">
-                  {item
-                    ? (
-                      <button type="button" className={`ws-page__big${page === 'inputs' ? ' is-on' : ''}`} onClick={() => { setMenu(false); onPage('inputs'); }} aria-pressed={page === 'inputs'} title="Go to Inputs">
-                        {item.icon}<span>Inputs</span>
-                      </button>
-                    )
-                    : <div className="ws-page__head">Inputs</div>}
-                  {list.map((r) => <PickerRow key={r.key} row={r} close={() => setMenu(false)} backTo3D={backTo3D} />)}
-                </div>
-              );
-            })()}
-            {/* The workspaces sit under Inputs, in the first column, with a gap. */}
-            <WorkspaceMenu close={() => setMenu(false)} readOnly={IS_SATELLITE} />
-            <WindowsFooter onNewWindow={() => openSatelliteWindow(tab)} close={() => setMenu(false)} />
-          </div>
-          <div className="ws-streams" role="table">
-            <div className="ws-streams__head" role="row">
-              <span />
-              <span>Views</span>
-              <span className="ws-streams__panels">Panels <span className="ws-page__sides">Left · Bottom · Right</span></span>
-            </div>
+          <div className="ws-views">
             {STREAMS.map((g) => {
               const list = inGroup(g);
               if (list.length === 0) return null;
-              const views = sorted(list.filter((r) => r.main), `${g}:views`);
-              const panels = sorted(list.filter((r) => !r.main), `${g}:panels`);
-              // The stream's name opens its main view: Planning the Gantt, Models the 4D view.
-              const open = g === 'Planning'
-                ? { page: 'schedule', run: () => { onTab('gantt'); onPage('schedule'); } }
-                : g === 'Models' ? { page: 'sequence', run: () => onPage('sequence') } : null;
-              const target = open && pages.find((p) => p.id === open.page);
-              const on = g === 'Planning' ? page === 'schedule' : g === 'Models' ? page === 'model' || page === 'sequence' : false;
+              const views = sorted(list.filter((r) => r.main), g + ':views');
               return (
-                <div key={g} className="ws-streams__row" role="row">
-                  <div className="ws-streams__name">
-                    {open && target
-                      ? (
-                        <button type="button" className={`ws-page__big${on ? ' is-on' : ''}`} onClick={() => { setMenu(false); open.run(); }} aria-pressed={on} title={g === 'Planning' ? 'Go to Planning: the Gantt' : 'Go to the 4D view'}>
-                          {g === 'Planning' ? <IconGantt width={22} height={22} /> : target.icon}<span>{g}</span>
-                        </button>
-                      )
-                      : <div className="ws-streams__label">{g}</div>}
-                  </div>
-                  <div className="ws-streams__cell">
-                    {views.map((r) => row(r, `${g}:views`, views))}
-                  </div>
-                  <div className="ws-streams__cell">
-                    {panels.map((r) => row(r, `${g}:panels`, panels))}
-                  </div>
+                <div key={g} className="ws-views__group" role="group" aria-label={g}>
+                  <div className="ws-views__label">{g}</div>
+                  {views.map((r) => row(r, g + ':views', views))}
                 </div>
               );
             })}
           </div>
-          </div>
+          <WindowsFooter onNewWindow={() => openSatelliteWindow(tab)} close={() => setMenu(false)} />
         </div>
       )}
     </div>
+  );
+}
+
+type PickerProps = { /** No view menu (the Home page has nothing to switch to). */ hideView?: boolean; /** Shows the name of what is showing beside the icon. */ named?: boolean; pages: PageItem[]; page: string; onPage: (id: string) => void; tab: TabId; onTab: (id: TabId) => void; /** Beside the view button, before the search (the Programmes level). */ afterView?: ReactNode; /** After the search box (the tools for what is picked). */ afterSearch?: ReactNode; /** The search box is placed elsewhere by the page. */ hideSearch?: boolean };
+
+/** The first button of the bar: the Home icon with the name of the scene you are in. Home is the first page of the app, where the scenes are. */
+function HomeButton({ pages, page, onPage }: Pick<PickerProps, 'pages' | 'page' | 'onPage'>) {
+  const [store, setStore] = useState(scenes.get);
+  useEffect(() => {
+    const refresh = () => setStore(scenes.get());
+    window.addEventListener('ip-scenes', refresh);
+    return () => window.removeEventListener('ip-scenes', refresh);
+  }, []);
+  const name = store.scenes.find((s) => s.id === store.activeId)?.name ?? 'Scene';
+  if (!pages.some((p) => p.id === 'home')) return null;
+  return (
+    <button type="button" className={'ws-page__btn ws-top__btn' + (page === 'home' ? ' is-on' : '')} onClick={() => onPage('home')} aria-pressed={page === 'home'} aria-label="Home" title={'Home: the scenes and workspaces. You are in ' + name}>
+      <IconHome width={16} height={16} />
+    </button>
+  );
+}
+
+/** The top bar's three buttons: the scene (the Inputs page), the workspace, and what the main window shows with its panels. */
+export function ViewPicker(props: PickerProps) {
+  return (
+    <div className="ws-top">
+      {!IS_SATELLITE && <HomeButton pages={props.pages} page={props.page} onPage={props.onPage} />}
+      {!props.hideView && <ViewMenu {...props} />}
+      {props.afterView}
+      {!props.hideSearch && <GlobalSearch pages={props.pages} onPage={props.onPage} onTab={props.onTab} />}
+      {props.afterSearch}
+    </div>
+  );
+}
+
+/** The Panels button, at the right end of a toolbar: a popover with the panels there are on the page showing, each with its left, bottom
+    and right buttons (a click on the name opens or closes it). One list in the order of the tabs: drag a row to change that order (the
+    ones you use most first); the order is kept with the workspace. */
+export function PanelsButton() {
+  const entries = useDockStore((s) => s.entries);
+  const order = useDockStore((s) => s.order);
+  const drag = useRef<string | null>(null);
+  const [over, setOver] = useState<{ key: string; after: boolean } | null>(null);
+  const rows = useMemo(() => {
+    const byId = new Map<string, Row>();
+    for (const e of Object.values(entries)) {
+      if (!e) continue;
+      const PanelIcon = TAB_ICONS[e.id];
+      byId.set(e.id, { key: 'panel:' + e.id, label: e.label, icon: PanelIcon ? <PanelIcon width={16} height={16} /> : null, group: PANEL_GROUP[e.id] ?? 'Tools', panel: e.id });
+    }
+    return panelOrder(order).flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
+  }, [entries, order]);
+  if (rows.length === 0) return null;
+
+  const drop = (targetId: string, after: boolean) => {
+    const from = drag.current;
+    drag.current = null;
+    setOver(null);
+    if (!from || from === targetId) return;
+    // The whole order is written down, so the panels not on this page keep their places too.
+    const all = panelOrder(order).filter((id) => id !== from);
+    const at = all.indexOf(targetId as DockPanelId) + (after ? 1 : 0);
+    all.splice(at, 0, from as DockPanelId);
+    useDockStore.getState().setOrder(all);
+  };
+  return (
+    <span className="panels-btn">
+      <ToolPopover icon={<IconSidePanel width={20} height={20} />} label="Panels" iconOnly={false} width={400}>
+        <div className="ws-views">
+          <div className="ws-views__heads"><span className="ws-page__sides">Drag to put them in order · Left · Bottom · Right</span></div>
+          {rows.map((r) => (
+            <div
+              key={r.key}
+              className={'ws-drag' + (over?.key === r.key ? (over.after ? ' drop-after' : ' drop-before') : '')}
+              draggable
+              onDragStart={(e) => { drag.current = r.panel!; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', r.key); }}
+              onDragOver={(e) => {
+                if (!drag.current) return;
+                e.preventDefault();
+                const b = e.currentTarget.getBoundingClientRect();
+                const after = e.clientY > b.top + b.height / 2;
+                if (over?.key !== r.key || over.after !== after) setOver({ key: r.key, after });
+              }}
+              onDrop={(e) => { e.preventDefault(); drop(r.panel!, over?.key === r.key && over.after); }}
+              onDragEnd={() => { drag.current = null; setOver(null); }}
+            >
+              <PickerRow row={r} close={() => {}} backTo3D={() => {}} />
+            </div>
+          ))}
+        </div>
+      </ToolPopover>
+    </span>
   );
 }

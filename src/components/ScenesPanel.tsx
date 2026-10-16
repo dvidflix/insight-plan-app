@@ -16,7 +16,8 @@ const SCENE_BUTTONS = [
 type SceneButton = (typeof SCENE_BUTTONS)[number]['id'];
 
 const START_PAGES = [
-  { id: 'inputs', label: 'Inputs' },
+  { id: 'home', label: 'Home' },
+  { id: 'inputs', label: 'Files' },
   { id: 'model', label: 'Models' },
   { id: 'schedule', label: 'Programmes' },
   { id: 'sequence', label: '4D Sequencing' },
@@ -59,7 +60,7 @@ export function ScenesPanel() {
   const [empty, setEmpty] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [renaming, setRenaming] = useState<string | null>(null);
-  const [startPage, setStartPage] = useState(() => localStorage.getItem(START_PAGE_KEY) ?? 'inputs');
+  const [startPage, setStartPage] = useState(() => localStorage.getItem(START_PAGE_KEY) ?? 'home');
   const importRef = useRef<HTMLInputElement>(null);
   useEffect(() => {
     const refresh = () => setStore(scenes.get());
