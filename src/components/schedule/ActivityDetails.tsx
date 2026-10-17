@@ -340,53 +340,6 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Primary resource', activity.primaryResource || '—'],
           ['Critical', activity.isCritical ? 'Yes' : 'No'],
         ])}
-        {edited && (
-          <div className="ad-edit-bar">
-            <span className="ad-edit-bar__note" title="Kept with the project on top of the programme, so re-importing or regenerating it keeps this edit">Edited</span>
-            <button type="button" className="btn btn--small" onClick={resetEdits} title="Put this activity back as in the imported or generated programme">Reset</button>
-          </div>
-        )}
-        <button
-          type="button"
-          className={`btn btn--small${drivingTarget === activity.id ? ' primary' : ''}`}
-          style={{ ...DETAIL_BTN, margin: 6, minWidth: 52, padding: 0 }}
-          onClick={() => onDrivingTarget(drivingTarget === activity.id ? null : activity.id)}
-          title={drivingTarget === activity.id ? 'Hide driving path' : "Show driving path: pick out the chain of predecessors that drives this activity's start"}
-          aria-label={drivingTarget === activity.id ? 'Hide driving path' : 'Show driving path'}
-          aria-pressed={drivingTarget === activity.id}
-        >
-          <IconRoadSurface width={18} height={18} />
-        </button>
-        <button
-          type="button"
-          className="btn btn--small"
-          style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0', minWidth: 52 }}
-          onClick={showIn4D}
-          disabled={linkedCount === 0}
-          title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to select` : `Go to 4D Sequencing: select ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'} and move the timeline to ${many ? 'the earliest start' : 'its start'}`}
-        >
-          {many ? `4D (${targets.length})` : '4D'}
-        </button>
-        <button
-          type="button"
-          className="btn btn--small"
-          style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0', minWidth: 52 }}
-          onClick={showIn3D}
-          disabled={linkedCount === 0}
-          title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to show` : `Go to the 3D models and isolate ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'}: only the pours are shown`}
-        >
-          {many ? `3D (${targets.length})` : '3D'}
-        </button>
-        <button
-          type="button"
-          className="btn btn--small"
-          style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0' }}
-          onClick={queueIdAndName}
-          disabled={selectedCount === 0}
-          title={selectedCount === 0 ? 'Select objects in the 3D model first' : `Add this activity's ID and Name to the Edit properties queue (Program › Activity ID, Activity Name) for the ${selectedCount.toLocaleString()} selected object${selectedCount === 1 ? '' : 's'}`}
-        >
-          {queued ? '✓ Queued' : 'Queue ID & Name'}
-        </button>
       </CollapsibleSection>
 
       <CollapsibleSection title="Dates & constraints" flush open={sections.isOpen('dates')} onToggle={() => sections.toggle('dates')}>
@@ -466,6 +419,56 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
       <CollapsibleSection title="Notes" flush open={sections.isOpen('notes')} onToggle={() => sections.toggle('notes')}>
         <ActivityNote activity={activity} />
       </CollapsibleSection>
+
+      <div className="ad-actions">
+          {edited && (
+            <div className="ad-edit-bar">
+              <span className="ad-edit-bar__note" title="Kept with the project on top of the programme, so re-importing or regenerating it keeps this edit">Edited</span>
+              <button type="button" className="btn btn--small" onClick={resetEdits} title="Put this activity back as in the imported or generated programme">Reset</button>
+            </div>
+          )}
+          <button
+            type="button"
+            className={`btn btn--small${drivingTarget === activity.id ? ' primary' : ''}`}
+            style={{ ...DETAIL_BTN, margin: 6, minWidth: 52, padding: 0 }}
+            onClick={() => onDrivingTarget(drivingTarget === activity.id ? null : activity.id)}
+            title={drivingTarget === activity.id ? 'Hide driving path' : "Show driving path: pick out the chain of predecessors that drives this activity's start"}
+            aria-label={drivingTarget === activity.id ? 'Hide driving path' : 'Show driving path'}
+            aria-pressed={drivingTarget === activity.id}
+          >
+            <IconRoadSurface width={18} height={18} />
+          </button>
+          <button
+            type="button"
+            className="btn btn--small"
+            style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0', minWidth: 52 }}
+            onClick={showIn4D}
+            disabled={linkedCount === 0}
+            title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to select` : `Go to 4D Sequencing: select ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'} and move the timeline to ${many ? 'the earliest start' : 'its start'}`}
+          >
+            {many ? `4D (${targets.length})` : '4D'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--small"
+            style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0', minWidth: 52 }}
+            onClick={showIn3D}
+            disabled={linkedCount === 0}
+            title={linkedCount === 0 ? `${many ? 'These activities have' : 'This activity has'} no linked objects (Link Groups), so there is nothing to show` : `Go to the 3D models and isolate ${ofThem} ${linkedCount.toLocaleString()} linked object${linkedCount === 1 ? '' : 's'}: only the pours are shown`}
+          >
+            {many ? `3D (${targets.length})` : '3D'}
+          </button>
+          <button
+            type="button"
+            className="btn btn--small"
+            style={{ ...DETAIL_BTN, margin: '6px 6px 6px 0' }}
+            onClick={queueIdAndName}
+            disabled={selectedCount === 0}
+            title={selectedCount === 0 ? 'Select objects in the 3D model first' : `Add this activity's ID and Name to the Edit properties queue (Program › Activity ID, Activity Name) for the ${selectedCount.toLocaleString()} selected object${selectedCount === 1 ? '' : 's'}`}
+          >
+            {queued ? '✓ Queued' : 'Queue ID & Name'}
+          </button>
+      </div>
     </div>
   );
 }

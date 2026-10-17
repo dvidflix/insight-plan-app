@@ -118,11 +118,38 @@ export function RecipeTaskDialog({ task, rules, onPatch, onRename, onDelete, onC
           </label>
         </div>
   );
+  // The duration is either fixed days, or worked out from a quantity (a productivity rate: quantity x man-hours per unit / (people x shifts x hours)).
+  const productivity = rules.rates.filter((r) => r.type === 'productivity');
+  const rateRow = rules.rates.find((r) => r.id === task.rate);
+  const fromQuantity = task.days === undefined && rateRow?.type === 'productivity';
+  const BASIS: Record<string, string> = { rebar: 'tonnes of rebar', concrete: 'm³ of concrete', footprint: 'footprint area', sides: 'side area', property: 'a model quantity' };
+  const rateText = (r: (typeof productivity)[number]) => `${BASIS[r.basis ?? 'rebar'] ?? r.basis} × ${r.manhoursPerUnit ?? '?'} man-hours per unit ÷ (${r.people || people || 'crew'} people × ${r.shifts ?? 1} shift${(r.shifts ?? 1) === 1 ? '' : 's'} × ${r.hoursPerShift ?? 8} h)`;
+  const setFromQuantity = (on: boolean) => {
+    if (!on) { onPatch({ days: task.days ?? 1 }); return; }
+    const pick = rateRow?.type === 'productivity' ? rateRow : productivity[0];
+    onPatch({ days: undefined, ...(pick ? { rate: pick.id } : {}), ...(pick && (pick.basis ?? 'rebar') === 'rebar' && !task.material ? { material: 'rebar' as const } : {}) });
+  };
   const duration = (
         <div className="rtd__pane rtd__grid">
-          <label>Days
-            <input className="rel-cell" type="number" min={0} step="any" style={{ width: 80 }} value={task.days ?? ''} onChange={(e) => onPatch({ days: num(e.target.value) })} title="Fixed days; empty: the rate decides" />
-          </label>
+          <div className="segmented-choice" title="How the duration of this task is decided">
+            <button type="button" className={!fromQuantity ? 'active' : ''} onClick={() => setFromQuantity(false)}>Fixed days</button>
+            <button type="button" className={fromQuantity ? 'active' : ''} onClick={() => setFromQuantity(true)} title="From the quantity of the objects (for example the tonnes of rebar) and a productivity rate">From quantity</button>
+          </div>
+          {fromQuantity ? (
+            <>
+              <label>Productivity rate
+                <select className="rel-cell" value={task.rate ?? ''} onChange={(e) => onPatch({ rate: e.target.value || undefined })}>
+                  {productivity.map((r) => <option key={r.id} value={r.id}>{r.id}</option>)}
+                </select>
+              </label>
+              {rateRow && rateRow.type === 'productivity' && <p className="scn-dim" style={{ gridColumn: '1 / -1' }}>Days = {rateText(rateRow)}{rateRow.rounding === 'none' ? '' : `, rounded ${rateRow.rounding === 'round' ? '' : 'up '}to whole days`}{rateRow.minDays ? `, at least ${rateRow.minDays}` : ''}.{(rateRow.basis ?? 'rebar') === 'rebar' && !task.density ? ' Rebar tonnes come from the concrete volume × a Rebar rate: pick one under Rates.' : ''}</p>}
+              {productivity.length === 0 && <p className="scn-dim" style={{ gridColumn: '1 / -1' }}>No productivity rate yet: add one in Resources… › Rates (type “productivity”, basis rebar), with its man-hours per tonne.</p>}
+            </>
+          ) : (
+            <label>Days
+              <input className="rel-cell" type="number" min={0} step="any" style={{ width: 80 }} value={task.days ?? ''} onChange={(e) => onPatch({ days: num(e.target.value) })} title="Fixed days; empty: the rate decides" />
+            </label>
+          )}
           <label>Priority
             <input className="rel-cell" type="number" style={{ width: 80 }} value={task.priority ?? ''} onChange={(e) => onPatch({ priority: num(e.target.value) })} title="Of the values of this task: a higher number wins" />
           </label>

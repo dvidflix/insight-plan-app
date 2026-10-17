@@ -7789,6 +7789,7 @@ body.is-col-resizing * {
   padding: 8px 10px;
 }
 
+
 .dtp__sets {
   display: flex;
   align-items: center;
@@ -12598,6 +12599,16 @@ body.viewer-fullscreen .ws-bar { display: none; }
 .lcfg__pin.is-on { color: var(--accent-strong, #1b7f4b); background: var(--accent-soft, rgba(27, 127, 75, 0.14)); }
 .lcfg__slot { flex: 1; min-height: 0; }
 .lcfg__none { padding: 12px 10px; }
+.lcfg { display: flex; flex-direction: column; min-height: 0; height: 100%; }
+.config-panel__body:has(> .lcfg) { display: flex; flex-direction: column; overflow: hidden; }
+.lcfg__lists { flex: 1; min-width: 0; flex-wrap: wrap; }
+.lcfg__foot { flex-shrink: 0; border-top: 1px solid var(--border); background: var(--n-f1f3f2); max-height: 50%; display: flex; flex-direction: column; }
+.lcfg__foot[hidden], .lcfg__extra[hidden] { display: none; }
+.lcfg__foot-head { display: flex; align-items: center; gap: 6px; padding: 7px 12px; border: none; background: none; font-size: 10px; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-dim); cursor: pointer; text-align: left; }
+.lcfg__extra { overflow: auto; padding-bottom: 6px; }
+.lcfg__tabs { margin: 8px 10px 0; }
+.lcfg__tabs button { display: inline-flex; align-items: center; justify-content: center; gap: 4px; }
+.lcfg__body { padding: 8px 10px; flex: 1; min-height: 0; overflow: auto; }
 
 /* Dragging a dock tab: where it can be dropped. */
 .dock-drop { position: absolute; z-index: 40; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; border: 2px dashed var(--accent-strong, #1b7f4b); background: rgba(27, 127, 75, 0.1); color: var(--accent-strong, #1b7f4b); font-weight: 600; border-radius: 8px; }
@@ -13245,7 +13256,7 @@ body.viewer-fullscreen .ws-float { display: none; }
 .home__thumbcell .home__thumb { width: 88px; }
 
 /* The search box: one grey pill, the input inside it plain (the app's input styles stay off it). */
-.gs { border: 0; background: rgba(0, 0, 0, 0.06); border-radius: 8px; height: 30px; padding: 0 10px; margin-left: 6px; }
+.gs { border: 0; background: rgba(0, 0, 0, 0.06); border-radius: 8px; height: 30px; padding: 0 10px; margin-left: 6px; margin-right: 6px; }
 .gs:focus-within { background: var(--bg-elevated, #fff); box-shadow: 0 0 0 1px var(--accent); }
 .gs .gs__input { border: 0; outline: 0; box-shadow: none; background: transparent; padding: 0; margin: 0; height: auto; min-width: 0; width: 150px; font-size: 13px; }
 .gs .gs__input:focus { width: 230px; box-shadow: none; }
@@ -13886,6 +13897,12 @@ body.viewer-fullscreen .ws-float { display: none; }
 /* ---- Home: scene details pane, groups, and the Panels button ---- */
 .home__body { display: flex; align-items: flex-start; gap: 16px; flex: 1 1 auto; min-height: 0; }
 .home__main { flex: 1 1 auto; min-width: 0; }
+/* List view: the list fills the space under the bar and scrolls on its own, with the header frozen. */
+.home:has(.home__body--list) { overflow: hidden; padding-bottom: 0; }
+.home__body--list { align-items: stretch; margin: 0 !important; padding: 0; gap: 0; }
+.home__body--list .home__list { width: 100%; }
+.home__body--list .home__main { overflow: auto; min-height: 0; }
+.home__body--list .home__list th { position: sticky; top: 0; z-index: 2; background: var(--bg); box-shadow: 0 1px 0 var(--border); }
 .home__details { flex: 0 0 300px; width: 300px; align-self: stretch; border: 1px solid var(--border); border-radius: 10px; background: var(--bg-elevated, #fff); overflow: auto; }
 .home__group { padding: 10px 0 6px; }
 .home__group .inputs-folder__toggle { font-size: 14px; }
@@ -13945,3 +13962,196 @@ body.viewer-fullscreen .ws-float { display: none; }
 .ws-views .ws-row__name svg { width: 15px; height: 15px; }
 .ws-views__label { padding: 4px 8px 2px; font-size: 10.5px; }
 .ws-views__group + .ws-views__group { margin-top: 3px; padding-top: 3px; }
+
+/* Icons on a second row: two exact rows, the icons start right under the fold / close row */
+.dock:not(.dock--bottom) .dock__head.is-stacked { display: grid !important; grid-template-columns: 1fr; grid-template-rows: var(--header-h) 40px; align-items: stretch; }
+.dock:not(.dock--bottom) .dock__head.is-stacked .dock__tools { grid-row: 1; grid-column: 1; justify-self: end; align-self: stretch; margin: 0; }
+.dock:not(.dock--bottom) .dock__head.is-stacked .seq-righttabs { grid-row: 2; grid-column: 1; align-self: stretch; margin: 0; min-height: 0; }
+.dock:not(.dock--bottom) .dock__head.is-stacked .dock__panel-tools:empty { display: none; }
+.dock:not(.dock--bottom) .dock__head.is-stacked { row-gap: 0; }
+/* The panel dropdown: square, the full width of its row, no spacing around */
+.dock:not(.dock--bottom) .dock__head .dock__tabselect { width: 100%; height: 100% !important; margin: 0; border: 0 !important; border-radius: 0 !important; box-sizing: border-box; }
+
+/* Status bar: Save for the workspace's unsaved changes, right beside its button */
+.ws-status { display: inline-flex; align-items: center; gap: 6px; }
+.ws-status__save { height: 24px; padding: 0 12px; border: 0; border-radius: 12px; background: var(--accent-strong, #1b7f4b); color: #fff; font: inherit; font-size: 12px; font-weight: 600; cursor: pointer; }
+.ws-status__save:hover { filter: brightness(1.1); }
+
+/* The note after a model is opened: in the status bar, centred */
+.stored-status { position: fixed; left: 50%; bottom: 0; transform: translateX(-50%); z-index: 60; height: 24px; display: flex; align-items: center; max-width: 45vw; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--text-dim); pointer-events: none; }
+
+/* Icons on a second row: the header never gets squeezed (the body would then cover the icons' row), and the active icon's line sits inside its row */
+.dock:not(.dock--bottom) .dock__head.is-stacked { flex: 0 0 auto; height: calc(var(--header-h) + 40px) !important; min-height: calc(var(--header-h) + 40px) !important; box-sizing: border-box; overflow: visible; }
+.dock:not(.dock--bottom) .dock__head.is-stacked .seq-righttabs { height: 40px; overflow: hidden; }
+.dock:not(.dock--bottom) .dock__head.is-stacked .seq-righttabs .config-tab { box-sizing: border-box; height: 40px; border-bottom: 0; box-shadow: inset 0 -3px 0 transparent; }
+.dock:not(.dock--bottom) .dock__head.is-stacked .seq-righttabs .config-tab.active { box-shadow: inset 0 -3px 0 var(--accent); }
+
+/* The view menu: narrower */
+.ws-page__menu--streams { width: 200px; min-width: 200px; }
+
+/* 3D / 4D: the tool buttons start straight after the search box. */
+.viewer-toolbar-row .schedule-toolbar__left > .vtb { margin-left: 8px; margin-right: auto; justify-content: flex-start; }
+
+/* Recipe needs shown in the Scenarios status bar. */
+.scn-statusbar__needs { display: contents; }
+.scn-statusbar__needs .rel-bar { margin: 0; flex-wrap: nowrap; }
+
+/* Home: the chosen scene's tile stays where it is, marked by a border (it is not moved or enlarged). */
+.home__tile.is-selected, .home__tile.is-here.is-selected { grid-column: auto; grid-row: auto; box-shadow: 0 0 0 2px var(--accent-strong, #1b7f4b), 0 2px 14px rgba(0, 0, 0, 0.12); }
+.home__tile.is-selected .home__thumbwrap .home__thumb { aspect-ratio: 2.1 / 1; }
+.home__tile.is-selected .home__tilebody { padding: 12px 14px 14px; gap: 4px; }
+.home__tile.is-selected .home__name, .home__tile.is-selected .home__tilebody .home__name { font-size: 16px; }
+.home__tile.is-selected .home__stats { font-size: inherit; }
+
+/* The view menu scrolls up and down only. */
+.ws-page__menu--streams { overflow-x: hidden; overflow-y: auto; box-sizing: border-box; }
+.ws-page__menu--streams > *, .ws-page__menu--streams .ws-views, .ws-page__menu--streams .ws-views__group, .ws-page__menu--streams .ws-row { min-width: 0; max-width: 100%; box-sizing: border-box; }
+.ws-page__menu--streams .ws-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Home's status bar: the workspace choice sits at the right end. */
+.app-statusbar--home > .ws-status:last-child { margin-left: auto !important; }
+
+/* Dark theme: the browser's own controls (slider tracks, scrollbars, inputs) inside the light-scheme 3D view shell are drawn dark too. */
+html[data-theme="dark"] .viewer-shell,
+html[data-theme="dark"] input,
+html[data-theme="dark"] select,
+html[data-theme="dark"] textarea { color-scheme: dark; }
+
+/* The status bar's cross, at the very right: a square button the height of the bar, no padding. */
+.statusbar-host { position: relative; flex: none; min-width: 0; }
+.statusbar-close { position: absolute; right: 0; bottom: 0; box-sizing: border-box; width: var(--nav-w, 38px); height: 32px; padding: 0; margin: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--text-dim); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; z-index: 2; }
+.statusbar-close:hover { background: rgba(0, 0, 0, 0.08); color: var(--text); }
+.statusbar-host .app-statusbar:last-of-type { padding-right: calc(var(--nav-w, 38px) + 8px); }
+body.hide-statusbar .statusbar-host:not(:has(.sequence-statusbar)) { display: none; }
+body.hide-statusbar .statusbar-host:has(.sequence-statusbar) .statusbar-close { display: none; }
+
+/* OverflowRow: one row of tools that never wraps; what does not fit is in the ⋯ menu at the right. */
+.ofr, .dockgantt__bar.ofr { display: flex; align-items: center; flex-wrap: nowrap; gap: 6px; position: relative; min-width: 0; }
+.ofr__item { display: inline-flex; align-items: center; flex: none; }
+.ofr__item--grow { flex: 1 1 150px; min-width: 0; }
+.ofr__item--grow > * { flex: 1 1 auto; width: 100%; min-width: 0; }
+.ofr__more { position: relative; flex: none; margin-left: auto; }
+.ofr__menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 70; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; width: max-content; max-width: min(360px, 90vw); padding: 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated, #fff); box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18); }
+.ofr__menu-item { display: inline-flex; align-items: center; }
+
+/* Activity details: the Reset / driving path / 4D / 3D / Queue actions stay pinned to the bottom of the pane */
+.activity-details { display: flex; flex-direction: column; min-height: 100%; }
+.activity-details > * { flex: none; }
+.activity-details .ad-actions { position: sticky; bottom: 0; z-index: 2; margin-top: auto; background: var(--n-ffffff); border-top: 1px solid var(--border); }
+
+/* The List setup button, just before Panels, outside Panels' fixed-width box. */
+.listsetup-btn { box-sizing: border-box; width: var(--nav-w, 38px); display: inline-flex; align-self: stretch; border-left: 1px solid var(--border); }
+.listsetup-btn .tp { align-self: stretch; display: flex; width: 100%; }
+.listsetup-btn .tp__btn { display: flex; align-items: center; justify-content: center; height: 100% !important; width: 100%; min-width: 0 !important; padding: 0 !important; justify-content: center; }
+
+/* ---------- Navigation bars of the left and right docks, as Blender's Properties editor (DockNav.tsx) ---------- */
+.dock--nav { background: var(--n-ffffff); }
+.dock__row { flex: 1; min-height: 0; display: flex; flex-direction: row; }
+.dock--nav-right .dock__row { flex-direction: row-reverse; }
+.dock-nav { flex: 0 0 var(--nav-w, 38px); box-sizing: border-box; display: flex; flex-direction: column; align-items: stretch; gap: 0; padding: 0; background: #fff; border-right: 1px solid var(--border); overflow-y: auto; overflow-x: hidden; scrollbar-width: none; }
+.dock--nav-right .dock-nav { border-right: 0; border-left: 1px solid var(--border); }
+/* Every button fills the bar's width and is square. */
+.dock-nav__tab, .dock-nav__more { display: flex; align-items: center; justify-content: center; width: 100%; aspect-ratio: 1 / 1; height: auto; padding: 0; border: 0; border-radius: 0; background: transparent; cursor: pointer; flex-shrink: 0; }
+.dock-nav__tab:hover { background: rgba(0, 0, 0, 0.06); }
+.dock-nav__tab.is-active { background: rgba(0, 0, 0, 0.09); }
+.dock-nav__more { color: #666; }
+.dock-nav__more:hover { color: #000; background: rgba(0, 0, 0, 0.06); }
+.dock-menu { position: fixed; z-index: 4000; min-width: 190px; overflow-y: auto; padding: 4px 0 0; background: #fff; color: var(--text); border: 1px solid var(--border); border-radius: 0; box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2); font-size: 12px; }
+.dock-menu__title { padding: 4px 12px; color: var(--text-dim); }
+.dock-menu__item { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 5px 12px; border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; }
+.dock-menu__item:hover, .dock-menu__tab:hover { background: var(--n-f1f3f2); }
+.dock-menu__sep { height: 1px; margin: 4px 0; background: var(--border); }
+.dock-menu__tabs { padding: 2px 0 0; border-top: 1px solid var(--border); }
+.dock-menu__tab { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 12px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.dock-menu__tab.is-on { font-weight: 700; background: rgba(0, 0, 0, 0.05); }
+.dock-menu__tab.is-on::after { content: '✓'; color: var(--accent-strong); }
+.dock-menu__icon { display: inline-flex; width: 16px; }
+.dock-menu__label { flex: 1; }
+.dock-menu__side { color: var(--text-dim); font-size: 10px; font-weight: 400; }
+
+/* ---------- The N panel: list setup beside the docks (ListSetupPanel.tsx) ---------- */
+.npanel { flex: 0 0 340px; width: 340px; min-width: 0; display: flex; flex-direction: column; background: var(--n-ffffff); border-left: 1px solid rgba(60, 64, 68, 0.14); border-right: 1px solid rgba(60, 64, 68, 0.14); overflow: hidden; }
+.npanel__head { display: flex; align-items: center; gap: 8px; height: 40px; padding: 0 8px 0 12px; flex-shrink: 0; border-bottom: 1px solid var(--border); }
+.npanel__title { flex: 1; font-weight: 700; font-size: 13px; }
+.npanel .lcfg { flex: 1; min-height: 0; height: auto; }
+.lcfg__sections { flex: 1; min-height: 0; overflow: auto; }
+.lcfg__sec { border-bottom: 1px solid var(--border); }
+.lcfg__sec-head { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 12px; border: 0; background: var(--n-f1f3f2); font: inherit; font-size: 12px; font-weight: 700; text-align: left; cursor: pointer; color: var(--text); }
+.lcfg__sec-head:hover { background: var(--n-e7ece9); }
+.lcfg__sec-label { flex: 1; }
+.lcfg__sec .lcfg__body { flex: none; overflow: visible; }
+/* Folded: just the strip with the fold button's place, the chevron turned round; the strip runs the height of the dock. */
+:root { --nav-w: 38px; } /* The navigation bars, the List setup button above them and the status bar's close button share this width. */
+.dock-nav--folded { align-self: stretch; border-left: 0; border-right: 1px solid var(--border); }
+.dock-nav--folded.dock-nav--right { border-right: 0; border-left: 1px solid var(--border); }
+
+/* The N panel's tabs: icons, the open one named; all named when there is room. */
+.npanel { container-type: inline-size; }
+.lcfg__head { padding: 6px 10px; }
+.lcfg__for { color: var(--text-dim); font-size: 11px; }
+.lcfg__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 700; font-size: 13px; }
+.lcfg__tabs { display: flex; flex-shrink: 0; border-bottom: 1px solid var(--border); background: var(--n-f1f3f2); }
+.lcfg__tab { display: inline-flex; align-items: center; justify-content: center; gap: 6px; flex: 0 0 auto; min-width: 40px; height: 36px; padding: 0 10px; border: 0; border-radius: 0; background: transparent; color: var(--text-dim); font: inherit; font-size: 12px; cursor: pointer; }
+.lcfg__tab:hover { background: var(--n-e7ece9); }
+.lcfg__tab.is-active { flex: 1 1 auto; background: var(--n-ffffff); color: var(--text); font-weight: 700; box-shadow: inset 0 -2px 0 var(--accent); }
+.lcfg__tab-label { display: none; }
+.lcfg__tab.is-active .lcfg__tab-label { display: inline; }
+@container (min-width: 420px) { .lcfg__tab { flex: 1 1 0; } .lcfg__tab-label { display: inline; } }
+
+/* The filter panel of every list (FilterShell.tsx): count, quick filters, applied chips, saved filters, builder behind "Add filter". */
+.fsh { display: flex; flex-direction: column; gap: 10px; }
+.fsh__count { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 4px 8px; font-size: 13px; }
+.fsh__count .flt__bar { flex-basis: 100%; }
+.fsh__empty { color: var(--text-dim); }
+.fsh__quick { display: flex; flex-wrap: wrap; gap: 6px; }
+.fsh__pill { padding: 3px 10px; border: 1px solid var(--border); border-radius: 12px; background: var(--n-ffffff); font: inherit; font-size: 11px; cursor: pointer; }
+.fsh__pill:hover { border-color: var(--accent); color: var(--accent-strong); }
+.fsh__pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+.fsh__chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.fsh__chip { display: inline-flex; align-items: stretch; max-width: 100%; border: 1px solid var(--accent); border-radius: 12px; background: var(--accent-dim); overflow: hidden; font-size: 11px; }
+.fsh__chip-main { display: inline-flex; align-items: baseline; gap: 5px; min-width: 0; padding: 3px 4px 3px 9px; border: 0; background: none; font: inherit; cursor: pointer; color: var(--text); }
+.fsh__chip-main b { flex-shrink: 0; }
+.fsh__chip-main span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-dim); }
+.fsh__chip-x { display: inline-flex; align-items: center; justify-content: center; width: 22px; padding: 0; border: 0; background: none; cursor: pointer; color: var(--text-dim); }
+.fsh__chip-x:hover { background: rgba(0, 0, 0, 0.08); color: var(--text); }
+.fsh__chip-x svg { width: 12px; height: 12px; }
+.fsh__add { display: flex; align-items: center; gap: 8px; width: 100%; padding: 8px 10px; border: 1px dashed var(--border); border-radius: 0; background: none; font: inherit; font-size: 12px; font-weight: 600; color: var(--accent-strong); cursor: pointer; text-align: left; }
+.fsh__add:hover, .fsh__add.is-open { background: var(--n-f1f3f2); }
+.fsh__adv { padding-top: 2px; }
+
+/* The recipes' top row also holds the graph's tools (one recipe showing); what the recipe needs goes to the status bar, at its right. */
+.rec-top { flex-wrap: wrap; row-gap: 6px; }
+.rec-top .rec-top__slot { display: contents; }
+.rec-top .rec-top__slot .rg__bar { display: contents; }
+.rec-top .rec-top__slot .rg__view { margin-left: auto; }
+/* In the status bar's own row, after what the bar says (never over it): the bar gives way, this keeps its width up to 55%. */
+.statusbar-host:has(.rec-statusbar-needs:not(:empty)) { display: flex; align-items: stretch; }
+.statusbar-host:has(.rec-statusbar-needs:not(:empty)) > :not(.rec-statusbar-needs):not(.statusbar-close) { flex: 1 1 0; min-width: 0; overflow: hidden; }
+.statusbar-host:has(.rec-statusbar-needs:not(:empty)) .app-statusbar:last-of-type { padding-right: 8px; }
+.rec-statusbar-needs { order: 2; flex: 0 1 auto; max-width: 55%; margin-right: var(--nav-w, 38px); min-height: 32px; display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 12px; background: inherit; border-top: 1px solid var(--border); padding-left: 8px; }
+.rec-statusbar-needs:empty { display: none; }
+.rec-statusbar-needs .rel-bar { margin: 0; flex-wrap: nowrap; white-space: nowrap; }
+body.hide-statusbar .statusbar-host:not(:has(.sequence-statusbar)) .rec-statusbar-needs { display: none; }
+
+/* A panel's own buttons, in the navigation bar under the tab icons (Dock.tsx DockNavTools): full-width squares like the tabs. */
+.dock-nav__actions { display: flex; flex-direction: column; align-items: stretch; margin-top: 4px; border-top: 1px solid var(--border); }
+.dock-nav__actions:empty { display: none; }
+.dock-nav__grp { display: flex; flex-direction: column; align-items: stretch; }
+.dock-nav__actions .btn, .dock-nav__actions .icon-btn, .dock-nav__actions button { display: flex; align-items: center; justify-content: center; width: 100%; min-width: 0; aspect-ratio: 1 / 1; height: auto; margin: 0; padding: 0; border: 0; border-radius: 0; background: transparent; box-shadow: none; color: var(--text); font-size: 11px; font-weight: 600; cursor: pointer; }
+.dock-nav__actions .btn:hover:not(:disabled), .dock-nav__actions button:hover:not(:disabled) { background: rgba(0, 0, 0, 0.06); }
+.dock-nav__actions .btn:disabled, .dock-nav__actions button:disabled { opacity: 0.35; cursor: default; }
+.dock-nav__actions .btn.primary, .dock-nav__actions button.primary { background: var(--accent-dim); color: var(--accent-strong); }
+.dock-nav__actions svg { width: 18px; height: 18px; }
+
+/* The Sequence panel's toolbar in one row (its icon buttons are in the navigation bar): the step box and the order list give way first,
+   and a very narrow panel scrolls the row sideways. */
+.scn-tools--compact { display: flex; flex-wrap: nowrap; align-items: center; column-gap: 6px; overflow-x: auto; scrollbar-width: none; }
+.scn-tools--compact::-webkit-scrollbar { display: none; }
+.scn-tools--compact .scn-grp--span2 { display: flex; grid-column: auto; gap: 6px; flex: 0 1 auto; min-width: 0; }
+.scn-tools--compact .scn-grp--span2 > .btn { flex: 0 0 auto; padding: 0 8px; white-space: nowrap; }
+.scn-tools--compact .scn-grp > form { flex: 1 1 auto; min-width: 0; }
+.scn-tools--compact .scn-tools__row--small .scn-step-input { width: 44px; flex: 0 1 44px; }
+.scn-tools--compact .scn-step-folder { min-width: 60px; max-width: 100px; flex: 1 1 80px; }
+.scn-tools--compact .scn-tools__row--small > span:last-child { grid-column: auto; margin-left: auto; flex: none; }
+.scn-tools--compact .scn-grp { flex: 0 0 auto; }
+.scn-tools--compact .scn-grp--span2:first-child, .scn-tools--compact .scn-tools__row--small .scn-grp--span2 { flex: 0 1 auto; }

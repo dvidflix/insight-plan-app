@@ -11,7 +11,6 @@ import { applyFieldFilters, buildFilterFields } from '../../schedule/filterField
 import { useCalcFilterFields } from '../../schedule/calculatedColumns';
 import { spreadColumns } from '../../schedule/periodShare';
 import { configFocusProps } from '../../state/listConfigStore';
-import { ListTools } from '../ListConfig';
 import { useTasksSettingsStore } from '../../state/tasksSettingsStore';
 
 export type TasksMode = 'active' | 'starting' | 'finishing';
@@ -119,7 +118,6 @@ export function TasksPanel({ model, catalog, columnCtx, selectedId, getColor, on
           <span className="tasks__count" title={`${tasks.length} ${tasks.length === 1 ? 'task' : 'tasks'} in this period`}>· {tasks.length.toLocaleString()}</span>
         </div>
         <div className="tasks__tools">
-          <ListTools id="tasks" iconOnly />
           <div className="heat__tabs" role="tablist">
             {MODES.map((m) => (
               <button key={m.id} type="button" role="tab" aria-selected={mode === m.id} title={m.title} className={mode === m.id ? 'active' : ''} onClick={() => setMode(m.id)}>{m.label}</button>

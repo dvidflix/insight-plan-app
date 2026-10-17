@@ -1,6 +1,7 @@
 import { addDbSyncer, dbRoot, useProjectDbStore } from '../state/projectDbStore';
 import { PERSISTED_CONFIG_PREFIXES } from '../utils/persistedState';
 import { fetchSettings, saveSetting } from './api';
+import { FILE_VIEW_KEY, stripView, withView } from '../state/fileView';
 
 /** Keeps the app's layout settings (which columns, their order and widths,
     group / sort / colour rules, zoom, panel sizes, view settings…) in the
@@ -27,6 +28,9 @@ const SKIP = new Set(['sequence.linkGroups', 'app.browserDataImported', 'app.sid
 const DB_PREFIX = 'ui:';
 const FLUSH_MS = 900;
 
+/** The Files view (filters, grouping, sorting, columns) is the scene's own, so the database holds only the file details of that key. */
+const forDb = (key: string, value: string | null) => (key === FILE_VIEW_KEY && value ? stripView(value) : value);
+
 const synced = (key: string) => !SKIP.has(key) && PREFIXES.some((p) => key.startsWith(p));
 
 let applying = false;
@@ -40,7 +44,7 @@ function flush(): Promise<unknown> {
   dirty.clear();
   if (!root) return Promise.resolve();
   return Promise.all(keys.map((key) =>
-    saveSetting(root, DB_PREFIX + key, localStorage.getItem(key)).catch((e) =>
+    saveSetting(root, DB_PREFIX + key, forDb(key, localStorage.getItem(key))).catch((e) =>
       useProjectDbStore.setState({ error: `Saving settings to the project database failed: ${e instanceof Error ? e.message : e}` }),
     ),
   ));
@@ -106,13 +110,14 @@ addDbSyncer({
       const key = localStorage.key(i);
       if (key && synced(key)) local.push(key);
     }
-    for (const key of local) if (!inDb.has(key)) await saveSetting(root, DB_PREFIX + key, localStorage.getItem(key));
+    for (const key of local) if (!inDb.has(key)) await saveSetting(root, DB_PREFIX + key, forDb(key, localStorage.getItem(key)));
 
-    // The database wins for the keys it has.
+    // The database wins for the keys it has (except the scene's own Files view, which stays as this scene has it).
     const changed = new Set<string>();
     applying = true;
     try {
-      for (const [key, value] of inDb) {
+      for (const [key, dbValue] of inDb) {
+        const value = key === FILE_VIEW_KEY ? withView(dbValue, localStorage.getItem(key)) : dbValue;
         if (!synced(key) || localStorage.getItem(key) === value) continue;
         localStorage.setItem(key, value);
         changed.add(key);

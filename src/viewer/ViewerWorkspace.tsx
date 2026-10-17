@@ -11,8 +11,11 @@ import { ColourLegend } from '../components/ColourLegend';
 import { ViewerToolbar } from '../components/ViewerToolbar';
 import { useClashRunner } from './useClashRunner';
 import { useDataTableStore } from '../state/dataTableStore';
-import { PanelsButton } from '../components/ViewPicker';
+import { ListSetupButton } from '../components/ViewPicker';
+import { ObjectSourceTags } from '../components/sequence/ObjectSourceTags';
+import { useTagsStore } from '../state/tagsStore';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
+import { NPanel } from '../components/ListSetupPanel';
 import { DockDropZones, DockPanel, DockSideView } from '../components/Dock';
 import { DOCK_DEFAULTS, useDockStore } from '../state/dockStore';
 import { ClashPanel } from '../components/ClashPanel';
@@ -62,6 +65,7 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
   const setTableOpen = useDataTableStore((s) => s.setOpen);
   // 4D image / video export in progress (Export tab): stoppable from here
   // while the Configuration pane is hidden for the capture.
+  const tagsShown = useTagsStore((s) => s.shown);
   const recPhase = useRecordingStore((s) => s.phase);
   const recCount = useRecordingStore((s) => s.count);
   const recDone = useRecordingStore((s) => s.done);
@@ -100,7 +104,7 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
       <div ref={useHeaderSlotStore.getState().setEl} className="viewer-header" />
       {!centerShown && <div className="filterbar schedule-toolbar viewer-toolbar-row" ref={toolbarRow}>
           <div className="schedule-toolbar__left">
-            {!centerShown && <>{picker}<ViewerToolbar /></>}
+            {!centerShown && <>{picker}{search}<ViewerToolbar /></>}
           </div>
           <div className="schedule-toolbar__right">
             {inSequence && recPhase !== 'idle' && (
@@ -110,8 +114,8 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
                 <b>Stop export</b>
               </button>
             )}
-            {search}
-            <PanelsButton />
+            {centerShown && search}
+            <ListSetupButton />
           </div>
         </div>}
       <div style={{ display: 'flex', flex: 1, minWidth: 0, minHeight: 0 }}>
@@ -120,6 +124,7 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
           <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
             <ViewerCanvas layout={effectiveLayout} />
             {overlay}
+            {!centerShown && tagsShown && <ObjectSourceTags />}
             {!centerShown && <SectionsPanel />}
             {/* The 3D view keeps its size underneath (a hidden canvas would lose its aspect ratio). */}
             {center !== undefined && (
@@ -131,14 +136,16 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
             {!inSequence && paneActive && <ColourLegend />}
           </div>
           <DockSideView side="bottom" />
-          <div ref={useHeaderSlotStore.getState().setFooter} className="viewer-footer" />
         </div>
+      <NPanel />
       <DockSideView side="right" />
       {panel}
       {!inSequence && paneActive && <ModelConfigPanel />}
       {/* Models > Colour applies while the Models page shows (4D colours its own way). */}
       {!inSequence && paneActive && <ModelColorSync />}
       </div>
+      {/* The status bar and the 4D timeline run the full width: the docks on the sides stop above them. */}
+      <div ref={useHeaderSlotStore.getState().setFooter} className="viewer-footer" />
     </div>
   );
 }

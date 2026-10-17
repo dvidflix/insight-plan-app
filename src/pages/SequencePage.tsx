@@ -25,6 +25,7 @@ import { lerpStage, type AppearanceProfile, type AppearanceStage } from '../sche
 import { DockPanel } from '../components/Dock';
 import { MATERIAL_CLASS_COLOURS, encodeSurfaceInColour } from '../viewer/materialClasses';
 import { isShowing, useDockStore } from '../state/dockStore';
+import { useListConfigStore } from '../state/listConfigStore';
 import { DockGantt } from '../components/sequence/DockGantt';
 import { TasksDock } from '../components/sequence/TasksDock';
 import { SequenceResources } from '../components/sequence/SequenceResources';
@@ -166,7 +167,7 @@ export function SequencePanel() {
   // The data table's Configure button brings up its setup panel, as on the Models page.
   const dataTableConfigRequest = useDataTableStore((s) => s.configRequest);
   useEffect(() => {
-    if (dataTableConfigRequest) useDockStore.getState().reveal('tableSetup');
+    if (dataTableConfigRequest) useListConfigStore.getState().setNOpen(true);
   }, [dataTableConfigRequest]);
   // The Settings pane holds the 4D timeline settings while this page is up.
   useEffect(() => {
@@ -789,13 +790,7 @@ export function SequencePanel() {
       <DockPanel id="gantt" label="Gantt">
         {ready && model ? (
           <>
-            <div className="seq-linked" style={{ padding: '3px 10px', borderBottom: '1px solid var(--border)', display: 'flex', alignItems: 'center', gap: 10 }}>
-              <span>{linkedActivityIds.size > 0 ? `${linkedActivityIds.size} activit${linkedActivityIds.size === 1 ? 'y' : 'ies'} linked to selection` : 'Pick an object in 3D to see its activities'}</span>
-              <label style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer' }} title="On: picking an object in the 3D view picks its first linked activity here. Ctrl+Shift+F then moves the timeline to the start of the picked activity.">
-                <input type="checkbox" checked={selectOnPick} onChange={(e) => setSelectOnPick(e.target.checked)} /> Pick first activity
-              </label>
-            </div>
-            <DockGantt model={model} getColor={taskColorOf ?? undefined} selectedId={ganttSelectedId} highlightedIds={linkedActivityIds} scrollToId={focusActivityId} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
+            <DockGantt pickFirst={{ on: selectOnPick, set: setSelectOnPick }} model={model} getColor={taskColorOf ?? undefined} selectedId={ganttSelectedId} highlightedIds={linkedActivityIds} scrollToId={focusActivityId} onSelect={(a) => setGanttSelectedId(a.id)} onOpen={(a) => void openActivity(a)} />
           </>
         ) : needProgramme}
       </DockPanel>

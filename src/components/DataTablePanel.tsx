@@ -1,12 +1,13 @@
 import { useMemo, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
-import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataTableTab } from '../state/dataTableStore';
+import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore } from '../state/dataTableStore';
 import { useTwin } from './useTwin';
 import { SEVERAL } from '../viewer/twinMatch';
 import { useSearchSetsStore } from '../state/searchSetsStore';
 import { ATTRIBUTES, elementValue } from '../viewer/bimTables';
-import { conditionTest, countIds, runSearchSet, type SearchCondition } from '../viewer/searchSets';
+import { conditionTest, countIds, runSearchSet, SEARCH_OPS, type SearchCondition } from '../viewer/searchSets';
+import { FilterShell, type FilterChip } from './FilterShell';
 import { ColumnsPanel } from './schedule/ColumnsPanel';
 import { GroupPanel } from './schedule/GroupPanel';
 import { SortPanel } from './schedule/SortPanel';
@@ -17,125 +18,10 @@ import { useIndexTick, useModelFields } from './modelFields';
 import { InfoTip } from './InfoTip';
 import { ListConfig } from './ListConfig';
 
-const TABS: { id: DataTableTab; label: string }[] = [
-  { id: 'columns', label: 'Columns' },
-  { id: 'filters', label: 'Filters' },
-  { id: 'group', label: 'Group' },
-  { id: 'sort', label: 'Sort' },
-  { id: 'color', label: 'Colour' },
-];
-
 const DEFAULT_COLUMNS = [COL_NAME, COL_CLASS, COL_MODEL];
 
-/** Models > Data table: shows or hides the table under the 3D view, and
-    sets it up the way the Programmes table is — its columns (any
-    property), filters (conditions, as in Search sets), grouping levels,
-    sort keys and row colours. */
-export function DataTablePanel() {
-  const engine = useViewerEngine();
-  const models = useModelsStore((s) => s.models);
-  const tick = useIndexTick();
-  const store = useDataTableStore();
-  const { columns, setColumns, filters, filterMatch, groupRules, sortRules, colorRules, tab, patch } = store;
-  const baseFields = useModelFields();
-  const twin = useTwin();
-  // With a twin model, every property of its objects can be a column, filter, group, sort key or colour too.
-  const fields = useMemo(() => {
-    if (!twin.active) return baseFields;
-    const keys = new Set<string>();
-    for (const e of engine.getIndexes().get(twin.b!.modelId)?.elements.values() ?? []) for (const k of Object.keys(e.props)) keys.add(k);
-    const own = baseFields.filter((f) => (f.group === ATTRIBUTES ? f.id !== `${ATTRIBUTES}.Model` : keys.has(f.id)));
-    return [...baseFields, ...own.map((f) => ({ ...f, id: TWIN_PREFIX + f.id, label: `Twin · ${f.label}`, group: `Twin · ${f.group ?? 'Other'}` }))];
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [baseFields, twin.active, twin.b]);
-
-  // Twin layout of the Columns tab: each property with the main model's and the twin's checkbox.
-  const twinColumns = useMemo(() => {
-    if (!twin.active) return null;
-    const keysOf = (modelId: string) => {
-      const keys = new Set<string>();
-      for (const e of engine.getIndexes().get(modelId)?.elements.values() ?? []) for (const k of Object.keys(e.props)) keys.add(k);
-      return keys;
-    };
-    const a = keysOf(twin.a!.modelId);
-    const b = keysOf(twin.b!.modelId);
-    const isAttr = (id: string) => id.startsWith(`${ATTRIBUTES}.`);
-    const hasOwn = (id: string) => (isAttr(id) ? true : a.has(id));
-    const hasTwin = (id: string) => (isAttr(id) ? id !== `${ATTRIBUTES}.Model` : b.has(id));
-    const listed = baseFields.filter((f) => hasOwn(f.id) || hasTwin(f.id));
-    return { listed, hasOwn, twinOf: (id: string) => (hasTwin(id) ? TWIN_PREFIX + id : null) };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [twin.active, twin.a, twin.b, baseFields, tick]);
-
-  const valuesOf = useMemo(() => {
-    const cache = new Map<string, { value: string; count: number }[]>();
-    return (field: string) => {
-      let list = cache.get(field);
-      if (!list) {
-        const counts = new Map<string, number>();
-        const isTwin = field.startsWith(TWIN_PREFIX);
-        const key = isTwin ? field.slice(TWIN_PREFIX.length) : field;
-        const indexes = isTwin ? [engine.getIndexes().get(twin.b?.modelId ?? '')].filter((x) => !!x) : [...engine.getIndexes().values()];
-        for (const index of indexes) for (const e of index!.elements.values()) {
-          const v = elementValue(e, key);
-          counts.set(v, (counts.get(v) ?? 0) + 1);
-        }
-        list = [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
-        cache.set(field, list);
-      }
-      return list;
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, models, tick, twin.b]);
-
-  const badge: Record<DataTableTab, number> = {
-    columns: columns.length,
-    filters: filters.filter((c) => conditionTest(c)).length,
-    group: groupRules.length,
-    sort: sortRules.length,
-    color: colorRules.length,
-  };
-
-  return (
-    <div className="dtp">
-      <div className="disp dtp__top">
-      </div>
-      <PresetsRow />
-      <TwinBlock twin={twin} />
-      <div className="cols__views dtp__tabs" role="tablist">
-        {TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={tab === t.id} className={tab === t.id ? 'active' : ''} onClick={() => patch({ tab: t.id })}>
-            {t.label}
-            {badge[t.id] > 0 && t.id !== 'columns' && <span className="dtp__badge">{badge[t.id]}</span>}
-          </button>
-        ))}
-      </div>
-      <div className="dtp__body">
-        {fields.length <= 4 && models.length === 0 && <div className="flt__hint">Load a model to list its properties.</div>}
-        {tab === 'columns' && (
-          <ColumnsPanel
-            catalog={fields.map((f) => ({ id: f.id, label: f.label, group: f.group ?? 'Other' }))}
-            listed={twinColumns?.listed.map((f) => ({ id: f.id, label: f.label, group: f.group ?? 'Other' }))}
-            twin={twinColumns ? { titles: ['Main model', 'Twin'], hints: [twin.a!.name, twin.b!.name], twinOf: twinColumns.twinOf, hasOwn: twinColumns.hasOwn } : undefined}
-            views={[{ id: 'table', label: 'Data table', selected: columns, defaults: DEFAULT_COLUMNS, onChange: setColumns }]}
-            presets={[]}
-            groupOrder={[ATTRIBUTES]}
-            closedGroups={[]}
-          />
-        )}
-        {tab === 'filters' && <FiltersTab fields={fields} filters={filters} match={filterMatch} onChange={(p) => patch(p)} />}
-        {tab === 'group' && (
-          <GroupPanel bare fields={fields} rules={groupRules} onChange={(r) => patch({ groupRules: r })} onClose={() => {}} onCollapseAll={() => store.setGroupsCollapsed(true)} onExpandAll={() => store.setGroupsCollapsed(false)} />
-        )}
-        {tab === 'sort' && <SortPanel bare fields={fields} rules={sortRules} onChange={(r) => patch({ sortRules: r })} onClose={() => {}} />}
-        {tab === 'color' && <ColorPanel bare fields={fields} valuesOf={valuesOf} rules={colorRules} onChange={(r) => patch({ colorRules: r })} onClose={() => {}} />}
-      </div>
-    </div>
-  );
-}
-
-/** The Data table's tools (Filter, Sort, Group, Columns, Color) for the toolbar of the table: the same bodies as the setup panel, given to the
-    popovers through ListConfig. Mounted with the table, so they are there whether or not the setup panel is up. */
+/** The Data table's setup (presets, twin models, Columns, Filters, Group, Sort, Colour) for the shared List setup panel, given through
+    ListConfig. Mounted with the table, so it is there whether or not the panel is up. */
 export function DataTableListConfig() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
@@ -197,8 +83,10 @@ export function DataTableListConfig() {
   return (
     <ListConfig
       id="datatable"
+      searchable
       label="Data table"
       badges={badges}
+      extra={<><PresetsRow /><TwinBlock twin={twin} /></>}
       panels={{
         columns: (
           <ColumnsPanel
@@ -317,7 +205,6 @@ function FiltersTab({ fields, filters, match, onChange }: {
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [engine, filters, match, models, tick, total],
   );
-  const pct = total ? (matched / total) * 100 : 100;
   const setFilters = (next: SearchCondition[]) => onChange({ filters: next });
   const patchCondition = (id: string, p: Partial<SearchCondition>) => setFilters(filters.map((c) => (c.id === id ? { ...c, ...p } : c)));
   const add = (f: PickField) => setFilters([...filters, { id: newRuleId('c'), field: f.id, op: 'anyOf', value: '', values: [] }]);
@@ -330,40 +217,59 @@ function FiltersTab({ fields, filters, match, onChange }: {
     if (set) onChange({ filters: set.conditions.map((c) => ({ ...c, id: newRuleId('c') })), filterMatch: set.match });
   };
 
+  const labelOf = (id: string) => byId.get(id)?.label ?? id;
+  const summaryOf = (c: SearchCondition) => {
+    const picked = c.values?.length ? c.values.join(', ') : c.value;
+    const op = SEARCH_OPS.find((o) => o.op === c.op)?.label ?? '';
+    return [op, c.op === 'between' && c.value2 ? `${c.value} – ${c.value2}` : picked].filter(Boolean).join(' ');
+  };
+  const [builderOpen, setBuilderOpen] = useState(false);
+  const chips: FilterChip[] = filters.filter((c) => conditionTest(c)).map((c) => ({
+    id: c.id,
+    label: labelOf(c.field),
+    summary: summaryOf(c),
+    onRemove: () => setFilters(filters.filter((x) => x.id !== c.id)),
+    onEdit: () => setBuilderOpen(true),
+  }));
   return (
-    <div className="flt">
-      <div className="flt__result">
-        <div className="flt__result-text">
-          <b>{matched.toLocaleString()}</b> of {total.toLocaleString()} objects
-          {matched === 0 && total > 0 && <span className="flt__none"> — no matches</span>}
+    <FilterShell
+      className="flt"
+      matched={matched}
+      total={total}
+      noun="objects"
+      emptyHint="Load a model to filter its objects."
+      chips={chips}
+      onClearAll={() => setFilters([])}
+      combine={(
+        <div className="disp__row">
+          <span>Rows matching</span>
+          <div className="segmented-choice">
+            <button type="button" className={match === 'all' ? 'active' : ''} onClick={() => onChange({ filterMatch: 'all' })}>All conditions</button>
+            <button type="button" className={match === 'any' ? 'active' : ''} onClick={() => onChange({ filterMatch: 'any' })}>Any condition</button>
+          </div>
         </div>
-        <button type="button" className="cols__link" disabled={filters.length === 0} onClick={() => setFilters([])}>Clear all</button>
-        <div className="flt__bar"><span style={{ width: `${pct}%` }} /></div>
-      </div>
-
-      <div className="disp__row">
-        <span>Rows matching</span>
-        <div className="segmented-choice">
-          <button type="button" className={match === 'all' ? 'active' : ''} onClick={() => onChange({ filterMatch: 'all' })}>All conditions</button>
-          <button type="button" className={match === 'any' ? 'active' : ''} onClick={() => onChange({ filterMatch: 'any' })}>Any condition</button>
+      )}
+      presets={(
+        <div className="dtp__sets">
+          <select value="" onChange={(e) => loadSet(e.target.value)} disabled={sets.length === 0}>
+            <option value="">{sets.length ? 'Use a saved filter (search set)…' : 'No saved filters yet'}</option>
+            {sets.map((s) => <option key={s.id} value={s.id}>{s.group ? `${s.group} › ${s.name}` : s.name}</option>)}
+          </select>
+          <button type="button" className="btn btn--small" disabled={!filters.some((c) => conditionTest(c))} onClick={saveAsSet}>Save as…</button>
+          <InfoTip>Filters are the same conditions as Search sets: load one as the filter, or keep this filter as a search set. The search box and the per-column boxes in the table filter on top of these.</InfoTip>
         </div>
-      </div>
-      <div className="dtp__sets">
-        <select value="" onChange={(e) => loadSet(e.target.value)} disabled={sets.length === 0}>
-          <option value="">{sets.length ? 'Use a search set…' : 'No search sets yet'}</option>
-          {sets.map((s) => <option key={s.id} value={s.id}>{s.group ? `${s.group} › ${s.name}` : s.name}</option>)}
-        </select>
-        <button type="button" className="btn btn--small" disabled={!filters.some((c) => conditionTest(c))} onClick={saveAsSet}>Save as search set</button>
-        <InfoTip>Filters are the same conditions as Search sets: load one as the filter, or keep this filter as a search set. The search box and the per-column boxes in the table filter on top of these.</InfoTip>
-      </div>
-
-      <div className="cols__heading"><span>Conditions <b>{filters.length}</b></span></div>
-      <RuleRows rules={filters} onChange={setFilters} empty="No filter: add a condition from the properties below.">
-        {(c) => <ConditionEditor condition={c} field={byId.get(c.field)} fields={fields} onChange={(p) => patchCondition(c.id, p)} />}
-      </RuleRows>
-
-      <div className="cols__heading"><span>Add a condition</span></div>
-      <FieldPicker catalog={fields} picked={new Set(filters.map((c) => c.field))} onPick={add} placeholder="Search properties…" />
-    </div>
+      )}
+      advanced={(
+        <>
+          <RuleRows rules={filters} onChange={setFilters} empty="No filter yet: pick a property below to add a condition.">
+            {(c) => <ConditionEditor condition={c} field={byId.get(c.field)} fields={fields} onChange={(p) => patchCondition(c.id, p)} />}
+          </RuleRows>
+          <div className="cols__heading"><span>Add a condition</span></div>
+          <FieldPicker catalog={fields} picked={new Set(filters.map((c) => c.field))} onPick={add} placeholder="Search properties…" />
+        </>
+      )}
+      advancedOpen={builderOpen}
+      onAdvancedOpen={setBuilderOpen}
+    />
   );
 }

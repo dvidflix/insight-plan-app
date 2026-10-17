@@ -55,11 +55,9 @@ import { IconCopy, IconDownload, IconFullscreen, IconUndo, IconRedo, IconRelated
 import { DockPanel } from '../components/Dock';
 import { hasLinkedWindows, onWindowMessage, sendToWindows } from '../state/windowSync';
 import { useSelectionSync } from '../schedule/useSelectionSync';
-import { useTableSearchStore } from '../state/tableSearchStore';
+import { useListQuery } from '../state/tableSearchStore';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
-import { ListTools } from '../components/ListConfig';
-import { GlobalSearch } from '../components/GlobalSearch';
-import { PanelsButton, ViewPicker, type PageItem } from '../components/ViewPicker';
+import { ListSetupButton, ViewPicker, type PageItem } from '../components/ViewPicker';
 import { DockGantt } from '../components/sequence/DockGantt';
 import { ToolbarLeftSlotContext, ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditTools } from '../components/schedule/EditTools';
@@ -228,17 +226,13 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
   const activityTableRef = useRef<ActivityTableHandle>(null);
   const ganttRef = useRef<GanttHandle>(null);
   // The words the table is narrowed to come from the search box in the top bar ("Filter this table").
-  const search = useTableSearchStore((t) => t.query);
+  const search = useListQuery('programmes');
   // Layouts and the name/code search belong to the activity views; the other
   // views put their own tools in the toolbar slot instead.
   const fullscreenOn = useFullscreenStore((st) => st.on);
   // The toolbar runs across the whole width above the docks (the header of the viewer workspace), while this page shows.
   const headerSlot = useHeaderSlotStore((h) => h.el);
   const listTools = tab === 'activities' || tab === 'gantt' || tab === 'explorer' || tab === 'planner';
-  useEffect(() => {
-    useTableSearchStore.getState().setAvailable(listTools && active);
-    return () => useTableSearchStore.getState().setAvailable(false);
-  }, [listTools, active]);
   const [toolbarSlot, setToolbarSlot] = useState<HTMLDivElement | null>(null);
   const [leftSlot, setLeftSlot] = useState<HTMLElement | null>(null);
   // The zoom and view settings live at the right of the status bar (App's footer holds the spot).
@@ -500,9 +494,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
         <div className="filterbar schedule-toolbar">
           <div className="schedule-toolbar__left">
             <ViewPicker named pages={pages} page="schedule" onPage={(id) => (onPage ? onPage(id) : undefined)} tab={tab} onTab={(t) => onTabChange?.(t)}
-              hideSearch
-            afterView={<>
-      <span ref={setStatusSlot} className="schedule-toolbar__view" />
+            afterSearch={<>
       <span ref={setLeftSlot} className="groupby-panel" style={tab === 'wbs' ? undefined : { display: 'none' }} />
         {(tab === 'activities' || tab === 'gantt' || tab === 'explorer') && (
           <div className="groupby-panel">
@@ -534,11 +526,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
   
           <div className="schedule-toolbar__right">
             {baselineBase && <BaselineMenu model={baselineBase} />}
-            {listTools && (
-              <>
-              <ListTools id="programmes" />
-              </>
-            )}
+            <span ref={setStatusSlot} className="schedule-toolbar__view" />
             <div ref={setToolbarSlot} className="schedule-toolbar__slot" />
             {dayFilter && (
               <button className="btn btn--small" type="button" onClick={() => setDayFilter(null)} title="Clear day filter">
@@ -572,8 +560,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
                 { label: fullscreenOn ? 'Exit full screen' : 'Full screen', icon: <IconFullscreen width={16} height={16} />, onClick: toggleFullscreen },
               ]}
             />
-            <GlobalSearch pages={pages} onPage={(id) => (onPage ? onPage(id) : undefined)} onTab={(t) => onTabChange?.(t)} />
-          <PanelsButton />
+          <ListSetupButton />
           </div>
         </div>
   );

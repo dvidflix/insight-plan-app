@@ -17,7 +17,7 @@ import { downloadBlob } from '../../../utils/download';
 import { IconCopy, IconEye, IconEyeOff, IconDelete, IconRemove } from '../../icons';
 import { useEditableGrid } from '../../useEditableGrid';
 import { RuleCard, useRuleContext } from './RuleParts';
-import { RecipeGraph } from './RecipeGraph';
+import { RecipeBarSlot, RecipeGraph } from './RecipeGraph';
 import { TaskResources } from './TaskResources';
 import { ResourcesScreen } from './ResourcesScreen';
 
@@ -346,12 +346,15 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
 }
 
 /** What a recipe needs, at a glance: days, the most people at once, and the cranes, equipment and materials it names. */
-function NeedsLine({ recipe, rules, lead }: { recipe: Recipe; rules: ScenarioRules; lead?: string }) {
+function NeedsLine({ recipe, rules, lead, inStatus }: { recipe: Recipe; rules: ScenarioRules; lead?: string; inStatus?: boolean }) {
   const n = recipeNeeds(recipe, rules);
+  // With one recipe the line goes to the status bar (when the page has one), else it stays here.
+  const [statusEl, setStatusEl] = useState<HTMLElement | null>(null);
+  useEffect(() => { setStatusEl(inStatus ? document.getElementById('scn-statusbar-needs') ?? document.getElementById('rec-statusbar-needs') : null); }, [inStatus]);
   const chip = (label: string, items: { type: string; count: number }[]) => items.length > 0 && (
     <span className="scn-chip" title={label}>{label}: {items.map((u) => (u.count > 1 ? `${u.type} ×${u.count}` : u.type)).join(', ')}</span>
   );
-  return (
+  const line = (
     <div className="rel-bar" aria-label="What the recipe needs">
       {lead && <span className="scn-dim rec-sub">{lead}</span>}
       <span className="scn-chip" title="The days of the tasks added up (tasks that run side by side are counted too)">{n.days} day{n.days === 1 ? '' : 's'} of work</span>
@@ -363,6 +366,7 @@ function NeedsLine({ recipe, rules, lead }: { recipe: Recipe; rules: ScenarioRul
       {n.days === 0 && n.people === 0 && !n.cranes.length && !n.equipment.length && !n.materials.length && <span className="scn-dim">Nothing assigned yet: give the tasks days, a crew or resources.</span>}
     </div>
   );
+  return statusEl ? createPortal(line, statusEl) : line;
 }
 
 const NO_PHASES: never[] = [];
@@ -453,6 +457,7 @@ ${unusedSets.map((x) => x.name).join(', ')}`)) return;
     }
   };
 
+  const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
   const mine = recipes.map((r, i) => ({ r, i })).filter(({ r }) => sameGroup(r));
   const objects = current ? countIds(members.get(current.id) ?? {}) : null;
   const label = (n: string) => n || 'Every object';
@@ -493,6 +498,8 @@ ${unusedSets.map((x) => x.name).join(', ')}`)) return;
           </div>
         </details>
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importFile(f); }} />
+        {/* The graph's tools (view tabs, Connect Task ... zoom) join this row while one recipe shows. */}
+        <span ref={setBarSlot} className="rec-top__slot" />
       </div>
       {note && <div className={`scn-rules__note${note.ok ? '' : ' is-error'}`} role="status">{note.text}</div>}
       {resourcesOpen && <ResourcesScreen onClose={() => setResourcesOpen(false)} />}
@@ -500,14 +507,16 @@ ${unusedSets.map((x) => x.name).join(', ')}`)) return;
         <div className="scn-dim scn-editor__help" style={{ margin: 8 }}>No recipes yet. Press + Recipe and pick the set of objects it is for (sets are made in Models &gt; Search sets, in the folder "{RECIPE_SETS_FOLDER}").</div>
       ) : (
         <>
+          <RecipeBarSlot.Provider value={mine.length === 1 ? barSlot : null}>
           {mine.map(({ r, i }, k) => (
 
             <div key={i}>
-              <NeedsLine recipe={r} rules={rules} lead={k === 0 && objects !== null ? `${objects} object${objects === 1 ? '' : 's'} in the loaded models` : undefined} />
+              <NeedsLine recipe={r} rules={rules} inStatus={mine.length === 1} lead={k === 0 && objects !== null ? `${objects} object${objects === 1 ? '' : 's'} in the loaded models` : undefined} />
               <RecipeCard bare={mine.length === 1} recipe={r} recipes={recipes} rules={rules} check={scenarioOpen} onChange={(next) => set(recipes.map((x, j) => (j === i ? next : x)))} onDelete={() => { if (window.confirm(`Delete the recipe "${r.id}"?`)) set(recipes.filter((_, j) => j !== i)); }} onCopy={() => copy(i)}
                 collapsed={folded.has(i)} onCollapsed={(c) => setFolded((prev) => { const next = new Set(prev); if (c) next.add(i); else next.delete(i); return next; })} />
             </div>
           ))}
+          </RecipeBarSlot.Provider>
         </>
       )}
       <datalist id="recipe-groups">{[...new Set([...folderSets.map((x) => x.name), ...rules.groups.map((g) => g.id)])].map((g) => <option key={g} value={g} />)}</datalist>

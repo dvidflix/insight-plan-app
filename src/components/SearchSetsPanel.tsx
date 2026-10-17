@@ -5,18 +5,20 @@ import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
 import { useSearchSetsStore } from '../state/searchSetsStore';
 import { useSelectionStore } from '../state/selectionStore';
+import { setIdsOf, useTagsStore } from '../state/tagsStore';
 import {
   SEARCH_OPS, conditionProblem, conditionsFromObjects, conversionResult, countIds, suggestFields, isSelectionSet, itemsOf, mergeItems, opInput, resolveItems, runSearchSet, upgradeLegacyItems,
   type SearchCondition, type SearchOp, type SearchSet, type SetItem,
 } from '../viewer/searchSets';
 import { FieldPicker, RuleRows, newRuleId, type PickField } from './schedule/FieldRules';
 import { useFieldValues, useIndexTick, useModelFields } from './modelFields';
-import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTextInputShort, IconUpload, IconRemove, IconPencil } from './icons';
+import { IconEye, IconEyeOff, IconSelectionSet, IconSectionChevron, IconTagOutline, IconTextInputShort, IconUpload, IconRemove, IconPencil } from './icons';
 import { RowButtonsChooser, useRowButtons } from './RowButtonsChooser';
 import { InfoTip } from './InfoTip';
 import { queryMatcher } from '../schedule/search';
 import { usePersistedState } from '../utils/persistedState';
 import { FolderPlayerBar, useFolderPlayer } from './FolderPlayer';
+import { buildSpoolSets, inFolderTree, type SpoolOptions } from '../viewer/spoolSets';
 import { STEPS_GROUP, buildStepSets, cleanHeader, guessColumns, guessField, parseTable, stepsFromRows } from '../viewer/importSteps';
 
 const MAX_VALUES = 300;
@@ -78,11 +80,23 @@ export function SearchSetsPanel({ player = false }: { /** Show the folder player
 const ROW_BUTTONS = [
   { id: 'count', glyph: '123', label: 'Object count' },
   { id: 'eye', glyph: '👁', label: 'Show / hide in 3D' },
+  { id: 'tag', glyph: <IconTagOutline width={14} height={14} />, label: 'Show / hide its tags' },
   { id: 'edit', glyph: <IconPencil width={14} height={14} />, label: 'Edit' },
   { id: 'dup', glyph: '⧉', label: 'Duplicate' },
   { id: 'del', glyph: '⊖', label: 'Delete' },
 ] as const;
 type RowButton = (typeof ROW_BUTTONS)[number]['id'];
+
+/** A set's tags button: lit while it has tags showing; the first click makes a tag that names each object (edit it in the Tags panel). */
+function TagButton({ set }: { set: SearchSet }) {
+  const on = useTagsStore((s) => s.shown && s.tags.some((t) => t.source?.kind === 'set' && !t.hidden && setIdsOf(t).includes(set.id)));
+  return (
+    <button type="button" className={`cols__icon${on ? ' is-on' : ''}`} aria-pressed={on} onClick={() => useTagsStore.getState().toggleSetTags(set.id, set.name)}
+      title={on ? 'Hide its tags (Shift+Space)' : 'Show its tags (Shift+Space). They use the “Set tags” tag: change its label in the Tags panel'} aria-label={`Tags of ${set.name}`} style={{ opacity: on ? 1 : 0.55 }}>
+      <IconTagOutline width={14} height={14} />
+    </button>
+  );
+}
 
 function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) => void; player: boolean }) {
   const engine = useViewerEngine();
@@ -106,6 +120,8 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
+  const [spooling, setSpooling] = useState(false);
+  const anyTagsOn = useTagsStore((s) => s.shown && s.tags.some((t) => !t.hidden && (t.source?.kind === 'selection' || (t.source?.kind === 'set' && setIdsOf(t).length > 0))));
   const [converting, setConverting] = useState<string[] | null>(null);
   // Order of the sets in their folders: as dragged, or alphabetical.
   const [alpha, setAlpha] = usePersistedState('searchSets.alpha', false);
@@ -251,9 +267,12 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
     const t = e.target as HTMLElement;
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(t.tagName)) return;
     e.preventDefault();
-    // Space: the selected sets' eye (their objects on / off in the 3D view).
+    // Space: the selected sets' eye (their objects on / off in the 3D view). Shift+Space: their tags on / off.
     if (e.key === ' ') {
-      flipShown(selectedIdsMap());
+      if (e.shiftKey) {
+        const picked = [...(selectedSets.size ? selectedSets : new Set(activeId ? [activeId] : []))].map((id) => sets.find((x) => x.id === id)).filter((x): x is SearchSet => !!x);
+        for (const x of picked) useTagsStore.getState().toggleSetTags(x.id, x.name);
+      } else flipShown(selectedIdsMap());
       return;
     }
     const dir = e.key === 'ArrowDown' ? 1 : -1;
@@ -363,6 +382,12 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
         </button>
         <button type="button" className="btn ss__tool" onClick={() => setAlpha((v) => !v)} aria-pressed={alpha} title={alpha ? 'Sorted A–Z: click to order by dragging' : 'Your own order (drag a row to move it): click to sort A–Z'}>{alpha ? 'A–Z' : 'Manual'}</button>
         <button type="button" className="btn ss__tool" disabled={![...(selectedSets.size ? selectedSets : new Set(activeId ? [activeId] : []))].some((id) => sets.some((x) => x.id === id && isSelectionSet(x)))} onClick={() => setConverting([...(selectedSets.size ? selectedSets : new Set(activeId ? [activeId] : []))])} aria-label="Convert selected sets to search sets" title="Convert the selected selection sets to search sets, by property (select them in the list first: Shift+click for a range)">Convert</button>
+        <button type="button" className="btn ss__tool" disabled={!anyTagsOn} onClick={() => useTagsStore.getState().hideObjectTags()} aria-label="Hide all tags" title={anyTagsOn ? 'Hide all the tags on sets and on the selection (they are kept: a set\'s tag button brings its back)' : 'No set or selection tags are showing'}>
+          <IconTagOutline width={16} height={16} /><span className="ss__tool-text">Tags off</span>
+        </button>
+        <button type="button" className="btn ss__tool" onClick={() => setSpooling((v) => !v)} aria-expanded={spooling} aria-label="Spool sets" title="Spool: make a set for every value of a property in one go, sorted into folders">
+          <span className="ss__tool-text">Spool</span>
+        </button>
         <button type="button" className="btn ss__tool" onClick={() => setImporting((v) => !v)} aria-expanded={importing} aria-label="Import steps" title="Import steps: make a set per step from a CSV / TXT file of GlobalIds and task names">
           <IconUpload width={16} height={16} /><span className="ss__tool-text">Import</span>
         </button>
@@ -375,6 +400,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
         </InfoTip>
       </div>
       {importing && <ImportSteps onDone={() => setImporting(false)} />}
+      {spooling && <SpoolSets onDone={() => setSpooling(false)} />}
       {converting && <BulkConvert ids={converting} onDone={() => setConverting(null)} />}
       {sets.length > 0 && (
         groups.some((g) => g !== '') ? (
@@ -461,6 +487,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                       </button>
                       {shownBtn('count') && <span className={`ss__count${n === 0 ? ' is-zero' : ''}${saved && stored > n ? ' is-partial' : ''}`} title={`${n} of ${total} objects${saved && stored > n ? ` · ${stored - n} saved objects not in the loaded models` : ''}`}>{n.toLocaleString()}</span>}
                       {shownBtn('eye') && eye(ids, `“${s.name}”`)}
+                      {shownBtn('tag') && <TagButton set={s} />}
                       {shownBtn('edit') && <button type="button" className="cols__icon" onClick={() => onEdit(s)} title="Edit" aria-label={`Edit ${s.name}`}><IconPencil width={14} height={14} /></button>}
                       {shownBtn('dup') && <button type="button" className="cols__icon" onClick={() => duplicate(s)} title="Duplicate" aria-label={`Duplicate ${s.name}`}>⧉</button>}
                       {shownBtn('del') && <button type="button" className="cols__icon cols__icon--remove" onClick={() => { if (window.confirm(`Delete the ${saved ? 'selection' : 'search'} set “${s.name}”?`)) remove(s.id); }} title="Delete" aria-label={`Delete ${s.name}`}><IconRemove /></button>}
@@ -910,6 +937,104 @@ function BulkConvert({ ids, onDone }: { ids: string[]; onDone: () => void }) {
         <span style={{ flex: 1 }} />
         <button type="button" className="btn" onClick={onDone}>Cancel</button>
         <button type="button" className="btn btn--primary" disabled={convertible.length === 0} onClick={apply}>Convert {convertible.length}</button>
+      </div>
+    </div>
+  );
+}
+
+/** Spool: makes a set for every value of a property (or every combination of several) in one go, sorted into folders by splitting the
+    value. Like the "Spool search sets" tool of other BIM add-ins. */
+function SpoolSets({ onDone }: { onDone: () => void }) {
+  const engine = useViewerEngine();
+  const fields = useModelFields();
+  const tick = useIndexTick();
+  const selected = useSelectionStore((s) => s.byModel);
+  const selectedCount = countIds(selected);
+  const [props, setProps] = useState<string[]>(['']);
+  const [folder, setFolder] = useState('');
+  const [output, setOutput] = useState<'search' | 'selection'>('search');
+  const [useSelection, setUseSelection] = useState(false);
+  const [deleteExisting, setDeleteExisting] = useState(true);
+  const [delimiter, setDelimiter] = useState('-');
+  const [primaryOn, setPrimaryOn] = useState(false);
+  const [primary, setPrimary] = useState(2);
+  const [secondaryOn, setSecondaryOn] = useState(false);
+  const [secondary, setSecondary] = useState(3);
+  const [message, setMessage] = useState('');
+  const labelOf = (id: string) => fields.find((f) => f.id === id)?.label ?? id;
+  const chosen = props.filter(Boolean);
+  const folderName = folder.trim() || (chosen.length ? chosen.map(labelOf).join(' + ') : '');
+
+  const opts = useMemo((): SpoolOptions => ({
+    fields: chosen,
+    folder: folderName,
+    output,
+    restrictTo: useSelection && selectedCount ? selected : undefined,
+    split: primaryOn || secondaryOn ? { delimiter, primary: primaryOn ? primary : undefined, secondary: secondaryOn ? secondary : undefined } : undefined,
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [chosen.join('|'), folderName, output, useSelection, selected, selectedCount, delimiter, primaryOn, primary, secondaryOn, secondary]);
+  const preview = useMemo(
+    () => (chosen.length ? buildSpoolSets(engine.getIndexes(), opts) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [engine, opts, tick],
+  );
+  const folders = preview ? new Set(preview.sets.map((s) => s.group)).size : 0;
+
+  const run = () => {
+    if (!preview || !preview.sets.length) return;
+    const store = useSearchSetsStore.getState();
+    const old = store.sets.filter((s) => inFolderTree(s.group, folderName));
+    if (deleteExisting && old.length && !window.confirm(`Replace the ${old.length} set${old.length === 1 ? '' : 's'} in “${folderName}” (and the folders inside it)?`)) return;
+    useSearchSetsStore.setState((s) => ({
+      sets: [...(deleteExisting ? s.sets.filter((x) => !inFolderTree(x.group, folderName)) : s.sets), ...preview.sets],
+    }));
+    setMessage(`Made ${preview.sets.length.toLocaleString()} ${output} sets in ${folders} folder${folders === 1 ? '' : 's'}.`);
+    onDone();
+  };
+
+  const num = (value: number, set: (n: number) => void, enabled: boolean) => (
+    <input type="number" min={1} max={20} value={value} disabled={!enabled} onChange={(e) => set(Math.max(1, Math.round(Number(e.target.value)) || 1))} style={{ width: 52 }} aria-label="Part number" />
+  );
+  const fieldSelect = (value: string, i: number) => (
+    <div key={i} style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
+      <select value={value} onChange={(e) => setProps((p) => p.map((x, j) => (j === i ? e.target.value : x)))} aria-label="Property" style={{ flex: 1, minWidth: 0 }}>
+        <option value="">Choose a property…</option>
+        {[...new Set(fields.map((f) => f.group))].map((g) => (
+          <optgroup key={g} label={g}>
+            {fields.filter((f) => f.group === g).map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </optgroup>
+        ))}
+      </select>
+      {props.length > 1 && <button type="button" className="cols__icon cols__icon--remove" onClick={() => setProps((p) => p.filter((_, j) => j !== i))} title="Remove this property" aria-label="Remove this property"><IconRemove /></button>}
+    </div>
+  );
+  return (
+    <div className="flt__hint ss__import" style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+      <div className="segmented-choice" title="What each set is">
+        <button type="button" className={output === 'search' ? 'active' : ''} onClick={() => setOutput('search')} title="Rules that find the value again, in whatever models are loaded">Search sets</button>
+        <button type="button" className={output === 'selection' ? 'active' : ''} onClick={() => setOutput('selection')} title="The objects as they are now, fixed">Selection sets</button>
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Property{props.length > 1 ? ' (one set per combination)' : ''}</div>
+      {props.map(fieldSelect)}
+      <button type="button" className="btn btn--small" style={{ alignSelf: 'flex-start' }} onClick={() => setProps((p) => [...p, ''])} title="Make a set for every combination of the values of several properties">+ Another property</button>
+      <input value={folder} placeholder={folderName || 'Folder name'} onChange={(e) => setFolder(e.target.value)} aria-label="Folder name" />
+      <label><input type="checkbox" checked={useSelection} disabled={selectedCount === 0} onChange={(e) => setUseSelection(e.target.checked)} /> Only the selected objects{selectedCount ? ` (${selectedCount.toLocaleString()})` : ' (select some first)'}</label>
+      <label><input type="checkbox" checked={deleteExisting} onChange={(e) => setDeleteExisting(e.target.checked)} /> Replace what is in this folder already</label>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)', textTransform: 'uppercase' }}>Sort into folders by splitting the name</div>
+      <label>Split on <input value={delimiter} onChange={(e) => setDelimiter(e.target.value)} style={{ width: 44 }} aria-label="Delimiter" /></label>
+      <label><input type="checkbox" checked={primaryOn} onChange={(e) => setPrimaryOn(e.target.checked)} /> Folder from part {num(primary, setPrimary, primaryOn)}</label>
+      <label><input type="checkbox" checked={secondaryOn} onChange={(e) => setSecondaryOn(e.target.checked)} /> Then a folder from part {num(secondary, setSecondary, secondaryOn)}</label>
+      {preview && (
+        <div className="ss__map-note">
+          {preview.sets.length ? <>Makes <b>{preview.sets.length.toLocaleString()}</b> sets in <b>{folders}</b> folder{folders === 1 ? '' : 's'} ({preview.objects.toLocaleString()} objects){preview.empty ? `; ${preview.empty.toLocaleString()} objects have no value and are left out` : ''}.</> : 'No object has a value for that property.'}
+          {preview.truncated && ' Only the first 2,000 are made: narrow it with a selection.'}
+          {preview.sets[0] && <> First: <i>{preview.sets[0].group} / {preview.sets[0].name}</i>.</>}
+        </div>
+      )}
+      {message && <div className="ss__map-note">{message}</div>}
+      <div style={{ display: 'flex', gap: 6 }}>
+        <button type="button" className="btn btn--primary" disabled={!preview || preview.sets.length === 0} onClick={run}>Make sets</button>
+        <button type="button" className="btn" onClick={onDone}>Close</button>
       </div>
     </div>
   );

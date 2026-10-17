@@ -5,6 +5,7 @@ import { FlagToggle } from './FlagToggle';
 import { useFocusStore } from '../../state/focusStore';
 import { useIgnoreTimelinerStore } from '../../state/ignoreTimelinerStore';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { DockNavTools } from '../Dock';
 import { useModelsStore } from '../../state/modelsStore';
 import { useScheduleStore } from '../../state/scheduleStore';
 import {
@@ -102,6 +103,11 @@ export function ScenarioSync({ loadOnly = false }: { loadOnly?: boolean }) {
   return null;
 }
 
+/** A group of the toolbar's icon buttons: in the 4D panel (`compact`) they go to the dock's navigation bar, under its tab icons. */
+function ToolGroup({ compact, order, className, children }: { compact?: boolean; order: number; className: string; children: ReactNode }) {
+  return compact ? <DockNavTools id="scenarios" order={order} className={className}>{children}</DockNavTools> : <div className={className}>{children}</div>;
+}
+
 /** Filter and the move / step / undo buttons. `compact`: smaller, wrapping
     onto more rows when narrow (4D panel). */
 export function ScenarioToolbar({ compact }: { compact?: boolean }) {
@@ -141,9 +147,12 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
   return (
     <div className={compact ? 'scn-tools scn-tools--compact' : 'scn-tools'}>
       <div className="scn-tools__row scn-tools__row--small">
-      <div className="scn-grp">
-      <input className="scn-filter" type="search" value={filter} onChange={(e) => useScenarioStore.setState({ filter: e.target.value })} placeholder="Filter (any column)…" />
-      </div>
+      {/* Docked beside the 3D view the table is searched with the main header's search box. */}
+      {!compact && (
+        <div className="scn-grp">
+        <input className="scn-filter" type="search" value={filter} onChange={(e) => useScenarioStore.setState({ filter: e.target.value })} placeholder="Filter (any column)…" />
+        </div>
+      )}
       <div className="scn-grp scn-grp--span2">
       <form
         className="scn-row"
@@ -200,7 +209,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         Reorder
       </button>
       </div>
-      <div className="scn-grp scn-grp--icons">
+      <ToolGroup compact={compact} order={5} className="scn-grp scn-grp--icons">
       <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveUp(rows, selected))} title="Move up one step (Alt+↑)" aria-label="Move up one step"><IconArrowUp width={16} height={16} /></button>
       <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveDown(rows, selected))} title="Move down one step (Alt+↓)" aria-label="Move down one step"><IconArrowDown width={16} height={16} /></button>
       <button className="btn scn-icon-btn" disabled={!undo.length} onClick={undoRows} title="Undo (Ctrl+Z)" aria-label="Undo"><IconUndo width={16} height={16} /></button>
@@ -222,7 +231,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         onCollapse={() => useScenarioStore.setState({ collapsedGroups: new Set(groupKeys) })}
         onExpand={() => useScenarioStore.setState({ collapsedGroups: new Set() })}
       />
-      </div>
+      </ToolGroup>
         <span style={{ marginLeft: 'auto' }}>
           <InfoTip>
             {reordered
@@ -233,10 +242,10 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         </span>
       </div>
       <div className="scn-tools__row">
-      <div className="scn-grp scn-grp--fill">
+      <ToolGroup compact={compact} order={4} className="scn-grp scn-grp--fill">
       <button className="btn scn-link-btn" disabled={selected.size < 2} onClick={() => applyRows(startTogether(rows, selected))} title="Make the selected items one step: they start together (Start-to-Start) (Alt+S)">SS</button>
       <button className="btn scn-link-btn" disabled={!hasSelection} onClick={() => applyRows(separate(rows, selected))} title="Give each selected item its own step, one after another (Finish-to-Start) (Alt+F)">FS</button>
-      </div>
+      </ToolGroup>
       <div className="scn-grp scn-grp--span2">
       <button className={`btn${recordPicks ? ' primary' : ''}`} aria-pressed={recordPicks} onClick={() => useScenarioStore.setState({ recordPicks: !recordPicks })} title="Record the order objects are picked in the 3D view, one at a time">
         {recordPicks ? `Recording (${pickOrder.length})` : 'Record picks'}
@@ -247,7 +256,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         }} title="Put the picked items first, one step each, in the order they were picked">Sort by picks</button>
       <button className="btn" disabled={pickOrder.length === 0} onClick={() => useScenarioStore.setState({ pickOrder: [] })} title="Forget the recorded picks">Clear picks</button>
       </div>
-      <div className="scn-grp scn-grp--icons scn-grp--icons-2">
+      <ToolGroup compact={compact} order={3} className="scn-grp scn-grp--icons scn-grp--icons-2">
       <button
         className={`btn scn-icon-btn scn-ignore-btn${focus ? ' primary' : ''}`}
         aria-pressed={focus}
@@ -280,7 +289,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
       >
         <IconSync width={18} height={18} />
       </button>
-      </div>
+      </ToolGroup>
       <div className="scn-grp">
       {/* Like "unsaved": only there while the order, links or crews changed since 4D was last updated (or an update is running); never with auto-update on. */}
       {!autoUpdate && (stale || updating) && (
@@ -877,6 +886,8 @@ export function ScenarioStatus({ className, extra }: { className?: string; extra
         </>
       )}
       {extra}
+      {/* The recipe editor puts what its recipe needs here (RecipesEditor > NeedsLine). */}
+      <span id="scn-statusbar-needs" className="scn-statusbar__needs" />
     </footer>
   );
 }

@@ -7,6 +7,7 @@ import { useContextMeshStore } from '../state/contextMeshStore';
 import { useScheduleStore } from '../state/scheduleStore';
 import { toggleHidden, useProjectDbStore } from '../state/projectDbStore';
 import { useTableSearchStore } from '../state/tableSearchStore';
+import { activeTargetId, useListConfigStore } from '../state/listConfigStore';
 import { activitySearchText } from '../schedule/search';
 import { scenes } from '../state/scenes';
 import { workspaces, workspaceActions } from '../state/workspaces';
@@ -48,8 +49,11 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
   const dbProgrammes = useProjectDbStore((s) => s.programmes);
   const storedActions = useStoredModels();
   const [query, setQuery] = useState('');
-  const tableQuery = useTableSearchStore((t) => t.query);
-  const tableAvailable = useTableSearchStore((t) => t.available);
+  // The list the search box works on: the one that is active (Gantt, Data table ...), when it can take words.
+  const activeList = useListConfigStore((s) => { const id = activeTargetId(s); return id ? s.targets[id] ?? null : null; });
+  const tableAvailable = !!activeList?.searchable;
+  const tableQuery = useTableSearchStore((t) => (activeList ? t.queries[activeList.id] ?? '' : ''));
+  const listName = (activeList?.label ?? '').replace(/ (panel|page)$/i, '');
   const [open, setOpen] = useState(false);
   const [at, setAt] = useState(0);
   const [sceneList, setSceneList] = useState(() => scenes.get());
@@ -61,6 +65,9 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
     window.addEventListener('ip-scenes', refresh);
     return () => window.removeEventListener('ip-scenes', refresh);
   }, []);
+  // Moving to another list: the box shows the words that list is narrowed to.
+  const activeListId = activeList?.id ?? null;
+  useEffect(() => { setQuery(useTableSearchStore.getState().queries[activeListId ?? ''] ?? ''); }, [activeListId]);
   // Ctrl+K from anywhere.
   useEffect(() => {
     const key = (e: KeyboardEvent) => {
@@ -134,7 +141,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
     if (!terms.length) return [];
     const found = all.filter((h) => matches(h.label, terms));
     // On a table: the first row narrows the table to these words (any ID, name, code, user field or resource), as the old box did.
-    if (tableAvailable) found.unshift({ key: 't:filter', group: 'Table', label: 'Filter this table by “' + query.trim() + '”', hint: 'Enter', run: () => useTableSearchStore.getState().setQuery(query.trim()) });
+    if (tableAvailable) found.unshift({ key: 't:filter', group: 'Table', label: `Filter ${listName} by “${query.trim()}”`, hint: 'Enter', run: () => useTableSearchStore.getState().setListQuery(activeList!.id, query.trim()) });
     // Activities of the programmes that are shown: by ID, name, WBS, codes, user fields and resources. Only while typing, and the first 25.
     const shown = schedules.filter((m) => !hiddenScheduleIds.has(m.id));
     let more = 0;
@@ -189,9 +196,9 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
         ref={input}
         type="text"
         className="gs__input"
-        placeholder="Search…  Ctrl K"
+        placeholder={tableAvailable ? `Search on ${listName}` : 'Search…'}
         value={query}
-        onChange={(e) => { setQuery(e.target.value); setOpen(true); }}
+        onChange={(e) => { setQuery(e.target.value); setOpen(true); if (activeList?.searchable) useTableSearchStore.getState().setListQuery(activeList.id, e.target.value.trim()); }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
         aria-label="Search scenes, files, views, panels and actions"
@@ -199,8 +206,8 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
         role="combobox"
         aria-controls="gs-list"
       />
-      {tableQuery && (
-        <button type="button" className="gs__chip" onClick={() => useTableSearchStore.getState().setQuery('')} title="The table is narrowed to these words. Click to show every row again">
+      {tableQuery && tableQuery !== query.trim() && (
+        <button type="button" className="gs__chip" onClick={() => activeList && useTableSearchStore.getState().setListQuery(activeList.id, '')} title={`${listName} is narrowed to these words. Click to show every row again`}>
           {tableQuery} ×
         </button>
       )}

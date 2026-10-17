@@ -1,6 +1,6 @@
 import { DockToolbar } from './Dock';
+import { configFocusProps } from '../state/listConfigStore';
 import { DataTableListConfig } from './DataTablePanel';
-import { ListTools } from './ListConfig';
 import { OverflowMenu } from './TablePopovers';
 import { useTableCountStore } from '../state/tableCountStore';
 import { useRowPx } from '../state/tableStyleStore';
@@ -16,13 +16,14 @@ import { conditionTest } from '../viewer/searchSets';
 import { matchColorRules } from './schedule/ColorPanel';
 import { newRuleId } from './schedule/FieldRules';
 import { queryMatcher } from '../schedule/search';
+import { useListQuery } from '../state/tableSearchStore';
 import { SEVERAL } from '../viewer/twinMatch';
 import { downloadCsv } from '../utils/csv';
 import { useTwin } from './useTwin';
 import { withUnit } from '../viewer/units';
 import { ExpandCollapseToggle } from './ExpandCollapseToggle';
 import { useDockStore } from '../state/dockStore';
-import { IconCheckboxChecked, IconChevronLeft, IconChevronRight, IconDownloadFile, IconExpandMore, IconPin, IconSearch, IconTotals, IconTune } from './icons';
+import { IconCheckboxChecked, IconChevronLeft, IconChevronRight, IconDownloadFile, IconExpandMore, IconPin, IconTotals, IconTune } from './icons';
 
 const BASE_ROW_H = 24;
 const OVERSCAN = 10;
@@ -121,7 +122,8 @@ export function ModelDataTable() {
   const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
   const { open, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setWidth, patch, configure, presets, applyPreset } = useDataTableStore();
 
-  const [search, setSearch] = useState('');
+  // The words come from the main header's search box (it works on the list that is active).
+  const search = useListQuery('datatable');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scrollTop, setScrollTop] = useState(0);
@@ -457,7 +459,7 @@ export function ModelDataTable() {
   if (!open) return null;
 
   return (
-    <div className="mdt mdt--docked">
+    <div className="mdt mdt--docked" {...configFocusProps('datatable')}>
       <DataTableListConfig />
       <DockToolbar id="datatable">
       <div className="mdt__bar">
@@ -495,7 +497,6 @@ export function ModelDataTable() {
         )}
         <button type="button" className="mdt__fold" onClick={() => useDockStore.getState().setFolded('bottom', true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: 'rotate(-90deg)' }} /></button>
         <div className="mdt__actions">
-          <ListTools id="datatable" />
           <span className="panels-btn mdt__more">
             <OverflowMenu
               items={[
@@ -507,7 +508,6 @@ export function ModelDataTable() {
               ]}
             />
           </span>
-          <span className="gs mdt__gs"><IconSearch width={14} height={14} /><input className="gs__input" type="text" placeholder="Search…" value={search} onChange={(e) => setSearch(e.target.value)} aria-label="Search the table" /></span>
         </div>
       </div>
       </DockToolbar>

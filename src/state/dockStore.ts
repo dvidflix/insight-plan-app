@@ -5,7 +5,7 @@ import { IS_SATELLITE } from './satellite';
 /** The panels that can be docked around the 3D view (Models and 4D Sequencing pages): each sits on the left, at the
     bottom or on the right of it. Panels on the same side share it as tabs; panels on different sides show together. */
 export type DockSide = 'left' | 'bottom' | 'right';
-export type DockPanelId = 'datatable' | 'gantt' | 'tasks' | 'resources' | 'scenarios' | 'recipes' | 'rules' | 'clash' | 'topics' | 'viewpoints' | 'checks' | 'compare' | 'layouts' | 'details' | 'links' | 'predecessors' | 'successors' | 'related' | 'tree' | 'properties' | 'search' | 'views' | 'colour' | 'tableSetup' | 'fourD' | 'planning' | 'dictionary' | 'files'
+export type DockPanelId = 'datatable' | 'gantt' | 'tasks' | 'resources' | 'scenarios' | 'recipes' | 'rules' | 'clash' | 'topics' | 'viewpoints' | 'checks' | 'compare' | 'layouts' | 'details' | 'links' | 'predecessors' | 'successors' | 'related' | 'tree' | 'properties' | 'search' | 'views' | 'colour' | 'fourD' | 'planning' | 'dictionary' | 'files'
   // The Programmes page's settings, the app's Settings and the settings of the 4D panels: panels like the rest, where the side pane held them.
   | 'cfgColumns' | 'cfgFilters' | 'cfgGroup' | 'cfgSort' | 'cfgColor' | 'generated' | 'settings' | 'scenarioSettings';
 
@@ -37,7 +37,6 @@ export const DOCK_DEFAULTS: Record<DockPanelId, DockSide> = {
   search: 'left',
   views: 'left',
   colour: 'left',
-  tableSetup: 'left',
   fourD: 'right',
   cfgColumns: 'right',
   cfgFilters: 'right',
@@ -52,7 +51,7 @@ export const DOCK_DEFAULTS: Record<DockPanelId, DockSide> = {
   files: 'bottom',
 };
 /** The order of the tabs on a side: Tree, Properties, Sets, 4D, Tasks, 3D & Related, Clash first, then the rest, the Programmes ones and the tools in the order of the Panels menu. */
-const ORDER: DockPanelId[] = ['tree', 'properties', 'search', 'fourD', 'tasks', 'related', 'clash', 'views', 'colour', 'tableSetup', 'resources', 'scenarios', 'recipes', 'rules', 'topics', 'viewpoints', 'checks', 'compare', 'datatable', 'layouts', 'details', 'links', 'planning', 'predecessors', 'successors', 'gantt', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'files', 'generated', 'scenarioSettings', 'settings'];
+const ORDER: DockPanelId[] = ['tree', 'properties', 'search', 'fourD', 'tasks', 'related', 'clash', 'views', 'colour', 'resources', 'scenarios', 'recipes', 'rules', 'topics', 'viewpoints', 'checks', 'compare', 'datatable', 'layouts', 'details', 'links', 'planning', 'predecessors', 'successors', 'gantt', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'files', 'generated', 'scenarioSettings', 'settings'];
 
 /** Which page's docks the panels belong to: the 3D view's (Models, 4D Sequencing) or the Programmes page's. Only the
     host that is showing registers its panels and draws its docks. */
@@ -73,6 +72,8 @@ interface DockState {
   setHost: (host: DockHost | null) => void;
   /** Where the user put each panel (absent: its default). 'closed' = not shown. */
   placement: Partial<Record<DockPanelId, DockSide | 'closed'>>;
+  /** Where each panel was docked when it was closed: it opens there again. */
+  lastSide: Partial<Record<DockPanelId, DockSide>>;
   /** The tab showing on each side. */
   active: Partial<Record<DockSide, DockPanelId>>;
   /** Width (left, right) or height (bottom), px. */
@@ -91,6 +92,9 @@ interface DockState {
   setBody: (side: DockSide, el: HTMLElement | null) => void;
   /** Where a panel puts its own toolbar in the header, between the tabs and the fold / close buttons (bottom dock). */
   tools: Record<DockSide, HTMLElement | null>;
+  /** Where a panel's own action buttons go in a left / right dock's navigation bar (under the tab icons). */
+  navTools: Record<DockSide, HTMLElement | null>;
+  setNavTools: (side: DockSide, el: HTMLElement | null) => void;
   setTools: (side: DockSide, el: HTMLElement | null) => void;
   sideOf: (id: DockPanelId) => DockSide | 'closed';
   move: (id: DockPanelId, side: DockSide) => void;
@@ -119,6 +123,8 @@ export const useDockStore = create<DockState>()(
       entries: {},
       bodies: { left: null, bottom: null, right: null },
       tools: { left: null, bottom: null, right: null },
+      navTools: { left: null, bottom: null, right: null },
+      setNavTools: (side, el) => set((s) => (s.navTools[side] === el ? s : { navTools: { ...s.navTools, [side]: el } })),
       setTools: (side, el) => set((s) => (s.tools[side] === el ? s : { tools: { ...s.tools, [side]: el } })),
       dragging: null,
       setDragging: (dragging) => set({ dragging }),
@@ -134,8 +140,12 @@ export const useDockStore = create<DockState>()(
         get().entries[id]?.setShown?.(true);
         set((s) => ({ placement: { ...s.placement, [id]: side }, active: { ...s.active, [side]: id }, folded: { ...s.folded, [side]: false } }));
       },
+      lastSide: {},
       close: (id) => {
         const e = get().entries[id];
+        // Where it was docked is kept, so showing it again puts it back there.
+        const here = get().placement[id] ?? DOCK_DEFAULTS[id];
+        if (here !== 'closed') set((s) => ({ lastSide: { ...s.lastSide, [id]: here } }));
         if (e?.setShown) e.setShown(false);
         else set((s) => ({ placement: { ...s.placement, [id]: 'closed' } }));
       },
@@ -146,7 +156,7 @@ export const useDockStore = create<DockState>()(
         const e = get().entries[id];
         e?.setShown?.(true);
         set((s) => {
-          const side = s.placement[id] && s.placement[id] !== 'closed' ? (s.placement[id] as DockSide) : DOCK_DEFAULTS[id];
+          const side = s.placement[id] && s.placement[id] !== 'closed' ? (s.placement[id] as DockSide) : s.lastSide[id] ?? DOCK_DEFAULTS[id];
           return { placement: { ...s.placement, [id]: side }, active: { ...s.active, [side]: id }, folded: { ...s.folded, [side]: false } };
         });
       },
@@ -161,7 +171,7 @@ export const useDockStore = create<DockState>()(
         return p as DockState;
       },
       // While Home shows, the state in the store is Home's own: what is kept under this key stays the workspace's.
-      partialize: (s) => (homeStash ?? { placement: s.placement, active: s.active, size: s.size, folded: s.folded, order: s.order }),
+      partialize: (s) => (homeStash ?? { placement: s.placement, active: s.active, size: s.size, folded: s.folded, order: s.order, lastSide: s.lastSide }),
     },
   ),
 );

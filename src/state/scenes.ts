@@ -15,6 +15,7 @@
     A scene from an old layout profile has no `data`: opening it leaves the lists alone. */
 
 import { FREE_MODE } from '../licence/freeMode';
+import { FILE_VIEW_KEY, stripView, viewOf, withView } from './fileView';
 
 export const SCENE_KIND = 'insight-plan-scene';
 const OLD_PROFILE_KIND = 'insight-plan-layout-profile';
@@ -70,6 +71,7 @@ const NOT_LAYOUT = new Set([
   'home.dock',
   'inputs.detailsTab',
   'inputs.detailsOpen',
+  'app.fileViewReset1',
 ]);
 
 /** Which part of a scene a browser key belongs to (exported for the tests). */
@@ -221,7 +223,7 @@ async function sync(): Promise<void> {
 }
 
 /** Writes a scene's keys over the browser's. Its lists are replaced only when it has any (see Snapshot.data). */
-function applyKeys(snap: Snapshot) {
+function applyKeys(snap: Snapshot, alsoKeep: string[] = []) {
   suspended = true;
   try {
     const drop = (match: (k: string) => boolean) => {
@@ -230,7 +232,7 @@ function applyKeys(snap: Snapshot) {
         if (key && match(key)) localStorage.removeItem(key);
       }
     };
-    const kept = KEEP_WHEN_ABSENT.filter((k) => !(k in snap.settings)).map((k) => [k, localStorage.getItem(k)] as const);
+    const kept = [...KEEP_WHEN_ABSENT.filter((k) => !(k in snap.settings)), ...alsoKeep].map((k) => [k, localStorage.getItem(k)] as const);
     drop(isLayoutKey);
     for (const [k, v] of Object.entries(snap.settings)) if (isLayoutKey(k) && typeof v === 'string') localStorage.setItem(k, v);
     for (const [k, v] of kept) if (v !== null) localStorage.setItem(k, v);
@@ -256,11 +258,15 @@ async function reloadSaved() {
   window.location.reload();
 }
 
+/** Keys that belong to the scene, not the workspace: which models and programme are loaded, and the Files view. A workspace never saves or restores them. */
+const SCENE_OWNED = [FILE_VIEW_KEY, 'models.loaded', 'programmes.choice'];
+
 /** For workspaces (state/workspaces.ts): everything a scene holds, the layout keys and the viewer's lists, in one record (ALL_MARK says
     the lists are in it: a workspace saved before that has only layout, and opening it leaves the lists alone). */
 const ALL_MARK = '__workspace.all';
 export const captureLayoutKeys = () => {
   const { settings, data } = capture();
+  for (const k of SCENE_OWNED) delete settings[k];
   return { ...settings, ...data, [ALL_MARK]: '1' };
 };
 export const applyLayoutKeys = (saved: Record<string, string>) => {
@@ -268,12 +274,12 @@ export const applyLayoutKeys = (saved: Record<string, string>) => {
   const data: Record<string, string> = {};
   for (const [k, v] of Object.entries(saved)) {
     if (isDataKey(k)) data[k] = v;
-    else if (isLayoutKey(k) && k !== ALL_MARK) settings[k] = v;
+    else if (isLayoutKey(k) && k !== ALL_MARK && !SCENE_OWNED.includes(k)) settings[k] = v;
   }
-  applyKeys(saved[ALL_MARK] ? { settings, data } : { settings });
+  applyKeys(saved[ALL_MARK] ? { settings, data } : { settings }, SCENE_OWNED);
 };
 /** Whether a browser key is part of what a workspace keeps. */
-export const isWorkspaceKey = (key: string) => isLayoutKey(key) || isDataKey(key);
+export const isWorkspaceKey = (key: string) => !SCENE_OWNED.includes(key) && (isLayoutKey(key) || isDataKey(key));
 export { reloadSaved };
 
 const newId = () => `sc-${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
@@ -359,16 +365,30 @@ export const scenes = {
     write(store);
   },
 
-  /** The Files filters a scene was saved with (Project: SZC…), read from its snapshot; null when it has none saved. */
-  async fileFilters(id: string): Promise<Record<string, string[]> | null> {
+  /** The Files view (filters, grouping, sorting, columns) a scene was saved with, read from its snapshot ({} when it has none). */
+  async fileView(id: string): Promise<Record<string, unknown>> {
+    await ready;
+    return viewOf((await getSnap(id))?.settings[FILE_VIEW_KEY]);
+  },
+
+  /** Saves the Files view into a scene's snapshot (for a scene other than the one you are in: that one saves itself). */
+  async setFileView(id: string, view: Record<string, unknown>) {
     await ready;
     const snap = await getSnap(id);
-    try {
-      const f = (JSON.parse(snap?.settings['models.fileDetails'] ?? 'null') as { state?: { filters?: Record<string, string[]> } } | null)?.state?.filters;
-      return f && Object.keys(f).length ? f : null;
-    } catch {
-      return null;
-    }
+    if (!snap) return;
+    const text = snap.settings[FILE_VIEW_KEY] ?? JSON.stringify({ state: {}, version: 0 });
+    await putSnap(id, { ...snap, settings: { ...snap.settings, [FILE_VIEW_KEY]: withView(text, JSON.stringify({ state: view })) } });
+  },
+
+  /** Adds models (by name) to the ones a scene brings back when it is opened. */
+  async addLoaded(id: string, names: string[]) {
+    if (!names.length) return;
+    await ready;
+    const snap = await getSnap(id);
+    if (!snap) return;
+    let have: string[] = [];
+    try { const v = JSON.parse(snap.settings['models.loaded'] ?? 'null'); if (Array.isArray(v)) have = v as string[]; } catch { /* none */ }
+    await putSnap(id, { ...snap, settings: { ...snap.settings, 'models.loaded': JSON.stringify([...new Set([...have, ...names])]) } });
   },
 
   /** Pins the scene to the top of Home, or lets it go. */
@@ -451,10 +471,33 @@ async function prepare() {
   write(store);
 }
 
+/** One-time reset: the Files filters, grouping, sorting and columns used to be shared by every scene; now each scene has its own,
+    so the ones saved so far are cleared from all scenes (the details typed against files are kept). */
+const FILE_VIEW_RESET = 'app.fileViewReset1';
 /** Runs first, from main.tsx: from then on the active scene follows every change to the browser's keys. */
 export function startScenes() {
   if (FREE_MODE) return; // saved arrangements are part of the licensed edition
   if (new URLSearchParams(window.location.search).has('satellite')) return; // a second window leaves the scene to the one that opened it
+  try {
+    if (!localStorage.getItem(FILE_VIEW_RESET)) {
+      localStorage.setItem(FILE_VIEW_RESET, '1');
+      // The scene you are in: its keys are in the browser, and nothing has read them yet.
+      const mine = localStorage.getItem(FILE_VIEW_KEY);
+      if (mine) localStorage.setItem(FILE_VIEW_KEY, stripView(mine));
+      // The others: their snapshots, once the list is ready.
+      void (async () => {
+        await Promise.resolve(); // (startScenes below has set `ready` by now)
+        await ready;
+        for (const s of read().scenes) {
+          const snap = await getSnap(s.id);
+          const text = snap?.settings[FILE_VIEW_KEY];
+          if (snap && text) await putSnap(s.id, { ...snap, settings: { ...snap.settings, [FILE_VIEW_KEY]: stripView(text) } });
+        }
+      })().catch(() => undefined);
+    }
+  } catch {
+    // leave the saved views as they are
+  }
   try {
     // The list is rewritten without snapshots at once when it is short of space; the move itself is async.
     ready = prepare().catch(() => undefined);

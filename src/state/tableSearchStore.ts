@@ -1,16 +1,16 @@
 import { create } from 'zustand';
 
-/** The words the table in view is narrowed to (set from the search box: "Filter this table"), and whether a table can take them now. */
+/** The words each list is narrowed to, by the id it registers with the List setup (ListConfig). They are typed in the search box of the
+    main header, which works on the list that is active ("Search on Gantt"). */
 interface TableSearchState {
-  query: string;
-  available: boolean;
-  setQuery: (query: string) => void;
-  setAvailable: (available: boolean) => void;
+  queries: Record<string, string>;
+  setListQuery: (list: string, query: string) => void;
 }
 
 export const useTableSearchStore = create<TableSearchState>((set) => ({
-  query: '',
-  available: false,
-  setQuery: (query) => set({ query }),
-  setAvailable: (available) => set((s) => (s.available === available ? s : { available })),
+  queries: {},
+  setListQuery: (list, query) => set((s) => (s.queries[list] === query ? s : { queries: { ...s.queries, [list]: query } })),
 }));
+
+/** One list's words ('' when none). */
+export const useListQuery = (list: string) => useTableSearchStore((s) => s.queries[list] ?? '');

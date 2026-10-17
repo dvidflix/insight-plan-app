@@ -1,6 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { useAppPrefsStore } from '../state/appPrefsStore';
-import { DOCK_DEFAULTS, DOCK_SIDES, panelOrder, SIDE_LABEL, useDockStore, type DockPanelId, type DockSide } from '../state/dockStore';
+import { useListConfigStore } from '../state/listConfigStore';
+import { DOCK_DEFAULTS, DOCK_SIDES, SIDE_LABEL, useDockStore, type DockPanelId, type DockSide } from '../state/dockStore';
 import { SCHEDULE_TABS, type TabId } from '../pages/SchedulePage';
 import { SideIcon, TAB_ICONS } from './Dock';
 import { IS_SATELLITE } from '../state/satellite';
@@ -10,8 +11,7 @@ import { blockedWindows } from '../state/workspaces';
 import { WindowsFooter } from './WorkspaceBar';
 import { scenes } from '../state/scenes';
 import { GlobalSearch } from './GlobalSearch';
-import { ToolPopover } from './TablePopovers';
-import { IconChecklist, IconChevronDown, IconDashboard, IconEyeOff, IconHome, IconGantt, IconLineGraph, IconList, IconPencil, IconSchema, IconShortText, IconSidePanel, IconGridTable, IconSplit, IconTagOutline, IconTimeline, IconTree, IconTwoPane } from './icons';
+import { IconCellProperties, IconChecklist, IconChevronDown, IconDashboard, IconEyeOff, IconHome, IconGantt, IconLineGraph, IconList, IconPencil, IconSchema, IconShortText, IconGridTable, IconSplit, IconTagOutline, IconTimeline, IconTree, IconTwoPane } from './icons';
 
 export interface PageItem {
   id: string;
@@ -52,7 +52,7 @@ const PANEL_GROUP: Partial<Record<DockPanelId, Group>> = {
 };
 
 /** The Tools panels in this order (the list settings first). */
-const TOOL_ORDER: DockPanelId[] = ['checks', 'compare', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'generated', 'settings', 'tableSetup', 'scenarioSettings'];
+const TOOL_ORDER: DockPanelId[] = ['checks', 'compare', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'generated', 'settings', 'scenarioSettings'];
 
 interface Row {
   key: string;
@@ -288,62 +288,18 @@ export function ViewPicker(props: PickerProps) {
   );
 }
 
-/** The Panels button, at the right end of a toolbar: a popover with the panels there are on the page showing, each with its left, bottom
-    and right buttons (a click on the name opens or closes it). One list in the order of the tabs: drag a row to change that order (the
-    ones you use most first); the order is kept with the workspace. */
-export function PanelsButton() {
-  const entries = useDockStore((s) => s.entries);
-  const order = useDockStore((s) => s.order);
-  const drag = useRef<string | null>(null);
-  const [over, setOver] = useState<{ key: string; after: boolean } | null>(null);
-  const rows = useMemo(() => {
-    const byId = new Map<string, Row>();
-    for (const e of Object.values(entries)) {
-      if (!e) continue;
-      const PanelIcon = TAB_ICONS[e.id];
-      byId.set(e.id, { key: 'panel:' + e.id, label: e.label, icon: PanelIcon ? <PanelIcon width={16} height={16} /> : null, group: PANEL_GROUP[e.id] ?? 'Tools', panel: e.id });
-    }
-    return panelOrder(order).flatMap((id) => (byId.has(id) ? [byId.get(id)!] : []));
-  }, [entries, order]);
-  if (rows.length === 0) return null;
-
-  const drop = (targetId: string, after: boolean) => {
-    const from = drag.current;
-    drag.current = null;
-    setOver(null);
-    if (!from || from === targetId) return;
-    // The whole order is written down, so the panels not on this page keep their places too.
-    const all = panelOrder(order).filter((id) => id !== from);
-    const at = all.indexOf(targetId as DockPanelId) + (after ? 1 : 0);
-    all.splice(at, 0, from as DockPanelId);
-    useDockStore.getState().setOrder(all);
-  };
+/** The List setup button, at the right end of a toolbar: opens and closes the N panel (the same as pressing N). */
+export function ListSetupButton() {
+  const open = useListConfigStore((s) => s.nOpen);
+  const hasLists = useListConfigStore((s) => Object.keys(s.targets).length > 0);
+  if (!hasLists) return null;
   return (
-    <span className="panels-btn">
-      <ToolPopover icon={<IconSidePanel width={20} height={20} />} label="Panels" iconOnly={false} width={400}>
-        <div className="ws-views">
-          <div className="ws-views__heads"><span className="ws-page__sides">Drag to put them in order · Left · Bottom · Right</span></div>
-          {rows.map((r) => (
-            <div
-              key={r.key}
-              className={'ws-drag' + (over?.key === r.key ? (over.after ? ' drop-after' : ' drop-before') : '')}
-              draggable
-              onDragStart={(e) => { drag.current = r.panel!; e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', r.key); }}
-              onDragOver={(e) => {
-                if (!drag.current) return;
-                e.preventDefault();
-                const b = e.currentTarget.getBoundingClientRect();
-                const after = e.clientY > b.top + b.height / 2;
-                if (over?.key !== r.key || over.after !== after) setOver({ key: r.key, after });
-              }}
-              onDrop={(e) => { e.preventDefault(); drop(r.panel!, over?.key === r.key && over.after); }}
-              onDragEnd={() => { drag.current = null; setOver(null); }}
-            >
-              <PickerRow row={r} close={() => {}} backTo3D={() => {}} />
-            </div>
-          ))}
-        </div>
-      </ToolPopover>
+    <span className="listsetup-btn">
+      <span className="tp">
+        <button type="button" className={`tp__btn${open ? ' is-open' : ''}`} onClick={() => useListConfigStore.getState().setNOpen(!open)} aria-pressed={open} title="List setup (N): filter, group, sort, colour and columns of the list you are in" aria-label="List setup">
+          <IconCellProperties width={20} height={20} />
+        </button>
+      </span>
     </span>
   );
 }

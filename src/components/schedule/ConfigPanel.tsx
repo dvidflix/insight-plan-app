@@ -78,6 +78,7 @@ export function ConfigPanel({
     <>
       <ListConfig
         id="programmes"
+        searchable
         label={label}
         badges={{ filters: filterCount, group: groupRules.length, sort: sortRules.length, color: colorRules.length }}
         panels={{

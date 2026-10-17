@@ -14,10 +14,9 @@ import { IS_SATELLITE, SATELLITE_PAGE, SATELLITE_VIEW } from './state/satellite'
 import { reportView } from './state/windowSync';
 import { ViewerEngineProvider } from './viewer/ViewerEngineContext';
 import { useViewerEngine } from './viewer/ViewerEngineContext';
-import { SettingsSync } from './components/SettingsMenu';
+import { SettingsSync, hideStatusBar } from './components/SettingsMenu';
 import { CustomFieldsSync } from './components/CustomFieldsSync';
 import { SettingsDock, SidePaneHost } from './components/SidePane';
-import { ListConfigPanels } from './components/ListConfig';
 import { AutoLinkGenerator } from './components/schedule/AutoLinkGenerator';
 import { ScenarioSync } from './components/scenarios/ScenarioParts';
 import { ViewerWorkspace } from './viewer/ViewerWorkspace';
@@ -51,7 +50,7 @@ import { setLiveCounts, touchScene } from './state/scenes';
 import { useActivitySelectionStore } from './state/activitySelectionStore';
 import { takeDroppedFiles } from './state/fileDrop';
 import { restoreStatus } from './state/restoreStatus';
-import { useHomeSelection } from './state/homeSelection';
+import { homeOpen, useHomeSelection } from './state/homeSelection';
 import { DbStatusChip } from './components/ProjectDbPanel';
 import { WorkspaceStatus } from './components/WorkspaceBar';
 import { FEATURES } from './features';
@@ -64,13 +63,14 @@ import { pushToSeaTable, DetailValue, GroupHeaderRow, ColumnResizer, InputsColgr
 import { HomePage } from './pages/HomePage';
 import { EditableStatus } from './components/schedule/EditableStatus';
 import { InputsTools } from './components/InputsTools';
+import { configFocusProps } from './state/listConfigStore';
 import { OverflowMenu, ToolPopover } from './components/TablePopovers';
 import type { PushFile } from './seatable/filesClient';
 import { type FileSummary } from './components/FileDetails';
 import { DetailsPane } from './components/DetailsPane';
 import { ResizeHandle, useResizableWidth } from './components/ResizeHandle';
 import { usePersistedState } from './utils/persistedState';
-import { StoredModelsNotes, useStoredModels } from './components/StoredModelsPanel';
+import { StoredModelsNotes, StoredModelsStatus, useStoredModels } from './components/StoredModelsPanel';
 import { ModelsRestoreSync } from './components/ModelsRestoreSync';
 import { SatelliteModelsSync } from './components/SatelliteModelsSync';
 import { WindowSelectionSync } from './components/WindowSelectionSync';
@@ -314,14 +314,17 @@ export default function App() {
   // On the pages with docks the status bar sits under the centre only, so the docks on the sides run down to the bottom of the page.
   const footerEl = useHeaderSlotStore((h) => h.footer);
   const statusBar = (
-    <>
-      {page === 'home' ? <footer className="app-statusbar"><span>The scene you are in is saved as you work.</span><HomeFilesCount /><span className="app-statusbar__tools" /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'sequence' ? <SequenceTimelineStatusBar /> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? null : <StatusBar page={page} />}
-    </>
+    <div className="statusbar-host">
+      <span id="rec-statusbar-needs" className="rec-statusbar-needs" />
+      {page === 'home' ? <footer className="app-statusbar app-statusbar--home"><span>The scene you are in is saved as you work.</span><HomeFilesCount /><span className="app-statusbar__tools" /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'sequence' ? <><SequenceTimelineStatusBar /><StatusBar page={page} /></> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? <footer className="app-statusbar"><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : <StatusBar page={page} />}
+      <button type="button" className="statusbar-close" onClick={hideStatusBar} title="Hide the status bar (Settings brings it back)" aria-label="Hide the status bar"><IconClose width={14} height={14} /></button>
+    </div>
   );
   return (
     <ViewerEngineProvider>
       <ThemeSync />
       {/* A second window loads the models only once it shows a page with the 3D view (loading them is the slow part). */}
+      <StoredModelsStatus />
       {FEATURES.browserData && <ModelsRestoreSync enabled={!IS_SATELLITE || visited.has('model') || visited.has('sequence') || wantModels} />}
       <ProgrammeChoiceSync />
       <FitOnModelsTab page={page} />
@@ -380,9 +383,8 @@ export default function App() {
       </div>
       {/* Pages with docks hold their settings as panels (Settings is one of them); the others keep the side pane. */}
       {!viewerVisible && <SidePaneHost />}
-      {page === 'home' && <SettingsDock />}
-      {page === 'home' && <FilesDock page={page} />}
-      <ListConfigPanels />
+      <SettingsDock />
+      <FilesDock page={page} />
       {inputsOpen && <InputsDialog onClose={() => setInputsOpen(false)} />}
       <AutoLinkGenerator />
       {FEATURES.scenarios && scenariosOn && <ScenarioSync loadOnly />}
@@ -655,6 +657,17 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
     const toOpen = picked.filter((r) => r.unloaded && r.stored).map((r) => r.stored!);
     if (toOpen.length) void (async () => { for (const m of toOpen) await storedActions.open(m); })();
   };
+  // Home's Open button: the stored models the filters leave in the list are loaded first (the rows are those of the scene chosen there).
+  const openable = () => listedRows.filter((r) => r.kind === 'model' && r.unloaded && r.stored).map((r) => r.stored!);
+  const openableRef = useRef(openable);
+  openableRef.current = openable;
+  const storedActionsRef = useRef(storedActions);
+  storedActionsRef.current = storedActions;
+  useEffect(() => {
+    homeOpen.names = () => openableRef.current().map((m) => m.name);
+    homeOpen.load = async () => { for (const m of openableRef.current()) await storedActionsRef.current.open(m); };
+    return () => { homeOpen.names = () => []; homeOpen.load = async () => undefined; };
+  }, []);
   const onRowsKeyDown = (e: React.KeyboardEvent) => {
     if ((e.key !== 'ArrowDown' && e.key !== 'ArrowUp' && e.key !== ' ') || e.altKey || e.ctrlKey || e.metaKey) return;
     if (/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) return;
@@ -921,7 +934,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
   const closeXerPick = () => setXerPicks((q) => q.slice(1));
 
   return (
-    <div className={`inputs-page${detailsOpen ? ' inputs-page--details' : ''}`}>
+    <div className={`inputs-page${detailsOpen ? ' inputs-page--details' : ''}`} {...configFocusProps('files')}>
       <DockToolbar id="files">
       <div className="inputs-panel__header inputs-bar">
         <button type="button" className="icon-btn inputs-fold" onClick={() => { const d = useDockStore.getState(); d.setFolded(d.sideOf('files') === 'closed' ? 'bottom' : (d.sideOf('files') as 'left' | 'bottom' | 'right'), true); }} title="Fold the Files panel away" aria-label="Fold the Files panel away"><IconChevronDown width={16} height={16} /></button>

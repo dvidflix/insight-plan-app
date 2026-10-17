@@ -159,6 +159,9 @@ function markDirty() {
   window.dispatchEvent(new Event(EVENT));
 }
 
+/** The workspace Open uses: the one chosen on Home (the default), else the one the app is in. */
+const chosenWorkspace = (): Workspace | undefined => (cache?.defaultId ? cache.items.find((w) => w.id === cache!.defaultId) : undefined) ?? workspaces.active() ?? undefined;
+
 /** The page and Programmes view the app is on now (App calls it as they change). Kept for the next start; saved with the workspace on Save. */
 let live: { page: string; tab: string | null } | null = null;
 export function noteView(page: string, tab: string | null) {
@@ -169,6 +172,9 @@ export function noteView(page: string, tab: string | null) {
   // (Home is the way into a workspace, not a page of one: being there changes nothing in it.)
   if (w && page !== 'home' && (w.page !== page || w.tab !== tab)) markDirty();
 }
+
+/** The app is on Home now: there, choosing a workspace only sets the one Open will use (nothing switches or reloads). */
+export const workspaceOnHome = () => live?.page === 'home';
 
 /** Opens the windows of the workspace; the ones the browser blocks are kept for a click. */
 function openWindows(windows: WindowInfo[]) {
@@ -276,7 +282,7 @@ export function startWorkspaces() {
     } catch {
       // no
     }
-    const def = enterDefault && cache?.defaultId ? cache.items.find((w) => w.id === cache!.defaultId) : undefined;
+    const def = enterDefault ? chosenWorkspace() : undefined;
     if (def) {
       void (async () => {
         const saved = await getLayout(def.id).catch(() => undefined);
@@ -313,7 +319,7 @@ const uniqueName = (list: List, base: string) => {
 /** Opening a scene from Home: the next load goes to the default workspace (its page, its Programmes view and its second windows), as a new session does.
     False when no workspace is the default: then the app stays where it is. */
 export function openDefaultWorkspace(): boolean {
-  const def = cache?.defaultId ? cache.items.find((w) => w.id === cache!.defaultId) : undefined;
+  const def = chosenWorkspace();
   if (!def) return false;
   try {
     // The page it opens on (read before the start-up check below can say): the workspace's own page and Programmes view.

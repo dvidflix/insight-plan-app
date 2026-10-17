@@ -6,10 +6,14 @@ import { useViewerEngine } from '../../viewer/ViewerEngineContext';
 import { useModelsStore } from '../../state/modelsStore';
 import { baseStem } from '../../scenarios/fromProgramme';
 import { useSelectionStore } from '../../state/selectionStore';
-import { isTableCfgTab, setSelected, useScenarioStore } from '../../state/scenarioStore';
+import { setSelected, useScenarioStore } from '../../state/scenarioStore';
+import { ListConfig } from '../ListConfig';
+import { useListQuery } from '../../state/tableSearchStore';
+import { configFocusProps } from '../../state/listConfigStore';
+import { ScenarioTableConfig, scnTabBadges, type ScnConfigTab } from './ScenarioTableConfig';
 import { useScenarioView } from '../../scenarios/useScenarioView';
 import { useJoinShortcut } from '../../scenarios/useJoinShortcut';
-import { ScenarioNotice, ScenarioPanelBody, ScenarioStatus, ScenarioSync, ScenarioTable, ScenarioToolbar, useScenarioTabs } from './ScenarioParts';
+import { ScenarioNotice, ScenarioPanelBody, ScenarioStatus, ScenarioSync, ScenarioTable, ScenarioToolbar } from './ScenarioParts';
 
 /** Pours (rows, keyed by GlobalId) <-> elements of the scenario's building
     model in the 3D view. */
@@ -94,7 +98,7 @@ function FocusColours({ pours }: { pours: ReturnType<typeof usePourElements> }) 
     Generate (Scenario panel) to see the new order play in 4D at once. */
 export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void }) {
   const engine = useViewerEngine();
-  const { ready } = useScenarioView();
+  const { ready, tableCfg, fields, allColumnIds, view } = useScenarioView();
   const pours = usePourElements();
   useJoinShortcut(pours); // Alt+J joins the objects picked in 3D
 
@@ -127,8 +131,33 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
     if (fresh.length) useScenarioStore.setState({ pickOrder: [...st.pickOrder, ...fresh] });
   }, [byModel, pours]);
 
+  const tableTab = (tab: ScnConfigTab) => (
+    <ScenarioTableConfig
+      tab={tab}
+      cfg={tableCfg}
+      onChange={(next) => useScenarioStore.setState({ tableCfg: next })}
+      fields={fields}
+      defaultColumns={allColumnIds}
+      onCollapseAll={() => useScenarioStore.setState({ collapsedGroups: new Set(view.flatMap((x) => (x.kind === 'group' ? [x.key] : []))) })}
+      onExpandAll={() => useScenarioStore.setState({ collapsedGroups: new Set() })}
+    />
+  );
+  const badges = scnTabBadges(tableCfg, fields);
+  // The words typed in the main header's search box (while this table is the active list) narrow the table.
+  const words = useListQuery('sequence');
+  useEffect(() => { useScenarioStore.setState({ filter: words }); }, [words]);
   return (
-    <div className="scn-4d">
+    <div className="scn-4d" {...configFocusProps('sequence')}>
+      {/* The table's Columns, Filters, Group, Sort and Colour are in the List setup panel (no buttons of their own). */}
+      {ready && (
+        <ListConfig
+          id="sequence"
+          searchable
+          label="Sequence table"
+          badges={{ filters: badges.filters, group: badges.group, sort: badges.sort, color: badges.color }}
+          panels={{ columns: tableTab('columns'), filters: tableTab('filters'), group: tableTab('group'), sort: tableTab('sort'), color: tableTab('color') }}
+        />
+      )}
       <ScenarioSync />
       <FocusColours pours={pours} />
       <ScenarioNotice />
@@ -149,32 +178,14 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
     Sort / Color), in the lower part of the side pane under the page's own
     tabs; the divider between them is draggable. */
 export function ScenarioDock() {
-  const { ready } = useScenarioView();
   const cfgTab = useScenarioStore((s) => s.cfgTab);
-  const tabs = useScenarioTabs(false);
-  // Rules has a dock panel of its own here.
-  const tab = ready && cfgTab !== 'rules' ? cfgTab : 'scenario';
+  // Rules has a dock panel of its own here, and the table's Columns / Filters / Group / Sort / Colour are in List setup.
+  void cfgTab;
+  const tab = 'scenario' as const;
   return (
     <SidePaneDock id="scenarioSettings" label="Scenarios settings">
       <div className="scn-dock" aria-label="Scenario">
-        <div className="side-pane__bar scn-dock__bar" role="tablist">
-          {tabs.map((t) => (
-            <button
-              key={t.id}
-              type="button"
-              role="tab"
-              aria-selected={tab === t.id}
-              className={`side-pane__tab${tab === t.id ? ' active' : ''}`}
-              title={t.label}
-              aria-label={t.label}
-              onClick={() => useScenarioStore.setState({ cfgTab: t.id })}
-            >
-              {t.icon}
-              {t.badge ? <span className="side-pane__badge">{t.badge}</span> : null}
-            </button>
-          ))}
-        </div>
-        <div className={ready && isTableCfgTab(tab) ? 'config-panel__body scn-panel scn-dock__body' : 'scn-panel scn-panel__body scn-dock__body'}>
+        <div className="scn-panel scn-panel__body scn-dock__body">
           <ScenarioPanelBody tab={tab} />
         </div>
       </div>

@@ -10,6 +10,7 @@ import { IconAddCircleOutline, IconDownload } from '../icons';
 import { AppearancePanel, useAppearanceUiStore } from './AppearancePanel';
 import { NeedsModels } from './NeedsModels';
 import { useAppearanceStore } from '../../state/appearanceStore';
+import { TagsSection } from './LabelPanel';
 import { LinkGroupsPanel, exportLinkGroupMatches, useLinkGroupsUiStore } from './LinkGroupsPanel';
 
 /** The 4D panel on the pages that are not 4D Sequencing (Models, Programmes): the Link Groups, which say which objects each activity
@@ -79,6 +80,7 @@ export function FourDSetupPanel() {
           >
             <AppearancePanel />
           </CollapsibleSection>
+          <TagsSection />
         </div>
       </div>
     </DockPanel>

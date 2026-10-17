@@ -28,7 +28,7 @@ import { PropertyVisibilityPanel } from './PropertyVisibilityPanel';
 import { IfcToolsPanel } from './sequence/IfcToolsPanel';
 import { ModelColorPanel } from './ModelColorPanel';
 import { SearchSetsPanel } from './SearchSetsPanel';
-import { DataTablePanel } from './DataTablePanel';
+import { useListConfigStore } from '../state/listConfigStore';
 import { useDataTableStore } from '../state/dataTableStore';
 import { DockPanel } from './Dock';
 import { DockGantt } from './sequence/DockGantt';
@@ -244,7 +244,6 @@ export function ModelDockPanels({ page, views, colour }: { page: 'model' | 'sequ
       <DockPanel id="search" label="Sets"><PaneBody><SearchSetsPanel player={page === 'model'} /></PaneBody></DockPanel>
       {views !== undefined && <DockPanel id="views" label="Views"><PaneBody>{views}</PaneBody></DockPanel>}
       {colour && <DockPanel id="colour" label="Colour"><PaneBody><ModelColorPanel /></PaneBody></DockPanel>}
-      <DockPanel id="tableSetup" label="Data table setup"><PaneBody><DataTablePanel /></PaneBody></DockPanel>
     </>
   );
 }
@@ -256,7 +255,7 @@ export function ModelConfigPanel() {
   // The data table's Configure button brings its setup panel up.
   const configRequest = useDataTableStore((s) => s.configRequest);
   useEffect(() => {
-    if (configRequest) useDockStore.getState().reveal('tableSetup');
+    if (configRequest) useListConfigStore.getState().setNOpen(true);
   }, [configRequest]);
   // Splitting the view brings up Views, to set the two views up.
   const split = useViewSettingsStore((s) => s.pages.model.split);

@@ -10,6 +10,7 @@ interface Placed {
   color: string;
   text: string;
   style?: TagStyle;
+  plain?: boolean;
   ax: number;
   ay: number;
   x: number;
@@ -93,7 +94,7 @@ const overlaps = (a: { x: number; y: number; w: number; h: number }, b: { x: num
 /** Greedy placement: each callout tries the corners around its anchor, then
     steps further out, and takes the first spot that clashes with no label
     already placed (nearest anchors first, so crowded areas fan out). */
-function layout(items: { key: string; color: string; text: string; style?: TagStyle; ax: number; ay: number }[], width: number, height: number): Placed[] {
+function layout(items: { key: string; color: string; text: string; style?: TagStyle; plain?: boolean; ax: number; ay: number }[], width: number, height: number): Placed[] {
   const placed: Placed[] = [];
   const sorted = [...items].sort((a, b) => a.ay - b.ay || a.ax - b.ax);
   for (const it of sorted) {
@@ -123,9 +124,10 @@ function layout(items: { key: string; color: string; text: string; style?: TagSt
 /** Tags drawn next to the objects they label (Label tab > Tags placement),
     over the main 3D view: each callout sits by the middle of its objects
     with a leader line, kept clear of the others, following the camera. */
-export function TagCallouts({ view = 'main' }: { view?: 'main' | 'second' }) {
+export function TagCallouts({ view = 'main', callouts: given }: { view?: 'main' | 'second'; /** Callouts of its own (tags on a set or the selection), instead of the ones the 4D step finds active. */ callouts?: TagCallout[] }) {
   const engine = useViewerEngine();
-  const allCallouts = useActiveTagsStore((s) => s.callouts);
+  const stepCallouts = useActiveTagsStore((s) => s.callouts);
+  const allCallouts = given ?? stepCallouts;
   // Side by side, each view tags only the objects of the models it shows (View settings > Models in this view).
   const models = useModelsStore((s) => s.models);
   const hiddenNames = useViewSettingsStore((s) => (s.pages.sequence.split ? s.pages.sequence[view].hiddenModels : undefined));
@@ -201,13 +203,13 @@ export function TagCallouts({ view = 'main' }: { view?: 'main' | 'second' }) {
       const ox = rect.left - rootRect.left;
       const oy = rect.top - rootRect.top;
       const camera = world.camera.three;
-      const items: { key: string; color: string; text: string; style?: TagStyle; ax: number; ay: number }[] = [];
+      const items: { key: string; color: string; text: string; style?: TagStyle; plain?: boolean; ax: number; ay: number }[] = [];
       for (const c of callouts) {
         const centre = centres.current.get(sig(c));
         if (!centre) continue;
         const v = centre.clone().project(camera);
         if (v.z > 1 || v.x < -1.2 || v.x > 1.2 || v.y < -1.2 || v.y > 1.2) continue;
-        items.push({ key: c.key, color: c.color, text: c.text, style: c.style, ax: ox + ((v.x + 1) / 2) * rect.width, ay: oy + ((1 - v.y) / 2) * rect.height });
+        items.push({ key: c.key, color: c.color, text: c.text, style: c.style, plain: c.plain, ax: ox + ((v.x + 1) / 2) * rect.width, ay: oy + ((1 - v.y) / 2) * rect.height });
       }
       setPlaced(layout(items, ox + rect.width, oy + rect.height));
     };
@@ -241,7 +243,7 @@ export function TagCallouts({ view = 'main' }: { view?: 'main' | 'second' }) {
         })}
       </svg>
       {placed.map((p) => (
-        <div key={p.key} className="tag-callouts__label" style={{ ...tagCss(p.style), left: p.x, top: p.y, width: p.w, borderLeftColor: p.color }}>
+        <div key={p.key} className="tag-callouts__label" style={{ ...tagCss(p.style), left: p.x, top: p.y, width: p.w, ...(p.plain ? { borderLeftWidth: 1 } : { borderLeftColor: p.color }) }}>
           {p.text}
         </div>
       ))}

@@ -1,5 +1,6 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
+import { foreignView, withView } from './fileView';
 import { fetchFileDetails, updateFileDetails, type PushFile } from '../seatable/filesClient';
 import { FEATURES } from '../features';
 import { experimentalOn } from './appPrefsStore';
@@ -158,6 +159,12 @@ export const useInputDetailsStore = create<InputDetailsState>()(
     }),
     {
       name: 'models.fileDetails',
+      // While Home shows another scene's view, what is saved keeps the browser's own view (the scene you are in) and takes only the details.
+      storage: createJSONStorage(() => ({
+        getItem: (k: string) => localStorage.getItem(k),
+        setItem: (k: string, v: string) => localStorage.setItem(k, foreignView.on ? withView(v, localStorage.getItem(k)) : v),
+        removeItem: (k: string) => localStorage.removeItem(k),
+      })),
       // Earlier versions kept one group level: groupBy (+ groupDir).
       merge: (saved, current) => {
         const old = saved as { groupBy?: string; groupDir?: 'up' | 'down'; groupRules?: SortRule[] } | undefined;

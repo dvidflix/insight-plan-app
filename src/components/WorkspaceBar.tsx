@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { FEATURES } from '../features';
-import { blockedWindows, openBlockedWindows, useWorkspaces, workspaceActions, workspaceDirty } from '../state/workspaces';
+import { blockedWindows, openBlockedWindows, useWorkspaces, workspaceActions, workspaceDirty, workspaceOnHome } from '../state/workspaces';
 import { UpdateChip } from './UpdateChip';
 import { PackageUpdateChip } from './PackageUpdateChip';
 import { IconAddCircleOutline, IconChevronDown, IconLaunch, IconRemove, IconScenes } from './icons';
@@ -61,6 +61,9 @@ export function WorkspaceStatus({ readOnly = false }: { readOnly?: boolean }) {
         <span>{active?.name ?? 'Workspace'}{dirty && <span className="ws-ws__dirty" title="Changes not saved yet"> ●</span>}</span>
         <IconChevronDown width={10} height={10} style={{ transform: 'rotate(180deg)' }} />
       </button>
+      {dirty && !readOnly && active && (
+        <button type="button" className="ws-status__save" onClick={() => void workspaceActions.save()} title={`Save the changes to "${active.name}": its page, panels, columns, filters and settings`}>Save</button>
+      )}
       {open && (
         <div className="ws-status__pop" role="menu">
           <WorkspaceMenu close={() => setOpen(false)} readOnly={readOnly} />
@@ -75,7 +78,10 @@ export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; 
   const dirty = workspaceDirty();
   const active = list?.items.find((w) => w.id === list.activeId);
 
+  // On Home a workspace is only chosen (it is the one Open uses, with its windows and layout): nothing changes until then.
+  const onHome = workspaceOnHome();
   const switchTo = (id: string) => {
+    if (onHome) { workspaceActions.setDefault(id); close(); return; }
     if (dirty && active && !window.confirm(`"${active.name}" has changes that are not saved.\n\nOK: leave them behind.\nCancel: stay in it (then Save workspace).`)) return;
     close();
     void workspaceActions.switchTo(id);
@@ -102,8 +108,8 @@ export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; 
           )}
         </div>
         {list?.items.map((w) => {
-          const isActive = w.id === list.activeId;
           const isDefault = w.id === list.defaultId;
+          const isActive = onHome ? (list.defaultId ? isDefault : w.id === list.activeId) : w.id === list.activeId;
           return (
             <div key={w.id} className={`ws-ws__row${isActive ? ' is-active' : ''}`}>
               <button
@@ -121,7 +127,7 @@ export function WorkspaceMenu({ close, readOnly = false }: { close: () => void; 
                 title={w.fixed ? `${w.name}: the workspace for loading models and programmes` : `${w.name}: the page, panels and second windows as you saved them. Double-click to rename.`}
               >
                 {w.name}
-                {isActive && dirty && <span className="ws-ws__dirty" title="Changes not saved yet: Save workspace keeps them">●</span>}
+                {isActive && dirty && !onHome && <span className="ws-ws__dirty" title="Changes not saved yet: Save workspace keeps them">●</span>}
                 {w.windows.length > 0 && <span className="ws-tab__windows" title={`${w.windows.length} second window${w.windows.length === 1 ? '' : 's'} open with this workspace`}>{w.windows.length}</span>}
               </button>
               <button

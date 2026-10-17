@@ -1,5 +1,6 @@
 import type { SVGProps } from 'react';
 import columnsSvg from '../icons/columns.svg?raw';
+import cellPropertiesSvg from '../icons/cell-properties.svg?raw';
 import windowTemplateSvg from '../icons/window-template.svg?raw';
 import treeSvg from '../icons/tree-structure.svg?raw';
 import sortSvg from '../icons/modus-icon-arrows-down-up.svg?raw';
@@ -430,6 +431,7 @@ export const IconTag = (p: SVGProps<SVGSVGElement>) => (
 );
 
 export const IconColumns = svgIcon(columnsSvg);
+export const IconCellProperties = svgIcon(cellPropertiesSvg);
 export const IconScenes = svgIcon(windowTemplateSvg);
 
 /** Section expand chevron (That Open's panel-section glyph): points up when

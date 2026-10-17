@@ -3,7 +3,8 @@ import { useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule } from '../../state/scheduleStore';
 import { useModelsStore } from '../../state/modelsStore';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
-import { DEFAULT_TAG_FONT_SIZE, placementOf, tagCss, useTagsStore, type Tag } from '../../state/tagsStore';
+import { DEFAULT_SOURCE_MAX, DEFAULT_TAG_FONT_SIZE, isObjectSourced, placementOf, setIdsOf, tagCss, useTagsStore, type Tag } from '../../state/tagsStore';
+import { useSearchSetsStore } from '../../state/searchSetsStore';
 import { HexColorInput } from '../HexColorInput';
 import { taskFieldOptions } from '../../schedule/linkGroups';
 import { TASK_TOKENS, renderTag } from '../../schedule/tagTemplate';
@@ -24,6 +25,10 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
   const models = useModelsStore((s) => s.models);
   const basis = useSequenceTimelineStore((s) => s.basis);
   const placement = placementOf(tag, useTagsStore((s) => s.placement));
+  const sets = useSearchSetsStore((s) => s.sets);
+  const kind = tag.source?.kind ?? 'task';
+  const objectSourced = isObjectSourced(tag);
+  const setIds = setIdsOf(tag);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const [propQuery, setPropQuery] = useState('');
 
@@ -69,10 +74,32 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
         <input value={tag.name} onChange={(e) => onChange({ name: e.target.value })} placeholder="Tag name" style={{ flex: 1 }} />
         {onDelete && <button type="button" className="cols__icon cols__icon--remove" onClick={onDelete} title="Delete tag"><IconDelete /></button>}
       </div>
-      <div className="segmented-choice" title="Where this tag shows in the 3D view">
+      <div className="segmented-choice" title="What the tag labels">
+        <button type="button" className={kind === 'task' ? 'active' : ''} onClick={() => onChange({ source: { kind: 'task' } })} title="The active tasks of the Link Groups that use this tag (4D)">4D tasks</button>
+        <button type="button" className={kind === 'set' ? 'active' : ''} disabled={kind !== 'set'} title="The objects of a search or selection set: made with the tag button on the set's row in Search sets">A set</button>
+        <button type="button" className={kind === 'selection' ? 'active' : ''} onClick={() => onChange({ source: { kind: 'selection' }, placement: 'objects' })} title="The objects selected in the 3D view now">Selection</button>
+      </div>
+      {kind === 'set' && (
+        <div className="scn-dim" style={{ fontSize: 12 }} title="Turn a set on and off with the tag button on its row in Search sets (Shift+Space)">
+          {setIds.length === 0 && 'No sets yet: use the tag button on a set in Search sets.'}
+          {setIds.map((id) => (
+            <span key={id} className="tags__chip" style={{ marginRight: 4, display: 'inline-flex', gap: 4, alignItems: 'center' }}>
+              {sets.find((x) => x.id === id)?.name ?? 'not found'}
+              <button type="button" aria-label="Take this set out" title="Take this set out" onClick={() => onChange({ source: { kind: 'set', setIds: setIds.filter((x) => x !== id) } })} style={{ border: 0, background: 'none', cursor: 'pointer', padding: 0 }}>×</button>
+            </span>
+          ))}
+        </div>
+      )}
+      {objectSourced && (
+        <label className="tags__style" title="The most objects labelled at once, so a big set stays readable and quick">
+          Most labels
+          <input type="number" min={1} max={500} value={tag.maxLabels ?? DEFAULT_SOURCE_MAX} onChange={(e) => { const n = Math.round(Number(e.target.value)); onChange({ maxLabels: Number.isFinite(n) && n > 0 ? Math.min(500, n) : undefined }); }} />
+        </label>
+      )}
+      {!objectSourced && <div className="segmented-choice" title="Where this tag shows in the 3D view">
         <button type="button" className={placement === 'corner' ? 'active' : ''} onClick={() => onChange({ placement: 'corner' })}>Bottom corner</button>
         <button type="button" className={placement === 'objects' ? 'active' : ''} onClick={() => onChange({ placement: 'objects' })}>Next to objects</button>
-      </div>
+      </div>}
 
       <textarea
         ref={inputRef}
@@ -83,7 +110,7 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
         style={{ width: '100%', resize: 'vertical', fontSize: 12 }}
       />
 
-      <div className="tags__chips">
+      {!objectSourced && <div className="tags__chips">
         <span className="tags__chips-label">Task</span>
         {TASK_TOKENS.map((t) => (
           <button key={t.token} type="button" className="tags__chip" onClick={() => insert(t.token)}>{t.label}</button>
@@ -99,7 +126,7 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
             {taskFields.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
         )}
-      </div>
+      </div>}
 
       <div className="tags__chips">
         <span className="tags__chips-label">Object</span>

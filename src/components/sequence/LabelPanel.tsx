@@ -5,7 +5,7 @@ import { useSequenceLabelStore, type LabelPosition } from '../../state/sequenceL
 import { useTagsStore } from '../../state/tagsStore';
 import { useAppearanceKeyStore } from '../../state/appearanceKeyStore';
 import { TagEditor } from './TagEditor';
-import { IconAddCircleOutline, IconPencil } from '../icons';
+import { IconAddCircleOutline, IconPencil, IconRemove } from '../icons';
 import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
 import { scheduleRange } from '../../schedule/linking';
 import { alignDown, nextBoundary } from '../../schedule/period';
@@ -23,59 +23,28 @@ const POSITIONS: { value: LabelPosition; label: string }[] = [
   { value: 'bottom-right', label: '↘' },
 ];
 
-/** 4D Sequencing > Label, as collapsible sections: the tags, then the
-    on-viewport date label — its position (a 3x3 grid over
-    the viewport, same idea as PowerPoint's text-anchor picker) and the
-    Navisworks-style template string (see schedule/labelTemplate.ts). */
-export function LabelPanel() {
-  const model = useSequenceSchedule();
-  const basis = useSequenceTimelineStore((s) => s.basis);
-  const stepUnit = useSequenceTimelineStore((s) => s.stepUnit);
-  const date = useSequenceTimelineStore((s) => s.date);
-  const enabled = useSequenceLabelStore((s) => s.enabled);
-  const setEnabled = useSequenceLabelStore((s) => s.setEnabled);
-  const position = useSequenceLabelStore((s) => s.position);
-  const setPosition = useSequenceLabelStore((s) => s.setPosition);
-  const keyOn = useAppearanceKeyStore((s) => s.enabled);
-  const setKeyOn = useAppearanceKeyStore((s) => s.setEnabled);
-  const keyPosition = useAppearanceKeyStore((s) => s.position);
-  const setKeyPosition = useAppearanceKeyStore((s) => s.setPosition);
-  const keyOrientation = useAppearanceKeyStore((s) => s.orientation);
-  const setKeyOrientation = useAppearanceKeyStore((s) => s.setOrientation);
-  const template = useSequenceLabelStore((s) => s.template);
-  const setTemplate = useSequenceLabelStore((s) => s.setTemplate);
-
+/** The Tags section on its own: the list of tags and the editor of one. It is in 4D's Label tab and in the Models page's 4D panel (tags
+    can label a set or the selection, so they are not only for 4D). */
+export function TagsSection() {
   const tags = useTagsStore((s) => s.tags);
   const addTag = useTagsStore((s) => s.add);
   const updateTag = useTagsStore((s) => s.update);
   const removeTag = useTagsStore((s) => s.remove);
-
   // The tag being edited (the list shows when none is).
   const [editingId, setEditingId] = useState<string | null>(null);
   const editing = tags.find((t) => t.id === editingId) ?? null;
-
-  const sections = useOpenSections<'tags' | 'date' | 'key'>('sequence.labelSections', ['tags']);
-
-  const range = useMemo(() => scheduleRange(model, basis), [model, basis]);
-  const preview = useMemo(() => {
-    if (!range || date === null || !template.trim()) return '';
-    try {
-      return renderLabelTemplate(template, { date: new Date(date), range, period: { start: alignDown(date, stepUnit), end: nextBoundary(date, stepUnit) } });
-    } catch {
-      return '';
-    }
-  }, [template, range, date, stepUnit]);
-
+  const sections = useOpenSections<'tags'>('sequence.tagsSection', ['tags']);
+  const open = sections.isOpen('tags');
+  const toggle = () => sections.toggle('tags');
   return (
-    <div>
-      <CollapsibleSection
+    <CollapsibleSection
         title="Tags"
-        open={sections.isOpen('tags')}
-        onToggle={() => sections.toggle('tags')}
+        open={open}
+        onToggle={() => toggle}
         flush
         actions={
           !editing && (
-            <button type="button" className="mini-btn mini-btn--icon" onClick={() => { if (!sections.isOpen('tags')) sections.toggle('tags'); setEditingId(addTag()); }} title="New tag" aria-label="New tag">
+            <button type="button" className="mini-btn mini-btn--icon" onClick={() => { if (!open) toggle; setEditingId(addTag()); }} title="New tag" aria-label="New tag">
               <IconAddCircleOutline width={20} height={20} />
             </button>
           )
@@ -121,6 +90,7 @@ export function LabelPanel() {
                     <td style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: 'var(--text-dim)' }} title={t.template}>{t.template}</td>
                     <td className="seq-grid__actions">
                       <button type="button" title="Edit" aria-label="Edit" onClick={() => setEditingId(t.id)}><IconPencil /></button>
+                      <button type="button" title="Delete" aria-label={`Delete ${t.name}`} onClick={() => { if (window.confirm(`Delete the tag "${t.name}"?`)) removeTag(t.id); }}><IconRemove /></button>
                     </td>
                   </tr>
                 ))}
@@ -131,6 +101,47 @@ export function LabelPanel() {
       )}
       </div>
       </CollapsibleSection>
+  );
+}
+
+/** 4D Sequencing > Label, as collapsible sections: the tags, then the
+    on-viewport date label — its position (a 3x3 grid over
+    the viewport, same idea as PowerPoint's text-anchor picker) and the
+    Navisworks-style template string (see schedule/labelTemplate.ts). */
+export function LabelPanel() {
+  const model = useSequenceSchedule();
+  const basis = useSequenceTimelineStore((s) => s.basis);
+  const stepUnit = useSequenceTimelineStore((s) => s.stepUnit);
+  const date = useSequenceTimelineStore((s) => s.date);
+  const enabled = useSequenceLabelStore((s) => s.enabled);
+  const setEnabled = useSequenceLabelStore((s) => s.setEnabled);
+  const position = useSequenceLabelStore((s) => s.position);
+  const setPosition = useSequenceLabelStore((s) => s.setPosition);
+  const keyOn = useAppearanceKeyStore((s) => s.enabled);
+  const setKeyOn = useAppearanceKeyStore((s) => s.setEnabled);
+  const keyPosition = useAppearanceKeyStore((s) => s.position);
+  const setKeyPosition = useAppearanceKeyStore((s) => s.setPosition);
+  const keyOrientation = useAppearanceKeyStore((s) => s.orientation);
+  const setKeyOrientation = useAppearanceKeyStore((s) => s.setOrientation);
+  const template = useSequenceLabelStore((s) => s.template);
+  const setTemplate = useSequenceLabelStore((s) => s.setTemplate);
+
+  const sections = useOpenSections<'date' | 'key'>('sequence.labelSections', []);
+
+  const range = useMemo(() => scheduleRange(model, basis), [model, basis]);
+  const preview = useMemo(() => {
+    if (!range || date === null || !template.trim()) return '';
+    try {
+      return renderLabelTemplate(template, { date: new Date(date), range, period: { start: alignDown(date, stepUnit), end: nextBoundary(date, stepUnit) } });
+    } catch {
+      return '';
+    }
+  }, [template, range, date, stepUnit]);
+
+  return (
+    <div>
+      <TagsSection />
+
 
       <CollapsibleSection
         title="Appearance key"

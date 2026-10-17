@@ -6,6 +6,7 @@ import { pushFiles, type PushFile } from '../seatable/filesClient';
 import { queryMatcher } from '../schedule/search';
 import { IconRemove, IconChevronDown, IconChevronRight, IconExpander } from './icons';
 import { SearchRow } from './SearchRow';
+import { useHomeSelection } from '../state/homeSelection';
 import { useModelsStore } from '../state/modelsStore';
 import { useScheduleStore } from '../state/scheduleStore';
 import { useContextMeshStore } from '../state/contextMeshStore';
@@ -66,7 +67,9 @@ export function InputsStatusBar() {
     counts), with quick presets for each type and file format. */
 export function InputsFilters() {
   const fields = useInputDetailsStore((s) => s.fields);
-  const filters = useInputDetailsStore((s) => s.filters);
+  const ownFilters = useInputDetailsStore((s) => s.filters);
+  // A scene chosen on Home (not the one you are in) shows the filters it was saved with.
+  const filters = useHomeSelection((s) => s.filters) ?? ownFilters;
   const files = useInputDetailsStore((s) => s.files);
   const details = useInputDetailsStore((s) => s.values);
   const { setFilter, clearFilters } = useInputDetailsStore.getState();

@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { create } from 'zustand';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
 import { useModelStoreState } from '../state/modelStoreState';
@@ -6,6 +7,19 @@ import { dbRoot, useProjectDbStore } from '../state/projectDbStore';
 import { deleteStoredModel, getStoredIfc, listStoredVersions, restoreStoredVersion, type StoredModel, type StoredVersion } from '../db/modelsApi';
 import { loadStoredModel } from '../viewer/modelStore';
 import { downloadBlob } from '../utils/download';
+
+/** The note after an open / restore: shown in the status bar (StoredModelsStatus), and cleared after a while. */
+const useStoredNote = create<{ text: string | null; set: (t: string | null) => void }>((set) => ({ text: null, set: (text) => set({ text }) }));
+let noteTimer: number | undefined;
+const setNote = (t: string | null) => {
+  window.clearTimeout(noteTimer);
+  useStoredNote.getState().set(t);
+  if (t && !t.endsWith('…')) noteTimer = window.setTimeout(() => useStoredNote.getState().set(null), 12000);
+};
+export function StoredModelsStatus() {
+  const text = useStoredNote((s) => s.text);
+  return text ? <div className="stored-status" role="status">{text}</div> : null;
+}
 
 export const formatBytes = (n: number) => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`);
 
@@ -20,7 +34,8 @@ export function useStoredModels() {
   const refresh = useModelStoreState((s) => s.refresh);
   const addModel = useModelsStore((s) => s.addModel);
   const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const message = useStoredNote((s) => s.text);
+  const setMessage = setNote;
   const [versions, setVersions] = useState<{ name: string; list: StoredVersion[] } | null>(null);
 
   useEffect(() => {
@@ -83,11 +98,10 @@ export function useStoredModels() {
 
 /** The message after an open / restore, and the earlier versions of the model whose count was clicked. */
 export function StoredModelsNotes({ actions }: { actions: ReturnType<typeof useStoredModels> }) {
-  const { error, message, versions, restore } = actions;
+  const { error, versions, restore } = actions;
   return (
     <>
       {error && <div className="inputs-panel__error">{error}</div>}
-      {message && <div className="scn-dim" style={{ padding: '4px 0' }}>{message}</div>}
       {versions && (
         <div className="scn-dim" style={{ padding: '6px 0' }}>
           <b>{versions.name}: earlier versions</b>

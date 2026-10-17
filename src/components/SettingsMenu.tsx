@@ -1,3 +1,4 @@
+import { IS_SATELLITE } from '../state/satellite';
 import { EXPERIMENTAL_FEATURES, useAppPrefsStore } from '../state/appPrefsStore';
 import { type ReactNode, useEffect, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
@@ -36,14 +37,30 @@ function usePersistedValue<T extends string | number>(key: string, defaultValue:
     configuration file carries it). Off hides the bottom status bar of the
     Models and Programmes pages; the 4D page's timeline bar always shows. */
 const STATUS_BAR_KEY = 'viewer.statusBar';
-const applyStatusBar = (show: boolean) => document.body.classList.toggle('hide-statusbar', !show);
+/** The same choice for second windows (a window opened with New window or by a workspace). */
+const STATUS_BAR_SECONDARY_KEY = 'viewer.statusBar.secondary';
+const applyStatusBar = () => {
+  const show = localStorage.getItem(IS_SATELLITE ? STATUS_BAR_SECONDARY_KEY : STATUS_BAR_KEY) !== 'false';
+  document.body.classList.toggle('hide-statusbar', !show);
+};
+
+/** The cross at the right end of the status bar: hides it in this window (the main window and the second windows each have their own
+    choice, which Settings turns back on). */
+export function hideStatusBar() {
+  try { localStorage.setItem(IS_SATELLITE ? STATUS_BAR_SECONDARY_KEY : STATUS_BAR_KEY, 'false'); } catch { /* not kept */ }
+  applyStatusBar();
+}
 
 export function SettingsSync() {
   const engine = useViewerEngine();
   useEffect(() => {
-    applyStatusBar(localStorage.getItem(STATUS_BAR_KEY) !== 'false');
+    applyStatusBar();
+    // A change made in another window (the main window's Settings can set the second windows' too).
+    const onStorage = (e: StorageEvent) => { if (e.key === STATUS_BAR_KEY || e.key === STATUS_BAR_SECONDARY_KEY) applyStatusBar(); };
+    window.addEventListener('storage', onStorage);
     const color = localStorage.getItem(SELECTION_COLOR_KEY) ?? DEFAULT_SELECTION_COLOR;
     void engine.ready.then(() => engine.setSelectionColor(color));
+    return () => window.removeEventListener('storage', onStorage);
   }, [engine]);
   return null;
 }
@@ -127,7 +144,8 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
   const setRowScale = useTableStyleStore((s) => s.setRowScale);
   const [fullScreen, setFullScreen] = usePersistedValue<string>(FULL_SCREEN_KEY, 'true');
   const [statusBar, setStatusBar] = usePersistedValue<string>(STATUS_BAR_KEY, 'true');
-  useEffect(() => { applyStatusBar(statusBar !== 'false'); }, [statusBar]);
+  const [statusBarSecondary, setStatusBarSecondary] = usePersistedValue<string>(STATUS_BAR_SECONDARY_KEY, 'true');
+  useEffect(() => { applyStatusBar(); }, [statusBar, statusBarSecondary]);
   const theme = useThemeStore((s) => s.choice);
   const setTheme = useThemeStore((s) => s.setChoice);
   const accent = useAccentPaletteStore((s) => s.id);
@@ -181,10 +199,19 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
         </div>
         <div className="disp__row">
           <span>
-            Show status bar{' '}
-            <InfoTip>The bar along the bottom of the Models and Programmes pages (models loaded, active model, element and activity counts). The 4D Sequencing timeline always shows.</InfoTip>
+            Status bar, main window{' '}
+            <InfoTip>The bar along the bottom of every page (models loaded, active model, element and activity counts) in the main window. On 4D Sequencing it sits under the timeline, which always shows.</InfoTip>
           </span>
           <button type="button" role="switch" aria-checked={statusBar !== 'false'} className={`switch${statusBar !== 'false' ? ' on' : ''}`} onClick={() => setStatusBar(statusBar === 'false' ? 'true' : 'false')}>
+            <span className="switch__thumb" />
+          </button>
+        </div>
+        <div className="disp__row">
+          <span>
+            Status bar, second windows{' '}
+            <InfoTip>The same bar in the windows opened with New window or by a workspace (a second screen).</InfoTip>
+          </span>
+          <button type="button" role="switch" aria-checked={statusBarSecondary !== 'false'} className={`switch${statusBarSecondary !== 'false' ? ' on' : ''}`} onClick={() => setStatusBarSecondary(statusBarSecondary === 'false' ? 'true' : 'false')}>
             <span className="switch__thumb" />
           </button>
         </div>

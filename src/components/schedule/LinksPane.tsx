@@ -21,11 +21,9 @@ import { useCellRange } from '../useCellRange';
 import { ColumnsPanel } from './ColumnsPanel';
 import { SortPanel, type SortRule } from './SortPanel';
 import { newRuleId } from './FieldRules';
-import { IconSort } from '../icons';
-import { ToolPopover } from '../TablePopovers';
-import { DockToolbar } from '../Dock';
+import { ListConfig } from '../ListConfig';
+import { configFocusProps } from '../../state/listConfigStore';
 import type { DockPanelId } from '../../state/dockStore';
-import { IconColumns } from '../icons';
 
 const days = (hours: number, perDay = 8) => Math.round((hours / perDay) * 10) / 10;
 
@@ -276,7 +274,7 @@ export function LinksPane({ activity, model, height, kind: only, dockId, onSelec
     return <span title={relationDetail(r.relation, kind)} className={`ad-relation ad-relation--${r.relation.dominant}`}>{r.relationText}</span>;
   };
 
-  const half = (kind: Kind, title: string, style?: React.CSSProperties) => {
+  const half = (kind: Kind, _title: string, style?: React.CSSProperties) => {
     const sort = sortRules[0] ? { key: sortRules[0].field as SortKey, dir: sortRules[0].direction === 'up' ? (1 as const) : (-1 as const) } : null;
     const rows = sortedRows[kind];
     const grid = grids[kind];
@@ -367,41 +365,42 @@ export function LinksPane({ activity, model, height, kind: only, dockId, onSelec
   };
 
   return (
-    <div className="links-pane" style={height === undefined ? { flex: 1, minHeight: 0, borderTop: 0 } : { height }}>
+    <div className="links-pane" style={height === undefined ? { flex: 1, minHeight: 0, borderTop: 0 } : { height }} {...(dockId ? configFocusProps(`links-${dockId}`) : {})}>
       {dockId && (
-        <div className="links-pane__tools">
-          <DockToolbar id={dockId}>
-            <span className="mdt__actions links-actions"><span className="tp-row links-tools">
-              <ToolPopover icon={<IconSort width={16} height={16} />} label="Sort" active={sortRules.length} activeLabel={`${sortRules.length} sort${sortRules.length === 1 ? '' : 's'}`}>
-                <SortPanel
-                  bare
-                  fields={COLUMNS.map((c) => ({ id: c.key, label: c.label || 'Driver', group: 'Link columns' }))}
-                  rules={sortRules}
-                  onChange={setSortRules}
-                  onClose={() => {}}
-                  presets={[
-                    { label: 'Activity ID', rules: [{ field: 'id', direction: 'up' }] },
-                    { label: 'Start', rules: [{ field: 'start', direction: 'up' }] },
-                    { label: 'Finish', rules: [{ field: 'finish', direction: 'up' }] },
-                    { label: 'Float', rules: [{ field: 'float', direction: 'up' }] },
-                  ]}
-                />
-              </ToolPopover>
-              <ToolPopover icon={<IconColumns width={16} height={16} />} label="Columns" width={380}>
-                <ColumnsPanel
-                  catalog={COLUMN_CATALOG}
-                  views={[{ id: 'links', label: 'Links', selected: columns.filter((k) => k !== ALWAYS), defaults: ALL_COLUMNS.filter((k) => k !== ALWAYS), onChange: setColumns }]}
-                  presets={[
-                    { id: 'all', label: 'All', ids: ALL_COLUMNS.filter((k) => k !== ALWAYS) },
-                    { id: 'compact', label: 'Compact', ids: ['driving', 'link', 'lag', 'name'] },
-                  ]}
-                  groupOrder={['Link columns']}
-                  closedGroups={[]}
-                />
-              </ToolPopover>
-            </span></span>
-          </DockToolbar>
-        </div>
+        <ListConfig
+          id={`links-${dockId}`}
+          label={only === 'predecessor' ? 'Predecessors' : only === 'successor' ? 'Successors' : 'Predecessors & successors'}
+          badges={{ sort: sortRules.length }}
+          panels={{
+            sort: (
+              <SortPanel
+                bare
+                fields={COLUMNS.map((c) => ({ id: c.key, label: c.label || 'Driver', group: 'Link columns' }))}
+                rules={sortRules}
+                onChange={setSortRules}
+                onClose={() => {}}
+                presets={[
+                  { label: 'Activity ID', rules: [{ field: 'id', direction: 'up' }] },
+                  { label: 'Start', rules: [{ field: 'start', direction: 'up' }] },
+                  { label: 'Finish', rules: [{ field: 'finish', direction: 'up' }] },
+                  { label: 'Float', rules: [{ field: 'float', direction: 'up' }] },
+                ]}
+              />
+            ),
+            columns: (
+              <ColumnsPanel
+                catalog={COLUMN_CATALOG}
+                views={[{ id: 'links', label: 'Links', selected: columns.filter((k) => k !== ALWAYS), defaults: ALL_COLUMNS.filter((k) => k !== ALWAYS), onChange: setColumns }]}
+                presets={[
+                  { id: 'all', label: 'All', ids: ALL_COLUMNS.filter((k) => k !== ALWAYS) },
+                  { id: 'compact', label: 'Compact', ids: ['driving', 'link', 'lag', 'name'] },
+                ]}
+                groupOrder={['Link columns']}
+                closedGroups={[]}
+              />
+            ),
+          }}
+        />
       )}
       <datalist id="links-pane-codes">{editing && model.activities.slice(0, 20000).map((a) => <option key={a.id} value={a.code}>{a.name}</option>)}</datalist>
       {only ? half(only, only === 'predecessor' ? 'Predecessors' : 'Successors', { flex: '1 1 0', minWidth: 0 }) : (

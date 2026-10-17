@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { END, START, edgeChip, graphEdges, positions, previewBars, type GraphEdge, type Rect } from '../../../prs/recipeGraph';
 import type { Recipe, RecipeEdge, RecipeLink, RecipeTask } from '../../../prs/recipes';
@@ -55,7 +55,11 @@ const inkOn = (hex: string) => {
 
 type Pick = { kind: 'task'; phase: string } | { kind: 'edge'; index: number } | null;
 
+/** Where the graph's tools go when the recipe's top row has room for them (one recipe showing): in that row, not a row of their own. */
+export const RecipeBarSlot = createContext<HTMLElement | null>(null);
+
 export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscreen, fullscreen, lead }: { lead?: ReactNode; onFullscreen?: () => void; fullscreen?: boolean; recipe: Recipe; recipes?: Recipe[]; rules: ScenarioRules; onChange: (r: Recipe) => void }) {
+  const barSlot = useContext(RecipeBarSlot);
   const [picked, setPicked] = useState<Pick>(null);
   const [connect, setConnect] = useState<string | null | false>(false); // false: off; null: pick the first task; a phase: pick the second
   // The cards being moved (all the selected ones move together) and by how far.
@@ -378,8 +382,7 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
     setEdge(index, to === 'pct' ? { from: e.from, to: e.to, sharePct: e.sharePct !== undefined && e.sharePct < 100 ? e.sharePct : 80 } : { from: e.from, to: e.to, type: to, ...(e.lagHours ? { lagHours: e.lagHours } : {}) });
   const dialogTask = dialog ? task(dialog) : undefined;
 
-  return (
-    <div className="rg" onMouseEnter={() => { hovered.current = true; }} onMouseLeave={() => { hovered.current = false; }}>
+  const bar = (
       <div className="rg__bar">
         {lead}
         <button type="button" className={`btn btn--small${connect !== false ? ' primary' : ''}`} onClick={() => setConnect(connect === false ? null : false)} title="Click the task that comes first, then the task that follows it">
@@ -416,6 +419,11 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
         {onFullscreen && <button type="button" className="rg__full" onClick={onFullscreen} title={fullscreen ? 'Back to the panel (Esc)' : 'Full screen (Esc to close)'} aria-label={fullscreen ? 'Close full screen' : 'Full screen'}><IconFullscreen width={22} height={22} /></button>}
         </span>
       </div>
+  );
+
+  return (
+    <div className="rg" onMouseEnter={() => { hovered.current = true; }} onMouseLeave={() => { hovered.current = false; }}>
+      {barSlot && !fullscreen ? createPortal(bar, barSlot) : bar}
       <div className="rg__main">
       <div className="rg__wrap" ref={wrap} data-bg={bg} style={{ backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${100 * zoom}px ${100 * zoom}px, ${20 * zoom}px ${20 * zoom}px`, ['--rg-fine' as string]: Math.max(0, Math.min(1, (zoom - 0.3) / 0.4)) }}
         onClick={(e) => { if (e.target === e.currentTarget) setPicked(null); }} onPointerDown={panDown} onPointerMove={panMove} onPointerUp={panUp}>
@@ -482,8 +490,8 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
                   <div className="rg__head" style={t && colors === 'activity' && t.enabled !== false ? (() => { const c = headColor(t, profiles); return { background: c, color: inkOn(c) }; })() : undefined}><span className="rg__title">{boundary ? (id === START ? 'Previous Elements' : 'Next Elements') : t!.name || t!.phase}</span></div>
                   {!hide && (
                     <div className="rg__row rg__row--flow">
-                      <span className="rg__k">{id === START ? '' : 'After'}</span>
-                      <span className="rg__v rg__v--out">{id === END ? '' : 'Next'}</span>
+                      <span className="rg__k">{id === START ? '' : 'Start'}</span>
+                      <span className="rg__v rg__v--out">{id === END ? '' : 'Finish'}</span>
                     </div>
                   )}
                   {rows.map(([k, v]) => <div key={k} className="rg__row"><span className="rg__k">{k}</span><span className="rg__v" title={v}>{v}</span></div>)}

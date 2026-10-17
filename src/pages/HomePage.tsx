@@ -4,7 +4,7 @@ import { FREE_MODE } from '../licence/freeMode';
 import { scenes, type Scene } from '../state/scenes';
 import { dropFiles } from '../state/fileDrop';
 import { openDefaultWorkspace } from '../state/workspaces';
-import { useHomeSelection } from '../state/homeSelection';
+import { homeOpen, useHomeSelection } from '../state/homeSelection';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
 import { DOCK_DEFAULTS, useDockStore } from '../state/dockStore';
 import { usePersistedState } from '../utils/persistedState';
@@ -12,7 +12,8 @@ import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { thumbFromFile, thumbFromView } from '../components/sceneThumb';
 import { IconCamera, IconChevronDown, IconChevronRight, IconCube, IconDownload, IconFolder, IconGantt, IconGear, IconBlocksFour, IconList, IconMoreHorizontal, IconPencil, IconPlus, IconRemove, IconUpload } from '../components/icons';
 import { SceneTools } from '../components/SceneTools';
-import { buildCombinedGroups, buildGroups, NO_VALUE, type GroupNode } from '../state/inputDetailsStore';
+import { buildCombinedGroups, buildGroups, NO_VALUE, useInputDetailsStore, type GroupNode } from '../state/inputDetailsStore';
+import { FILE_VIEW_PROPS, foreignView } from '../state/fileView';
 import { sceneMatches, sortScenes, useSceneDetailsStore, valuesOfScene } from '../state/sceneDetailsStore';
 
 /** What the list shows, top to bottom: a group's header, or the scenes under it (all of them when nothing is grouped). */
@@ -57,7 +58,6 @@ export function HomePage({ picker, search }: { /** The global search, at the rig
   const [view, setView] = usePersistedState<'tiles' | 'list'>('home.view', 'tiles');
   const [menu, setMenu] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
-  const sideEl = useHomeSelection((x) => x.sideEl);
   const headerSlot = useHeaderSlotStore((h) => h.el);
   const settingsOpen = useDockStore((s) => (s.placement.settings ?? DOCK_DEFAULTS.settings) !== 'closed');
   const [renaming, setRenaming] = useState<string | null>(null);
@@ -115,27 +115,62 @@ export function HomePage({ picker, search }: { /** The global search, at the rig
   // The chosen scene (the one you are in until you choose another): the Files panel lists its files.
   const [chosenId, setChosenId] = usePersistedState<string | null>('home.chosen', null);
   const chosen = store.scenes.find((x) => x.id === chosenId) ?? store.scenes.find((x) => x.id === store.activeId) ?? null;
-  // The Files panel filters as the chosen scene saved them; the scene you are in already has its own on.
+  // The Files panel shows the Files view (filters, grouping, sorting, columns) of the chosen scene. The scene you are in already has its own in
+  // the store; for another one its saved view is loaded into the store, edits go back into that scene, and the scene you are in gets its own back after.
   useEffect(() => {
     if (!chosen) return;
-    if (chosen.id === store.activeId) { useHomeSelection.getState().select(chosen.id, chosen.name, null); return; }
+    useHomeSelection.getState().select(chosen.id, chosen.name, null);
+    if (chosen.id === store.activeId) return;
+    const pick = () => { const st = useInputDetailsStore.getState(); return Object.fromEntries(FILE_VIEW_PROPS.map((p) => [p, st[p]])); };
     let live = true;
-    void scenes.fileFilters(chosen.id).then((f) => { if (live) useHomeSelection.getState().select(chosen.id, chosen.name, f); });
-    return () => { live = false; };
+    let unsub: (() => void) | null = null;
+    let timer: number | undefined;
+    let last = '';
+    const save = () => { window.clearTimeout(timer); const v = pick(); const text = JSON.stringify(v); if (text !== last) { last = text; void scenes.setFileView(chosen.id, v); } };
+    void scenes.fileView(chosen.id).then((view) => {
+      if (!live) return;
+      foreignView.on = true;
+      const initial = useInputDetailsStore.getInitialState();
+      useInputDetailsStore.setState({ ...Object.fromEntries(FILE_VIEW_PROPS.map((p) => [p, initial[p]])), ...view });
+      last = JSON.stringify(pick());
+      unsub = useInputDetailsStore.subscribe(() => { window.clearTimeout(timer); timer = window.setTimeout(save, 400); });
+    });
+    return () => {
+      live = false;
+      unsub?.();
+      if (foreignView.on) {
+        save();
+        foreignView.on = false;
+        void useInputDetailsStore.persist.rehydrate(); // the scene you are in: its own view from the browser's key
+      }
+    };
   }, [chosen?.id, store.activeId]);
   useEffect(() => () => useHomeSelection.getState().clear(), []);
 
   const open = (s: Scene) => {
-    // The scene you are in: its default workspace opens (the page reloads, as a new session does).
+    // The scene you are in: the models the filters leave in the Files list are added to the ones it brings back, then its workspace opens (the page
+    // reloads, as a new session does, and the viewer loads them there: it is not running on Home).
     if (s.id === store.activeId) {
-      if (openDefaultWorkspace()) window.location.reload();
+      try {
+        const names = homeOpen.names();
+        if (names.length) {
+          let have: string[] = [];
+          try { const v = JSON.parse(localStorage.getItem('models.loaded') ?? 'null'); if (Array.isArray(v)) have = v as string[]; } catch { /* none */ }
+          localStorage.setItem('models.loaded', JSON.stringify([...new Set([...have, ...names])]));
+        }
+        if (!openDefaultWorkspace()) setError('Open: no workspace to open. Choose one in the workspace menu at the bottom right.');
+        else window.location.reload();
+      } catch (e) {
+        setError(`The scene was not opened: ${e instanceof Error ? e.message : String(e)}`);
+      }
       return;
     }
+    const names = homeOpen.names();
     if (window.confirm(`Open the scene “${s.name}”?
 
-The page reloads with its layout and lists (models loaded now are unloaded) and goes to your default workspace. “${current?.name ?? 'This scene'}” is saved first.`)) {
+The page reloads with its layout and lists and goes to your workspace${names.length ? `, loading ${names.length} more model${names.length === 1 ? '' : 's'} from its Files list` : ''}. “${current?.name ?? 'This scene'}” is saved first.`)) {
       openDefaultWorkspace();
-      void attempt('The scene was not opened', () => scenes.activate(s.id));
+      void attempt('The scene was not opened', async () => { await scenes.addLoaded(s.id, names); await scenes.activate(s.id); });
     }
   };
   const create = (empty: boolean) => {
@@ -190,12 +225,12 @@ The page reloads with its layout and lists (models loaded now are unloaded) and 
     </span>
   );
 
-  /** One scene's card. The chosen one (when the Files panel is open) stands in the panel's left column; the others are in the grid. */
+  /** One scene's card. The chosen one keeps its place, marked with a border. */
   const tileOf = (s: Scene) => {
     const here = s.id === store.activeId;
     const isChosen = s.id === chosen?.id;
     return (
-        <div key={s.id} className={`home__tile${here ? ' is-here' : ''}${isChosen ? ' is-selected' : ''}`} onClick={(e) => { if ((e.target as HTMLElement).closest('.home__tilemore, .home__menu')) return; if (isChosen) open(s); else setChosenId(s.id); }} onDoubleClick={() => open(s)} title={isChosen ? 'Click to open it in your default workspace' : `Choose ${s.name}: list its files below`}>
+        <div key={s.id} className={`home__tile${here ? ' is-here' : ''}${isChosen ? ' is-selected' : ''}`} onClick={(e) => { if ((e.target as HTMLElement).closest('.home__tilemore, .home__menu')) return; if (!isChosen) setChosenId(s.id); }} onDoubleClick={() => open(s)} title={isChosen ? 'Chosen: press Open to open it in your default workspace' : `Choose ${s.name}: list its files below`}>
           <div className="home__thumbwrap">{picture(s)}</div>
           <div className="home__tilemore">
             {isChosen
@@ -240,10 +275,6 @@ The page reloads with its layout and lists (models loaded now are unloaded) and 
       <div className="home__bar viewer-toolbar-row schedule-toolbar">
         <div className="schedule-toolbar__left">
           {picker}
-          <span className="home__barinfo">
-            {store.scenes.length} scene{store.scenes.length === 1 ? '' : 's'} · saved as you work ·{' '}
-            <button type="button" className="cols__link" onClick={() => create(true)}>New empty scene…</button>
-          </span>
         </div>
         <div className="schedule-toolbar__right">
           <button type="button" className="home__tool home__tool--primary" onClick={() => create(false)} title="A copy of the scene you are in, under a name"><IconPlus width={18} height={18} /> New scene</button>
@@ -289,7 +320,7 @@ The page reloads with its layout and lists (models loaded now are unloaded) and 
         <div className="home__empty">No scene matches the filters. <button type="button" className="cols__link" onClick={() => useSceneDetailsStore.getState().clearFilters()}>Clear filters</button></div>
       )}
 
-      <div className={`home__body`}>
+      <div className={`home__body${view === 'list' ? ' home__body--list' : ''}`}>
         <div className="home__main">
           {view === 'tiles' ? (
             <>
@@ -297,10 +328,9 @@ The page reloads with its layout and lists (models loaded now are unloaded) and 
                 ? <Fragment key={r.node.key}>{groupHeader(r.node)}</Fragment>
                 : (
                   <div key={`s${i}`} className="home__tiles">
-                    {(sideEl ? r.items.filter((s) => s.id !== chosen?.id) : r.items).map((s) => tileOf(s))}
+                    {r.items.map((s) => tileOf(s))}
                   </div>
                 ))}
-              {sideEl && chosen && createPortal(<div className="home__sidecard">{tileOf(chosen)}</div>, sideEl)}
             </>
           ) : (
             <table className="home__list">

@@ -544,6 +544,12 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
 
   const onKeyDown = (e: React.KeyboardEvent) => {
     if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return;
+    // 0-9: collapse the WBS to that level (the same as picking Group Level N; 0 collapses all); "." shows every level.
+    if (grouped && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey && (/^[0-9]$/.test(e.key) || e.key === '.')) {
+      e.preventDefault();
+      setCollapsedGroups(new Set(e.key === '.' ? [] : wbsPathsAtOrBeyondDepth(wbsTree, Number(e.key))));
+      return;
+    }
     if (sheet.onKeyDown(e)) return;
     const page = Math.max(1, Math.floor(bodyH / ROW_H) - 1);
     const delta = e.key === 'ArrowDown' ? 1 : e.key === 'ArrowUp' ? -1 : e.key === 'PageDown' ? page : e.key === 'PageUp' ? -page : 0;

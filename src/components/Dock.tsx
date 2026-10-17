@@ -1,8 +1,11 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type ReactNode, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
 import { activeTargetId, useListConfigStore } from '../state/listConfigStore';
+import { useDockNavStore } from '../state/dockNavStore';
+import { DockNav } from './DockNav';
+import { panelColor } from './panelColors';
 import { activeOn, isShowing, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus, IconFolder } from './icons';
+import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconChevronDown, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus, IconFolder } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
 export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -29,7 +32,6 @@ export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement
   search: IconSearch,
   views: IconCubeFocus,
   colour: IconPalette,
-  tableSetup: IconViewTable,
   fourD: IconSchema,
   planning: IconList,
   dictionary: IconTune,
@@ -78,6 +80,18 @@ export function DockToolbar({ id, children }: { id: DockPanelId; children: React
   return <>{children}</>;
 }
 
+/** A panel's action buttons, drawn in the navigation bar of the left or right dock it sits in (under the tab icons) while it is the tab
+    showing; in the bottom dock, which has no bar, or when it is not docked, they stay where they are written. `order` sets their place. */
+export function DockNavTools({ id, order = 0, className, children }: { id: DockPanelId; order?: number; className?: string; children: ReactNode }) {
+  const side = useDockStore((s) => { const p = s.placement[id] ?? DOCK_DEFAULTS[id]; return p === 'closed' ? null : p; });
+  const barSide = side === 'left' || side === 'right' ? side : null;
+  const here = useDockStore((s) => !!barSide && activeOn(s, barSide) === id);
+  const slot = useDockStore((s) => (barSide ? s.navTools[barSide] : null));
+  if (barSide && here && slot) return createPortal(<div className="dock-nav__grp" style={{ order }}>{children}</div>, slot);
+  if (barSide) return null;
+  return <div className={className}>{children}</div>;
+}
+
 /** A tiny picture of a window with one side filled: where a panel goes. */
 export function SideIcon({ side, size = 16 }: { side: DockSide | 'main'; size?: number }) {
   const fill = side === 'main' ? { x: 3, y: 3, w: 10, h: 10 } : side === 'left' ? { x: 2, y: 2, w: 5, h: 12 } : side === 'right' ? { x: 9, y: 2, w: 5, h: 12 } : { x: 2, y: 9, w: 12, h: 5 };
@@ -95,6 +109,7 @@ const LIMITS: Record<DockSide, [number, number]> = { left: [260, 1100], right: [
 export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?: DockHost }) {
   const mine = useDockStore((s) => s.host === host);
   const entries = useDockStore((s) => s.entries);
+  const navFlip = useDockNavStore((s) => s.flip[side]);
   const placement = useDockStore((s) => s.placement);
   const activeRaw = useDockStore((s) => s.active);
   const size = useDockStore((s) => s.size[side]);
@@ -201,12 +216,34 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
 
   if (folded) {
     const label = tabs.map((t) => t.label).join(', ');
+    // Left and right: the fold button's place at the top of a strip as wide as the bar, pointing the other way to bring the panels back.
+    if (!horizontal) {
+      return (
+        <nav className={`dock-nav dock-nav--folded${side === 'right' ? ' dock-nav--right' : ''}`} aria-label={`${SIDE_LABEL[side]} panels`}>
+          <button type="button" className="dock-nav__more" onClick={() => store().setFolded(side, false)} title={`Show the ${SIDE_LABEL[side].toLowerCase()} panels: ${label}`} aria-label={`Show the ${SIDE_LABEL[side].toLowerCase()} panels`}>
+            <IconChevronDown width={16} height={16} style={{ transform: side === 'right' ? 'rotate(90deg)' : 'rotate(-90deg)' }} />
+          </button>
+        </nav>
+      );
+    }
     return (
       <button type="button" className={`pane-reveal dock-reveal dock-reveal--${side}`} onClick={() => store().setFolded(side, false)} title={`Show the ${SIDE_LABEL[side].toLowerCase()} panels: ${label}`} aria-label={`Show the ${SIDE_LABEL[side].toLowerCase()} panels`}>
-        <IconChevronLeft style={{ transform: side === 'right' ? undefined : side === 'left' ? 'rotate(180deg)' : 'rotate(90deg)' }} />
+        <IconChevronLeft style={{ transform: 'rotate(90deg)' }} />
       </button>
     );
   }
+
+  const toolButtons = (
+    <>
+      {active !== 'files' && <button type="button" className="icon-btn dock__tool dock__tool--fold" onClick={() => store().setFolded(side, true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: side === 'right' ? 'rotate(180deg)' : side === 'left' ? undefined : 'rotate(-90deg)' }} /></button>}
+      {active && active !== 'files' && <button type="button" className="icon-btn dock__tool" onClick={() => store().close(active)} title={`Close ${entries[active]?.label ?? 'the panel'} (the Panels menu brings it back)`} aria-label="Close panel"><IconClose /></button>}
+    </>
+  );
+
+  // Left and right docks have a navigation bar of icons (as Blender's Properties editor); the bottom one keeps its tabs in a header.
+  const navBar = !horizontal;
+  // The bar is on the inner edge by default (the left for a right dock); Flip puts it on the other edge.
+  const barOnLeft = (side === 'right') !== navFlip;
 
   const handle = horizontal
     ? <div className="resize-handle resize-handle--h dock__grip" onMouseDown={startResize} role="separator" aria-label="Resize the bottom panels" />
@@ -215,8 +252,8 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
   return (
     <>
       {side !== 'left' && handle}
-      <aside data-active={active ?? undefined} className={`config-panel seq-panel dock dock--${side}`} style={horizontal ? { height: size, width: 'auto', marginTop: 0 } : { width: size, minWidth: 0 }}>
-        <div className={`filter-sidebar-header seq-righthead dock__head${stacked ? ' is-stacked' : ''}`} ref={headEl}>
+      <aside data-active={active ?? undefined} className={`config-panel seq-panel dock dock--${side}${navBar ? ` dock--nav${barOnLeft ? '' : ' dock--nav-right'}` : ''}`} style={horizontal ? { height: size, width: 'auto', marginTop: 0 } : { width: size, minWidth: 0 }}>
+        {!navBar && <div className={`filter-sidebar-header seq-righthead dock__head${stacked ? ' is-stacked' : ''}`} ref={headEl}>
           <div className={`config-tabs seq-righttabs${compact ? ' is-compact' : ''}`} role="tablist" ref={tabsEl}>
             {dropdown ? (
               <select className="dock__tabselect" value={active ?? ''} onChange={(e) => store().select(side, e.target.value as typeof tabs[number]['id'])} aria-label="Panel">
@@ -228,7 +265,7 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
                 const TabIcon = TAB_ICONS[t.id];
                 return (
                   <button key={t.id} type="button" role="tab" aria-selected={active === t.id} aria-label={t.label} title={compact ? `${t.label} (drag to the left, bottom or right to move it)` : 'Drag to the left, bottom or right to move it'} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => store().setDragging(t.id), 0); }} onDragEnd={() => store().setDragging(null)} className={`config-tab${active === t.id ? ' active' : ''}`} onClick={() => store().select(side, t.id)}>
-                    {compact && TabIcon ? <TabIcon className="dock__tabicon" /> : t.label}
+                    {compact && TabIcon ? <TabIcon className="dock__tabicon" style={{ color: panelColor(t.id) }} /> : t.label}
                   </button>
                 );
               })}
@@ -237,11 +274,17 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
           </div>
           <span className="dock__panel-tools" ref={(el) => store().setTools(side, el)} />
           <span className="dock__tools" ref={toolsEl}>
-            {active !== 'files' && <button type="button" className="icon-btn dock__tool dock__tool--fold" onClick={() => store().setFolded(side, true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: side === 'right' ? 'rotate(180deg)' : side === 'left' ? undefined : 'rotate(-90deg)' }} /></button>}
-            {active && active !== 'files' && <button type="button" className="icon-btn dock__tool" onClick={() => store().close(active)} title={`Close ${entries[active]?.label ?? 'the panel'} (the Panels menu brings it back)`} aria-label="Close panel"><IconClose /></button>}
+            {toolButtons}
           </span>
-        </div>
-        <div className="dock__body" ref={(el) => { if (el) setBody(side, el); }} />
+        </div>}
+        {navBar ? (
+          <div className="dock__row">
+            <DockNav side={side} tabs={tabs} active={active} icons={TAB_ICONS} />
+            <div className="dock__body" ref={(el) => { if (el) setBody(side, el); }} />
+          </div>
+        ) : (
+          <div className="dock__body" ref={(el) => { if (el) setBody(side, el); }} />
+        )}
       </aside>
       {side === 'left' && handle}
     </>

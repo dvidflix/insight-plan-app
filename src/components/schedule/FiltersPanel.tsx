@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { IconRemove, IconSectionChevron } from '../icons';
 import {
-  FILTER_GROUPS, TEXT_MODES, applyFieldFilters, isPresenceMode, buildFilterFields, countActiveFilters, emptyFilterState, rangeActive,
+  FILTER_GROUPS, TEXT_MODES, applyFieldFilters, isPresenceMode, buildFilterFields, emptyFilterState, rangeActive,
   type FieldFilterState, type FilterFieldDef, type TextMode, type RangeFilter,
 } from '../../schedule/filterFields';
 import { InfoTip } from '../InfoTip';
+import { FilterShell, type FilterChip, type QuickFilter } from '../FilterShell';
 import { SearchRow } from '../SearchRow';
 import { useCalcFilterFields } from '../../schedule/calculatedColumns';
 import { queryMatcher } from '../../schedule/search';
@@ -90,7 +91,6 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
   const q = search.trim().toLowerCase();
   const hit = queryMatcher(search);
   const combine = state.combine ?? 'all';
-  const pct = baseActivities.length ? (matched.length / baseActivities.length) * 100 : 100;
 
   const clear = (id: string) => onChange((prev) => clearField(prev, id));
   const toggleOpen = (id: string) =>
@@ -123,76 +123,49 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
   const quick = QUICK.filter((qf) => visibleFields.some((f) => f.id === qf.fieldId));
   const saved = useUserPresetsStore((st) => st.presets).filter((p) => p.kind === 'filters');
 
+  const chips: FilterChip[] = activeFields.map((f) => ({
+    id: f.id,
+    label: f.label,
+    summary: summarize(f, state),
+    onRemove: () => clear(f.id),
+    onEdit: () => { setOpenFields((prev) => new Set(prev).add(f.id)); setClosedGroups((prev) => { const n = new Set(prev); n.delete(f.group); return n; }); },
+  }));
+  const quickFilters: QuickFilter[] = quick.map((qf) => ({ id: qf.id, label: qf.label, active: quickActive(qf), onToggle: () => toggleQuick(qf) }));
+
   return (
-    <div className="cols flt flt--groups">
-      <div className="flt__result">
-        <div className="flt__result-text">
-          <b>{matched.length.toLocaleString()}</b> of {baseActivities.length.toLocaleString()} activities
-          {matched.length === 0 && <span className="flt__none"> — no matches</span>}
-        </div>
-        <button type="button" className="cols__link" disabled={activeFields.length === 0} onClick={() => onChange((prev) => ({ ...emptyFilterState(), combine: prev.combine }))}>Clear all</button>
-        <div className="flt__bar"><span style={{ width: `${pct}%` }} /></div>
-      </div>
-
-      {quick.length > 0 && (
-        <div className="cols__presets">
-          <span className="cols__hint">Quick</span>
-          {quick.map((qf) => (
-            <button key={qf.id} type="button" className={quickActive(qf) ? 'on' : ''} aria-pressed={quickActive(qf)} onClick={() => toggleQuick(qf)}>{qf.label}</button>
-          ))}
-        </div>
-      )}
-
-      <PresetBar
-        noun="filter"
-        items={saved.map((p) => ({ id: p.id, label: p.name, user: true }))}
-        saveDisabled={activeFields.length === 0}
-        onApply={(id) => {
-          const kept = saved.find((p) => p.id === id)?.data as SerializedFilters | undefined;
-          if (kept) onChange(deserializeFilters(kept));
-        }}
-        onSave={(name) => saveUserPreset('filters', name, serializeFilters(state))}
-        onDelete={removeUserPreset}
-      />
-
-      {activeFields.length > 0 && (
-        <>
-          <div className="cols__heading"><span>Active <b>{countActiveFilters(state)}</b></span></div>
-          {countActiveFilters(state) > 1 && (
-            <div className="flt__match">
-              <span className="flt__match-label">An activity must match</span>
-              <div className="flt__modes" role="group" aria-label="How the filters combine">
-                <button type="button" className={combine === 'all' ? 'on' : ''} aria-pressed={combine === 'all'} onClick={() => onChange((prev) => ({ ...prev, combine: 'all' }))} title="AND: every active filter must match">All</button>
-                <button type="button" className={combine === 'any' ? 'on' : ''} aria-pressed={combine === 'any'} onClick={() => onChange((prev) => ({ ...prev, combine: 'any' }))} title="OR: matching any one of the active filters is enough">Any</button>
-              </div>
-              <span className="flt__match-label">of these filters</span>
-            </div>
-          )}
-          <div className="rgrid" role="table" style={{ '--rg-cols': '40% minmax(0, 1fr)' } as React.CSSProperties}>
-            <div className="rgrid__head" role="row">
-              <span className="rgrid__n rgrid__n--head" />
-              <div className="rgrid__body">
-                <span className="rgrid__th" role="columnheader">Field</span>
-                <span className="rgrid__th" role="columnheader">Filter</span>
-              </div>
-            </div>
-            {activeFields.map((f, i) => (
-              <div className="rgrid__row" role="row" key={f.id}>
-                <span className="rgrid__n">
-                  <span className="rgrid__num">{i + 1}</span>
-                  <button type="button" className="rgrid__del" onClick={() => clear(f.id)} aria-label={`Clear ${f.label} filter`} title="Remove filter"><IconRemove /></button>
-                </span>
-                <div className="rgrid__body">
-                  <span className="rgrid__cell rgrid__cell--name" title={f.label}>{f.label}</span>
-                  <span className="rgrid__cell" title={summarize(f, state)}>{summarize(f, state)}</span>
-                </div>
-              </div>
-            ))}
+    <FilterShell
+      className="cols flt flt--groups"
+      matched={matched.length}
+      total={baseActivities.length}
+      noun="activities"
+      chips={chips}
+      onClearAll={() => onChange((prev) => ({ ...emptyFilterState(), combine: prev.combine }))}
+      quick={quickFilters}
+      combine={(
+        <div className="flt__match">
+          <span className="flt__match-label">An activity must match</span>
+          <div className="flt__modes" role="group" aria-label="How the filters combine">
+            <button type="button" className={combine === 'all' ? 'on' : ''} aria-pressed={combine === 'all'} onClick={() => onChange((prev) => ({ ...prev, combine: 'all' }))} title="AND: every active filter must match">All</button>
+            <button type="button" className={combine === 'any' ? 'on' : ''} aria-pressed={combine === 'any'} onClick={() => onChange((prev) => ({ ...prev, combine: 'any' }))} title="OR: matching any one of the active filters is enough">Any</button>
           </div>
-        </>
+          <span className="flt__match-label">of these filters</span>
+        </div>
       )}
-
-      <div className="cols__heading"><span>Available fields <b>{visibleFields.length}</b></span></div>
+      presets={(
+        <PresetBar
+          noun="filter"
+          items={saved.map((p) => ({ id: p.id, label: p.name, user: true }))}
+          saveDisabled={activeFields.length === 0}
+          onApply={(id) => {
+            const kept = saved.find((p) => p.id === id)?.data as SerializedFilters | undefined;
+            if (kept) onChange(deserializeFilters(kept));
+          }}
+          onSave={(name) => saveUserPreset('filters', name, serializeFilters(state))}
+          onDelete={removeUserPreset}
+        />
+      )}
+      advanced={(
+        <>
       <SearchRow
         collapsed={groupNames.length > 0 && groupNames.every((g) => closedGroups.has(g))}
         onCollapse={() => { setClosedGroups(new Set(groupNames)); setOpenFields(new Set()); }}
@@ -233,7 +206,9 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
           </div>
         );
       })}
-    </div>
+        </>
+      )}
+    />
   );
 }
 

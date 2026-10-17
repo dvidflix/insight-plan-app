@@ -21,3 +21,6 @@ export const useHomeSelection = create<HomeSelection>((set) => ({
   select: (sceneId, name, filters) => set({ sceneId, name, filters }),
   clear: () => set({ sceneId: null, name: '', filters: null }),
 }));
+
+/** What Open needs from the Files list (App registers it while the list is mounted): the stored models that pass the filters and are not loaded yet. */
+export const homeOpen: { names: () => string[]; load: () => Promise<void> } = { names: () => [], load: async () => undefined };
