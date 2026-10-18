@@ -1,12 +1,12 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ComponentType, type SVGProps } from 'react';
 import { createPortal } from 'react-dom';
-import { panelOrder, SIDE_LABEL, useDockStore, type DockEntry, type DockPanelId, type DockSide } from '../state/dockStore';
+import { goToPanel, isHomeDock, PANEL_LABELS, panelOrder, SIDE_LABEL, useDockStore, type DockEntry, type DockPanelId, type DockSide } from '../state/dockStore';
 import { useDockNavStore } from '../state/dockNavStore';
 import { IconChevronDown } from './icons';
-import { panelColor } from './panelColors';
+import { PANEL_KIND_ORDER, panelColor, panelKind } from './panelColors';
 
 type IconType = ComponentType<SVGProps<SVGSVGElement>>;
-/** The chevron's box: the menu opens beside it. */
+/** The navigation bar's box: the menu opens beside it, from the top of the window. */
 type Anchor = { left: number; right: number; top: number };
 
 /** A dock's navigation bar, as Blender's Properties editor has it: a strip of coloured panel icons down one edge, and under them a
@@ -15,16 +15,19 @@ export function DockNav({ side, tabs, active, icons }: { side: DockSide; tabs: D
   const flip = useDockNavStore((s) => s.flip[side]);
   const [menu, setMenu] = useState<Anchor | null>(null);
   const chev = useRef<HTMLButtonElement>(null);
+  const bar = useRef<HTMLElement>(null);
   const store = useDockStore.getState;
 
   const openMenu = () => {
-    const r = chev.current?.getBoundingClientRect();
+    const r = bar.current?.getBoundingClientRect();
     if (!r) return;
-    setMenu({ left: r.left, right: r.right, top: r.top });
+    // Under the fold button at the bar's top, so the menu covers neither the bar nor the header above it.
+    const fold = bar.current?.querySelector('.dock-nav__more')?.getBoundingClientRect();
+    setMenu({ left: r.left, right: r.right, top: fold ? fold.bottom + 4 : r.top });
   };
 
   return (
-    <nav className="dock-nav" aria-label={`${SIDE_LABEL[side]} panels`}>
+    <nav ref={bar} className="dock-nav" aria-label={`${SIDE_LABEL[side]} panels`}>
       <button type="button" className="dock-nav__more" aria-label="Fold away" title="Fold these panels away" onClick={() => store().setFolded(side, true)}>
         <IconChevronDown width={16} height={16} style={{ transform: side === 'right' ? 'rotate(-90deg)' : 'rotate(90deg)' }} />
       </button>
@@ -73,22 +76,29 @@ function NavMenu({ side, flip, at, icons, onClose }: { side: DockSide; flip: boo
     document.addEventListener('keydown', esc);
     return () => { document.removeEventListener('mousedown', away); document.removeEventListener('keydown', esc); };
   }, [onClose]);
-  // Beside the chevron, on the side that faces the middle of the window, measured once the menu has its width.
+  // Beside the bar, on the side that faces the middle of the window, measured once the menu has its width.
   const [pos, setPos] = useState({ top: at.top, left: at.right + 4 });
   useLayoutEffect(() => {
     const w = root.current?.offsetWidth ?? 200;
     const h = root.current?.offsetHeight ?? 0;
     const toRight = at.left < window.innerWidth / 2;
-    const left = toRight ? at.right + 4 : at.left - w - 4;
-    // Opens downward from the chevron; one that would run off the bottom slides up to fit.
+    const left = toRight ? at.right + 8 : at.left - w - 8;
+    // From the top of the bar (under its fold button), tall enough to show every panel at once.
     const top = Math.max(8, Math.min(at.top, window.innerHeight - h - 8));
     setPos({ top, left: Math.max(8, left) });
   }, [at]);
-  const rows = useMemo(() => panelOrder(order).flatMap((id) => (entries[id] ? [entries[id]!] : [])), [entries, order]);
+  // Every panel, whatever the view: one this view does not have is listed too, and clicking it goes to the view that has it.
+  const rows = useMemo(() => panelOrder(order).flatMap((id) => {
+    const e = entries[id];
+    if (e) return [{ ...e, here: true }];
+    const label = PANEL_LABELS[id];
+    return label && !isHomeDock() ? [{ id, label, here: false } as DockEntry & { here: boolean }] : [];
+  }).sort((a, b) => PANEL_KIND_ORDER.indexOf(panelKind(a.id)) - PANEL_KIND_ORDER.indexOf(panelKind(b.id))), [entries, order]);
   // Shown: in a dock (this one or another) and not closed or switched off.
   const sideOfPanel = (e: DockEntry) => placement[e.id] ?? store().sideOf(e.id);
-  const isShown = (e: DockEntry) => sideOfPanel(e) !== 'closed' && e.shown !== false;
-  const toggle = (e: DockEntry) => {
+  const isShown = (e: DockEntry & { here?: boolean }) => e.here !== false && sideOfPanel(e) !== 'closed' && e.shown !== false;
+  const toggle = (e: DockEntry & { here?: boolean }) => {
+    if (e.here === false) { goToPanel(e.id); onClose(); return; }
     if (isShown(e)) store().close(e.id);
     else store().reveal(e.id);
   };
@@ -100,13 +110,14 @@ function NavMenu({ side, flip, at, icons, onClose }: { side: DockSide; flip: boo
       <button type="button" role="menuitem" className="dock-menu__item" onClick={() => { nav().toggleFlip(side); onClose(); }}>{barOnLeft ? 'Flip to Right' : 'Flip to Left'}</button>
       {(
         <div className="dock-menu__tabs">
-                    {rows.map((r) => {
+                    {rows.map((r, i) => {
             const Icon = icons[r.id];
+            const groupStart = i > 0 && panelKind(rows[i - 1].id) !== panelKind(r.id);
             return (
-              <button key={r.id} type="button" role="menuitemcheckbox" aria-checked={isShown(r)} className={`dock-menu__tab${isShown(r) ? ' is-on' : ''}`} onClick={() => toggle(r)}>
+              <button key={r.id} type="button" role="menuitemcheckbox" aria-checked={isShown(r)} title={r.here ? undefined : 'Opens the view that has it'}className={`dock-menu__tab${isShown(r) ? ' is-on' : ''}${groupStart ? ' is-group' : ''}`} onClick={() => toggle(r)}>
                 <span className="dock-menu__icon" style={{ color: panelColor(r.id) }}>{Icon && <Icon width={16} height={16} />}</span>
                 <span className="dock-menu__label">{r.label}</span>
-                {isShown(r) && sideOfPanel(r) !== side && <span className="dock-menu__side">{SIDE_LABEL[sideOfPanel(r) as DockSide]}</span>}
+                
               </button>
             );
           })}

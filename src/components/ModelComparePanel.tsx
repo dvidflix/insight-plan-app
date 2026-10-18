@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { queryMatcher } from '../schedule/search';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useIndexTick } from './modelFields';
 import { usePersistedState } from '../utils/persistedState';
 import { downloadCsv } from '../utils/csv';
 import { usePourMapStore } from '../state/pourMapStore';
-import { DOUBTFUL_BELOW, compareModels, compareStats, pourKeysOf, pourMapOf, pourOf, type CompareResult, type MatchedPair } from '../viewer/modelCompare';
+import { DOUBTFUL_BELOW, compareModels, compareStats, ATTRIBUTE_KEYS, idKeysOf, pourMapOf, pourOf, type CompareResult, type MatchedPair } from '../viewer/modelCompare';
 import type { ElementSummary } from '../viewer/types';
 import { CollapsibleSection, useOpenSections } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
@@ -53,7 +54,7 @@ export function ModelComparePanel() {
   const newModel = idOf(newId, 1);
   const oldIndex = indexes.find(([id]) => id === oldModel)?.[1];
   const newIndex = indexes.find(([id]) => id === newModel)?.[1];
-  const pourKeys = useMemo(() => [...new Set([...(oldIndex ? pourKeysOf(oldIndex) : []), ...(newIndex ? pourKeysOf(newIndex) : [])])], [oldIndex, newIndex]);
+  const pourKeys = useMemo(() => [...new Set([...(oldIndex ? idKeysOf(oldIndex) : []), ...(newIndex ? idKeysOf(newIndex) : [])])], [oldIndex, newIndex]);
   const key = pourKeys.includes(pourKey) ? pourKey : pourKeys[0] ?? '';
 
   const run = () => {
@@ -94,8 +95,8 @@ export function ModelComparePanel() {
   }, [rows]);
   const stats = useMemo(() => (result ? compareStats(result) : null), [result]);
   const shown = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return rows.filter((r) => (!filter || r.status === filter) && (!q || `${r.e.name} ${r.e.category} ${r.oldPour} ${r.newPour} ${r.e.guid}`.toLowerCase().includes(q)));
+    const hit = queryMatcher(search);
+    return rows.filter((r) => (!filter || r.status === filter) && hit(`${r.e.name} ${r.e.category} ${r.oldPour} ${r.newPour} ${r.e.guid}`));
   }, [rows, filter, search]);
   const current = rows.find((r) => r.key === selected) ?? null;
   const pourMap = useMemo(() => (result && usedKey ? pourMapOf(result, usedKey) : []), [result, usedKey]);
@@ -177,10 +178,10 @@ export function ModelComparePanel() {
           </select>
         </label>
         <label className="disp__row">
-          <span>Pour ID property <InfoTip>The property that holds each object's Pour ID, to read the old → new Pour IDs from the pairs.</InfoTip></span>
+          <span>ID property <InfoTip>Any property (or the object's Name, Class or GlobalId) that holds the ID to follow, such as a Pour ID, to read the old → new IDs from the pairs. Pour ID properties are listed first.</InfoTip></span>
           <select value={key} onChange={(e) => setPourKey(e.target.value)}>
             {pourKeys.length === 0 && <option value="">(none found)</option>}
-            {pourKeys.map((k) => <option key={k} value={k}>{k}</option>)}
+            {pourKeys.map((k) => <option key={k} value={k}>{ATTRIBUTE_KEYS[k] ?? k}</option>)}
           </select>
         </label>
         <div className="disp__row">

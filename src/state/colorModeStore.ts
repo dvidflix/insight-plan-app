@@ -6,12 +6,13 @@ import { persist } from 'zustand/middleware';
     - original:   the model's own colours — the timeline still hides/ghosts
     - property:   one colour per value of a model property (rules below)
     Visibility and opacity always follow the timeline; only colour differs. */
-export type ColorMode = 'appearance' | 'original' | 'property';
+export type ColorMode = 'appearance' | 'original' | 'property' | 'sets';
 
 export const COLOR_MODES: { id: ColorMode; label: string; hint: string }[] = [
   { id: 'appearance', label: 'Appearance Profiles', hint: 'Colours from each Link Group’s appearance profile (the default 4D look).' },
   { id: 'original', label: 'Original colours', hint: 'The model’s own colours; the timeline still controls what is visible.' },
-  { id: 'property', label: 'By property', hint: 'Colour elements by the value of a model property, using the rules you set.' },
+  { id: 'property', label: 'By property', hint: 'Colour elements by the value of a model property, using the colours of the Colour panel.' },
+  { id: 'sets', label: 'Search / Selection Sets', hint: 'Colour the objects of each Search / Selection Set in the colour set for it below; an object in several sets takes the first one in the list.' },
 ];
 
 export interface PropertyColorRule {
@@ -28,6 +29,12 @@ export interface ColorModeSettings {
   rules: PropertyColorRule[];
   /** Colour for values no rule matches; null keeps the original colour. */
   fallback: string | null;
+  /** Colour of each Search / Selection Set by id (sets without one take a palette colour by their place in the list). */
+  setColors?: Record<string, string>;
+  /** The folder of sets coloured in "Search / Selection Sets" mode ('' = sets in no folder); absent: every folder. */
+  setFolder?: string;
+  /** Sets switched off in "Search / Selection Sets" mode. */
+  setsOff?: string[];
 }
 
 export const DEFAULT_COLOR_MODE: ColorModeSettings = { mode: 'appearance', field: '_category', rules: [], fallback: null };

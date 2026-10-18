@@ -20,9 +20,9 @@ const MAX_VALUES = 150;
 /** Models > Colour: colour the models by any property — pick the field,
     a palette (or random colours), and adjust any value's colour. Split
     into two views, each view is coloured on its own. */
-export function ModelColorPanel() {
+export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence' } = {}) {
   const engine = useViewerEngine();
-  const split = useViewSettingsStore((s) => s.pages.model.split);
+  const split = useViewSettingsStore((s) => s.pages[page].split);
   const [picked, setPicked] = useState<ViewKey>('main');
   const view: ViewKey = split ? picked : 'main';
   const { enabled, field, palette, seed, colors, others } = useModelColorStore((s) => s.views[view]);
@@ -180,12 +180,15 @@ export function ModelColorPanel() {
       )}
       <CollapsibleSection title="Options" open={sections.isOpen('options')} onToggle={() => sections.toggle('options')} flush>
       <div className="disp model-colour__top">
-        <div className="disp__row">
-          <span>Colour the models</span>
-          <button type="button" role="switch" aria-checked={enabled} className={`switch${enabled ? ' on' : ''}`} onClick={() => (enabled ? patch({ enabled: false }) : colors.length ? patch({ enabled: true }) : recolour(field, palette, seed))}>
-            <span className="switch__thumb" />
-          </button>
-        </div>
+        {/* 4D Sequencing switches these colours on with its Color mode (By property) instead. */}
+        {page === 'model' && (
+          <div className="disp__row">
+            <span>Colour the models</span>
+            <button type="button" role="switch" aria-checked={enabled} className={`switch${enabled ? ' on' : ''}`} onClick={() => (enabled ? patch({ enabled: false }) : colors.length ? patch({ enabled: true }) : recolour(field, palette, seed))}>
+              <span className="switch__thumb" />
+            </button>
+          </div>
+        )}
         <div className="disp__row">
           <span>Colour by</span>
           <b className="model-colour__field" title={field}>

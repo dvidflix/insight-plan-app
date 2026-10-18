@@ -1,3 +1,8 @@
+import { FEATURES } from '../features';
+import { useExternalTable, pseudoObjects, parseScope, scopeOf } from '../datasources/externalRows';
+import { useDataSourcesStore, tableOf } from '../datasources/store';
+import { chooseDataFiles, addDroppedFiles, dragHasFiles } from '../datasources/addFiles';
+import { objectsForRows, rowsForObjects } from '../datasources/idMatch';
 import { DockToolbar } from './Dock';
 import { configFocusProps } from '../state/listConfigStore';
 import { DataTableListConfig } from './DataTablePanel';
@@ -26,6 +31,7 @@ import { useDockStore } from '../state/dockStore';
 import { IconCheckboxChecked, IconChevronLeft, IconChevronRight, IconDownloadFile, IconExpandMore, IconPin, IconTotals, IconTune } from './icons';
 
 const BASE_ROW_H = 24;
+const ADD_DATA = '__add-data';
 const OVERSCAN = 10;
 const DEFAULT_W = 170;
 const MIN_W = 60;
@@ -38,6 +44,8 @@ const BUILTIN: { id: string; label: string; width: number }[] = [
 
 interface Row {
   key: string;
+  /** An external table's row: its place in the table. */
+  ext?: number;
   modelId: string;
   modelName: string;
   el: ElementSummary;
@@ -105,6 +113,9 @@ function aggregate(rows: Row[], col: string, kind: DataAgg): string {
   return formatNumber(kind === 'sum' ? sum : kind === 'avg' ? sum / count : kind === 'min' ? min : max);
 }
 
+/** A selection as one text, to tell the selection the table made itself from a new one of the user's. */
+const sigOf = (m: Record<string, Iterable<number>>) => JSON.stringify(Object.entries(m).map(([k, v]) => [k, [...v].sort((a, b) => a - b)]).sort());
+
 function toIdMap(rows: Row[]): OBC.ModelIdMap {
   const map: OBC.ModelIdMap = {};
   for (const r of rows) (map[r.modelId] ??= new Set<number>()).add(r.el.localId);
@@ -120,7 +131,31 @@ export function ModelDataTable() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
-  const { open, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, pinnedKeys, setPinned, setWidth, patch, configure, presets, applyPreset } = useDataTableStore();
+  const { open, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, setScope, pinnedKeys, setPinned, setWidth, setColumns, patch, configure, presets, applyPreset } = useDataTableStore();
+  // An external table (CSV, Excel, SQLite) instead of the model's objects: its rows are pseudo-objects, one property per column.
+  const ext = useExternalTable(scope);
+  const lab = (c: string) => (ext ? c : labelOf(c));
+  const sources = useDataSourcesStore((s) => s.sources);
+  // A source that was removed while its table showed: back to the model's objects.
+  useEffect(() => {
+    const p = parseScope(scope);
+    if (p && !sources.some((x) => x.id === p.sourceId)) setScope('all');
+  }, [scope, sources, setScope]);
+  const sourceTables = useDataSourcesStore((s) => s.data);
+  const triggers = useDataSourcesStore((s) => s.triggers);
+  // The sources the browser still lets us read are read again once.
+  useEffect(() => { if (FEATURES.dataSources) void useDataSourcesStore.getState().restore(); }, []);
+  // A table with no columns chosen yet (or none left after the file changed) shows all of them.
+  useEffect(() => {
+    if (ext && !ext.table.columns.some((c) => columns.includes(c))) setColumns(ext.table.columns);
+  }, [ext, columns, setColumns]);
+  /** What the 3D view selects narrows an external table (when the trigger is on); null: every row. */
+  const [extFilter, setExtFilter] = useState<Set<number> | null>(null);
+  const extScopeKey = ext ? `${ext.source.id}|${ext.name}` : '';
+  useEffect(() => { setExtFilter(null); }, [extScopeKey]);
+  const extRef = useRef({ ext, triggers });
+  extRef.current = { ext, triggers };
+  const extEcho = useRef('');
 
   // The words come from the main header's search box (it works on the list that is active).
   const search = useListQuery('datatable');
@@ -147,6 +182,9 @@ export function ModelDataTable() {
   const twin = useTwin();
   const rows = useMemo<Row[]>(() => {
     const out: Row[] = [];
+    if (ext) {
+      return pseudoObjects(ext.table, ext.source.name).map((el) => ({ key: `ext:${el.localId}`, modelId: '', modelName: ext.source.name, el, ext: el.localId }));
+    }
     if (twin.active) {
       const bElements = engine.getIndexes().get(twin.b!.modelId)?.elements;
       for (const el of twin.a!.elements) {
@@ -161,7 +199,7 @@ export function ModelDataTable() {
     }
     return out;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [models, hiddenModelIds, twin.active, twin.a, twin.b, twin.map]);
+  }, [models, hiddenModelIds, twin.active, twin.a, twin.b, twin.map, ext?.table, ext?.source.name]);
 
   // Show: visible objects — what the 3D view shows now, re-read after each
   // Hide / Isolate / Show all (and 4D / storey slide changes).
@@ -199,10 +237,11 @@ export function ModelDataTable() {
 
   const scoped = useMemo(() => {
     if (pinnedKeys) return rows.filter((r) => pinnedKeys.has(r.key));
+    if (ext) return extFilter && triggers.toGrid ? rows.filter((r) => extFilter.has(r.ext!)) : rows;
     if (scope === 'visible') return visibleKeys ? rows.filter((r) => visibleKeys.has(r.key)) : rows;
     if (scope === 'selected') return rows.filter((r) => scopeSelected.has(r.key));
     return rows;
-  }, [rows, scope, visibleKeys, scopeSelected, pinnedKeys]);
+  }, [rows, scope, visibleKeys, scopeSelected, pinnedKeys, ext, extFilter, triggers.toGrid]);
 
   // Search, then the Filters tab's conditions, then the sort keys.
   const shown = useMemo(() => {
@@ -332,6 +371,20 @@ export function ModelDataTable() {
       };
       const fromTable = (keys: Set<string>) => [...keys].sort().join('|') === lastFromTable.current;
       const onHighlight = (map: OBC.ModelIdMap) => {
+        const { ext: x, triggers: t } = extRef.current;
+        if (x) {
+          // An external table: the objects picked in 3D narrow it to their rows (the ID Match says which), unless this is the
+          // selection the table just made itself.
+          if (sigOf(map) === extEcho.current || !t.toGrid) return;
+          const indexes = engine.getIndexes();
+          const objects: ElementSummary[] = [];
+          for (const [modelId, ids] of Object.entries(map)) for (const id of ids) { const e = indexes.get(modelId)?.elements.get(id); if (e) objects.push(e); }
+          if (!objects.length) { setExtFilter(null); return; }
+          const hit = rowsForObjects(x.match, x.table, objects);
+          setExtFilter(hit);
+          if (t.selectInGrid) setSelected(new Set([...hit].map((i) => `ext:${i}`)));
+          return;
+        }
         const keys = toKeys(map);
         setSelected(keys);
         if (fromTable(keys)) return;
@@ -340,6 +393,7 @@ export function ModelDataTable() {
         lastFromTable.current = '(3d)';
       };
       const onClear = () => {
+        if (extRef.current.ext) { extEcho.current = ''; setExtFilter(null); setSelected(new Set()); return; }
         setSelected(new Set());
         if (lastFromTable.current !== '') setScopeSelected(new Set());
       };
@@ -371,6 +425,18 @@ export function ModelDataTable() {
     lastFromTable.current = [...keys].sort().join('|');
     setSelected(keys);
     if (keys.size === 0) { await engine.highlighter.clear('select'); return; }
+    const { ext: x, triggers: t } = extRef.current;
+    if (x) {
+      // An external table: the rows picked select the objects the ID Match couples them to (when the trigger is on).
+      if (!t.toModel) return;
+      const picked = [...keys].map((k) => Number(k.slice(4))).filter((i) => Number.isFinite(i));
+      const ids = objectsForRows(x.match, x.table, picked, engine.getIndexes());
+      if (!Object.keys(ids).length) return;
+      extEcho.current = sigOf(ids);
+      if (t.isolate) await engine.isolateElements(ids, t.reframe);
+      else await engine.selectElements(ids, t.reframe);
+      return;
+    }
     const byKey = new Map(rows.map((r) => [r.key, r]));
     const picked: Row[] = [];
     for (const k of keys) { const r = byKey.get(k); if (r) picked.push(r); }
@@ -404,7 +470,7 @@ export function ModelDataTable() {
     const date = new Date().toISOString().slice(0, 10);
     downloadCsv(
       `data-table-${date}.csv`,
-      columns.map((c) => labelOf(c)),
+      columns.map((c) => lab(c)),
       shown.map((r) => columns.map((c) => cell(r, c))),
     );
   };
@@ -450,7 +516,8 @@ export function ModelDataTable() {
   const selectedShown = shown.reduce((n, r) => n + (selected.has(r.key) ? 1 : 0), 0);
 
   // The count of rows goes to the status bar.
-  const countText = (shown.length === scoped.length ? `${scoped.length.toLocaleString()} elements` : `${shown.length.toLocaleString()} of ${scoped.length.toLocaleString()} elements`) + (selectedShown > 0 ? ` · ${selectedShown.toLocaleString()} selected` : '');
+  const noun = ext ? 'rows' : 'elements';
+  const countText = (shown.length === scoped.length ? `${scoped.length.toLocaleString()} ${noun}` : `${shown.length.toLocaleString()} of ${scoped.length.toLocaleString()} ${noun}`) + (selectedShown > 0 ? ` · ${selectedShown.toLocaleString()} selected` : '');
   useEffect(() => {
     useTableCountStore.getState().set(countText);
     return () => useTableCountStore.getState().set(null);
@@ -459,14 +526,31 @@ export function ModelDataTable() {
   if (!open) return null;
 
   return (
-    <div className="mdt mdt--docked" {...configFocusProps('datatable')}>
+    <div
+      className="mdt mdt--docked"
+      {...configFocusProps('datatable')}
+      onDragOver={FEATURES.dataSources ? (e) => { if (dragHasFiles(e)) e.preventDefault(); } : undefined}
+      onDrop={FEATURES.dataSources ? (e) => { if (dragHasFiles(e)) { e.preventDefault(); void addDroppedFiles(e.dataTransfer.items); } } : undefined}
+    >
       <DataTableListConfig />
       <DockToolbar id="datatable">
       <div className="mdt__bar">
-        <select className="mdt__scope" value={scope} disabled={!!pinnedKeys} onChange={(e) => patch({ scope: e.target.value as DataTableScope })} title="Which objects the table lists">
+        <select
+          className="mdt__scope"
+          value={scope}
+          disabled={!!pinnedKeys}
+          onChange={(e) => { if (e.target.value === ADD_DATA) void chooseDataFiles(); else setScope(e.target.value as DataTableScope); }}
+          title="What the table lists: the model's objects, or the rows of external data (CSV, Excel, SQLite)"
+        >
           <option value="all">All objects</option>
           <option value="visible">Visible objects</option>
           <option value="selected">Selected objects</option>
+          {FEATURES.dataSources && sources.map((src) => {
+            const names = Object.keys(sourceTables[src.id] ?? {});
+            if (!names.length) return <option key={src.id} value={scopeOf(src.id, tableOf(src, undefined)?.name ?? '')} disabled>{src.name} (not read)</option>;
+            return names.map((n) => <option key={`${src.id}|${n}`} value={scopeOf(src.id, n)}>{names.length > 1 ? `${src.name} › ${n}` : src.name}</option>);
+          })}
+          {FEATURES.dataSources && <option value={ADD_DATA}>＋ Add data file…</option>}
         </select>
         <button
           type="button"
@@ -519,7 +603,7 @@ export function ModelDataTable() {
               {columns.map((c) => (
                 <div key={c} className="mdt__th" style={{ width: colW(c) }} onClick={() => sortByHeader(c)} title={`${c} — click to sort`}>
                   <span className="mdt__th-label">
-                    {labelOf(c)}
+                    {lab(c)}
                     {sortOf(c) >= 0 && `${sortRules[sortOf(c)].direction === 'up' ? ' ▲' : ' ▼'}${sortRules.length > 1 ? sortOf(c) + 1 : ''}`}
                   </span>
                   <span className="mdt__resize" onMouseDown={startResizeCol(c)} onClick={(e) => e.stopPropagation()} />
@@ -539,7 +623,7 @@ export function ModelDataTable() {
                 const head = (
                   <>
                     <span className="mdt__chev">{it.collapsed ? <IconChevronRight width={14} height={14} /> : <IconExpandMore width={14} height={14} />}</span>
-                    <span className="mdt__group-field">{labelOf(groupRules[it.level]?.field ?? '')}</span>
+                    <span className="mdt__group-field">{lab(groupRules[it.level]?.field ?? '')}</span>
                     <b className="mdt__group-label" title={it.label}>{it.label}</b>
                     <span className="mdt__group-count">{it.rows.length.toLocaleString()}</span>
                     {inGroup > 0 && !allIn && <span className="mdt__group-sel">{inGroup.toLocaleString()} selected</span>}
@@ -607,7 +691,7 @@ export function ModelDataTable() {
             })}
           </div>
           {items.length === 0 && (
-            <div className="mdt__empty">{rows.length === 0 ? 'Load a model from the Inputs tab to see its elements here.' : 'No elements match the search or filters.'}</div>
+            <div className="mdt__empty">{rows.length === 0 ? (ext ? 'This table has no rows.' : 'Load a model from the Inputs tab to see its elements here.') : ext ? 'No rows match the search or filters.' : 'No elements match the search or filters.'}</div>
           )}
           {totals && shown.length > 0 && (
             <div className="mdt__row mdt__totals" title="Totals of the rows shown (search and filters applied). Click a total to change how that column is summed up.">
@@ -625,8 +709,8 @@ export function ModelDataTable() {
                           const r = e.currentTarget.getBoundingClientRect();
                           setAggMenu({ col: c, x: r.left, y: r.top });
                         }}
-                        title={kind === 'none' ? `Sum up ${labelOf(c)}…` : `${AGG_LABELS[kind]} of ${labelOf(c)}: ${value} (click to change)`}
-                        aria-label={`Sum up ${labelOf(c)}`}
+                        title={kind === 'none' ? `Sum up ${lab(c)}…` : `${AGG_LABELS[kind]} of ${lab(c)}: ${value} (click to change)`}
+                        aria-label={`Sum up ${lab(c)}`}
                       >
                         {kind === 'none' ? <span className="agg-cell__add">＋</span> : <><span className="agg-cell__kind">{AGG_SHORT[kind]}</span><span className="agg-cell__value">{value}</span></>}
                       </button>

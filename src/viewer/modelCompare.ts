@@ -73,17 +73,35 @@ export function pourKeysOf(index: ModelIndex): string[] {
   return [...counts].sort((x, y) => y[1] - x[1]).map(([k]) => k);
 }
 
+/** The object's own fields, which can serve as the ID like any property ("@" keys). */
+export const ATTRIBUTE_KEYS: Record<string, string> = { '@name': 'Name (label)', '@category': 'Class', '@guid': 'GlobalId' };
+const attributeOf = (e: ElementSummary, key: string) => (key === '@name' ? e.name : key === '@category' ? e.category : e.guid);
+
+/** Every key that can hold the ID: the Pour-like properties first (most used first), then the other properties, then the object's own fields. */
+export function idKeysOf(index: ModelIndex): string[] {
+  const counts = new Map<string, number>();
+  for (const e of index.elements.values()) for (const [k, v] of Object.entries(e.props)) if (text(v) !== '') counts.set(k, (counts.get(k) ?? 0) + 1);
+  const pour = pourKeysOf(index);
+  const rest = [...counts.keys()].filter((k) => !pour.includes(k)).sort((x, y) => x.localeCompare(y));
+  return [...pour, ...rest, ...Object.keys(ATTRIBUTE_KEYS)];
+}
+
 /** A Pour ID as the programme writes it: numbers padded to four digits. */
 export function normalisePour(v: unknown): string {
   const s = text(v).trim();
   return /^\d+$/.test(s) ? s.padStart(4, '0') : s;
 }
 
-export const pourOf = (e: ElementSummary, key: string | null) => (key ? normalisePour(e.props[key]) : '');
+/** The ID of an object under `key` (a property, or one of the object's own fields): numbers are padded for a Pour ID property only. */
+export const pourOf = (e: ElementSummary, key: string | null) => {
+  if (!key) return '';
+  if (key in ATTRIBUTE_KEYS) return text(attributeOf(e, key)).trim();
+  return /pour/i.test(key) ? normalisePour(e.props[key]) : text(e.props[key]).trim();
+};
 
 /** How alike two objects are, 0…1, ignoring the identity properties (the
     GlobalId, anything holding a Pour ID) that are expected to change. */
-function similarity(a: ElementSummary, b: ElementSummary, skip: (k: string) => boolean): number {
+function similarity(a: ElementSummary, b: ElementSummary, skip: (k: string) => boolean, skipName = false): number {
   let same = 0;
   let total = 0;
   for (const [k, v] of Object.entries(a.props)) {
@@ -99,7 +117,8 @@ function similarity(a: ElementSummary, b: ElementSummary, skip: (k: string) => b
     const rel = Math.abs(va - vb) / Math.max(va, vb);
     volume = rel <= 0.005 ? 1 : rel <= 0.02 ? 0.85 : rel <= 0.05 ? 0.55 : 0;
   }
-  const name = a.name && a.name === b.name ? 1 : 0;
+  // A name that is the ID is expected to change: neutral.
+  const name = skipName ? 0.5 : a.name && a.name === b.name ? 1 : 0;
   return 0.5 * props + 0.35 * volume + 0.15 * name;
 }
 
@@ -162,7 +181,7 @@ export function compareModels(oldIndex: ModelIndex, newIndex: ModelIndex, opts: 
       for (let i = lo; i < list.length && looked < MAX_CANDIDATES; i++, looked++) {
         const b = list[i];
         if (va > 0 && volumeOf(b) > va * 1.1) break;
-        const score = similarity(a, b, skip);
+        const score = similarity(a, b, skip, opts.pourKey === '@name');
         if (score >= ACCEPT_FROM) cands.push({ a, b, score });
       }
     }

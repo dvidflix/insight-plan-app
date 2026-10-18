@@ -208,6 +208,29 @@ export function panelOrder(order?: DockPanelId[]): DockPanelId[] {
   return [...mine, ...ORDER.filter((id) => !mine.includes(id))];
 }
 
+/** The names the Navigation Bar menu gives the panels the current view does not have (it lists every panel on every view). */
+export const PANEL_LABELS: Partial<Record<DockPanelId, string>> = {
+  tree: 'Tree', properties: 'Properties', search: 'Sets', fourD: '4D', tasks: 'Tasks', related: '3D', clash: 'Clash', views: 'Views', colour: 'Colour',
+  resources: 'Resources', scenarios: 'Sequence', recipes: 'Recipes', rules: 'Rules', topics: 'Topics', viewpoints: 'Viewpoints', checks: 'Model checks',
+  compare: 'Compare models', datatable: 'Data table', layouts: 'Layouts', details: 'Activity', links: 'Predecessors & successors', planning: 'Resources & codes',
+  predecessors: 'Predecessors', successors: 'Successors', gantt: 'Gantt', dictionary: 'Dictionary', files: 'Files', settings: 'General settings',
+};
+/** The page that has a panel the current page lacks (the Models page for the rest). */
+const PANEL_PAGE: Partial<Record<DockPanelId, 'sequence' | 'schedule'>> = {
+  tasks: 'sequence', resources: 'sequence', scenarios: 'sequence', rules: 'sequence',
+  layouts: 'schedule', details: 'schedule', links: 'schedule', planning: 'schedule', predecessors: 'schedule', successors: 'schedule', dictionary: 'schedule',
+};
+/** Brings up a panel this view does not have: goes to the page that has it and shows it there once it has mounted. */
+export function goToPanel(id: DockPanelId) {
+  const st = useDockStore;
+  window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: PANEL_PAGE[id] ?? 'model' }));
+  const done = () => { unsub(); clearTimeout(timer); st.getState().reveal(id); };
+  const unsub = st.subscribe((s) => { if (s.entries[id]) done(); });
+  const timer = setTimeout(unsub, 5000);
+}
+/** Whether Home's own panel layout is showing (it holds only its own panels). */
+export const isHomeDock = () => !!homeStash;
+
 export function panelsOn(state: Pick<DockState, 'entries' | 'placement'> & { order?: DockPanelId[] }, side: DockSide): DockEntry[] {
   return panelOrder(state.order).flatMap((id) => {
     const e = state.entries[id];

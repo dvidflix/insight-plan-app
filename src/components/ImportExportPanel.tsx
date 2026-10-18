@@ -73,18 +73,13 @@ ${r.written.join(', ')}` });
       onDragLeave={() => setOver(false)}
       onDrop={onDrop}
     >
-      <div className="ie__top">
-        <button type="button" className="ie__cellbtn" onClick={() => void exportAll()} title="Write every export file into the settings folder of the project at once (each is the file its Export button downloads)"><IconDownload width={14} height={14} /> Export all to project folder</button>
-        <button type="button" className="ie__cellbtn" onClick={() => anyRef.current?.click()} title="Pick one or more export files; each goes to the list it belongs to. You can also drop them on this box.">Import any file…</button>
-      </div>
-      <div className="rgrid ie__grid" role="table" style={{ '--rg-cols': 'minmax(0, 1fr) 52px 88px 88px' } as React.CSSProperties}>
+      <div className="rgrid ie__grid" role="table" style={{ '--rg-cols': 'minmax(0, 1fr) 52px 76px' } as React.CSSProperties}>
         <div className="rgrid__head" role="row">
           <span className="rgrid__n rgrid__n--head" />
           <div className="rgrid__body">
             <span className="rgrid__th" role="columnheader">Data</span>
             <span className="rgrid__th ie__right" role="columnheader">Items</span>
-            <span className="rgrid__th" role="columnheader">Export</span>
-            <span className="rgrid__th" role="columnheader">Import</span>
+            <span className="rgrid__th" role="columnheader" style={{ textAlign: "center" }}>Actions</span>
           </div>
         </div>
         {DATA_PORTS.map((p, i) => (
@@ -93,11 +88,17 @@ ${r.written.join(', ')}` });
             <div className="rgrid__body">
               <span className="rgrid__cell rgrid__cell--name" title={p.hint}>{p.label}</span>
               <span className="rgrid__cell rgrid__cell--num">{p.count()}</span>
-              <button type="button" className="ie__cellbtn" onClick={() => void exportOne(p)} title={`Export the ${p.label.toLowerCase()} to a file. ${p.hint}`} aria-label={`Export ${p.label}`}><IconDownload width={14} height={14} /> Export</button>
-              <button type="button" className="ie__cellbtn" onClick={() => { rowFor.current = p.id; rowRef.current?.click(); }} title={`Import ${p.label.toLowerCase()} from a file: new ones are added, ones with the same id are replaced, nothing is removed.`} aria-label={`Import ${p.label}`}><IconUpload width={14} height={14} /> Import</button>
+              <span className="rgrid__cell" style={{ display: 'flex', gap: 4 }}>
+              <button type="button" className="ie__cellbtn" onClick={() => void exportOne(p)} title={`Export the ${p.label.toLowerCase()} to a file. ${p.hint}`} aria-label={`Export ${p.label}`}><IconDownload width={14} height={14} /></button>
+              <button type="button" className="ie__cellbtn" onClick={() => { rowFor.current = p.id; rowRef.current?.click(); }} title={`Import ${p.label.toLowerCase()} from a file: new ones are added, ones with the same id are replaced, nothing is removed.`} aria-label={`Import ${p.label}`}><IconUpload width={14} height={14} /></button>
+              </span>
             </div>
           </div>
         ))}
+      </div>
+      <div className="ie__top">
+        <button type="button" className="ie__cellbtn" onClick={() => void exportAll()} title="Write every export file into the settings folder of the project at once (each is the file its Export button downloads)"><IconDownload width={14} height={14} /> Export all to project folder</button>
+        <button type="button" className="ie__cellbtn" onClick={() => anyRef.current?.click()} title="Pick one or more export files; each goes to the list it belongs to. You can also drop them on this box.">Import any file…</button>
       </div>
       <div className="ie__drop">or drop export files here</div>
       <input ref={rowRef} type="file" accept=".json,.xml,.prs" style={{ display: 'none' }} onChange={(e) => { if (e.target.files?.length) void run(e.target.files, rowFor.current); e.target.value = ''; }} />

@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { queryMatcher } from '../schedule/search';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { createViewpoint, openViewpoint, thumbnailUrl, useViewpoints, viewpointTitle } from '../viewer/savedViews';
 import { useSequenceSchedule } from '../state/scheduleStore';
@@ -51,8 +52,9 @@ export function TopicsPanel() {
 
   const shown = useMemo(() => {
     const q = query.trim().toLowerCase();
+    const hit = queryMatcher(query);
     return topics
-      .filter((t) => (!statusFilter || t.status === statusFilter) && (!q || [t.title, t.description, t.assignedTo, t.type, t.labels.join(' ')].some((x) => x.toLowerCase().includes(q)) || `#${t.index}` === q))
+      .filter((t) => (!statusFilter || t.status === statusFilter) && (!q || hit([t.title, t.description, t.assignedTo, t.type, t.labels.join(' ')].join('\n')) || `#${t.index}` === q))
       .sort((a, b) => b.index - a.index);
   }, [topics, query, statusFilter]);
 

@@ -1,6 +1,6 @@
 import type { DockPanelId } from '../state/dockStore';
 
-/** The four kinds of panel, each with its own colour in the navigation bars: muted tones that sit with the app's green accent
+/** The four kinds of panel (planning only, common to both, 3D / 4D, secondary), each with its own colour in the navigation bars: muted tones that sit with the app's green accent
     (slate blue, a deeper green, ochre, plum). */
 export type PanelKind = 'planning' | 'models' | 'others' | 'settings';
 
@@ -11,14 +11,18 @@ export const PANEL_KIND_COLOR: Record<PanelKind, string> = {
   settings: '#8a6a9e',
 };
 
-const PLANNING: DockPanelId[] = ['details', 'links', 'predecessors', 'successors', 'layouts', 'planning', 'gantt', 'resources', 'scenarios', 'recipes', 'rules', 'dictionary', 'generated', 'tasks'];
-const MODELS: DockPanelId[] = ['related', 'tree', 'properties', 'search', 'views', 'viewpoints', 'colour', 'clash', 'datatable', 'topics', 'fourD'];
-const SETTINGS: DockPanelId[] = ['settings', 'scenarioSettings', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor'];
+const PLANNING: DockPanelId[] = ['details', 'links', 'predecessors', 'successors', 'layouts', 'planning'];
+const COMMON: DockPanelId[] = ['files', 'datatable', 'gantt', 'tasks', 'resources', 'scenarios', 'recipes', 'rules'];
+const MODELS: DockPanelId[] = ['related', 'tree', 'properties', 'search', 'views', 'viewpoints', 'colour', 'clash', 'topics', 'fourD', 'checks', 'compare'];
+const SETTINGS: DockPanelId[] = ['settings', 'scenarioSettings', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'generated'];
+/** The groups of the Navigation Bar menu, in order: the planning-only panels, those common to both, the 3D / 4D ones, and the secondary ones (settings and the like). */
+export const PANEL_KIND_ORDER: PanelKind[] = ['planning', 'others', 'models', 'settings'];
 
 export function panelKind(id: DockPanelId): PanelKind {
   if (SETTINGS.includes(id)) return 'settings';
   if (PLANNING.includes(id)) return 'planning';
   if (MODELS.includes(id)) return 'models';
+  if (COMMON.includes(id)) return 'others';
   return 'others';
 }
 

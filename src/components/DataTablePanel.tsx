@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import type { ElementSummary } from '../viewer/types';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
 import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore } from '../state/dataTableStore';
@@ -17,6 +18,9 @@ import { ConditionEditor } from './SearchSetsPanel';
 import { useIndexTick, useModelFields } from './modelFields';
 import { InfoTip } from './InfoTip';
 import { ListConfig } from './ListConfig';
+import { FEATURES } from '../features';
+import { pseudoObjects, useExternalTable } from '../datasources/externalRows';
+import { DataSourcesBlock } from '../datasources/DataSourcesBlock';
 
 const DEFAULT_COLUMNS = [COL_NAME, COL_CLASS, COL_MODEL];
 
@@ -28,11 +32,16 @@ export function DataTableListConfig() {
   const tick = useIndexTick();
   const store = useDataTableStore();
   const { columns, setColumns, filters, filterMatch, groupRules, sortRules, colorRules, patch } = store;
-  const baseFields = useModelFields();
+  const modelFields = useModelFields();
+  const scope = useDataTableStore((s) => s.scope);
+  // External data showing: its columns are the properties, one pseudo-object per row (see datasources/externalRows).
+  const ext = useExternalTable(scope);
+  const extObjects = useMemo(() => (ext ? pseudoObjects(ext.table, ext.source.name) : null), [ext?.table, ext?.source.name]); // eslint-disable-line react-hooks/exhaustive-deps
+  const baseFields = useMemo<PickField[]>(() => (ext ? ext.table.columns.map((c) => ({ id: c, label: c, group: ext.source.name })) : modelFields), [ext?.table, ext?.source.name, modelFields]); // eslint-disable-line react-hooks/exhaustive-deps
   const twin = useTwin();
   // With a twin model, every property of its objects can be a column, filter, group, sort key or colour too.
   const fields = useMemo(() => {
-    if (!twin.active) return baseFields;
+    if (ext || !twin.active) return baseFields;
     const keys = new Set<string>();
     for (const e of engine.getIndexes().get(twin.b!.modelId)?.elements.values() ?? []) for (const k of Object.keys(e.props)) keys.add(k);
     const own = baseFields.filter((f) => (f.group === ATTRIBUTES ? f.id !== `${ATTRIBUTES}.Model` : keys.has(f.id)));
@@ -42,7 +51,7 @@ export function DataTableListConfig() {
 
   // Twin layout of the Columns tab: each property with the main model's and the twin's checkbox.
   const twinColumns = useMemo(() => {
-    if (!twin.active) return null;
+    if (ext || !twin.active) return null;
     const keysOf = (modelId: string) => {
       const keys = new Set<string>();
       for (const e of engine.getIndexes().get(modelId)?.elements.values() ?? []) for (const k of Object.keys(e.props)) keys.add(k);
@@ -64,6 +73,12 @@ export function DataTableListConfig() {
       let list = cache.get(field);
       if (!list) {
         const counts = new Map<string, number>();
+        if (extObjects) {
+          for (const e of extObjects) { const v = elementValue(e, field); counts.set(v, (counts.get(v) ?? 0) + 1); }
+          list = [...counts].map(([value, count]) => ({ value, count })).sort((a, b) => b.count - a.count);
+          cache.set(field, list);
+          return list;
+        }
         const isTwin = field.startsWith(TWIN_PREFIX);
         const key = isTwin ? field.slice(TWIN_PREFIX.length) : field;
         const indexes = isTwin ? [engine.getIndexes().get(twin.b?.modelId ?? '')].filter((x) => !!x) : [...engine.getIndexes().values()];
@@ -77,7 +92,7 @@ export function DataTableListConfig() {
       return list;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, models, tick, twin.b]);
+  }, [engine, models, tick, twin.b, extObjects]);
 
   const badges = { columns: columns.length, filters: filters.filter((c) => conditionTest(c)).length, group: groupRules.length, sort: sortRules.length, color: colorRules.length };
   return (
@@ -86,20 +101,20 @@ export function DataTableListConfig() {
       searchable
       label="Data table"
       badges={badges}
-      extra={<><PresetsRow /><TwinBlock twin={twin} /></>}
+      extra={<>{!ext && <PresetsRow />}{!ext && <TwinBlock twin={twin} />}{FEATURES.dataSources && <DataSourcesBlock />}</>}
       panels={{
         columns: (
           <ColumnsPanel
             catalog={fields.map((f) => ({ id: f.id, label: f.label, group: f.group ?? 'Other' }))}
             listed={twinColumns?.listed.map((f) => ({ id: f.id, label: f.label, group: f.group ?? 'Other' }))}
             twin={twinColumns ? { titles: ['Main model', 'Twin'], hints: [twin.a!.name, twin.b!.name], twinOf: twinColumns.twinOf, hasOwn: twinColumns.hasOwn } : undefined}
-            views={[{ id: 'table', label: 'Data table', selected: columns, defaults: DEFAULT_COLUMNS, onChange: setColumns }]}
+            views={[{ id: 'table', label: 'Data table', selected: columns, defaults: ext ? ext.table.columns : DEFAULT_COLUMNS, onChange: setColumns }]}
             presets={[]}
             groupOrder={[ATTRIBUTES]}
             closedGroups={[]}
           />
         ),
-        filters: <FiltersTab fields={fields} filters={filters} match={filterMatch} onChange={(pp) => patch(pp)} />,
+        filters: <FiltersTab fields={fields} filters={filters} match={filterMatch} onChange={(pp) => patch(pp)} objects={extObjects} />,
         group: <GroupPanel bare fields={fields} rules={groupRules} onChange={(r) => patch({ groupRules: r })} onClose={() => {}} onCollapseAll={() => store.setGroupsCollapsed(true)} onExpandAll={() => store.setGroupsCollapsed(false)} />,
         sort: <SortPanel bare fields={fields} rules={sortRules} onChange={(r) => patch({ sortRules: r })} onClose={() => {}} />,
         color: <ColorPanel bare fields={fields} valuesOf={valuesOf} rules={colorRules} onChange={(r) => patch({ colorRules: r })} onClose={() => {}} />,
@@ -183,7 +198,9 @@ function TwinBlock({ twin }: { twin: ReturnType<typeof useTwin> }) {
 
 /** Filters: conditions a row must meet — the same conditions as Search
     sets, so a filter can be saved as one (and a set loaded as the filter). */
-function FiltersTab({ fields, filters, match, onChange }: {
+function FiltersTab({ fields, filters, match, onChange, objects }: {
+  /** External data showing: its rows as pseudo-objects (the counts are over those, not the model). */
+  objects: ElementSummary[] | null;
   fields: PickField[];
   filters: SearchCondition[];
   match: 'all' | 'any';
@@ -195,15 +212,23 @@ function FiltersTab({ fields, filters, match, onChange }: {
   const { sets, save } = useSearchSetsStore();
   const byId = new Map(fields.map((f) => [f.id, f]));
   const total = useMemo(() => {
+    if (objects) return objects.length;
     let n = 0;
     for (const index of engine.getIndexes().values()) n += index.elements.size;
     return n;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, models, tick]);
+  }, [engine, models, tick, objects]);
   const matched = useMemo(
-    () => (filters.some((c) => conditionTest(c)) ? countIds(runSearchSet(engine.getIndexes(), { match, conditions: filters })) : total),
+    () => {
+      if (!filters.some((c) => conditionTest(c))) return total;
+      if (objects) {
+        const tests = filters.map((c) => conditionTest(c)).filter((t): t is (e: ElementSummary) => boolean => t !== null);
+        return objects.filter((e) => (match === 'all' ? tests.every((t) => t(e)) : tests.some((t) => t(e)))).length;
+      }
+      return countIds(runSearchSet(engine.getIndexes(), { match, conditions: filters }));
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, filters, match, models, tick, total],
+    [engine, filters, match, models, tick, total, objects],
   );
   const setFilters = (next: SearchCondition[]) => onChange({ filters: next });
   const patchCondition = (id: string, p: Partial<SearchCondition>) => setFilters(filters.map((c) => (c.id === id ? { ...c, ...p } : c)));
@@ -236,8 +261,8 @@ function FiltersTab({ fields, filters, match, onChange }: {
       className="flt"
       matched={matched}
       total={total}
-      noun="objects"
-      emptyHint="Load a model to filter its objects."
+      noun={objects ? 'rows' : 'objects'}
+      emptyHint={objects ? 'This table has no rows.' : 'Load a model to filter its objects.'}
       chips={chips}
       onClearAll={() => setFilters([])}
       combine={(

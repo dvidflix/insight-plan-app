@@ -16,7 +16,9 @@ export type DataTableTab = 'columns' | 'filters' | 'group' | 'sort' | 'color';
 /** How a column is summed up in the totals row and on group rows. */
 export type DataAgg = 'none' | 'sum' | 'avg' | 'min' | 'max' | 'count';
 
-export type DataTableScope = 'all' | 'visible' | 'selected';
+/** Which rows the table lists: the model's objects (all, those visible in 3D, those selected), or one table of an external data source
+    ("src:" + source id + "|" + table name; see datasources/externalRows.ts). */
+export type DataTableScope = 'all' | 'visible' | 'selected' | `src:${string}`;
 
 export type DataTablePosition = 'bottom' | 'left' | 'right';
 
@@ -50,6 +52,12 @@ export interface DataTableConfig {
   twin: TwinSetup;
 }
 
+/** The setup of one source's table (the model's objects, or an external table), kept while another source shows. */
+export type DataTableSetup = Omit<DataTableConfig, 'scope' | 'twin'>;
+
+/** The key a setup is kept under: every model scope shares one, each external table has its own. */
+export const setupKey = (scope: DataTableScope): string => (scope.startsWith('src:') ? scope : 'objects');
+
 export interface DataTablePreset {
   id: string;
   name: string;
@@ -78,6 +86,10 @@ interface DataTableState {
   totals: boolean;
   /** Which objects get a row: all of them, those visible in the 3D view, or the selected ones. */
   scope: DataTableScope;
+  /** Changes what the table lists: the setup (columns, filters, grouping, sorting, colours) of the one shown is kept and the new one's comes back. */
+  setScope: (scope: DataTableScope) => void;
+  /** The setups of the sources not showing. */
+  setups: Record<string, DataTableSetup>;
   /** Pinned: the table keeps listing these rows ("model:localId") whatever the 3D view shows or selects; null = not pinned. Not remembered. */
   pinnedKeys: Set<string> | null;
   setPinned: (keys: Set<string> | null) => void;
@@ -128,6 +140,19 @@ export const useDataTableStore = create<DataTableState>()(
       tab: 'columns',
       totals: true,
       scope: 'all',
+      setups: {},
+      setScope: (next) => set((s) => {
+        const from = setupKey(s.scope);
+        const to = setupKey(next);
+        if (from === to) return { scope: next };
+        const mine: DataTableSetup = {
+          columns: s.columns, widths: s.widths, filters: s.filters, filterMatch: s.filterMatch, groupRules: s.groupRules,
+          sortRules: s.sortRules, colorRules: s.colorRules, totals: s.totals, aggs: s.aggs,
+        };
+        // An external table starts with no columns: the table shows them all until they are chosen.
+        const theirs: DataTableSetup = s.setups[to] ?? { columns: to === 'objects' ? [COL_NAME, COL_CLASS, COL_MODEL] : [], widths: {}, filters: [], filterMatch: 'all', groupRules: [], sortRules: [], colorRules: [], totals: true, aggs: {} };
+        return { ...structuredClone(theirs), setups: { ...s.setups, [from]: mine }, scope: next, pinnedKeys: null };
+      }),
       aggs: {},
       pinnedKeys: null,
       setPinned: (pinnedKeys) => set({ pinnedKeys }),

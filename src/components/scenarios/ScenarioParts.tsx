@@ -4,6 +4,7 @@ import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { FlagToggle } from './FlagToggle';
 import { useFocusStore } from '../../state/focusStore';
 import { useIgnoreTimelinerStore } from '../../state/ignoreTimelinerStore';
+import { useColorModeStore } from '../../state/colorModeStore';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { DockNavTools } from '../Dock';
 import { useModelsStore } from '../../state/modelsStore';
@@ -132,7 +133,7 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
   const hasSelection = selected.size > 0;
   const ignoreTimeliner = useIgnoreTimelinerStore((s) => s.ignore);
   const setIgnoreTimeliner = useIgnoreTimelinerStore((s) => s.setIgnore);
-  const setIgnoreAppearance = useIgnoreTimelinerStore((s) => s.setIgnoreAppearance);
+  const patchColorMode = useColorModeStore((s) => s.patch);
   const focus = useFocusStore((s) => s.focus);
   const setFocus = useFocusStore((s) => s.setFocus);
   // The folder of sets that gives the order: Steps (imported) unless another is chosen, e.g. a folder of recorded selection sets.
@@ -273,7 +274,12 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
         onClick={() => {
           const on = !ignoreTimeliner;
           setIgnoreTimeliner(on);
-          setIgnoreAppearance(on);
+          // Appearance profiles are ignored when the views' Color mode is Original colours.
+          for (const v of ['a', 'b'] as const) {
+            const cur = useColorModeStore.getState()[v].mode;
+            if (on) patchColorMode(v, { mode: 'original' });
+            else if (cur === 'original') patchColorMode(v, { mode: 'appearance' });
+          }
         }}
         title={ignoreTimeliner ? 'Timeliner ignored' : 'Timeliner active'}
         aria-label={ignoreTimeliner ? 'Timeliner ignored' : 'Timeliner active'}

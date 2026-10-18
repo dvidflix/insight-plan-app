@@ -41,7 +41,7 @@ import { useColumnCatalog } from '../schedule/calculatedColumns';
 import { TasksPanel } from '../components/sequence/TasksPanel';
 import { isSettingsOpen, useSettingsPaneStore } from '../state/settingsPaneStore';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
-import { ColorModeRow, ViewColorSettings, propertyColorer } from '../components/sequence/ColorModePanel';
+import { ColorModeRow, ViewColorSettings, setColorOf } from '../components/sequence/ColorModePanel';
 import { View3DPanel } from '../components/View3DPanel';
 import { NavisworksExport } from '../components/sequence/ExportPanel';
 import { MediaExport } from '../components/sequence/MediaExport';
@@ -56,6 +56,12 @@ import { ModelDockPanels, ViewpointsPanel } from '../components/ModelConfigPanel
 import { useViewSettingsStore } from '../state/viewSettingsStore';
 import { useColorModeStore, type ColorModeSettings } from '../state/colorModeStore';
 import type { ElementSummary } from '../viewer/types';
+import { useModelColorStore, type ColourConfig } from '../state/modelColorStore';
+import { useSearchSetsStore } from '../state/searchSetsStore';
+import { makeValueOf } from '../viewer/setFolderValues';
+import { runSearchSet, type SearchSet } from '../viewer/searchSets';
+import type { ModelIndex } from '../viewer/ViewerEngine';
+import { ModelColorPanel } from '../components/ModelColorPanel';
 
 /** What the 4D driver pushes per-element visibility/colour/opacity into —
     the main viewer or the split view. */
@@ -119,6 +125,23 @@ function resolveAppearance(
 // that one is scheduled to start later still (an unstarted future task
 // must never hide/reset an element a started task already claimed).
 // When none has started, the earliest-starting one owns the element.
+/** Each object's colour under "Search / Selection Sets" mode, by model: the first set in the list that holds it. Kept until the sets, the models or the mode's settings change (it runs a search per set). */
+const setColourCache = new WeakMap<ColorModeSettings, { sets: unknown; indexes: unknown; map: Map<string, Map<number, string>> }>();
+function setColourMap(indexes: ReadonlyMap<string, ModelIndex>, sets: SearchSet[], settings: ColorModeSettings): Map<string, Map<number, string>> {
+  const hit = setColourCache.get(settings);
+  if (hit && hit.sets === sets && hit.indexes === indexes) return hit.map;
+  const map = new Map<string, Map<number, string>>();
+  sets.forEach((x, i) => {
+    if (settings.setsOff?.includes(x.id) || (settings.setFolder !== undefined && (x.group ?? '') !== settings.setFolder)) return;
+    for (const [modelId, ids] of Object.entries(runSearchSet(indexes, x))) {
+      const byId = map.get(modelId) ?? map.set(modelId, new Map()).get(modelId)!;
+      for (const id of ids) if (!byId.has(id)) byId.set(id, setColorOf(settings, x.id, i));
+    }
+  });
+  setColourCache.set(settings, { sets, indexes, map });
+  return map;
+}
+
 function shouldClaim(candidateStatus: SequenceStatus, candidateStart: number, ownerStatus: SequenceStatus, ownerStart: number): boolean {
   const candidateStarted = candidateStatus !== 'pending';
   const ownerStarted = ownerStatus !== 'pending';
@@ -149,6 +172,9 @@ export function SequencePanel() {
   const split = useViewSettingsStore((s) => s.pages.sequence.split);
   const settingsA = useColorModeStore((s) => s.a);
   const settingsB = useColorModeStore((s) => s.b);
+  // The Colour panel's colours, which "By property" plays; a change redrives the view.
+  const panelColours = useModelColorStore((s) => s.views);
+  const searchSets = useSearchSetsStore((s) => s.sets);
   // Bumped when the second view appears/disappears, so the driver pushes the
   // whole current state to it (a fresh view starts with nothing applied).
   const [secondaryTick, setSecondaryTick] = useState(0);
@@ -193,8 +219,8 @@ export function SequencePanel() {
   // object stays visible) and / or the appearance profiles (own colours).
   const ignoreTimeliner = useIgnoreTimelinerStore((s) => s.ignore);
   const setIgnoreTimeliner = useIgnoreTimelinerStore((s) => s.setIgnore);
-  const ignoreAppearance = useIgnoreTimelinerStore((s) => s.ignoreAppearance);
-  const setIgnoreAppearance = useIgnoreTimelinerStore((s) => s.setIgnoreAppearance);
+  // "Original colours" in the Color mode drop-down: no profile colours, opacity or growth (with two views, when both show them).
+  const ignoreAppearance = settingsA.mode === 'original' && (!split || settingsB.mode === 'original');
   const [unassignedMode, setUnassignedMode] = usePersistedState<'original' | 'red'>('sequence.unassignedMode', 'original');
   // Gantt, Tasks, Resources, Scenarios, Clash and Topics are dock panels (components/Dock.tsx): the user puts each on the
   // left, at the bottom or on the right. Scenarios has a second part (its dock) that goes with it while it shows.
@@ -557,12 +583,25 @@ export function SequencePanel() {
 
     // The colour mode only swaps colour; visibility and opacity stay driven by
     // the timeline, so both views always show the same elements.
-    const colorsFor = (settings: ColorModeSettings, run: (typeof perModelRuns)[number]) => {
+    // "By property" plays the Colour panel's colours (left view = main, right = second).
+    const panelA = useModelColorStore.getState().views.main;
+    const panelB = useModelColorStore.getState().views.second;
+    const colourPanelColorer = (cfg: ColourConfig) => {
+      const byValue = new Map(cfg.colors.map((c) => [c.value, c.color]));
+      const valueOf = makeValueOf(cfg.field, engine.getIndexes(), searchSets);
+      return (el: ElementSummary): string | null => byValue.get(valueOf(el)) ?? cfg.others;
+    };
+    const colorsFor = (settings: ColorModeSettings, run: (typeof perModelRuns)[number], viewId: string) => {
       if (settings.mode === 'appearance') return { colorOf: run.colorOf, unlinkedColorOf: null };
       const unlinkedSet = new Set(run.unlinked);
       const colorOf = new Map<number, string | null>();
       const unlinkedColorOf = new Map<number, string | null>();
-      const colorFor = settings.mode === 'property' ? propertyColorer(settings.field, settings.rules, settings.fallback) : () => null;
+      let colorFor: (el: ElementSummary) => string | null = () => null;
+      if (settings.mode === 'property') colorFor = colourPanelColorer(viewId === 'a' ? panelA : panelB);
+      else if (settings.mode === 'sets') {
+        const byId = setColourMap(engine.getIndexes(), searchSets, settings).get(run.modelId);
+        colorFor = (el) => byId?.get(el.localId) ?? null;
+      }
       for (const el of run.elements) {
         const c = colorFor(el);
         if (unlinkedSet.has(el.localId)) unlinkedColorOf.set(el.localId, c);
@@ -621,7 +660,7 @@ export function SequencePanel() {
         // Growth stand-ins are drawn in the main view only.
         const hidden = view.id === 'a' && animated.size ? new Set([...run.hidden, ...animated]) : run.hidden;
         const visible = view.id === 'a' && animated.size ? [...run.visible].filter((id) => !animated.has(id)) : run.visible;
-        const { colorOf, unlinkedColorOf } = colorsFor(view.settings, run);
+        const { colorOf, unlinkedColorOf } = colorsFor(view.settings, run, view.id);
         const engine = view.target;
         const key = `${view.id}:${modelId}`;
         const prev = applied.get(key) ?? { visible: new Map(), color: new Map(), opacity: new Map() };
@@ -677,7 +716,7 @@ export function SequencePanel() {
       // Tells the image/video export this date is now on screen.
       useSequenceTimelineStore.setState({ appliedDate: date });
     }
-  }, [model, models, groupResultsByModel, appearanceById, date, basis, stepUnit, engine, showUnassigned, unassignedMode, refreshTick, secondaryTick, split, settingsA, settingsB, ignoreTimeliner, ignoreAppearance]);
+  }, [model, models, groupResultsByModel, appearanceById, date, basis, stepUnit, engine, showUnassigned, unassignedMode, refreshTick, secondaryTick, split, settingsA, settingsB, ignoreTimeliner, ignoreAppearance, panelColours, searchSets]);
 
   // Tasks wear the colour their linked objects have in the 4D view: the
   // Appearance Profile stage of the (first) Link Group that links them, for the
@@ -805,6 +844,17 @@ export function SequencePanel() {
       <DockPanel id="resources" label="Resources">
         {ready && model ? <SequenceResources model={model} /> : needProgramme}
       </DockPanel>
+      {/* The colours the 4D plays with: appearance profiles, the model's own, or by a property (per view when split). */}
+      <DockPanel id="colour" label="Colour">
+        <div className="config-panel__body model-config__body" style={{ flex: 1, minHeight: 0 }}>
+          <div className="disp vsp">
+            <ColorModeRow view="a" elements={allElements} label={split ? 'Color mode (left)' : 'Color mode'} />
+            {split && <ColorModeRow view="b" elements={allElements} label="Color mode (right)" />}
+          </div>
+          {/* The same Colour panel as the Models page; "By property" in the Color mode plays its colours. */}
+          <ModelColorPanel page="sequence" />
+        </div>
+      </DockPanel>
       {experimental.scenarios && <DockPanel id="scenarios" label="Sequence"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
       {experimental.scenarios && <DockPanel id="recipes" label="Recipes"><RecipesDock /></DockPanel>}
       {experimental.scenarios && <DockPanel id="rules" label="Rules"><ScenarioRulesDock /></DockPanel>}
@@ -855,18 +905,9 @@ export function SequencePanel() {
                       <div className="disp__row">
                         <span>
                           Ignore timeliner{' '}
-                          <InfoTip>Every linked object stays visible whatever the date: nothing is hidden before it starts or after a Remove. Appearance colours for the current date still apply (unless ignored below).</InfoTip>
+                          <InfoTip>Every linked object stays visible whatever the date: nothing is hidden before it starts or after a Remove. Appearance colours for the current date still apply (unless the Color mode is Original colours).</InfoTip>
                         </span>
                         <button type="button" role="switch" aria-checked={ignoreTimeliner} className={`switch${ignoreTimeliner ? ' on' : ''}`} onClick={() => setIgnoreTimeliner(!ignoreTimeliner)}>
-                          <span className="switch__thumb" />
-                        </button>
-                      </div>
-                      <div className="disp__row">
-                        <span>
-                          Ignore appearance profiles{' '}
-                          <InfoTip>Objects keep their own colours: no profile colours, opacity or growth animation. The timeline still shows and hides them by date (unless ignored above).</InfoTip>
-                        </span>
-                        <button type="button" role="switch" aria-checked={ignoreAppearance} className={`switch${ignoreAppearance ? ' on' : ''}`} onClick={() => setIgnoreAppearance(!ignoreAppearance)}>
                           <span className="switch__thumb" />
                         </button>
                       </div>

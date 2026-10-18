@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { queryMatcher } from '../schedule/search';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
 import { useSearchSetsStore } from '../state/searchSetsStore';
@@ -112,8 +113,8 @@ export function ClashPanel() {
     return c;
   }, [results]);
   const shown = useMemo(() => {
-    const q = search.trim().toLowerCase();
-    return results.filter((r) => filter.includes(r.status) && (!q || `${r.n} ${r.a.name} ${r.b.name} ${r.a.category} ${r.b.category} ${r.comment ?? ''}`.toLowerCase().includes(q)));
+    const hit = queryMatcher(search);
+    return results.filter((r) => filter.includes(r.status) && hit(`${r.n} ${r.a.name} ${r.b.name} ${r.a.category} ${r.b.category} ${r.comment ?? ''}`));
   }, [results, filter, search]);
   const groups = useMemo(() => {
     if (groupBy === 'none') return [{ key: '', label: '', rows: shown }];

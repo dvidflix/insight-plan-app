@@ -12987,7 +12987,7 @@ body.viewer-fullscreen .ws-float { display: none; }
 .ie__top .ie__cellbtn + .ie__cellbtn { border-left: 1px solid var(--border); }
 .ie__cellbtn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-height: 28px; padding: 0 8px; border: 0; background: transparent; color: var(--text); font: inherit; font-size: 12px; cursor: pointer; white-space: nowrap; }
 .ie__cellbtn:hover { background: rgb(var(--accent-rgb) / 0.1); color: var(--accent-strong); }
-.ie__grid .rgrid__body .ie__cellbtn { border-left: 1px solid var(--border); justify-content: flex-start; }
+.ie__grid .rgrid__body .ie__cellbtn { border-left: 0; justify-content: center; flex: 1; }
 .ie__grid { margin: 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
 .ie__right { justify-content: flex-end; }
 
@@ -14063,6 +14063,8 @@ body.hide-statusbar .statusbar-host:has(.sequence-statusbar) .statusbar-close { 
 .dock-menu__sep { height: 1px; margin: 4px 0; background: var(--border); }
 .dock-menu__tabs { padding: 2px 0 0; border-top: 1px solid var(--border); }
 .dock-menu__tab { display: flex; align-items: center; gap: 8px; width: 100%; padding: 4px 12px; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+/* A new group of panels (planning, common, 3D / 4D, secondary) starts under a line. */
+.dock-menu__tab.is-group { border-top: 1px solid var(--border); margin-top: 3px; padding-top: 7px; }
 .dock-menu__tab.is-on { font-weight: 700; background: rgba(0, 0, 0, 0.05); }
 .dock-menu__tab.is-on::after { content: '✓'; color: var(--accent-strong); }
 .dock-menu__icon { display: inline-flex; width: 16px; }

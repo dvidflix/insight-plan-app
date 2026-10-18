@@ -5,7 +5,7 @@ import { useDockNavStore } from '../state/dockNavStore';
 import { DockNav } from './DockNav';
 import { panelColor } from './panelColors';
 import { activeOn, isShowing, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconChevronDown, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconTwoPane, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus, IconFolder } from './icons';
+import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconChevronDown, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconCompare, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus, IconFolder } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
 export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
@@ -19,7 +19,7 @@ export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement
   topics: IconChat,
   viewpoints: IconCamera,
   checks: IconChecklist,
-  compare: IconTwoPane,
+  compare: IconCompare,
   datatable: IconViewTable,
   layouts: IconBookmark,
   details: IconInfo,

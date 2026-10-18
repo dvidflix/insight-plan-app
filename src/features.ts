@@ -10,6 +10,8 @@ export const FEATURES = {
   selfUpdate: internal,
   /** The packaged app downloads signed updates in the background (server/packageUpdater.ts). */
   packageUpdate: EDITION === 'product',
+  /** Data sources: external data (CSV, Excel, SQLite files; later Monday.com) listed as tables in the Data table's drop-down. */
+  dataSources: internal,
   /** File details and model data synced with SeaTable. */
   seatable: internal,
   /** The External data and Dashboards pages (SeaTable / Superset in a frame). */

@@ -40,11 +40,11 @@ export function TagsSection() {
     <CollapsibleSection
         title="Tags"
         open={open}
-        onToggle={() => toggle}
+        onToggle={toggle}
         flush
         actions={
           !editing && (
-            <button type="button" className="mini-btn mini-btn--icon" onClick={() => { if (!open) toggle; setEditingId(addTag()); }} title="New tag" aria-label="New tag">
+            <button type="button" className="mini-btn mini-btn--icon" onClick={() => { if (!open) toggle(); setEditingId(addTag()); }} title="New tag" aria-label="New tag">
               <IconAddCircleOutline width={20} height={20} />
             </button>
           )

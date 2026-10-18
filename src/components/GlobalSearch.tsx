@@ -8,7 +8,7 @@ import { useScheduleStore } from '../state/scheduleStore';
 import { toggleHidden, useProjectDbStore } from '../state/projectDbStore';
 import { useTableSearchStore } from '../state/tableSearchStore';
 import { activeTargetId, useListConfigStore } from '../state/listConfigStore';
-import { activitySearchText } from '../schedule/search';
+import { activitySearchText, searchTokens } from '../schedule/search';
 import { scenes } from '../state/scenes';
 import { workspaces, workspaceActions } from '../state/workspaces';
 import { openSatelliteWindow } from '../state/windowSync';
@@ -30,8 +30,10 @@ interface Hit {
   run: () => void;
 }
 
-/** Every term (split on spaces) is somewhere in the text. */
-const matches = (text: string, terms: string[]) => { const t = text.toLowerCase(); return terms.every((x) => t.includes(x)); };
+/** The query as alternatives (split on commas, "||", semicolons and new lines), each a list of words (split on spaces). */
+const alternatives = (query: string) => searchTokens(query).map((a) => a.split(/\s+/).filter(Boolean)).filter((a) => a.length);
+/** One of the alternatives has every one of its words somewhere in the text. */
+const matches = (text: string, alts: string[][]) => { const t = text.toLowerCase(); return alts.some((terms) => terms.every((x) => t.includes(x))); };
 
 /** One search box for the whole app (Ctrl+K): scenes, files, views, panels and actions. Enter takes the first result; the arrows move.
     Its scope today is navigation; activities and model elements are searched in their own tables. */
@@ -137,7 +139,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
   }, [pages, onPage, onTab, experimental, entries, models, hiddenModelIds, toggleModelHidden, meshes, schedules, hiddenScheduleIds, toggleScheduleHidden, dbProgrammes, storedActions.stored, sceneList, engine]);
 
   const hits = useMemo(() => {
-    const terms = query.toLowerCase().split(/\s+/).filter(Boolean);
+    const terms = alternatives(query);
     if (!terms.length) return [];
     const found = all.filter((h) => matches(h.label, terms));
     // On a table: the first row narrows the table to these words (any ID, name, code, user field or resource), as the old box did.
@@ -164,7 +166,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
       }
     }
     // Names that start with the query first; then by group.
-    const rank = (h: Hit) => (h.label.toLowerCase().startsWith(terms[0]) ? 0 : 1);
+    const rank = (h: Hit) => (terms.some((t) => h.label.toLowerCase().startsWith(t[0])) ? 0 : 1);
     return found.sort((a, b) => (a.group === 'Table' ? -1 : b.group === 'Table' ? 1 : rank(a) - rank(b) || GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group))).slice(0, 40);
   }, [all, query, schedules, hiddenScheduleIds, onTab, onPage, tableAvailable]);
   useEffect(() => { setAt(0); }, [query]);
