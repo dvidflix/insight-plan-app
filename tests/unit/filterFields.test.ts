@@ -64,4 +64,17 @@ describe('text filters', () => {
     expect(ids(applyFieldFilters(rows, [ecs, name], s))).toEqual([]);
     expect(ids(applyFieldFilters(rows, [ecs, name], { ...s, combine: 'any' }))).toEqual(['1', '2']);
   });
+
+  it('combines the fields by a formula over their numbers in the table order', () => {
+    const name: FilterFieldDef = { ...ecs, id: 'name', label: 'Name', rawValue: (a) => a.name };
+    const s = state('100');
+    s.textFilters.name = '2';
+    // Rule 1 is ECS (first in `order`), rule 2 is Name.
+    expect(ids(applyFieldFilters(rows, [ecs, name], { ...s, order: ['ecs', 'name'], logic: '1 or 2' }))).toEqual(['1', '2']);
+    expect(ids(applyFieldFilters(rows, [ecs, name], { ...s, order: ['ecs', 'name'], logic: '1 and not 2' }))).toEqual(['1']);
+    // Reordering the table renumbers them: rule 1 is now Name.
+    expect(ids(applyFieldFilters(rows, [ecs, name], { ...s, order: ['name', 'ecs'], logic: '1 and not 2' }))).toEqual(['2']);
+    // A formula that does not read falls back to all / any.
+    expect(ids(applyFieldFilters(rows, [ecs, name], { ...s, order: ['ecs', 'name'], logic: '1 and', combine: 'any' }))).toEqual(['1', '2']);
+  });
 });

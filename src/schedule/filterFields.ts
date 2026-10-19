@@ -1,3 +1,4 @@
+import { compileLogic } from '../viewer/filterLogic';
 import { constraintName } from './reports';
 import type { Activity, ActivityStatus, ActivityType, ScheduleModel } from './types';
 
@@ -252,6 +253,11 @@ export type SelectMode = 'any' | 'all';
 export interface FieldFilterState {
   /** Across the active fields; absent = 'all'. */
   combine?: FilterCombine;
+  /** How the filters combine, by their numbers in the Filters table ("(1 and 2) or 3"); empty or absent: all / any of them, as `combine` says. */
+  logic?: string;
+  /** The field ids in the order of the Filters table, which is what the numbers in `logic` mean. Active fields it does not list follow, in the
+      order of the field list. */
+  order?: string[];
   /** Per checklist field; absent = 'any'. */
   selectModes?: Record<string, SelectMode>;
   selections: Record<string, Set<string>>;
@@ -300,35 +306,60 @@ function matchesRange(f: FilterFieldDef, a: Activity, r: RangeFilter): boolean {
   return (Number.isNaN(lo) || (r.minExclusive ? v > lo : v >= lo)) && (Number.isNaN(hi) || v <= hi);
 }
 
-/** Applies the field filters except `excludeFieldId`. Across fields: AND by default, OR when state.combine is 'any'.
+/** The filters in the order the Filters table numbers them: the listed ones (`order`), then the other active fields. */
+export function filterRuleIds(fields: FilterFieldDef[], state: FieldFilterState): string[] {
+  const known = new Set(fields.map((f) => f.id));
+  const listed = (state.order ?? []).filter((id, i, all) => known.has(id) && all.indexOf(id) === i);
+  const active = new Set(listed);
+  const rest: string[] = [];
+  for (const f of fields) if (!active.has(f.id) && fieldIsActive(f, state)) rest.push(f.id);
+  return [...listed, ...rest];
+}
+
+/** Whether a field narrows the list now. */
+export function fieldIsActive(f: FilterFieldDef, s: FieldFilterState): boolean {
+  if (f.kind === 'text') return isPresenceMode(s.textModes?.[f.id]) || (s.textFilters[f.id] ?? '').trim() !== '';
+  if (f.kind === 'select') return (s.selections[f.id]?.size ?? 0) > 0;
+  return rangeActive(s.ranges[f.id]);
+}
+
+/** Applies the field filters except `excludeFieldId`. Across fields they combine as `state.logic` says (rule numbers, as the Filters table
+    shows them), else AND, or OR when state.combine is 'any'.
     Within a checklist field: OR of the ticked values by default, AND when its select mode is 'all'.
     (With OR across fields the other filters don't narrow a field's own counts, so those are the plain counts.) */
 export function applyFieldFilters(activities: Activity[], fields: FilterFieldDef[], state: FieldFilterState, excludeFieldId?: string): Activity[] {
-  const tests: ((a: Activity) => boolean)[] = [];
+  const tests = new Map<string, (a: Activity) => boolean>();
   for (const f of fields) {
     if (f.id === excludeFieldId) continue;
     if (f.kind === 'text') {
       const mode = state.textModes?.[f.id];
       const tokens = searchTokens(state.textFilters[f.id] || '');
-      if (isPresenceMode(mode)) { if (f.rawValue) tests.push((a) => matchesSearchTokens(f.rawValue!(a), tokens, mode)); }
-      else if (tokens.length > 0 && f.rawValue) tests.push((a) => matchesSearchTokens(f.rawValue!(a), tokens, mode));
+      if (isPresenceMode(mode)) { if (f.rawValue) tests.set(f.id, (a) => matchesSearchTokens(f.rawValue!(a), tokens, mode)); }
+      else if (tokens.length > 0 && f.rawValue) tests.set(f.id, (a) => matchesSearchTokens(f.rawValue!(a), tokens, mode));
     } else if (f.kind === 'select') {
       const sel = state.selections[f.id];
       if (sel && sel.size > 0) {
         const all = state.selectModes?.[f.id] === 'all';
-        tests.push((a) => {
+        tests.set(f.id, (a) => {
           const have = f.activityValues(a);
           return all ? [...sel].every((v) => have.includes(v)) : have.some((v) => sel.has(v));
         });
       }
     } else {
       const r = state.ranges[f.id];
-      if (rangeActive(r)) tests.push((a) => matchesRange(f, a, r));
+      if (rangeActive(r)) tests.set(f.id, (a) => matchesRange(f, a, r));
     }
   }
-  if (tests.length === 0) return activities;
-  if (state.combine === 'any') return excludeFieldId ? activities : activities.filter((a) => tests.some((t) => t(a)));
-  return activities.filter((a) => tests.every((t) => t(a)));
+  if (tests.size === 0) return activities;
+  const compiled = state.logic?.trim() ? compileLogic(state.logic, filterRuleIds(fields, state).length) : null;
+  if (compiled?.ok) {
+    const ids = filterRuleIds(fields, state);
+    const slots = ids.map((id) => tests.get(id) ?? null);
+    return activities.filter((a) => compiled.run(slots.map((t) => (t ? t(a) : null))));
+  }
+  const list = [...tests.values()];
+  if (state.combine === 'any') return excludeFieldId ? activities : activities.filter((a) => list.some((t) => t(a)));
+  return activities.filter((a) => list.every((t) => t(a)));
 }
 
 /** How many separate fields currently narrow the list. */

@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { ToolPopover } from './TablePopovers';
+import { FilterRules } from './FilterRules';
 import { GroupPanel } from './schedule/GroupPanel';
 import { SortPanel } from './schedule/SortPanel';
-import { IconFilter, IconGroup, IconRemove, IconSort } from './icons';
+import { IconFilter, IconGroup, IconSort } from './icons';
 import { NO_VALUE } from '../state/inputDetailsStore';
 import { SCENE_BUILT_INS, sceneMatches, useSceneDetailsStore, valuesOfScene } from '../state/sceneDetailsStore';
 import type { Scene } from '../state/scenes';
@@ -16,7 +17,6 @@ function SceneFilters({ scenes }: { scenes: Scene[] }) {
   const filters = useSceneDetailsStore((s) => s.filters);
   const details = useSceneDetailsStore((s) => s.values);
   const { setFilter, clearFilters } = useSceneDetailsStore.getState();
-  const [open, setOpen] = useState<string | null>(null);
   const keys = useMemo(() => [...SCENE_BUILT_INS.filter((b) => b.id === 'programme'), ...fields.filter((f) => f !== 'Notes').map((f) => ({ id: f, label: f }))], [fields]);
   const matched = useMemo(() => scenes.filter((s) => sceneMatches(s, filters, details)).length, [scenes, filters, details]);
   const valuesOf = (key: string) => {
@@ -29,42 +29,43 @@ function SceneFilters({ scenes }: { scenes: Scene[] }) {
     for (const v of filters[key] ?? []) if (!counts.has(v)) counts.set(v, 0);
     return [...counts].sort(([a], [b]) => (a === NO_VALUE ? 1 : b === NO_VALUE ? -1 : a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' })));
   };
+  const [editing, setEditing] = useState<string | null>(null);
+  const [order, setOrder] = useState<string[]>([]);
+  const byKey = new Map(keys.map((k) => [k.id, k]));
+  const activeIds = new Set(keys.filter((k) => (filters[k.id]?.length ?? 0) > 0).map((k) => k.id));
+  const rowIds = [...order.filter((id) => byKey.has(id) && (activeIds.has(id) || id === editing)), ...[...activeIds].filter((id) => !order.includes(id))];
+  const summaryOf = (id: string) => { const kept = filters[id] ?? []; return kept.length <= 2 ? kept.map(labelOf).join(', ') : `${kept.length} values`; };
+  const edited = editing ? byKey.get(editing) : undefined;
+  const kept = edited ? filters[edited.id] ?? [] : [];
+  const list = edited ? valuesOf(edited.id) : [];
   return (
-    <div className="flt flt--inputs">
-      <div className="flt__result">
-        <div className="flt__result-text"><b>{matched}</b> of {scenes.length} scenes{scenes.length > 0 && matched === 0 && <span className="flt__none"> — no matches</span>}</div>
-        <button type="button" className="cols__link" disabled={Object.keys(filters).length === 0} onClick={clearFilters}>Clear all</button>
-      </div>
-      {keys.map((k) => {
-        const kept = filters[k.id] ?? [];
-        const isOpen = open === k.id;
-        return (
-          <div key={k.id} className={`flt__field${kept.length ? ' active' : ''}`}>
-            <div className="flt__field-head">
-              <button type="button" className="flt__field-toggle" aria-expanded={isOpen} onClick={() => setOpen(isOpen ? null : k.id)}>
-                <span className="flt__field-label">{k.label}</span>
-                {kept.length > 0 && <span className="flt__field-sum">{kept.length <= 2 ? kept.map(labelOf).join(', ') : `${kept.length} values`}</span>}
-              </button>
-              {kept.length > 0 && <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label}`} title="Clear"><IconRemove /></button>}
-            </div>
-            {isOpen && (
-              <div className="flt__field-body">
-                <div className="flt__values">
-                  {valuesOf(k.id).map(([v, n]) => (
-                    <label key={v} className={`cols__check${n === 0 && !kept.includes(v) ? ' flt__zero' : ''}`}>
-                      <input type="checkbox" checked={kept.includes(v)} onChange={() => setFilter(k.id, kept.includes(v) ? kept.filter((x) => x !== v) : [...kept, v])} />
-                      <span title={labelOf(v)}>{labelOf(v)}</span>
-                      <span className="flt__n">{n}</span>
-                    </label>
-                  ))}
-                  {scenes.length === 0 && <div className="flt__hint">No scenes.</div>}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-    </div>
+    <FilterRules
+      tip="Keep only the scenes that have one of the chosen values of a field. Click a filter to change its values."
+      hint={scenes.length === 0 ? null : activeIds.size > 0 && <div className="flt__hint"><b>{matched}</b> of {scenes.length} scenes{matched === 0 && <span className="flt__none"> — no matches</span>}</div>}
+      rows={rowIds.map((id) => ({ id, field: byKey.get(id)!.label, summary: summaryOf(id), dim: !activeIds.has(id) }))}
+      onRemove={(id) => { setFilter(id, []); setOrder((o) => o.filter((x) => x !== id)); if (editing === id) setEditing(null); }}
+      onReorder={setOrder}
+      onClearAll={() => { clearFilters(); setOrder([]); setEditing(null); }}
+      editingId={editing}
+      onEdit={setEditing}
+      editorTitle={edited ? `Edit ${edited.label}` : 'Edit filter'}
+      editor={edited && (
+        <div className="flt__values">
+          {list.map(([v, n]) => (
+            <label key={v} className={`cols__check${n === 0 && !kept.includes(v) ? ' flt__zero' : ''}`}>
+              <input type="checkbox" checked={kept.includes(v)} onChange={() => setFilter(edited.id, kept.includes(v) ? kept.filter((x) => x !== v) : [...kept, v])} />
+              <span title={labelOf(v)}>{labelOf(v)}</span>
+              <span className="flt__n">{n}</span>
+            </label>
+          ))}
+          {scenes.length === 0 && <div className="flt__hint">No scenes.</div>}
+        </div>
+      )}
+      combine={<div className="flt__hint">A scene must match every filter.</div>}
+      fields={keys.map((k) => ({ id: k.id, label: k.label, group: k.id === 'programme' ? 'Scene' : DETAILS }))}
+      picked={activeIds}
+      onPick={(f) => { setOrder((o) => (o.includes(f.id) ? o : [...o, f.id])); setEditing(f.id); }}
+    />
   );
 }
 

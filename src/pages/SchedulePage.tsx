@@ -61,7 +61,6 @@ import { ListSetupButton, ViewPicker, type PageItem } from '../components/ViewPi
 import { DockGantt } from '../components/sequence/DockGantt';
 import { ToolbarLeftSlotContext, ToolbarSlotContext } from '../components/schedule/ToolbarSlot';
 import { EditTools } from '../components/schedule/EditTools';
-import { LevelStepper } from '../components/schedule/LevelStepper';
 import { PlannerView } from '../components/schedule/PlannerView';
 import { ActivityPlanningPanel, DictionaryPanel } from '../components/schedule/PlanningPanels';
 import { BaselineMenu } from '../components/schedule/BaselineMenu';
@@ -507,7 +506,6 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
                 </select>
               </>
             )}
-            <LevelStepper value={cfg.groupLevel} onChange={cfg.setGroupLevel} />
           </div>
         )}
             {/* The planning tools, in a menu, after the WBS level and the Zoom: they follow them instead of sitting in a place of their own. */}
@@ -675,6 +673,8 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
               onGroupRulesChange={cfg.setGroupRules}
               onCollapseAll={() => setCollapseAllSignal((n) => n + 1)}
               onExpandAll={() => setExpandAllSignal((n) => n + 1)}
+              groupLevel={cfg.groupLevel}
+              onGroupLevelChange={cfg.setGroupLevel}
               groupByWbs={cfg.groupByWbs}
               onToggleGroupByWbs={() => cfg.setGroupByWbs((v) => !v)}
               sortRules={cfg.sortRules}

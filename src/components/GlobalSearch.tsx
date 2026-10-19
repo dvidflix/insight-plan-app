@@ -17,6 +17,7 @@ import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useStoredModels } from './StoredModelsPanel';
 import type { PageItem } from './ViewPicker';
 import { IconSearch } from './icons';
+import { LevelStepper } from './schedule/LevelStepper';
 
 type Group = 'Table' | 'Scenes' | 'Files' | 'Activities' | 'Views' | 'Panels' | 'Actions';
 const GROUPS: Group[] = ['Table', 'Actions', 'Scenes', 'Files', 'Activities', 'Views', 'Panels'];
@@ -192,6 +193,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
   });
 
   return (
+    <>
     <div className="gs" ref={root}>
       <IconSearch width={14} height={14} />
       <input
@@ -219,5 +221,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
         </div>
       )}
     </div>
+    {activeList?.level && <LevelStepper value={activeList.level.value} onChange={activeList.level.set} max={activeList.level.max} title={`Show ${listName} groups down to this level (All: everything open)`} />}
+    </>
   );
 }

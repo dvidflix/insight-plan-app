@@ -1,7 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import { kindOfFile, readTables, type DataTable, type SourceKind } from './parsers';
-import { DEFAULT_TRIGGERS, type IdMatch, type LinkTriggers } from './idMatch';
+import { DEFAULT_TRIGGERS, type LinkTriggers, type MatchGroup } from './matchGroups';
 
 /** A connection to a file of external data (the first kind of data source: CSV / text, Excel, SQLite). It holds one or more
     tables (a text file has one, a workbook one per sheet, a database one per table). What is remembered is the connection;
@@ -15,8 +15,8 @@ export interface DataSourceMeta {
   table: string | null;
   /** When the tables were last read (ms); 0: not read in this session. */
   loadedAt: number;
-  /** How each table is coupled to the 3D (ID Match), by table name. */
-  matches?: Record<string, IdMatch>;
+  /** How each table is coupled to the 3D (its match groups), by table name. */
+  matchGroups?: Record<string, MatchGroup[]>;
 }
 
 /** The File System Access API's handle to a file, where the browser has one: Refresh can read the file again without asking. */
@@ -58,7 +58,7 @@ interface DataSourcesState {
   /** The triggers between the 3D and the tables (the same for every source). */
   triggers: LinkTriggers;
   setTriggers: (patch: Partial<LinkTriggers>) => void;
-  setMatch: (id: string, table: string, match: IdMatch) => void;
+  setGroups: (id: string, table: string, groups: MatchGroup[]) => void;
   select: (id: string | null) => void;
   setTable: (id: string, table: string) => void;
   add: (file: File, handle?: FileHandle) => Promise<string | null>;
@@ -97,7 +97,7 @@ export const useDataSourcesStore = create<DataSourcesState>()(
         errors: {},
         triggers: DEFAULT_TRIGGERS,
         setTriggers: (patch) => set((s) => ({ triggers: { ...s.triggers, ...patch } })),
-        setMatch: (id, table, match) => set((s) => ({ sources: s.sources.map((x) => (x.id === id ? { ...x, matches: { ...x.matches, [table]: match } } : x)) })),
+        setGroups: (id, table, groups) => set((s) => ({ sources: s.sources.map((x) => (x.id === id ? { ...x, matchGroups: { ...x.matchGroups, [table]: groups } } : x)) })),
         select: (selectedId) => set({ selectedId }),
         setTable: (id, table) => set((s) => ({ sources: s.sources.map((x) => (x.id === id ? { ...x, table } : x)) })),
         rename: (id, name) => set((s) => ({ sources: s.sources.map((x) => (x.id === id ? { ...x, name: name.trim() || x.name } : x)) })),

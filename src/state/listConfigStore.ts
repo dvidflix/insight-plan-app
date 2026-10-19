@@ -1,8 +1,9 @@
 import { create } from 'zustand';
 
 /** The settings every list has: the same five panels, whichever list they are for. */
-export type ConfigKind = 'columns' | 'filters' | 'group' | 'sort' | 'color';
-export const CONFIG_KINDS: ConfigKind[] = ['columns', 'filters', 'group', 'sort', 'color'];
+/** `source` and `match` are the Data table's external data: its sources, and how its rows are matched to the model's objects. */
+export type ConfigKind = 'columns' | 'filters' | 'group' | 'sort' | 'color' | 'source' | 'match';
+export const CONFIG_KINDS: ConfigKind[] = ['source', 'match', 'columns', 'filters', 'group', 'sort', 'color'];
 
 /** A list that can be set up (the Programmes table, the Gantt, the Tasks): what it supports and how much is set. */
 export interface ConfigTarget {
@@ -14,6 +15,8 @@ export interface ConfigTarget {
   hasExtra?: boolean;
   /** The list narrows itself to the words of the header's search box. */
   searchable?: boolean;
+  /** The list is grouped: the header's ‹ 2 › stepper works on it. `max` is its deepest group level ('' = All open). */
+  level?: { value: string; max: number; set: (value: string) => void };
 }
 
 interface ListConfigState {
@@ -41,7 +44,7 @@ interface ListConfigState {
 }
 
 const same = (a: ConfigTarget | undefined, b: ConfigTarget) =>
-  !!a && a.label === b.label && !!a.hasExtra === !!b.hasExtra && !!a.searchable === !!b.searchable && a.kinds.join() === b.kinds.join() && JSON.stringify(a.badges) === JSON.stringify(b.badges);
+  !!a && a.label === b.label && !!a.hasExtra === !!b.hasExtra && !!a.searchable === !!b.searchable && a.level?.value === b.level?.value && a.level?.max === b.level?.max && a.kinds.join() === b.kinds.join() && JSON.stringify(a.badges) === JSON.stringify(b.badges);
 
 export const useListConfigStore = create<ListConfigState>((set) => ({
   targets: {},

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
 import { ATTRIBUTES, elementValue } from '../viewer/bimTables';
+import { usePropertyVisibilityStore } from '../state/propertyVisibilityStore';
 import type { PickField } from './schedule/FieldRules';
 
 /** Bumps when the viewer's per-model indexes are (re)built. */
@@ -18,10 +19,17 @@ export function useIndexTick() {
 
 /** Every property of the loaded models, for the field pickers: the
     attributes first, then "Pset.Prop" grouped by property set. */
-export function useModelFields(): PickField[] {
+const NO_KEEP: string[] = [];
+
+export function useModelFields(keep: string[] = NO_KEEP): PickField[] {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
+  // The properties left out in Models > Properties > Show / hide are left out here too (unless switched off there); ones in use stay.
+  const apply = usePropertyVisibilityStore((s) => s.applyToFields);
+  const hiddenPsets = usePropertyVisibilityStore((s) => s.hiddenPsets);
+  const hiddenProps = usePropertyVisibilityStore((s) => s.hiddenProps);
+  const keepKey = keep.join('\u0001');
   return useMemo(() => {
     const keys = new Set<string>();
     for (const index of engine.getIndexes().values()) for (const e of index.elements.values()) for (const k of Object.keys(e.props)) keys.add(k);
@@ -30,9 +38,14 @@ export function useModelFields(): PickField[] {
       const dot = k.indexOf('.');
       return { id: k, label: dot === -1 ? k : k.slice(dot + 1), group: dot === -1 ? 'Other' : k.slice(0, dot) };
     });
-    return [...attrs, ...props];
+    const all = [...attrs, ...props];
+    if (!apply || (!hiddenPsets.length && !hiddenProps.length)) return all;
+    const used = new Set(keepKey ? keepKey.split('\u0001') : []);
+    const setOff = new Set(hiddenPsets);
+    const propOff = new Set(hiddenProps);
+    return all.filter((f) => used.has(f.id) || !(setOff.has(f.group ?? '') || propOff.has(f.id)));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [engine, models, tick]);
+  }, [engine, models, tick, apply, hiddenPsets, hiddenProps, keepKey]);
 }
 
 /** Distinct values of `field` over the loaded models, most common first. */

@@ -360,6 +360,7 @@ export default function App() {
               search={<GlobalSearch pages={pages} onPage={goPage} onTab={setScheduleTab} />}
               layout={page === 'sequence' ? 'sequence' : 'model'}
               paneActive={page === 'model'}
+              backgroundPanels={page === 'schedule'}
               panel={page === 'sequence' ? <SequencePanel /> : <FourDSetupPanel />}
               overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
               center={

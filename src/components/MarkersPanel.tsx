@@ -6,7 +6,7 @@ import { parseTsv, toTsv } from './timelines/gridText';
 import { usePersistedState } from '../utils/persistedState';
 import { CollapsibleSection } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
-import { IconCopy, IconEye, IconEyeOff, IconRemove } from './icons';
+import { IconCopy, IconEye, IconEyeOff, IconRemove, IconExpander } from './icons';
 import { RichNoteEditor } from './RichNoteEditor';
 import { MarkerActivityPicker } from './MarkerActivityPicker';
 import { isEmptyNote } from '../utils/richText';
@@ -99,7 +99,7 @@ export function MarkersPanel() {
       tip={
         <>
           <p>Points in the model's coordinates (project axes: X east, Y north, Z up, metres — the same as the Point coordinates tool), drawn in the 3D view with an icon. Hover one for its name and coordinates; click a row to fly to it. Markers that overlap on screen merge into a numbered cluster.</p>
-          <p>Link a marker to an <b>activity</b> (the ▸ in the Edit table) and in 4D Sequencing it shows only from that activity's start to its finish. Add a formatted <b>note</b> (bold, lists, colours, links) that shows with the marker on hover.</p>
+          <p>Link a marker to an <b>activity</b> (the arrow in the Edit table) and in 4D Sequencing it shows only from that activity's start to its finish. Add a formatted <b>note</b> (bold, lists, colours, links) that shows with the marker on hover.</p>
           <p><b>Edit</b> opens a table: type values, or paste a block from Excel into any cell (columns Name, X, Y, Z, Icon — or just X, Y, Z, with a name and icon after if you like). Rows are added as needed.</p>
         </>
       }
@@ -180,7 +180,7 @@ export function MarkersPanel() {
                   <select value={m.icon} onChange={(e) => update(m.id, { icon: e.target.value })} onPaste={(e) => onPaste(e, row, 4)}>
                     {MARKER_ICONS.map((i) => <option key={i.id} value={i.id}>{i.label}</option>)}
                   </select>
-                  <button type="button" className={`mkt__more${more === m.id ? ' on' : ''}${m.activityId || !isEmptyNote(m.note) ? ' has' : ''}`} title="Activity and note" aria-label="Activity and note" aria-expanded={more === m.id} onClick={() => setMore(more === m.id ? null : m.id)}>{more === m.id ? '▾' : '▸'}</button>
+                  <button type="button" className={`mkt__more${more === m.id ? ' on' : ''}${m.activityId || !isEmptyNote(m.note) ? ' has' : ''}`} title="Activity and note" aria-label="Activity and note" aria-expanded={more === m.id} onClick={() => setMore(more === m.id ? null : m.id)}><IconExpander open={more === m.id} width={14} height={14} /></button>
                   <button type="button" className="mkt__del" title="Duplicate this marker" aria-label="Duplicate this marker" onClick={() => duplicate(m.id)}><IconCopy /></button>
                   <button type="button" className="mkt__del" title="Delete this marker" aria-label="Delete this marker" onClick={() => remove(m.id)}><IconRemove /></button>
                 </div>

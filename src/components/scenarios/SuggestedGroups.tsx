@@ -5,7 +5,7 @@ import { useScenarioView } from '../../scenarios/useScenarioView';
 import { DEFAULT_TARGETS, levelKey, rebarByPour, suggestGroups, wallsToGroup, type GroupSuggestion, type RebarTargets } from '../../scenarios/groupSuggest';
 import type { ScheduleModel } from '../../schedule/types';
 import { usePersistedState } from '../../utils/persistedState';
-import { IconCheckboxChecked, IconCheckboxUnchecked, IconSectionChevron } from '../icons';
+import { IconCheckboxChecked, IconCheckboxUnchecked, IconSectionChevron, IconExpander } from '../icons';
 import { InfoTip } from '../InfoTip';
 
 interface Item {
@@ -69,7 +69,7 @@ export function SuggestedGroups({ source }: { source: ScheduleModel | null }) {
         <button type="button" className="btn" disabled={!ready || !source} onClick={suggest} title={source ? 'Look for groups of walls' : 'Update 4D first: the rebar rates come from the generated programme'}>
           Suggest groups
         </button>
-        <button type="button" className="cols__link" aria-expanded={showTargets} onClick={() => setShowTargets((v) => !v)}>Target rates {showTargets ? '▴' : '▾'}</button>
+        <button type="button" className="cols__link" aria-expanded={showTargets} onClick={() => setShowTargets((v) => !v)}>Target rates <IconExpander open={showTargets} width={14} height={14} /></button>
       </div>
       {!source && <div className="scn-dim">Update 4D once: the wall rates (rebar tonnes ÷ days) come from the generated programme.</div>}
 

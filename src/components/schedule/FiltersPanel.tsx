@@ -1,16 +1,13 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
-import { IconRemove, IconSectionChevron } from '../icons';
 import {
-  FILTER_GROUPS, TEXT_MODES, applyFieldFilters, isPresenceMode, buildFilterFields, emptyFilterState, rangeActive,
+  TEXT_MODES, applyFieldFilters, filterRuleIds, fieldIsActive, isPresenceMode, buildFilterFields, emptyFilterState, rangeActive,
   type FieldFilterState, type FilterFieldDef, type TextMode, type RangeFilter,
 } from '../../schedule/filterFields';
 import { InfoTip } from '../InfoTip';
-import { FilterShell, type FilterChip, type QuickFilter } from '../FilterShell';
-import { SearchRow } from '../SearchRow';
+import { FilterRules, LogicRow } from '../FilterRules';
 import { useCalcFilterFields } from '../../schedule/calculatedColumns';
 import { queryMatcher } from '../../schedule/search';
-import { IconExpander } from '../icons';
 import { PresetBar } from './PresetBar';
 import { removeUserPreset, saveUserPreset, useUserPresetsStore } from '../../state/userPresetsStore';
 import { deserializeFilters, serializeFilters, type SerializedFilters } from '../../state/scheduleLayoutsStore';
@@ -52,12 +49,6 @@ function clearField(prev: FieldFilterState, id: string): FieldFilterState {
   return { combine: prev.combine, selectModes, selections, textFilters, textModes, ranges };
 }
 
-function fieldActive(f: FilterFieldDef, s: FieldFilterState): boolean {
-  if (f.kind === 'text') return isPresenceMode(s.textModes?.[f.id]) || (s.textFilters[f.id] ?? '').trim() !== '';
-  if (f.kind === 'select') return (s.selections[f.id]?.size ?? 0) > 0;
-  return rangeActive(s.ranges[f.id]);
-}
-
 function summarize(f: FilterFieldDef, s: FieldFilterState): string {
   if (f.kind === 'text') {
     const mode = s.textModes?.[f.id] ?? 'contains';
@@ -82,30 +73,22 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
   const fields = useMemo(() => buildFilterFields(model, calcFields), [model, calcFields]);
   const visibleFields = useMemo(() => fields.filter((f) => f.hasData), [fields]);
   const matched = useMemo(() => applyFieldFilters(baseActivities, fields, state), [baseActivities, fields, state]);
-  const [search, setSearch] = useState('');
-  const [openFields, setOpenFields] = useState<Set<string>>(new Set(['status']));
-  const [closedGroups, setClosedGroups] = useState<Set<string>>(new Set(['Activity Codes', 'User Fields', 'Resources']));
+  // The filter being edited under the table (a field just picked is there at once, before it has a value).
+  const [editing, setEditing] = useState<string | null>(null);
 
-  const groupNames = useMemo(() => [...new Set(visibleFields.map((f) => f.group))], [visibleFields]);
-  const activeFields = visibleFields.filter((f) => fieldActive(f, state));
-  const q = search.trim().toLowerCase();
-  const hit = queryMatcher(search);
-  const combine = state.combine ?? 'all';
+  const byId = useMemo(() => new Map(visibleFields.map((f) => [f.id, f])), [visibleFields]);
+  const activeFields = visibleFields.filter((f) => fieldIsActive(f, state));
+  const activeIds = new Set(activeFields.map((f) => f.id));
+  // The rows are the filters, numbered as the logic formula means them: the order of the table is kept in the state.
+  const rowIds = filterRuleIds(fields, state).filter((id) => byId.has(id) && (activeIds.has(id) || id === editing));
+  // The state lists only the filters that count (the one being edited too): a field that was picked and left without a value drops out.
+  useEffect(() => {
+    const stale = (state.order ?? []).filter((id) => !activeIds.has(id) && id !== editing);
+    if (stale.length) onChange((prev) => ({ ...prev, order: (prev.order ?? []).filter((id) => !stale.includes(id)) }));
+  });
+  const setOrder = (order: string[]) => onChange((prev) => ({ ...prev, order }));
 
   const clear = (id: string) => onChange((prev) => clearField(prev, id));
-  const toggleOpen = (id: string) =>
-    setOpenFields((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(id)) next.add(id);
-      return next;
-    });
-  const toggleGroup = (g: string) =>
-    setClosedGroups((prev) => {
-      const next = new Set(prev);
-      if (!next.delete(g)) next.add(g);
-      return next;
-    });
-
   const quickActive = (qf: (typeof QUICK)[number]) => {
     if (qf.values) {
       const sel = state.selections[qf.fieldId];
@@ -122,35 +105,10 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
   };
   const quick = QUICK.filter((qf) => visibleFields.some((f) => f.id === qf.fieldId));
   const saved = useUserPresetsStore((st) => st.presets).filter((p) => p.kind === 'filters');
-
-  const chips: FilterChip[] = activeFields.map((f) => ({
-    id: f.id,
-    label: f.label,
-    summary: summarize(f, state),
-    onRemove: () => clear(f.id),
-    onEdit: () => { setOpenFields((prev) => new Set(prev).add(f.id)); setClosedGroups((prev) => { const n = new Set(prev); n.delete(f.group); return n; }); },
-  }));
-  const quickFilters: QuickFilter[] = quick.map((qf) => ({ id: qf.id, label: qf.label, active: quickActive(qf), onToggle: () => toggleQuick(qf) }));
+  const edited = editing ? byId.get(editing) : undefined;
 
   return (
-    <FilterShell
-      className="cols flt flt--groups"
-      matched={matched.length}
-      total={baseActivities.length}
-      noun="activities"
-      chips={chips}
-      onClearAll={() => onChange((prev) => ({ ...emptyFilterState(), combine: prev.combine }))}
-      quick={quickFilters}
-      combine={(
-        <div className="flt__match">
-          <span className="flt__match-label">An activity must match</span>
-          <div className="flt__modes" role="group" aria-label="How the filters combine">
-            <button type="button" className={combine === 'all' ? 'on' : ''} aria-pressed={combine === 'all'} onClick={() => onChange((prev) => ({ ...prev, combine: 'all' }))} title="AND: every active filter must match">All</button>
-            <button type="button" className={combine === 'any' ? 'on' : ''} aria-pressed={combine === 'any'} onClick={() => onChange((prev) => ({ ...prev, combine: 'any' }))} title="OR: matching any one of the active filters is enough">Any</button>
-          </div>
-          <span className="flt__match-label">of these filters</span>
-        </div>
-      )}
+    <FilterRules
       presets={(
         <PresetBar
           noun="filter"
@@ -158,105 +116,40 @@ export function FiltersPanel({ model, baseActivities, state, onChange }: Filters
           saveDisabled={activeFields.length === 0}
           onApply={(id) => {
             const kept = saved.find((p) => p.id === id)?.data as SerializedFilters | undefined;
-            if (kept) onChange(deserializeFilters(kept));
+            if (kept) { onChange(deserializeFilters(kept)); setEditing(null); }
           }}
           onSave={(name) => saveUserPreset('filters', name, serializeFilters(state))}
           onDelete={removeUserPreset}
         />
       )}
-      advanced={(
+      tip="Conditions an activity must meet. Click a filter to change it; pick a field below to add one."
+      hint={baseActivities.length === 0 ? null : activeFields.length > 0 && <div className="flt__hint"><b>{matched.length.toLocaleString()}</b> of {baseActivities.length.toLocaleString()} activities{matched.length === 0 && <span className="flt__none"> — no matches</span>}</div>}
+      quick={quick.length > 0 && (
+        <div className="fsh__quick" role="group" aria-label="Quick filters">
+          {quick.map((qf) => (
+            <button key={qf.id} type="button" className={`fsh__pill${quickActive(qf) ? ' on' : ''}`} aria-pressed={quickActive(qf)} onClick={() => toggleQuick(qf)}>{qf.label}</button>
+          ))}
+        </div>
+      )}
+      rows={rowIds.map((id) => ({ id, field: byId.get(id)!.label, summary: activeIds.has(id) ? summarize(byId.get(id)!, state) : '', dim: !activeIds.has(id) }))}
+      onRemove={(id) => { onChange((prev) => ({ ...clearField(prev, id), order: (prev.order ?? []).filter((x) => x !== id) })); if (editing === id) setEditing(null); }}
+      onReorder={setOrder}
+      onClearAll={() => { onChange((prev) => ({ ...emptyFilterState(), combine: prev.combine })); setEditing(null); }}
+      editingId={editing}
+      onEdit={setEditing}
+      editorTitle={edited ? `Edit ${edited.label}` : 'Edit filter'}
+      editor={edited && (
         <>
-      <SearchRow
-        collapsed={groupNames.length > 0 && groupNames.every((g) => closedGroups.has(g))}
-        onCollapse={() => { setClosedGroups(new Set(groupNames)); setOpenFields(new Set()); }}
-        onExpand={() => setClosedGroups(new Set())}
-      >
-        <input className="cols__search" type="search" placeholder="Search fields…" value={search} onChange={(e) => setSearch(e.target.value)} />
-      </SearchRow>
-
-      {[...FILTER_GROUPS, ...new Set(visibleFields.map((f) => f.group).filter((g) => !(FILTER_GROUPS as readonly string[]).includes(g)))].map((group) => {
-        const inGroup = visibleFields.filter((f) => f.group === group);
-        const shown = q ? inGroup.filter((f) => hit(f.label)) : inGroup;
-        if (shown.length === 0) return null;
-        const open = q ? true : !closedGroups.has(group);
-        const on = inGroup.filter((f) => fieldActive(f, state)).length;
-        return (
-          <div className="cols__group" key={group}>
-            <div className="cols__group-head">
-              <button type="button" className="cols__group-toggle" onClick={() => toggleGroup(group)} aria-expanded={open}>
-                <IconSectionChevron className="section-chevron" />
-                <span className="cols__group-name">{group}</span>
-                <span className="cols__count">{on > 0 ? `${on} active · ` : ''}{inGroup.length}</span>
-              </button>
-            </div>
-            {open && <div className="cols__group-body">{shown.map((f) => (
-              <FieldCard
-                key={f.id}
-                bare={inGroup.length === 1 && group.toLowerCase().startsWith(f.label.toLowerCase())}
-                field={f}
-                fields={fields}
-                base={baseActivities}
-                state={state}
-                open={openFields.has(f.id) || !!q}
-                onToggle={() => toggleOpen(f.id)}
-                onChange={onChange}
-                onClear={() => clear(f.id)}
-              />
-            ))}</div>}
-          </div>
-        );
-      })}
+          {edited.kind === 'text' && <TextBody field={edited} state={state} onChange={onChange} />}
+          {edited.kind === 'select' && <SelectBody field={edited} fields={fields} base={baseActivities} state={state} onChange={onChange} />}
+          {(edited.kind === 'number' || edited.kind === 'date') && <RangeBody field={edited} state={state} onChange={onChange} />}
         </>
       )}
+      combine={<LogicRow count={rowIds.length} match={state.combine ?? 'all'} logic={state.logic ?? ''} onChange={(p) => onChange((prev) => ({ ...prev, ...(p.match ? { combine: p.match } : {}), ...(p.logic !== undefined ? { logic: p.logic } : {}) }))} />}
+      fields={visibleFields.map((f) => ({ id: f.id, label: f.label, group: f.group }))}
+      picked={activeIds}
+      onPick={(f) => { onChange((prev) => ({ ...prev, order: filterRuleIds(fields, prev).includes(f.id) ? prev.order : [...filterRuleIds(fields, prev), f.id] })); setEditing(f.id); }}
     />
-  );
-}
-
-interface FieldCardProps {
-  /** The group's only field, when its name just repeats the group's (Resources › Resource): the row is left out and the field is always open. */
-  bare?: boolean;
-  field: FilterFieldDef;
-  fields: FilterFieldDef[];
-  base: Activity[];
-  state: FieldFilterState;
-  open: boolean;
-  onToggle: () => void;
-  onChange: SetState;
-  onClear: () => void;
-}
-
-function FieldCard({ bare, field: f, fields, base, state, open, onToggle, onChange, onClear }: FieldCardProps) {
-  const active = fieldActive(f, state);
-  if (bare) {
-    return (
-      <div className={`flt__field flt__field--bare${active ? ' active' : ''}`}>
-        <div className="flt__field-body">
-          {f.kind === 'text' && <TextBody field={f} state={state} onChange={onChange} />}
-          {f.kind === 'select' && <SelectBody field={f} fields={fields} base={base} state={state} onChange={onChange} />}
-          {(f.kind === 'number' || f.kind === 'date') && <RangeBody field={f} state={state} onChange={onChange} />}
-          {active && f.kind !== 'select' && <button type="button" className="cols__link" onClick={onClear}>Clear</button>}
-        </div>
-      </div>
-    );
-  }
-  return (
-    <div className={`flt__field${active ? ' active' : ''}`}>
-      <div className="flt__field-head">
-        <button type="button" className="flt__field-toggle" onClick={onToggle} aria-expanded={open}>
-          <span className="flt__caret"><IconExpander open={open} /></span>
-          <span className="flt__field-label">{f.label}</span>
-          {active && <span className="flt__field-sum">{summarize(f, state)}</span>}
-        </button>
-        {active && <button type="button" className="cols__icon cols__icon--remove" onClick={onClear} aria-label={`Clear ${f.label}`} title="Clear"><IconRemove /></button>}
-      </div>
-      {open && (
-        <div className="flt__field-body">
-          {f.kind === 'text' && <TextBody field={f} state={state} onChange={onChange} />}
-          {f.kind === 'select' && <SelectBody field={f} fields={fields} base={base} state={state} onChange={onChange} />}
-          {(f.kind === 'number' || f.kind === 'date') && <RangeBody field={f} state={state} onChange={onChange} />}
-        </div>
-      )}
-    </div>
   );
 }
 

@@ -1,4 +1,4 @@
-import { IconRemove } from '../icons';
+import { IconRemove, IconChevronDown } from '../icons';
 import { useState } from 'react';
 import { useDismiss } from '../useDismiss';
 import type { ScheduleModel } from '../../schedule/types';
@@ -38,7 +38,7 @@ export function BaselineMenu({ model }: { model: ScheduleModel }) {
   return (
     <span className="schedule-toolbar__edit-wbs baseline-menu" ref={boxRef}>
       <button type="button" className={`btn btn--small${chosen !== null ? ' primary' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)} title="Save the programme as a baseline, and choose the baseline it is shown against">
-        Baselines ▾
+        Baselines <IconChevronDown width={14} height={14} />
       </button>
       {open && (
         <div className="schedule-toolbar__edit-panel" role="group" aria-label="Baselines" style={{ minWidth: 320 }}>

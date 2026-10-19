@@ -2,7 +2,6 @@ import { useMemo } from 'react';
 import { ListConfig } from './ListConfig';
 import { ColumnsPanel } from './schedule/ColumnsPanel';
 import { GroupPanel } from './schedule/GroupPanel';
-import { SortPanel } from './schedule/SortPanel';
 import { InputsFilters } from './InputDetails';
 import { BUILT_IN_GROUPS, DEFAULT_INPUT_COLUMNS, INPUT_COLUMNS, useInputDetailsStore } from '../state/inputDetailsStore';
 
@@ -24,31 +23,15 @@ export function InputsTools({ onCollapseAll, onExpandAll }: { onCollapseAll: () 
     () => [...BUILT_IN_GROUPS.filter((g) => g.id !== 'none').map((g) => ({ ...g, group: 'File' })), ...fields.map((f) => ({ id: f, label: f, group: DETAILS }))],
     [fields],
   );
-  const sortFields = useMemo(() => catalog.filter((c) => c.id !== 'bounds'), [catalog]);
   const filterCount = Object.keys(filters).length;
 
   return (
     <ListConfig
       id="files"
       label="Files"
-      badges={{ filters: filterCount, sort: sortRules.length, group: groupRules.length }}
+      badges={{ filters: filterCount, group: groupRules.length }}
       panels={{
         filters: <InputsFilters />,
-        sort: (
-          <SortPanel
-            bare
-            fields={sortFields}
-            rules={sortRules}
-            onChange={setSortRules}
-            onClose={() => {}}
-            presets={[
-              { label: 'Name', rules: [{ field: 'name', direction: 'up' }] },
-              { label: 'Type', rules: [{ field: 'type', direction: 'up' }, { field: 'name', direction: 'up' }] },
-              { label: 'Most items', rules: [{ field: 'items', direction: 'down' }] },
-              { label: 'Largest', rules: [{ field: 'size', direction: 'down' }] },
-            ]}
-          />
-        ),
         group: (
           <GroupPanel
             bare
@@ -72,6 +55,7 @@ export function InputsTools({ onCollapseAll, onExpandAll }: { onCollapseAll: () 
               { id: 'sizes', label: 'Sizes', ids: ['type', 'name', 'items', 'size'] },
               { id: 'details', label: 'Details', ids: ['type', 'name', ...fields] },
             ]}
+            sort={{ rules: sortRules, onChange: setSortRules, canSort: (id) => id !== 'bounds' }}
             groupOrder={['File', DETAILS]}
             closedGroups={[]}
           />

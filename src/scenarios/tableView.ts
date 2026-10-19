@@ -1,3 +1,4 @@
+import { combineTests } from '../viewer/filterLogic';
 import type { GroupRule } from '../components/schedule/GroupPanel';
 import type { SortRule } from '../components/schedule/SortPanel';
 
@@ -36,6 +37,9 @@ export interface ScnTableConfig {
   /** Shown column ids in order; null = every column (the default). */
   columns: string[] | null;
   filters: ScnFilterRule[];
+  /** How the filters combine, by their numbers ("(1 and 2) or 3"); empty: all / any of them, as `filterMatch` says. */
+  filterLogic?: string;
+  filterMatch?: 'all' | 'any';
   groups: GroupRule[];
   /** What the groups are ordered by: their name (the default) or their highest Step. The group rule's direction applies. */
   groupOrder?: 'name' | 'maxStep';
@@ -98,8 +102,12 @@ export type ViewItem<T> =
 /** Filters (all rules must hold), sorts and groups `items`. With no sort or
     group rules the items keep their order — the pour order. */
 export function applyView<T>(items: T[], cfg: ScnTableConfig, valueOf: (item: T, field: string) => string, collapsed: Set<string>): ViewItem<T>[] {
-  const active = cfg.filters.filter((f) => f.field && (!SCN_OPS.find((o) => o.id === f.op)?.needsValue || f.value !== ''));
-  let list = active.length ? items.filter((it) => active.every((f) => matches(valueOf(it, f.field), f.op, f.value))) : items;
+  const keep = combineTests(
+    cfg.filters.map((f) => (f.field && (!SCN_OPS.find((o) => o.id === f.op)?.needsValue || f.value !== '') ? (it: T) => matches(valueOf(it, f.field), f.op, f.value) : null)),
+    cfg.filterMatch ?? 'all',
+    cfg.filterLogic ?? '',
+  );
+  let list = keep ? items.filter(keep) : items;
   if (cfg.sorts.length) {
     list = [...list].sort((a, b) => {
       for (const s of cfg.sorts) {

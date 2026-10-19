@@ -2,7 +2,7 @@ import { FEATURES } from '../features';
 import { useExternalTable, pseudoObjects, parseScope, scopeOf } from '../datasources/externalRows';
 import { useDataSourcesStore, tableOf } from '../datasources/store';
 import { chooseDataFiles, addDroppedFiles, dragHasFiles } from '../datasources/addFiles';
-import { objectsForRows, rowsForObjects } from '../datasources/idMatch';
+import { computeLinks, objectsForRows, rowsForObjects, type GroupLinks } from '../datasources/matchGroups';
 import { DockToolbar } from './Dock';
 import { configFocusProps } from '../state/listConfigStore';
 import { DataTableListConfig } from './DataTablePanel';
@@ -21,10 +21,14 @@ import { conditionTest } from '../viewer/searchSets';
 import { matchColorRules } from './schedule/ColorPanel';
 import { newRuleId } from './schedule/FieldRules';
 import { queryMatcher } from '../schedule/search';
-import { useListQuery } from '../state/tableSearchStore';
+import { useListLevel, useListQuery, useTableSearchStore } from '../state/tableSearchStore';
 import { SEVERAL } from '../viewer/twinMatch';
 import { downloadCsv } from '../utils/csv';
 import { useTwin } from './useTwin';
+import { useIndexTick } from './modelFields';
+import { combineTests } from '../viewer/filterLogic';
+import { LINK_GROUP_FIELD, useVirtualFields } from './useVirtualFields';
+import { SET_FOLDER, setFolderOf } from '../viewer/setFolderValues';
 import { withUnit } from '../viewer/units';
 import { ExpandCollapseToggle } from './ExpandCollapseToggle';
 import { useDockStore } from '../state/dockStore';
@@ -59,7 +63,11 @@ type Item =
 
 /** A column's header: the built-in's name, or the property's (its set in the tooltip). */
 const labelOf = (col: string): string =>
-  col.startsWith(TWIN_PREFIX)
+  col === LINK_GROUP_FIELD
+    ? 'Link group'
+    : col.startsWith(SET_FOLDER)
+    ? `Set › ${setFolderOf(col) || '(no folder)'}`
+    : col.startsWith(TWIN_PREFIX)
     ? `Twin · ${labelOf(col.slice(TWIN_PREFIX.length))}`
     : BUILTIN.find((b) => b.id === col)?.label ?? (col.includes('.') ? col.slice(col.indexOf('.') + 1) : col);
 
@@ -131,7 +139,9 @@ export function ModelDataTable() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const hiddenModelIds = useModelsStore((s) => s.hiddenModelIds);
-  const { open, columns, widths, filters: conditions, filterMatch, groupRules, sortRules, colorRules, totals, aggs, scope, setScope, pinnedKeys, setPinned, setWidth, setColumns, patch, configure, presets, applyPreset } = useDataTableStore();
+  const { open, columns, widths, filters: conditions, filterMatch, filterLogic, groupRules, sortRules, colorRules, totals, aggs, scope, setScope, pinnedKeys, setPinned, setWidth, setColumns, patch, configure, presets, applyPreset } = useDataTableStore();
+  // What the set and Link Group fields read from (their values change with the sets, the groups and the models).
+  const virtualVersion = useVirtualFields();
   // An external table (CSV, Excel, SQLite) instead of the model's objects: its rows are pseudo-objects, one property per column.
   const ext = useExternalTable(scope);
   const lab = (c: string) => (ext ? c : labelOf(c));
@@ -153,13 +163,17 @@ export function ModelDataTable() {
   const [extFilter, setExtFilter] = useState<Set<number> | null>(null);
   const extScopeKey = ext ? `${ext.source.id}|${ext.name}` : '';
   useEffect(() => { setExtFilter(null); }, [extScopeKey]);
-  const extRef = useRef({ ext, triggers });
-  extRef.current = { ext, triggers };
+  // What the match groups couple (rows ↔ objects), for the triggers.
+  const indexTick = useIndexTick();
+  const links = useMemo<GroupLinks[]>(() => (ext ? computeLinks(ext.table, engine.getIndexes(), ext.groups) : []), [ext?.table, ext?.groups, engine, indexTick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const extRef = useRef({ ext, triggers, links });
+  extRef.current = { ext, triggers, links };
   const extEcho = useRef('');
 
   // The words come from the main header's search box (it works on the list that is active).
   const search = useListQuery('datatable');
   const [collapsed, setCollapsed] = useState<Set<string>>(new Set());
+  const groupLevel = useListLevel('datatable');
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [scrollTop, setScrollTop] = useState(0);
   // The totals row's "how to sum up" menu, opened by clicking a total.
@@ -257,8 +271,10 @@ export function ModelDataTable() {
       }
       const t = conditionTest(c);
       return t && ((r: Row) => t(r.el));
-    }).filter((t): t is (r: Row) => boolean => t !== null);
-    if (tests.length) list = list.filter((r) => (filterMatch === 'all' ? tests.every((t) => t(r)) : tests.some((t) => t(r))));
+    });
+    // The rules combine as the formula says ("(1 and 2) or 3"), else all / any of them.
+    const keep = combineTests(tests, filterMatch, filterLogic);
+    if (keep) list = list.filter(keep);
     if (sortRules.length) {
       list = [...list].sort((a, b) => {
         for (const rule of sortRules) {
@@ -269,7 +285,7 @@ export function ModelDataTable() {
       });
     }
     return list;
-  }, [scoped, search, columns, conditions, filterMatch, sortRules]);
+  }, [scoped, search, columns, conditions, filterMatch, filterLogic, sortRules, virtualVersion]);
 
   // Nested groups, one level per Group rule (outermost first).
   const items = useMemo<Item[]>(() => {
@@ -298,7 +314,7 @@ export function ModelDataTable() {
     };
     walk(shown, 0, '');
     return out;
-  }, [shown, groupRules, collapsed]);
+  }, [shown, groupRules, collapsed, virtualVersion]);
 
   // Number columns: every value (of the first 2,000 that have one) is a number.
   const numeric = useMemo(() => {
@@ -315,7 +331,7 @@ export function ModelDataTable() {
       if (ok && seen > 0) out.add(c);
     }
     return out;
-  }, [rows, columns]);
+  }, [rows, columns, virtualVersion]);
   const aggOf = (c: string): DataAgg => {
     const k = aggs[c];
     if (k && (numeric.has(c) || TEXT_AGGS.includes(k))) return k;
@@ -335,8 +351,12 @@ export function ModelDataTable() {
   const groupCommand = useDataTableStore((s) => s.groupCommand);
   useEffect(() => {
     if (!groupCommand) return;
-    if (groupCommand.kind === 'expand') { setCollapsed(new Set()); return; }
-    // Every group key at every level (collapsed ones hide their children from `items`).
+    useTableSearchStore.getState().setListLevel('datatable', '');
+    setCollapsed(groupCommand.kind === 'expand' ? new Set() : groupKeys());
+  }, [groupCommand]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /** Every group key at every level (collapsed ones hide their children from `items`); with `only`, just that level's. */
+  function groupKeys(only?: number) {
     const keys = new Set<string>();
     const walk = (list: Row[], level: number, path: string) => {
       const rule = groupRules[level];
@@ -347,13 +367,20 @@ export function ModelDataTable() {
         (groups.get(k) ?? groups.set(k, []).get(k)!).push(r);
       }
       for (const [label, gr] of groups) {
-        keys.add(`${path}/${label}`);
-        walk(gr, level + 1, `${path}/${label}`);
+        if (only === undefined || only === level) keys.add(`${path}/${label}`);
+        if (only === undefined || level < only) walk(gr, level + 1, `${path}/${label}`);
       }
     };
     walk(shown, 0, '');
-    setCollapsed(keys);
-  }, [groupCommand]); // eslint-disable-line react-hooks/exhaustive-deps
+    return keys;
+  }
+  // The header's ‹ 2 › stepper: show the groups down to that level, the ones at it closed ('' = All open).
+  const levelSeen = useRef('');
+  useEffect(() => {
+    if (groupLevel === levelSeen.current) return;
+    levelSeen.current = groupLevel;
+    setCollapsed(groupLevel === '' ? new Set() : groupKeys(Number(groupLevel)));
+  }, [groupLevel]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rowItemIndexes = useMemo(() => items.flatMap((it, i) => (it.kind === 'row' ? [i] : [])), [items]);
 
@@ -371,16 +398,15 @@ export function ModelDataTable() {
       };
       const fromTable = (keys: Set<string>) => [...keys].sort().join('|') === lastFromTable.current;
       const onHighlight = (map: OBC.ModelIdMap) => {
-        const { ext: x, triggers: t } = extRef.current;
+        const { ext: x, triggers: t, links: lk } = extRef.current;
         if (x) {
           // An external table: the objects picked in 3D narrow it to their rows (the ID Match says which), unless this is the
           // selection the table just made itself.
           if (sigOf(map) === extEcho.current || !t.toGrid) return;
-          const indexes = engine.getIndexes();
-          const objects: ElementSummary[] = [];
-          for (const [modelId, ids] of Object.entries(map)) for (const id of ids) { const e = indexes.get(modelId)?.elements.get(id); if (e) objects.push(e); }
-          if (!objects.length) { setExtFilter(null); return; }
-          const hit = rowsForObjects(x.match, x.table, objects);
+          const objectKeys: string[] = [];
+          for (const [modelId, ids] of Object.entries(map)) for (const id of ids) objectKeys.push(`${modelId}:${id}`);
+          if (!objectKeys.length) { setExtFilter(null); return; }
+          const hit = rowsForObjects(lk, objectKeys);
           setExtFilter(hit);
           if (t.selectInGrid) setSelected(new Set([...hit].map((i) => `ext:${i}`)));
           return;
@@ -425,12 +451,12 @@ export function ModelDataTable() {
     lastFromTable.current = [...keys].sort().join('|');
     setSelected(keys);
     if (keys.size === 0) { await engine.highlighter.clear('select'); return; }
-    const { ext: x, triggers: t } = extRef.current;
+    const { ext: x, triggers: t, links: lk } = extRef.current;
     if (x) {
-      // An external table: the rows picked select the objects the ID Match couples them to (when the trigger is on).
+      // An external table: the rows picked select the objects the match groups couple them to (when the trigger is on).
       if (!t.toModel) return;
       const picked = [...keys].map((k) => Number(k.slice(4))).filter((i) => Number.isFinite(i));
-      const ids = objectsForRows(x.match, x.table, picked, engine.getIndexes());
+      const ids = objectsForRows(lk, picked);
       if (!Object.keys(ids).length) return;
       extEcho.current = sigOf(ids);
       if (t.isolate) await engine.isolateElements(ids, t.reframe);
@@ -541,16 +567,21 @@ export function ModelDataTable() {
           disabled={!!pinnedKeys}
           onChange={(e) => { if (e.target.value === ADD_DATA) void chooseDataFiles(); else setScope(e.target.value as DataTableScope); }}
           title="What the table lists: the model's objects, or the rows of external data (CSV, Excel, SQLite)"
+          aria-label="What the table lists"
         >
           <option value="all">All objects</option>
           <option value="visible">Visible objects</option>
           <option value="selected">Selected objects</option>
-          {FEATURES.dataSources && sources.map((src) => {
-            const names = Object.keys(sourceTables[src.id] ?? {});
-            if (!names.length) return <option key={src.id} value={scopeOf(src.id, tableOf(src, undefined)?.name ?? '')} disabled>{src.name} (not read)</option>;
-            return names.map((n) => <option key={`${src.id}|${n}`} value={scopeOf(src.id, n)}>{names.length > 1 ? `${src.name} › ${n}` : src.name}</option>);
-          })}
-          {FEATURES.dataSources && <option value={ADD_DATA}>＋ Add data file…</option>}
+          {FEATURES.dataSources && (
+            <optgroup label="External data">
+              {sources.map((src) => {
+                const names = Object.keys(sourceTables[src.id] ?? {});
+                if (!names.length) return <option key={src.id} value={scopeOf(src.id, tableOf(src, undefined)?.name ?? '')} disabled>{src.name} (not read)</option>;
+                return names.map((n) => <option key={`${src.id}|${n}`} value={scopeOf(src.id, n)}>{names.length > 1 ? `${src.name} › ${n}` : src.name}</option>);
+              })}
+              <option value={ADD_DATA}>＋ Add data file…</option>
+            </optgroup>
+          )}
         </select>
         <button
           type="button"
@@ -575,7 +606,7 @@ export function ModelDataTable() {
               className="btn btn--small"
               collapsed={items.some((x) => x.kind === 'group') && items.every((x) => x.kind !== 'row')}
               onCollapse={() => useDataTableStore.getState().setGroupsCollapsed(true)}
-              onExpand={() => setCollapsed(new Set())}
+              onExpand={() => { setCollapsed(new Set()); useTableSearchStore.getState().setListLevel('datatable', ''); }}
             />
           </span>
         )}

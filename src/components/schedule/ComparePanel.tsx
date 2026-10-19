@@ -7,6 +7,7 @@ import { useBaselinesOf } from '../../state/baselines';
 import { dbScheduleId, loadProgramme } from '../../state/projectDbStore';
 import type { ScheduleModel } from '../../schedule/types';
 import type { MilestoneDriver } from '../../schedule/milestoneDrivers';
+import { IconExpander } from '../icons';
 
 export function ComparePanel({ current }: { current: ScheduleModel }) {
   const schedules = useScheduleStore((s) => s.schedules);
@@ -192,7 +193,7 @@ function MilestoneDrivers({ rows }: { rows: MilestoneDriver[] }) {
         {rows.map((r) => (
           <Fragment key={r.code}>
             <tr className={r.slipDays > 0 ? 'critical' : ''} onClick={() => setOpen(open === r.code ? null : r.code)} style={{ cursor: 'pointer' }}>
-              <td>{open === r.code ? '▾' : '▸'}</td>
+              <td><IconExpander open={open === r.code} width={14} height={14} /></td>
               <td title={r.name}>{r.code}<div style={{ color: 'var(--text-dim)', fontSize: 11 }}>{r.name}</div></td>
               <td>{r.baseDate.toLocaleDateString()}</td>
               <td>{r.currDate.toLocaleDateString()}</td>

@@ -30,7 +30,7 @@ import { useModelsStore } from '../state/modelsStore';
     for the app's whole lifetime — see App.tsx, which toggles CSS visibility
     rather than unmounting it when switching tabs. `paneActive`: the Models
     page is showing, so its tabs go in the side pane. */
-export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, centerShown, picker, search }: { /** The global search, at the right end of the toolbar. */ search?: React.ReactNode; /** The button that chooses what the main panel shows (at the start of the toolbar). */ picker?: ReactNode; layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean; /** A view that takes the place of the 3D view (the Programmes views), with the same docks around it. */ center?: ReactNode; centerShown?: boolean }) {
+export function ViewerWorkspace({ layout, panel, overlay, paneActive, backgroundPanels, center, centerShown, picker, search }: { /** The Models page's panels are available beside another main window (the Programmes views), not only on the Models page. */ backgroundPanels?: boolean;/** The global search, at the right end of the toolbar. */ search?: React.ReactNode; /** The button that chooses what the main panel shows (at the start of the toolbar). */ picker?: ReactNode; layout: ViewerLayout; panel?: ReactNode; overlay?: ReactNode; paneActive?: boolean; /** A view that takes the place of the 3D view (the Programmes views), with the same docks around it. */ center?: ReactNode; centerShown?: boolean }) {
   const engine = useViewerEngine();
   // The toolbar row grows when its tools wrap onto a second row: the docks' headers and the side pane's tab bar follow
   // it (--toolbar-row-h), so the bars along the top stay level. Hidden (another page showing): the default applies.
@@ -140,7 +140,7 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, center, ce
       <NPanel />
       <DockSideView side="right" />
       {panel}
-      {!inSequence && paneActive && <ModelConfigPanel />}
+      {!inSequence && (paneActive ? <ModelConfigPanel /> : backgroundPanels && <ModelConfigPanel background />)}
       {/* Models > Colour applies while the Models page shows (4D colours its own way). */}
       {!inSequence && paneActive && <ModelColorSync />}
       </div>

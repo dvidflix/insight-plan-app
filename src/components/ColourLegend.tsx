@@ -10,6 +10,8 @@ import { legendRows, valuesOfRow, type LegendRow } from '../viewer/colourLegend'
 import { useModelsStore } from '../state/modelsStore';
 import { orderValues, useColourOrderStore } from '../state/colourOrderStore';
 import { usePersistedState } from '../utils/persistedState';
+import { IconExpander } from './icons';
+import { DEFAULT_SCALE, scaleCss, scaleRange } from '../viewer/colourScale';
 
 
 const MAX_ROWS = 40;
@@ -32,7 +34,7 @@ export function ColourLegend() {
 
 function LegendBlock({ view, title }: { view: ViewKey; title: string | null }) {
   const engine = useViewerEngine();
-  const { field, colors, others } = useModelColorStore((s) => s.views[view]);
+  const { field, colors, others, mode, scale } = useModelColorStore((s) => s.views[view]);
   const patch = useModelColorStore((s) => s.patch);
   const sets = useSearchSetsStore((s) => s.sets);
   const fields = useModelFields();
@@ -94,13 +96,31 @@ function LegendBlock({ view, title }: { view: ViewKey; title: string | null }) {
     <div className="colour-legend" role="group" aria-label={`Colour legend${title ? `, ${title}` : ''}`}>
       <div className="colour-legend__head">
         <button type="button" className="colour-legend__toggle" onClick={() => setOpen(!open)} aria-expanded={open} title={open ? 'Collapse the legend' : 'Show the legend'}>
-          <span aria-hidden="true">{open ? '▾' : '▸'}</span>
+          <IconExpander open={open} width={14} height={14} />
           <span className="colour-legend__title">{title ? `${title}: ` : ''}{label}</span>
         </button>
         <span className="colour-legend__n" title="Objects coloured">{total.toLocaleString()}</span>
         <button type="button" className="colour-legend__close" onClick={() => patch(view, { enabled: false })} title="Turn colouring off" aria-label="Turn colouring off">×</button>
       </div>
-      {open && (
+      {open && mode === 'grade' && (() => {
+        const sc = scale ?? DEFAULT_SCALE;
+        const range = scaleRange(sc, counted.map((v) => v.value));
+        const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 2 });
+        return (
+          <div className="colour-legend__rows" style={{ padding: '6px 8px' }}>
+            {range ? (
+              <>
+                <div style={{ height: 12, borderRadius: 3, border: '1px solid var(--border)', background: scaleCss(sc) }} />
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 2 }}>
+                  <span>{fmt(range.min)}</span>
+                  <span>{fmt(range.max)}</span>
+                </div>
+              </>
+            ) : <div className="colour-legend__empty">No numbers in this property.</div>}
+          </div>
+        );
+      })()}
+      {open && mode !== 'grade' && (
         <div className="colour-legend__rows">
           {rows.length === 0 && <div className="colour-legend__empty">Nothing to colour yet.</div>}
           {rows.slice(0, MAX_ROWS).map((r) => (

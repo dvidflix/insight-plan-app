@@ -1,6 +1,6 @@
 import type { DataTableScope } from '../state/dataTableStore';
 import type { ElementSummary } from '../viewer/types';
-import { EMPTY_MATCH, type IdMatch } from './idMatch';
+import type { MatchGroup } from './matchGroups';
 import type { DataTable } from './parsers';
 import { tableOf, useDataSourcesStore, type DataSourceMeta } from './store';
 
@@ -14,6 +14,7 @@ export function parseScope(scope: string): { sourceId: string; table: string } |
   return bar < 0 ? null : { sourceId: rest.slice(0, bar), table: rest.slice(bar + 1) };
 }
 
+const NO_GROUPS: MatchGroup[] = [];
 const cache = new WeakMap<DataTable, ElementSummary[]>();
 
 /** The rows of a table as pseudo-objects (the row's place in `localId`, each column a property under its own name), so the Data
@@ -35,7 +36,7 @@ export interface ExternalTable {
   source: DataSourceMeta;
   name: string;
   table: DataTable;
-  match: IdMatch;
+  groups: MatchGroup[];
 }
 
 /** The external table the scope names, once its source has been read; null for the model's objects. */
@@ -46,5 +47,5 @@ export function useExternalTable(scope: string): ExternalTable | null {
   if (!parsed || !source || !tables) return null;
   const table = tables[parsed.table] ?? tableOf(source, tables)?.table;
   if (!table) return null;
-  return { source, name: tables[parsed.table] ? parsed.table : tableOf(source, tables)!.name, table, match: source.matches?.[parsed.table] ?? EMPTY_MATCH };
+  return { source, name: tables[parsed.table] ? parsed.table : tableOf(source, tables)!.name, table, groups: source.matchGroups?.[parsed.table] ?? NO_GROUPS };
 }

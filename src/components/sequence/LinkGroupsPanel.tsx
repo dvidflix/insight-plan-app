@@ -48,7 +48,7 @@ export function exportLinkGroupMatches(model: ScheduleModel, elements: ElementSu
   );
 }
 
-const OPS: { value: CompareOp; label: string }[] = [
+export const OPS: { value: CompareOp; label: string }[] = [
   { value: 'equals', label: 'Equals' },
   { value: 'notEquals', label: 'Not equals' },
   { value: 'contains', label: 'Contains' },
@@ -227,7 +227,7 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
 
 /** A block of the editor: a thin title bar with its "+ add" button, then a table-like list of one-line rows under
     column headings. */
-function GeSection({ id, title, count, heads, cols, onAdd, addLabel = '+ condition', children }: { id: string; title: string; count: number; heads: string[]; cols: string; onAdd: () => void; addLabel?: string; children: ReactNode }) {
+export function GeSection({ id, title, count, heads, cols, onAdd, addLabel = '+ condition', children }: { id: string; title: string; count: number; heads: string[]; cols: string; onAdd: () => void; addLabel?: string; children: ReactNode }) {
   const [closed, setClosed] = usePersistedState<string[]>('groupEditor.closed', []);
   const open = !closed.includes(id);
   return (
@@ -250,13 +250,13 @@ function GeSection({ id, title, count, heads, cols, onAdd, addLabel = '+ conditi
   );
 }
 
-const ConjSelect = ({ value, first, onChange }: { value: Conjunction; first: boolean; onChange: (c: Conjunction) => void }) =>
+export const ConjSelect = ({ value, first, onChange }: { value: Conjunction; first: boolean; onChange: (c: Conjunction) => void }) =>
   first ? <span /> : (
     <CellPick value={value} options={[{ value: 'or', label: 'Or' }, { value: 'and', label: 'And' }]} onChange={(v) => onChange(v as Conjunction)} title="And / Or" />
   );
 
 /** Grid columns of each block's rows (and its headings). */
-const GE_COLS = {
+export const GE_COLS = {
   task: '44px minmax(0, 1.5fr) 84px minmax(0, 1fr) 26px',
   object: '44px minmax(0, 1.5fr) 84px minmax(0, 1fr) 68px 26px',
   match: '44px minmax(0, 1fr) 10px minmax(0, 1fr) 46px 26px',
@@ -477,7 +477,7 @@ function GroupEditor({
 
 /** Separators for a field that holds several values: the usual ones to switch on, any other typed in (Enter). */
 const COMMON_SEPARATORS = ['||', '|', ',', ';', '/'];
-function SeparatorsEditor({ label, value, onChange }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
+export function SeparatorsEditor({ label, value, onChange }: { label: string; value: string[]; onChange: (v: string[]) => void }) {
   const [draft, setDraft] = useState('');
   const toggle = (sep: string) => onChange(value.includes(sep) ? value.filter((x) => x !== sep) : [...value, sep]);
   const add = () => {

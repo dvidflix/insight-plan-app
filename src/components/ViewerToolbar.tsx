@@ -170,7 +170,7 @@ function Menu({ anchor, items, onClose, sub }: { anchor: DOMRect; items: MenuIte
   );
 }
 
-/** A button with a ▾ beside it for its menu; `onClick` null: the button opens the menu too. */
+/** A button with a chevron beside it for its menu; `onClick` null: the button opens the menu too. */
 function Split({ icon, tip, menuTip, active, disabled, onClick, items }: { icon: IconC; tip: string; menuTip: string; active?: boolean; disabled?: boolean; onClick: (() => void) | null; items: MenuItem[] }) {
   const [open, setOpen] = useState<DOMRect | null>(null);
   const root = useRef<HTMLSpanElement>(null);

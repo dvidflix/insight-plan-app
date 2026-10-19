@@ -73,7 +73,7 @@ const OBJECT_BUILTIN_KEYS = new Set(['_category', '_name', '_guid', '_file']);
 export function objectFieldLabel(key: string): string {
   if (key === '_category') return 'IFC class';
   if (key === '_name') return 'Name';
-  if (key === '_guid') return 'GUID';
+  if (key === '_guid') return 'GlobalId';
   if (key === '_file') return 'File name';
   return key;
 }
@@ -127,7 +127,7 @@ export function objectFieldValue(el: ElementSummary, propertySet: string, attrib
   return String(el.props[`${propertySet}.${attribute}`] ?? '');
 }
 
-function evalOp(actual: string, expected: string, op: CompareOp, caseSensitive = false): boolean {
+export function evalOp(actual: string, expected: string, op: CompareOp, caseSensitive = false): boolean {
   const a = caseSensitive ? actual : actual.toLowerCase();
   const b = caseSensitive ? expected : expected.toLowerCase();
   switch (op) {
@@ -147,7 +147,7 @@ function evalOp(actual: string, expected: string, op: CompareOp, caseSensitive =
   }
 }
 
-function evalChain<T extends { conj: Conjunction }>(rules: T[], test: (rule: T) => boolean): boolean {
+export function evalChain<T extends { conj: Conjunction }>(rules: T[], test: (rule: T) => boolean): boolean {
   if (rules.length === 0) return true;
   let result = test(rules[0]);
   for (let i = 1; i < rules.length; i++) {
@@ -194,8 +194,8 @@ export function joinKeys(parts: string[][], cap = 500): string[] {
     previous cluster (all its fields must hold for the same task/object pair
     at once, i.e. a composite-key join); an 'or' rule (or the first rule)
     starts a new independent cluster. A pair links if ANY cluster matches. */
-function clusterMatchRules(rules: MatchRule[]): MatchRule[][] {
-  const clusters: MatchRule[][] = [];
+export function clusterMatchRules<T extends { conj: Conjunction }>(rules: T[]): T[][] {
+  const clusters: T[][] = [];
   for (const r of rules) {
     if (r.conj === 'and' && clusters.length > 0) clusters[clusters.length - 1].push(r);
     else clusters.push([r]);

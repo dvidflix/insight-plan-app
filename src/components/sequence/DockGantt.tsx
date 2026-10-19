@@ -17,10 +17,8 @@ import { ListConfig } from '../ListConfig';
 import { useListQuery } from '../../state/tableSearchStore';
 import { ColumnsPanel } from '../schedule/ColumnsPanel';
 import { GroupPanel } from '../schedule/GroupPanel';
-import { SortPanel } from '../schedule/SortPanel';
 import { ColorPanel } from '../schedule/ColorPanel';
 import { IconCopy, IconDownload, IconRedo, IconUndo } from '../icons';
-import { LevelStepper } from '../schedule/LevelStepper';
 import { EditTools } from '../schedule/EditTools';
 import { EditableStatus } from '../schedule/EditableStatus';
 import { BaselineMenu } from '../schedule/BaselineMenu';
@@ -158,7 +156,6 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
             </select>
           ) },
           { key: 'date4d', node: <button type="button" className="btn btn--small" disabled={date === null} onClick={() => date !== null && ref.current?.scrollToDate(date)} title="Scroll to the 4D timeline's date">4D date</button> },
-          { key: 'level', node: <LevelStepper value={set.groupLevel} onChange={set.setGroupLevel} /> },
           { key: 'undo', menu: true, node: <button type="button" className="btn btn--small" disabled={!undoLabel} onClick={() => undo()} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><IconUndo width={16} height={16} /></button> },
           { key: 'redo', menu: true, node: <button type="button" className="btn btn--small" disabled={!redoLabel} onClick={() => redo()} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><IconRedo width={16} height={16} /></button> },
           ...(single?.editable ? [{ key: 'edit', node: <EditTools model={single} selectedId={selectedId} onSelect={(id) => { const a = single.activities.find((x) => x.id === id); if (a) onSelect(a); }} onNote={flash} keys /> }] : []),
@@ -187,12 +184,12 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
       <ListConfig
         id="gantt"
         searchable
+        level={{ value: set.groupLevel, max: 8, set: set.setGroupLevel }}
         label="Gantt panel"
         badges={{ group: set.groupRules.length, sort: set.sortRules.length, color: set.colorRules.length }}
         panels={{
-          columns: <ColumnsPanel catalog={catalog} views={[{ id: 'gantt', label: 'Gantt', selected: columnIds, defaults: DEFAULT_GANTT_COLUMNS, onChange: setColumnIds }]} calculated />,
+          columns: <ColumnsPanel catalog={catalog} views={[{ id: 'gantt', label: 'Gantt', selected: columnIds, defaults: DEFAULT_GANTT_COLUMNS, onChange: setColumnIds }]} calculated sort={{ rules: set.sortRules, onChange: set.setSortRules }} />,
           group: <GroupPanel bare fields={catalog} rules={set.groupRules} onChange={set.setGroupRules} onClose={() => {}} onCollapseAll={() => setCollapseAll((n) => n + 1)} onExpandAll={() => setExpandAll((n) => n + 1)} groupByWbs={set.groupByWbs} onToggleGroupByWbs={() => set.setGroupByWbs(!set.groupByWbs)} />,
-          sort: <SortPanel bare fields={catalog} rules={set.sortRules} onChange={set.setSortRules} onClose={() => {}} />,
           color: <ColorPanel bare rules={set.colorRules} onChange={set.setColorRules} onClose={() => {}} wbsPalette={palette} onWbsPaletteChange={setPalette} fields={catalog} valuesOf={valuesOf} />,
         }}
       />

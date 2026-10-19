@@ -1,5 +1,5 @@
 import type { ModelIndex } from './ViewerEngine';
-import { ATTRIBUTES, NO_VALUE, elementValue } from './bimTables';
+import { ATTRIBUTES, NO_VALUE, elementValue, isVirtualField, virtualValues } from './bimTables';
 import type { ElementSummary } from './types';
 
 /** How a condition compares a property's value. */
@@ -145,6 +145,8 @@ const num = (v: string) => {
 /** The value(s) a condition tests on one object. The class also answers to
     its IFC name ("IfcWall" as well as "Wall"). */
 function valuesOf(e: ElementSummary, field: string): string[] {
+  // A set / Link Group field: the object can be in several, and a condition holds when any of them does.
+  if (isVirtualField(field)) { const vs = virtualValues(e, field); return vs.length ? vs : [NO_VALUE]; }
   const v = elementValue(e, field);
   return field === `${ATTRIBUTES}.Class` ? [v, e.category] : [v];
 }

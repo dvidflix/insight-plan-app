@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { IconChevronDown } from '../icons';
 
 export interface FilterValue {
   value: string;
@@ -50,7 +51,7 @@ export function PourFilter({ series, hiddenSeries, onHiddenSeries, depth, onDept
   return (
     <div className="rv-filter" ref={ref}>
       <button type="button" className={`btn${active ? ' primary' : ''}`} aria-expanded={open} onClick={() => setOpen((o) => !o)} title="Choose what the chart includes">
-        Filter{active ? ` (${active})` : ''} ▾
+        Filter{active ? ` (${active})` : ''} <IconChevronDown width={14} height={14} />
       </button>
       {open && (
         <div className="rv-filter__pop" role="dialog" aria-label="Filter the chart">

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useDismiss } from '../useDismiss';
-import { IconMenu } from '../icons';
+import { IconMenu, IconChevronDown } from '../icons';
 import type { ScheduleModel } from '../../schedule/types';
 import { assignResource } from '../../schedule/planResources';
 import { addActivity, addTasksFromObjects, addWbs, deleteActivities, deleteWbs, dissolveActivities, moveActivities, moveWbs, renameWbs, setDataDate, wbsPathOf } from '../../schedule/programmeCommands';
@@ -216,7 +216,7 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
       {count >= 1 && <button type="button" className="btn btn--small" onClick={remove} title="Delete the picked activities and their links (Delete). Undo puts them back.">Delete</button>}
       {(objects.length > 0 || from3d) && (
       <span className="schedule-toolbar__edit-wbs" ref={from3dRef}>
-        <button type="button" className="btn btn--small" aria-expanded={from3d} onClick={() => setFrom3d(!from3d)} title="Make tasks from the objects picked in the 3D model: each gets the values its Link Group matches on, so it is linked to its object at once">From 3D ({objects.length}) ▾</button>
+        <button type="button" className="btn btn--small" aria-expanded={from3d} onClick={() => setFrom3d(!from3d)} title="Make tasks from the objects picked in the 3D model: each gets the values its Link Group matches on, so it is linked to its object at once">From 3D ({objects.length}) <IconChevronDown width={14} height={14} /></button>
         {from3d && (
           <div className="schedule-toolbar__edit-panel" role="group" aria-label="Tasks from 3D">
             <div className="scn-dim">{objects.length === 0 ? 'Pick objects in the 3D model (Models or 4D page), then come back.' : `${objects.length.toLocaleString()} ${objects.length === 1 ? 'object' : 'objects'} picked.`}</div>
@@ -261,7 +261,7 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
         </label>
       )}
       <span className="schedule-toolbar__edit-wbs" ref={wbsRef}>
-        <button type="button" className="btn btn--small" aria-expanded={open} onClick={() => setOpen(!open)} title="Add, rename, move and delete WBS nodes, and move the picked activities into one">WBS ▾</button>
+        <button type="button" className="btn btn--small" aria-expanded={open} onClick={() => setOpen(!open)} title="Add, rename, move and delete WBS nodes, and move the picked activities into one">WBS <IconChevronDown width={14} height={14} /></button>
         {open && (
           <div className="schedule-toolbar__edit-panel" role="group" aria-label="WBS">
             <select value={current} onChange={(e) => setNode(e.target.value)} aria-label="WBS node">

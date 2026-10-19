@@ -5,6 +5,7 @@ import type { Activity, ScheduleModel } from '../../schedule/types';
 import { queryMatcher } from '../../schedule/search';
 import { usePersistedState } from '../../utils/persistedState';
 import { AddCalendar, CalendarEditor } from './CalendarEditor';
+import { IconExpander } from '../icons';
 
 const DOW = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
@@ -137,7 +138,7 @@ export function CalendarsPanel({ model, onSelectActivity }: { model: ScheduleMod
           return (
             <div className="check-item" key={cal.id}>
               <div className="check-item__title" style={{ cursor: 'pointer' }} onClick={() => toggle(cal.id)} role="button" aria-expanded={open}>
-                <span><span aria-hidden="true">{open ? '▾' : '▸'}</span> {cal.name || cal.id}</span>
+                <span><IconExpander open={open} width={14} height={14} /> {cal.name || cal.id}</span>
                 <span style={{ color: 'var(--text-dim)', display: 'flex', gap: 12 }}>
                   <span title="Activities using this calendar">{used.length.toLocaleString()} {used.length === 1 ? 'activity' : 'activities'}</span>
                   <span title="Hours per day">{perDay}h/day</span>

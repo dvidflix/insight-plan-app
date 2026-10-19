@@ -1,7 +1,8 @@
+import { useState } from 'react';
 import { IconRemove } from '../icons';
+import { FilterRules, LogicRow } from '../FilterRules';
 import { useFocusStore, type FocusColourMode } from '../../state/focusStore';
 import { GroupPanel } from '../schedule/GroupPanel';
-import { SortPanel } from '../schedule/SortPanel';
 import { SCN_OPS, type ScnColorRule, type ScnFilterRule, type ScnOp, type ScnTableConfig } from '../../scenarios/tableView';
 import { InfoTip } from '../InfoTip';
 import { ColumnsPanel } from '../schedule/ColumnsPanel';
@@ -10,14 +11,13 @@ type Field = { id: string; label: string };
 const newId = () => crypto.randomUUID();
 const SWATCHES = ['', '#f6b8cb', '#aecbf2', '#b9e6b0', '#f5e79c', '#f6b3a9', '#d9dde0'];
 
-export type ScnConfigTab = 'columns' | 'filters' | 'group' | 'sort' | 'color';
+export type ScnConfigTab = 'columns' | 'filters' | 'group' | 'color';
 
 export function scnTabBadges(cfg: ScnTableConfig, allColumns: Field[]): Record<ScnConfigTab, number> {
   return {
     columns: (cfg.columns ?? allColumns.map((c) => c.id)).length,
     filters: cfg.filters.filter((f) => f.field).length,
     group: cfg.groups.length,
-    sort: cfg.sorts.length,
     color: cfg.colors.filter((c) => c.color).length,
   };
 }
@@ -43,7 +43,7 @@ export function ScenarioTableConfig({
 }) {
   const patch = (p: Partial<ScnTableConfig>) => onChange({ ...cfg, ...p });
   if (tab === 'columns') return <ColumnsTab cfg={cfg} patch={patch} fields={fields} defaultColumns={defaultColumns} />;
-  if (tab === 'filters') return <RulesTab rules={cfg.filters} fields={fields} onChange={(filters) => patch({ filters })} addLabel="+ Add filter" hint="Rows must meet every filter." />;
+  if (tab === 'filters') return <ScnFilters rules={cfg.filters} fields={fields} onChange={(filters) => patch({ filters })} match={cfg.filterMatch ?? 'all'} logic={cfg.filterLogic ?? ''} onLogic={(p) => patch({ ...(p.match ? { filterMatch: p.match } : {}), ...(p.logic !== undefined ? { filterLogic: p.logic } : {}) })} />;
   if (tab === 'group')
     return (
       <>
@@ -57,7 +57,6 @@ export function ScenarioTableConfig({
         <GroupPanel bare fields={fields} rules={cfg.groups} onChange={(groups) => patch({ groups })} onClose={() => {}} onCollapseAll={onCollapseAll} onExpandAll={onExpandAll} />
       </>
     );
-  if (tab === 'sort') return <SortPanel bare fields={fields} rules={cfg.sorts} onChange={(sorts) => patch({ sorts })} onClose={() => {}} />;
   return (
     <>
       <FocusColourOptions />
@@ -104,10 +103,47 @@ function ColumnsTab({ cfg, patch, fields, defaultColumns }: { cfg: ScnTableConfi
       catalog={fields.map((f) => ({ id: f.id, label: f.label, group: groupOf(f) }))}
       views={[{ id: 'pours', label: 'Order', selected: cfg.columns ?? defaultColumns, defaults: defaultColumns, onChange: (columns) => patch({ columns }) }]}
       presets={cfg.presets.map((p) => ({ id: p.name, label: p.name, ids: p.columns }))}
+      sort={{ rules: cfg.sorts, onChange: (sorts) => patch({ sorts }) }}
       groupOrder={GROUP_ORDER}
       closedGroups={[]}
       onSavePreset={(name, columns) => patch({ presets: [...cfg.presets.filter((p) => p.name !== name), { name, columns }] })}
       onDeletePreset={(name) => patch({ presets: cfg.presets.filter((p) => p.name !== name) })}
+    />
+  );
+}
+
+/** The pour table's filters, in the layout every list's Filters tab has: the rules as a Field / Condition table, the one being edited under it. */
+function ScnFilters({ rules, fields, onChange, match, logic, onLogic }: { rules: ScnFilterRule[]; fields: Field[]; onChange: (rules: ScnFilterRule[]) => void; match: 'all' | 'any'; logic: string; onLogic: (p: { match?: 'all' | 'any'; logic?: string }) => void }) {
+  const [editing, setEditing] = useState<string | null>(null);
+  const label = (id: string) => fields.find((f) => f.id === id)?.label ?? id;
+  const needs = (r: ScnFilterRule) => SCN_OPS.find((o) => o.id === r.op)?.needsValue;
+  const done = (r: ScnFilterRule) => !!r.field && (!needs(r) || r.value !== '');
+  const patchRule = (id: string, p: Partial<ScnFilterRule>) => onChange(rules.map((r) => (r.id === id ? { ...r, ...p } : r)));
+  const edited = rules.find((r) => r.id === editing);
+  return (
+    <FilterRules
+      tip="Rows must meet the filters as the logic says (every one, by default). Click a filter to change it; pick a field below to add one."
+      rows={rules.map((r) => ({ id: r.id, field: label(r.field), summary: [SCN_OPS.find((o) => o.id === r.op)?.label, needs(r) ? r.value : ''].filter(Boolean).join(' '), dim: !done(r) }))}
+      onRemove={(id) => onChange(rules.filter((r) => r.id !== id))}
+      onReorder={(ids) => onChange(ids.map((id) => rules.find((r) => r.id === id)!))}
+      onClearAll={() => onChange([])}
+      editingId={editing}
+      onEdit={setEditing}
+      editor={edited && (
+        <div className="scn-rule">
+          <select value={edited.field} onChange={(e) => patchRule(edited.id, { field: e.target.value })}>
+            {fields.map((f) => <option key={f.id} value={f.id}>{f.label}</option>)}
+          </select>
+          <select value={edited.op} onChange={(e) => patchRule(edited.id, { op: e.target.value as ScnOp })}>
+            {SCN_OPS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+          </select>
+          {needs(edited) && <input value={edited.value} autoFocus onChange={(e) => patchRule(edited.id, { value: e.target.value })} placeholder="value" />}
+        </div>
+      )}
+      combine={<LogicRow count={rules.length} match={match} logic={logic} onChange={onLogic} />}
+      fields={fields.map((f) => ({ id: f.id, label: f.label, group: groupOf(f) }))}
+      picked={new Set(rules.map((r) => r.field))}
+      onPick={(f) => { const r: ScnFilterRule = { id: newId(), field: f.id, op: 'contains', value: '' }; onChange([...rules, r]); setEditing(r.id); }}
     />
   );
 }

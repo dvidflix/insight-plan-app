@@ -19,8 +19,8 @@ export interface QuickFilter {
   onToggle: () => void;
 }
 
-/** The filter panel of every list, one layout: the match count, quick filters, what is applied as chips (one click removes one),
-    saved filters, and the builder behind an "Add filter" button for when the quick ones are not enough. */
+/** The filter panel of every list, one layout: saved filters, then the match count, quick filters, what is applied as chips (one click
+    removes one), and the builder behind an "Add filter" button for when the quick ones are not enough. */
 export function FilterShell({ matched, total, noun, emptyHint, chips, onClearAll, quick, combine, presets, addLabel = 'Add filter', advanced, advancedOpen, onAdvancedOpen, className = '' }: {
   matched: number;
   total: number;
@@ -48,6 +48,7 @@ export function FilterShell({ matched, total, noun, emptyHint, chips, onClearAll
   const pct = total ? (matched / total) * 100 : 100;
   return (
     <div className={`fsh ${className}`}>
+      {presets}
       <div className="fsh__count" aria-live="polite">
         {total === 0 && emptyHint ? <span className="fsh__empty">{emptyHint}</span> : (
           <>
@@ -79,7 +80,6 @@ export function FilterShell({ matched, total, noun, emptyHint, chips, onClearAll
         </div>
       )}
       {chips.length > 1 && combine}
-      {presets}
 
       <button type="button" className={`fsh__add${open ? ' is-open' : ''}`} aria-expanded={open} onClick={() => setOpen(!open)}>
         <span aria-hidden>{open ? '–' : '+'}</span> {open ? 'Hide filter builder' : addLabel}

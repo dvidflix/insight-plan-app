@@ -22,7 +22,7 @@ import {
   type TimelineRow,
 } from '../state/timelinesStore';
 import { usePersistedState } from '../utils/persistedState';
-import { IconChevronDown, IconCopy, IconDownload, IconFlag, IconInfoOutlined, IconPencil, IconPlus, IconSidePanel, IconDelete, IconRemove } from '../components/icons';
+import { IconChevronDown, IconCopy, IconDownload, IconFlag, IconInfoOutlined, IconPencil, IconPlus, IconSidePanel, IconDelete, IconRemove, IconExpander } from '../components/icons';
 import { InfoTip } from '../components/InfoTip';
 import { FullscreenButton } from '../components/ViewerToolbar';
 import { ukBankHolidays } from '../components/timelines/holidays';
@@ -577,7 +577,7 @@ export function TimelinesPage() {
                 {(shown?.items ?? []).map((item, i) => item.kind === 'group' ? (
                   <div key={item.key} className="tl-row tl-row--group" style={{ height: GROUP_H }}>
                     <div className="tl-left tl-groupleft" style={{ width: LABEL_W, paddingLeft: 8 + item.depth * 14 }} onClick={() => toggleGroup(item.key)}>
-                      <span className="tl-chev">{item.collapsed ? '▸' : '▾'}</span>
+                      <span className="tl-chev"><IconExpander open={!item.collapsed} width={14} height={14} /></span>
                       <span className="tl-grouplabel" title={item.label}>{item.label}</span>
                       <span className="tl-groupcount">{item.count}</span>
                     </div>

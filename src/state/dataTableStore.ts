@@ -43,6 +43,8 @@ export interface DataTableConfig {
   widths: Record<string, number>;
   filters: SearchCondition[];
   filterMatch: 'all' | 'any';
+  /** How the filter rules combine, by their numbers ("(1 and 2) or 3"); empty: all / any of them, as filterMatch says. */
+  filterLogic: string;
   groupRules: GroupRule[];
   sortRules: SortRule[];
   colorRules: ColorRule[];
@@ -57,6 +59,15 @@ export type DataTableSetup = Omit<DataTableConfig, 'scope' | 'twin'>;
 
 /** The key a setup is kept under: every model scope shares one, each external table has its own. */
 export const setupKey = (scope: DataTableScope): string => (scope.startsWith('src:') ? scope : 'objects');
+
+/** A filter the user keeps under a name, to bring back in the Filters tab. */
+export interface SavedFilter {
+  id: string;
+  name: string;
+  match: 'all' | 'any';
+  logic?: string;
+  filters: SearchCondition[];
+}
 
 export interface DataTablePreset {
   id: string;
@@ -76,6 +87,8 @@ interface DataTableState {
   /** Conditions a row must meet (all, or any), as in Search sets. */
   filters: SearchCondition[];
   filterMatch: 'all' | 'any';
+  /** How the rules combine, by their numbers ("(1 and 2) or 3"); empty: all / any of them, as filterMatch says. */
+  filterLogic: string;
   /** Grouping levels, outermost first. */
   groupRules: GroupRule[];
   /** Sort keys: the first decides, the next ones break ties. */
@@ -97,6 +110,10 @@ interface DataTableState {
   aggs: Record<string, DataAgg>;
   twin: TwinSetup;
   presets: DataTablePreset[];
+  /** The filters kept under a name (Filters tab). */
+  savedFilters: SavedFilter[];
+  saveFilter: (name: string, match: 'all' | 'any', filters: SearchCondition[], logic: string) => string;
+  removeFilter: (id: string) => void;
   /** Keeps the table's setup as a preset (replacing one of that name). */
   savePreset: (name: string) => void;
   applyPreset: (id: string) => void;
@@ -113,7 +130,7 @@ interface DataTableState {
   setWidth_: (v: number) => void;
   setColumns: (v: string[]) => void;
   setWidth: (col: string, w: number) => void;
-  patch: (p: Partial<Pick<DataTableState, 'filters' | 'filterMatch' | 'groupRules' | 'sortRules' | 'colorRules' | 'tab' | 'totals' | 'aggs' | 'scope' | 'twin' | 'position'>>) => void;
+  patch: (p: Partial<Pick<DataTableState, 'filters' | 'filterMatch' | 'filterLogic' | 'groupRules' | 'sortRules' | 'colorRules' | 'tab' | 'totals' | 'aggs' | 'scope' | 'twin' | 'position'>>) => void;
   /** Opens the side pane on the Data table tab (at `tab`). */
   configure: (tab?: DataTableTab) => void;
 }
@@ -134,6 +151,7 @@ export const useDataTableStore = create<DataTableState>()(
       widths: {},
       filters: [],
       filterMatch: 'all',
+      filterLogic: '',
       groupRules: [],
       sortRules: [],
       colorRules: [],
@@ -146,11 +164,11 @@ export const useDataTableStore = create<DataTableState>()(
         const to = setupKey(next);
         if (from === to) return { scope: next };
         const mine: DataTableSetup = {
-          columns: s.columns, widths: s.widths, filters: s.filters, filterMatch: s.filterMatch, groupRules: s.groupRules,
+          columns: s.columns, widths: s.widths, filters: s.filters, filterMatch: s.filterMatch, filterLogic: s.filterLogic, groupRules: s.groupRules,
           sortRules: s.sortRules, colorRules: s.colorRules, totals: s.totals, aggs: s.aggs,
         };
         // An external table starts with no columns: the table shows them all until they are chosen.
-        const theirs: DataTableSetup = s.setups[to] ?? { columns: to === 'objects' ? [COL_NAME, COL_CLASS, COL_MODEL] : [], widths: {}, filters: [], filterMatch: 'all', groupRules: [], sortRules: [], colorRules: [], totals: true, aggs: {} };
+        const theirs: DataTableSetup = s.setups[to] ?? { columns: to === 'objects' ? [COL_NAME, COL_CLASS, COL_MODEL] : [], widths: {}, filters: [], filterMatch: 'all', filterLogic: '', groupRules: [], sortRules: [], colorRules: [], totals: true, aggs: {} };
         return { ...structuredClone(theirs), setups: { ...s.setups, [from]: mine }, scope: next, pinnedKeys: null };
       }),
       aggs: {},
@@ -158,10 +176,17 @@ export const useDataTableStore = create<DataTableState>()(
       setPinned: (pinnedKeys) => set({ pinnedKeys }),
       twin: { primary: null, twin: null, tolerance: 0.01 },
       presets: [],
+      savedFilters: [],
+      saveFilter: (name, match, filters, logic) => {
+        const id = crypto.randomUUID();
+        set((s) => ({ savedFilters: [...s.savedFilters.filter((f) => f.name !== name), { id, name, match, logic, filters: structuredClone(filters) }] }));
+        return id;
+      },
+      removeFilter: (id) => set((s) => ({ savedFilters: s.savedFilters.filter((f) => f.id !== id) })),
       savePreset: (name) => {
         const s = get();
         const config: DataTableConfig = {
-          columns: s.columns, widths: s.widths, filters: s.filters, filterMatch: s.filterMatch, groupRules: s.groupRules,
+          columns: s.columns, widths: s.widths, filters: s.filters, filterMatch: s.filterMatch, filterLogic: s.filterLogic, groupRules: s.groupRules,
           sortRules: s.sortRules, colorRules: s.colorRules, totals: s.totals, scope: s.scope, aggs: s.aggs, twin: s.twin,
         };
         set({ presets: [...s.presets.filter((p) => p.name !== name), { id: crypto.randomUUID(), name, config: structuredClone(config) }] });

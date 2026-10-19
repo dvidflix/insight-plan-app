@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { IconDownloadFile } from './icons';
+import { IconDownloadFile, IconChevronDown } from './icons';
 
 export type DownloadFormat = 'xml' | 'xer';
 
@@ -32,7 +32,7 @@ export function ProgrammeDownload({ canXml, disabled, onDownload }: { canXml: bo
         className="mini-btn mini-btn--icon dl-split__main"
         disabled={disabled}
         onClick={() => onDownload(main)}
-        title={canXml ? 'Download as a P6 XML file (▾ for XER)' : 'Download as a P6 XER file (XML is available for scenario programmes)'}
+        title={canXml ? 'Download as a P6 XML file (the arrow for XER)' : 'Download as a P6 XER file (XML is available for scenario programmes)'}
         aria-label={`Download programme as ${main.toUpperCase()}`}
       >
         <IconDownloadFile width={16} height={16} />
@@ -50,7 +50,7 @@ export function ProgrammeDownload({ canXml, disabled, onDownload }: { canXml: bo
           setPos(pos ? null : { x: Math.max(8, r.right - 150), y: r.bottom + 4 });
         }}
       >
-        ▾
+        <IconChevronDown width={14} height={14} />
       </button>
       {pos &&
         createPortal(

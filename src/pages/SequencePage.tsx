@@ -62,6 +62,7 @@ import { makeValueOf } from '../viewer/setFolderValues';
 import { runSearchSet, type SearchSet } from '../viewer/searchSets';
 import type { ModelIndex } from '../viewer/ViewerEngine';
 import { ModelColorPanel } from '../components/ModelColorPanel';
+import { DEFAULT_SCALE, gradeColorOf } from '../viewer/colourScale';
 
 /** What the 4D driver pushes per-element visibility/colour/opacity into —
     the main viewer or the split view. */
@@ -589,6 +590,12 @@ export function SequencePanel() {
     const colourPanelColorer = (cfg: ColourConfig) => {
       const byValue = new Map(cfg.colors.map((c) => [c.value, c.color]));
       const valueOf = makeValueOf(cfg.field, engine.getIndexes(), searchSets);
+      if (cfg.mode === 'grade') {
+        const seen = new Set<string>();
+        for (const index of engine.getIndexes().values()) for (const e of index.elements.values()) seen.add(valueOf(e));
+        const grade = gradeColorOf(cfg.scale ?? DEFAULT_SCALE, seen);
+        return (el: ElementSummary): string | null => grade(valueOf(el)) ?? cfg.others;
+      }
       return (el: ElementSummary): string | null => byValue.get(valueOf(el)) ?? cfg.others;
     };
     const colorsFor = (settings: ColorModeSettings, run: (typeof perModelRuns)[number], viewId: string) => {

@@ -168,7 +168,8 @@ export const useScenarioStore = create<ScenarioState>(() => ({
   scenario: load<string | null>('scenarios.current', null),
   pickedStem: load<string | null>('scenarios.model', null),
   tableCfg: load('scenarios.table', DEFAULT_SCN_TABLE),
-  cfgTab: load<ScenarioCfgTab>('scenarios.cfgTab', 'scenario'),
+  // 'sort' was a tab of its own before sorting moved into Columns.
+  cfgTab: ((t) => (t === ('sort' as string) ? 'columns' : t))(load<ScenarioCfgTab>('scenarios.cfgTab', 'scenario')),
   project: null,
   projectError: null,
   drafts: [],

@@ -6,7 +6,6 @@ import { useTasksSettingsStore } from '../../state/tasksSettingsStore';
 import { ColumnsPanel } from '../schedule/ColumnsPanel';
 import { FiltersPanel } from '../schedule/FiltersPanel';
 import { GroupPanel } from '../schedule/GroupPanel';
-import { SortPanel } from '../schedule/SortPanel';
 import { ColorPanel } from '../schedule/ColorPanel';
 import { ListConfig } from '../ListConfig';
 import { defaultColumnIds } from './TasksPanel';
@@ -40,10 +39,9 @@ export function TasksDock({ model, catalog, columnCtx }: { model: ScheduleModel;
       label="Tasks"
       badges={{ filters: countActiveFilters(s.filters), group: s.groupRules.length, sort: s.sortRules.length, color: s.colorRules.length }}
       panels={{
-        columns: <ColumnsPanel catalog={catalog} views={[{ id: 'tasks', label: 'Tasks', selected: s.columnIds ?? defaults, defaults, onChange: (columnIds) => patch({ columnIds }) }]} calculated />,
+        columns: <ColumnsPanel catalog={catalog} views={[{ id: 'tasks', label: 'Tasks', selected: s.columnIds ?? defaults, defaults, onChange: (columnIds) => patch({ columnIds }) }]} calculated sort={{ rules: s.sortRules, onChange: (sortRules) => patch({ sortRules }) }} />,
         filters: <FiltersPanel model={model} baseActivities={model.activities} state={s.filters} onChange={(next) => patch({ filters: typeof next === 'function' ? next(useTasksSettingsStore.getState().filters) : next })} />,
         group: <GroupPanel bare fields={catalog} rules={s.groupRules} onChange={(groupRules) => patch({ groupRules })} onClose={close} onCollapseAll={() => patch({ collapseAll: s.collapseAll + 1 })} onExpandAll={() => patch({ expandAll: s.expandAll + 1 })} groupByWbs={s.groupByWbs} onToggleGroupByWbs={() => patch({ groupByWbs: !s.groupByWbs })} />,
-        sort: <SortPanel bare fields={catalog} rules={s.sortRules} onChange={(sortRules) => patch({ sortRules })} onClose={close} />,
         color: <ColorPanel bare rules={s.colorRules} onChange={(colorRules) => patch({ colorRules })} onClose={close} wbsPalette={s.wbsPalette} onWbsPaletteChange={(wbsPalette) => patch({ wbsPalette })} fields={catalog} valuesOf={valuesOf} />,
       }}
     />

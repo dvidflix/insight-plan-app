@@ -5,7 +5,7 @@ import { countActiveFilters, type FieldFilterState } from '../../schedule/filter
 import { ColorPanel, type ColorRule } from './ColorPanel';
 import { ColumnsPanel, type ColumnView } from './ColumnsPanel';
 import { GroupPanel, type GroupRule } from './GroupPanel';
-import { SortPanel, type SortRule } from './SortPanel';
+import type { SortRule } from './SortPanel';
 import { GeneratedSchedulesPanel } from './GeneratedSchedulesPanel';
 import { FiltersPanel } from './FiltersPanel';
 import { DockPanel } from '../Dock';
@@ -32,6 +32,9 @@ interface ConfigPanelProps {
   onGroupRulesChange: (rules: GroupRule[]) => void;
   onCollapseAll: () => void;
   onExpandAll: () => void;
+  /** The group level shown ('' = All), set from the header's ‹ 2 › stepper. */
+  groupLevel: string;
+  onGroupLevelChange: (level: string) => void;
   groupByWbs?: boolean;
   onToggleGroupByWbs?: () => void;
 
@@ -49,7 +52,7 @@ interface ConfigPanelProps {
     per kind of setting (with a badge showing how much is configured). */
 export function ConfigPanel({
   label, onClose, colorRules, onColorRulesChange, wbsPalette, onWbsPaletteChange, model, catalog, columnViews,
-  groupRules, onGroupRulesChange, onCollapseAll, onExpandAll, groupByWbs, onToggleGroupByWbs,
+  groupRules, onGroupRulesChange, onCollapseAll, onExpandAll, groupLevel, onGroupLevelChange, groupByWbs, onToggleGroupByWbs,
   sortRules, onSortRulesChange, baseActivities, columnCtx, fieldFilters, onFieldFiltersChange,
 }: ConfigPanelProps) {
 
@@ -79,13 +82,13 @@ export function ConfigPanel({
       <ListConfig
         id="programmes"
         searchable
+        level={{ value: groupLevel, max: 8, set: onGroupLevelChange }}
         label={label}
         badges={{ filters: filterCount, group: groupRules.length, sort: sortRules.length, color: colorRules.length }}
         panels={{
-          columns: <ColumnsPanel key={columnViews.map((v) => v.id).join()} catalog={catalog} views={columnViews} calculated />,
+          columns: <ColumnsPanel key={columnViews.map((v) => v.id).join()} catalog={catalog} views={columnViews} calculated sort={{ rules: sortRules, onChange: onSortRulesChange }} />,
           filters: <FiltersPanel model={model} baseActivities={baseActivities} state={fieldFilters} onChange={onFieldFiltersChange} />,
           group: <GroupPanel bare fields={catalog} rules={groupRules} onChange={onGroupRulesChange} onClose={onClose} onCollapseAll={onCollapseAll} onExpandAll={onExpandAll} groupByWbs={groupByWbs} onToggleGroupByWbs={onToggleGroupByWbs} />,
-          sort: <SortPanel bare fields={catalog} rules={sortRules} onChange={onSortRulesChange} onClose={onClose} />,
           color: <ColorPanel bare rules={colorRules} onChange={onColorRulesChange} onClose={onClose} wbsPalette={wbsPalette} onWbsPaletteChange={onWbsPaletteChange} fields={catalog} valuesOf={columnCtx ? valuesOf : undefined} />,
         }}
       />

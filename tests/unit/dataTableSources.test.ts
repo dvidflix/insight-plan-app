@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { elementValue } from '../../src/viewer/bimTables';
+import { NO_VALUE, elementValue, setVirtualResolver } from '../../src/viewer/bimTables';
 import { conditionTest } from '../../src/viewer/searchSets';
 import { parseScope, pseudoObjects, scopeOf } from '../../src/datasources/externalRows';
 import type { DataTable } from '../../src/datasources/parsers';
@@ -43,5 +43,20 @@ describe('Data table with external data', () => {
     expect(st().columns).toEqual(['Qty']);
     expect(st().sortRules).toHaveLength(1);
     st().setScope('all');
+  });
+
+  it('reads set and Link Group fields through the resolver, several values at once', () => {
+    const rows = pseudoObjects(table, 'Plan');
+    setVirtualResolver((e, key) => (key === 'LinkGroups:Group' && e.localId === 0 ? ['Concrete', 'Rebar'] : []));
+    try {
+      expect(elementValue(rows[0], 'LinkGroups:Group')).toBe('Concrete, Rebar');
+      expect(elementValue(rows[1], 'LinkGroups:Group')).toBe(NO_VALUE);
+      const test = conditionTest({ id: 'c', field: 'LinkGroups:Group', op: 'equals', value: 'rebar' });
+      expect(rows.filter((r) => test!(r)).map((r) => r.localId)).toEqual([0]);
+      const none = conditionTest({ id: 'c', field: 'LinkGroups:Group', op: 'equals', value: '' });
+      expect(rows.filter((r) => none!(r)).map((r) => r.localId)).toEqual([1, 2]);
+    } finally {
+      setVirtualResolver(null);
+    }
   });
 });

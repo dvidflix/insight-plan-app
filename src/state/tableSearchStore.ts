@@ -5,12 +5,20 @@ import { create } from 'zustand';
 interface TableSearchState {
   queries: Record<string, string>;
   setListQuery: (list: string, query: string) => void;
+  /** The group level each list shows, for the lists that keep it here ('' = All open). Set by the ‹ 2 › stepper of the main header. */
+  levels: Record<string, string>;
+  setListLevel: (list: string, level: string) => void;
 }
 
 export const useTableSearchStore = create<TableSearchState>((set) => ({
   queries: {},
+  levels: {},
+  setListLevel: (list, level) => set((s) => (s.levels[list] === level ? s : { levels: { ...s.levels, [list]: level } })),
   setListQuery: (list, query) => set((s) => (s.queries[list] === query ? s : { queries: { ...s.queries, [list]: query } })),
 }));
 
 /** One list's words ('' when none). */
 export const useListQuery = (list: string) => useTableSearchStore((s) => s.queries[list] ?? '');
+
+/** One list's group level ('' = All open). */
+export const useListLevel = (list: string) => useTableSearchStore((s) => s.levels[list] ?? '');

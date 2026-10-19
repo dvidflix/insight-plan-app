@@ -8,7 +8,7 @@ import { useSavedViewAttrsStore } from '../state/savedViewAttrsStore';
 import { usePersistedState } from '../utils/persistedState';
 import { InfoTip } from './InfoTip';
 import { SavedViewAttrsPanel } from './SavedViewAttrsPanel';
-import { IconCameraPhotoAdd, IconFolderNew, IconGear, IconImage, IconPencil, IconSync, IconRemove } from './icons';
+import { IconCameraPhotoAdd, IconFolderNew, IconGear, IconImage, IconPencil, IconSync, IconRemove, IconExpander } from './icons';
 import { RowButtonsChooser, useRowButtons, type RowButtonDef } from './RowButtonsChooser';
 
 const VP_BUTTONS = [
@@ -284,7 +284,7 @@ export function ViewpointsList({ layout = 'list', actions = false }: { /** cards
               <div key={f} className="vp__folder">
                 <div className={`vp__folder-head${dragOver === f ? ' is-over' : ''}`} {...dropProps(f)}>
                   <button type="button" className="vp__folder-toggle" aria-expanded={open} onClick={() => setClosed(open ? [...closed, f] : closed.filter((x) => x !== f))}>
-                    <span className="vp__chev">{open ? '▾' : '▸'}</span>
+                    <span className="vp__chev"><IconExpander open={open} width={14} height={14} /></span>
                     {renamingFolder === f ? (
                       <input
                         className="vp__rename"

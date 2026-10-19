@@ -217,12 +217,14 @@ export const PANEL_LABELS: Partial<Record<DockPanelId, string>> = {
 };
 /** The page that has a panel the current page lacks (the Models page for the rest). */
 const PANEL_PAGE: Partial<Record<DockPanelId, 'sequence' | 'schedule'>> = {
-  tasks: 'sequence', resources: 'sequence', scenarios: 'sequence', rules: 'sequence',
+  tasks: 'sequence', resources: 'sequence',
   layouts: 'schedule', details: 'schedule', links: 'schedule', planning: 'schedule', predecessors: 'schedule', successors: 'schedule', dictionary: 'schedule',
 };
 /** Brings up a panel this view does not have: goes to the page that has it and shows it there once it has mounted. */
 export function goToPanel(id: DockPanelId) {
   const st = useDockStore;
+  // The view has it already: it opens beside the main window, which stays as it is.
+  if (st.getState().entries[id]) { st.getState().reveal(id); return; }
   window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: PANEL_PAGE[id] ?? 'model' }));
   const done = () => { unsub(); clearTimeout(timer); st.getState().reveal(id); };
   const unsub = st.subscribe((s) => { if (s.entries[id]) done(); });

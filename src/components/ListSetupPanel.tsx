@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useState } from 'react';
 import { activeTargetId, useListConfigStore, type ConfigKind } from '../state/listConfigStore';
 import { useDockNavStore } from '../state/dockNavStore';
-import { IconCellProperties, IconClose, IconColumns, IconFilter, IconGroup, IconPalette, IconPin, IconSort } from './icons';
+import { IconCellProperties, IconClose, IconColumns, IconFilter, IconGroup, IconLink, IconPalette, IconSort, IconTable, IconExpander } from './icons';
 
-const KIND_LABEL: Record<ConfigKind, string> = { filters: 'Filters', group: 'Group', sort: 'Sort', color: 'Colour', columns: 'Columns' };
-const KIND_ICON = { filters: IconFilter, group: IconGroup, sort: IconSort, color: IconPalette, columns: IconColumns };
-const SECTION_ORDER: ConfigKind[] = ['filters', 'group', 'sort', 'color', 'columns'];
+const KIND_LABEL: Record<ConfigKind, string> = { source: 'Source', match: 'Match', filters: 'Filters', group: 'Group', sort: 'Sort', color: 'Colour', columns: 'Columns' };
+const KIND_ICON = { source: IconTable, match: IconLink, filters: IconFilter, group: IconGroup, sort: IconSort, color: IconPalette, columns: IconColumns };
+const SECTION_ORDER: ConfigKind[] = ['source', 'match', 'filters', 'group', 'sort', 'color', 'columns'];
 
 /** Where the active list draws one setting's body (through ListConfig's portal). */
 function Slot({ kind }: { kind: ConfigKind }) {
@@ -34,6 +34,8 @@ export function NPanel() {
     window.addEventListener('keydown', key);
     return () => window.removeEventListener('keydown', key);
   }, []);
+  // The list it is for, by name ("Gantt", "Data table", ...).
+  const listName = useListConfigStore((s) => { const id = activeTargetId(s); return id ? (s.targets[id]?.label ?? '').replace(/ (panel|page)$/i, '') : ''; });
   const width = useDockNavStore((s) => s.nWidth);
   const startResize = (e: React.MouseEvent) => {
     e.preventDefault();
@@ -55,7 +57,7 @@ export function NPanel() {
     <aside className="npanel" aria-label="List setup" style={{ width, flexBasis: width }}>
       <div className="npanel__head">
         <IconCellProperties width={18} height={18} />
-        <span className="npanel__title">List setup</span>
+        <span className="npanel__title">List setup{listName ? `: ${listName}` : ''}</span>
         <button type="button" className="icon-btn dock__tool" onClick={() => useListConfigStore.getState().setNOpen(false)} title="Close (N)" aria-label="Close list setup"><IconClose /></button>
       </div>
       <ListSetupPanel />
@@ -67,9 +69,8 @@ export function NPanel() {
 function ListSetupPanel() {
   const targets = useListConfigStore((s) => s.targets);
   const activeId = useListConfigStore((s) => activeTargetId(s));
-  const pinned = useListConfigStore((s) => s.pinned);
   const kind = useListConfigStore((s) => s.kind);
-  const { setPinned, setKind, setExtraSlot } = useListConfigStore.getState();
+  const { setKind, setExtraSlot } = useListConfigStore.getState();
   const extraRef = useCallback((el: HTMLDivElement | null) => setExtraSlot(el), [setExtraSlot]);
   const [extraOpen, setExtraOpen] = useState(true);
 
@@ -79,23 +80,14 @@ function ListSetupPanel() {
   const shown = kinds.includes(kind) ? kind : kinds[0];
   return (
     <div className="lcfg">
-      <div className="lcfg__head">
-        <span className="lcfg__for">List</span>
-        <span className="lcfg__name" title={target.label}>{target.label}</span>
-        <button type="button" className={`btn btn--small lcfg__pin${pinned === activeId ? ' is-on' : ''}`} onClick={() => setPinned(pinned === activeId ? null : activeId)} title={pinned === activeId ? 'Following this list only: click to follow whichever list you click in' : 'Keep this panel on this list whichever list you click in'} aria-pressed={pinned === activeId}>
-          <IconPin width={14} height={14} />
-        </button>
-      </div>
       {/* Icons, with the name beside the open one (and beside every one when the panel is wide enough). */}
       <div className="lcfg__tabs" role="tablist">
         {kinds.map((k) => {
-          const n = k === 'columns' ? 0 : target.badges[k] ?? 0;
           const Icon = KIND_ICON[k];
           return (
             <button key={k} type="button" role="tab" aria-selected={shown === k} className={`lcfg__tab${shown === k ? ' is-active' : ''}`} title={KIND_LABEL[k]} onClick={() => setKind(k)}>
               <Icon width={16} height={16} />
               <span className="lcfg__tab-label">{KIND_LABEL[k]}</span>
-              {n > 0 && <span className="dtp__badge">{n}</span>}
             </button>
           );
         })}
@@ -106,7 +98,7 @@ function ListSetupPanel() {
       {/* The list's own settings stay at the foot whichever tab is up; the draw point stays mounted while folded. */}
       <div className="lcfg__foot" hidden={!target.hasExtra}>
         <button type="button" className="lcfg__foot-head" aria-expanded={extraOpen} onClick={() => setExtraOpen(!extraOpen)}>
-          <span aria-hidden>{extraOpen ? '▾' : '▸'}</span> {target.label} settings
+          <IconExpander open={extraOpen} width={14} height={14} /> {target.label} settings
         </button>
         <div ref={extraRef} className="lcfg__extra" hidden={!extraOpen} />
       </div>

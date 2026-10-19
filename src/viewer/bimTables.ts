@@ -91,9 +91,23 @@ function propertyRow(name: string, values: (string | undefined)[], key: string):
   return { data: { Property: name, Value: label, Count: '', Key: key, Match: '' }, children };
 }
 
+/** Fields that are not properties of the object but come from elsewhere in the app: the search / selection set that holds it
+    ("SetFolder:" + a folder of sets) and the Link Group that links it. Their values come from a resolver the Data table sets
+    (see virtualFields.ts), since they need the sets and groups, not just the object. */
+export const VIRTUAL_PREFIXES = ['SetFolder:', 'LinkGroups:'];
+export const isVirtualField = (key: string) => VIRTUAL_PREFIXES.some((p) => key.startsWith(p));
+let virtualResolver: ((e: ElementSummary, key: string) => string[]) | null = null;
+export const setVirtualResolver = (fn: ((e: ElementSummary, key: string) => string[]) | null) => { virtualResolver = fn; };
+/** Every value of a virtual field on one object (it can be in several sets / groups); empty when it is in none. */
+export const virtualValues = (e: ElementSummary, key: string): string[] => (virtualResolver ? virtualResolver(e, key) : []);
+
 /** A property's value for one object, as the table shows it
     (`key` = "Pset.Prop", or "Attributes.Name" / ".Class" / ".GlobalId"). */
 export function elementValue(e: ElementSummary, key: string): string {
+  if (isVirtualField(key)) {
+    const vs = virtualValues(e, key);
+    return vs.length ? vs.join(', ') : NO_VALUE;
+  }
   let v: string | undefined;
   if (key === `${ATTRIBUTES}.Name`) v = formatValue(e.name);
   else if (key === `${ATTRIBUTES}.Class`) v = prettyClass(e.category);

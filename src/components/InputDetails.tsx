@@ -3,9 +3,8 @@ import { BUILT_IN_GROUPS, NO_VALUE, passesFilters, useInputDetailsStore, valuesO
 import { FEATURES } from '../features';
 import { experimentalOn } from '../state/appPrefsStore';
 import { pushFiles, type PushFile } from '../seatable/filesClient';
-import { queryMatcher } from '../schedule/search';
-import { IconRemove, IconChevronDown, IconChevronRight, IconExpander } from './icons';
-import { SearchRow } from './SearchRow';
+import { IconChevronDown, IconChevronRight } from './icons';
+import { FilterRules } from './FilterRules';
 import { useHomeSelection } from '../state/homeSelection';
 import { useModelsStore } from '../state/modelsStore';
 import { useScheduleStore } from '../state/scheduleStore';
@@ -73,13 +72,10 @@ export function InputsFilters() {
   const files = useInputDetailsStore((s) => s.files);
   const details = useInputDetailsStore((s) => s.values);
   const { setFilter, clearFilters } = useInputDetailsStore.getState();
-  const [open, setOpen] = useState<Set<string>>(new Set(['type']));
-  const [search, setSearch] = useState('');
 
   const keys = useMemo(() => [...BUILT_IN_GROUPS.filter((g) => g.id !== 'none'), ...fields.map((f) => ({ id: f, label: f }))], [fields]);
   const matched = useMemo(() => files.filter((f) => passesFilters(f, filters, details)).length, [files, filters, details]);
   const activeKeys = keys.filter((k) => (filters[k.id]?.length ?? 0) > 0);
-  const hit = queryMatcher(search);
 
   // Every value of a key (even those no file has after the other filters) with how many files each would leave.
   const valuesOf = (key: string) => {
@@ -101,84 +97,58 @@ export function InputsFilters() {
   ], [files]);
   const presetOn = (p: { key: string; value: string }) => filters[p.key]?.length === 1 && filters[p.key][0] === p.value;
 
-  return (
-    <div className="flt flt--inputs">
-      <div className="flt__result">
-        <div className="flt__result-text">
-          <b>{matched.toLocaleString()}</b> of {files.length.toLocaleString()} files
-          {files.length > 0 && matched === 0 && <span className="flt__none"> — no matches</span>}
-        </div>
-        <button type="button" className="cols__link" disabled={activeKeys.length === 0} onClick={clearFilters}>Clear all</button>
-        <div className="flt__bar"><span style={{ width: `${files.length ? (matched / files.length) * 100 : 100}%` }} /></div>
-      </div>
+  const [editing, setEditing] = useState<string | null>(null);
+  const [order, setOrder] = useState<string[]>([]);
+  const byKey = new Map(keys.map((k) => [k.id, k]));
+  const activeIds = new Set(activeKeys.map((k) => k.id));
+  const rowIds = [...order.filter((id) => byKey.has(id) && (activeIds.has(id) || id === editing)), ...activeKeys.map((k) => k.id).filter((id) => !order.includes(id))];
+  const summaryOf = (id: string) => { const kept = filters[id] ?? []; return kept.length <= 2 ? kept.map(labelOf).join(', ') : `${kept.length} values`; };
+  const edited = editing ? byKey.get(editing) : undefined;
+  const editedKept = edited ? filters[edited.id] ?? [] : [];
+  const list = edited ? valuesOf(edited.id) : [];
+  const toggle = (v: string) => edited && setFilter(edited.id, editedKept.includes(v) ? editedKept.filter((x) => x !== v) : [...editedKept, v]);
 
-      {presets.length > 0 && (
-        <div className="cols__presets">
-          <span className="cols__hint">Quick</span>
+  return (
+    <FilterRules
+      tip="Keep only the files that have one of the chosen values of a field. Click a filter to change its values."
+      hint={files.length === 0 ? null : activeKeys.length > 0 && <div className="flt__hint"><b>{matched.toLocaleString()}</b> of {files.length.toLocaleString()} files{matched === 0 && <span className="flt__none"> — no matches</span>}</div>}
+      quick={presets.length > 0 && (
+        <div className="fsh__quick" role="group" aria-label="Quick filters">
           {presets.map((p) => (
-            <button key={`${p.key}:${p.value}`} type="button" className={presetOn(p) ? 'on' : ''} aria-pressed={presetOn(p)} onClick={() => setFilter(p.key, presetOn(p) ? [] : [p.value])}>{p.label}</button>
+            <button key={`${p.key}:${p.value}`} type="button" className={`fsh__pill${presetOn(p) ? ' on' : ''}`} aria-pressed={presetOn(p)} onClick={() => setFilter(p.key, presetOn(p) ? [] : [p.value])}>{p.label}</button>
           ))}
         </div>
       )}
-
-      {activeKeys.length > 0 && (
-        <>
-          <div className="cols__heading"><span>Active <b>{activeKeys.length}</b></span></div>
-          <div className="flt__active">
-            {activeKeys.map((k) => (
-              <span className="flt__chip" key={k.id}>
-                <span className="flt__chip-label">{k.label}:</span> {filters[k.id].map(labelOf).join(', ')}
-                <button type="button" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label} filter`} title="Remove filter"><IconRemove /></button>
-              </span>
+      rows={rowIds.map((id) => ({ id, field: byKey.get(id)!.label, summary: summaryOf(id), dim: !activeIds.has(id) }))}
+      onRemove={(id) => { setFilter(id, []); setOrder((o) => o.filter((x) => x !== id)); if (editing === id) setEditing(null); }}
+      onReorder={setOrder}
+      onClearAll={() => { clearFilters(); setOrder([]); setEditing(null); }}
+      editingId={editing}
+      onEdit={setEditing}
+      editorTitle={edited ? `Edit ${edited.label}` : 'Edit filter'}
+      editor={edited && (
+        <div className="flt__values-wrap">
+          <div className="flt__bulk">
+            <button type="button" className="cols__link" onClick={() => setFilter(edited.id, list.map(([v]) => v))}>Select all</button>
+            <button type="button" className="cols__link" onClick={() => setFilter(edited.id, [])}>None</button>
+          </div>
+          <div className="flt__values">
+            {list.map(([v, n]) => (
+              <label key={v} className={`cols__check${n === 0 && !editedKept.includes(v) ? ' flt__zero' : ''}`}>
+                <input type="checkbox" checked={editedKept.includes(v)} onChange={() => toggle(v)} />
+                <span title={labelOf(v)}>{labelOf(v)}</span>
+                <span className="flt__n">{n}</span>
+              </label>
             ))}
+            {list.length === 0 && <div className="flt__hint">No files.</div>}
           </div>
-        </>
+        </div>
       )}
-
-      <div className="cols__heading"><span>Fields <b>{keys.length}</b></span></div>
-      <SearchRow collapsed={open.size === 0} onCollapse={() => setOpen(new Set())} onExpand={() => setOpen(new Set(keys.filter((k) => hit(k.label)).map((k) => k.id)))}>
-        <input className="cols__search" type="search" placeholder="Search fields…" value={search} onChange={(e) => setSearch(e.target.value)} />
-      </SearchRow>
-      {keys.filter((k) => hit(k.label)).map((k) => {
-        const kept = filters[k.id] ?? [];
-        const isOpen = open.has(k.id) || !!search.trim();
-        const list = isOpen ? valuesOf(k.id) : [];
-        const toggle = (v: string) => setFilter(k.id, kept.includes(v) ? kept.filter((x) => x !== v) : [...kept, v]);
-        return (
-          <div key={k.id} className={`flt__field${kept.length ? ' active' : ''}`}>
-            <div className="flt__field-head">
-              <button type="button" className="flt__field-toggle" aria-expanded={isOpen} onClick={() => setOpen((prev) => { const n = new Set(prev); if (!n.delete(k.id)) n.add(k.id); return n; })}>
-                <span className="flt__caret"><IconExpander open={isOpen} /></span>
-                <span className="flt__field-label">{k.label}</span>
-                {kept.length > 0 && <span className="flt__field-sum">{kept.length <= 2 ? kept.map(labelOf).join(', ') : `${kept.length} values`}</span>}
-              </button>
-              {isOpen && (
-                <span className="flt__bulk flt__bulk--inline">
-                  <button type="button" className="cols__link" onClick={() => setFilter(k.id, list.map(([v]) => v))}>Select all</button>
-                  <button type="button" className="cols__link" onClick={() => setFilter(k.id, [])}>None</button>
-                </span>
-              )}
-              {kept.length > 0 && <button type="button" className="cols__icon cols__icon--remove" onClick={() => setFilter(k.id, [])} aria-label={`Clear ${k.label}`} title="Clear"><IconRemove /></button>}
-            </div>
-            {isOpen && (
-              <div className="flt__field-body">
-                <div className="flt__values">
-                  {list.map(([v, n]) => (
-                    <label key={v} className={`cols__check${n === 0 && !kept.includes(v) ? ' flt__zero' : ''}`}>
-                      <input type="checkbox" checked={kept.includes(v)} onChange={() => toggle(v)} />
-                      <span title={labelOf(v)}>{labelOf(v)}</span>
-                      <span className="flt__n">{n}</span>
-                    </label>
-                  ))}
-                  {list.length === 0 && <div className="flt__hint">No files.</div>}
-                </div>
-              </div>
-            )}
-          </div>
-        );
-      })}
-      {fields.length === 0 && <div className="flt__hint">No details yet. In Settings, push the files to SeaTable, fill in the table there, then Read.</div>}
-    </div>
+      combine={<div className="flt__hint">A file must match every filter.</div>}
+      fields={keys.map((k) => ({ id: k.id, label: k.label, group: BUILT_IN_GROUPS.some((g) => g.id === k.id) ? 'File' : 'SeaTable details' }))}
+      picked={activeIds}
+      onPick={(f) => { setOrder((o) => (o.includes(f.id) ? o : [...o, f.id])); setEditing(f.id); }}
+    />
   );
 }
 

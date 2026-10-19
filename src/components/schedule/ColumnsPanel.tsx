@@ -7,6 +7,8 @@ import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { CalcColumnsEditor } from './CalcColumnsEditor';
 import { queryMatcher } from '../../schedule/search';
 import { useColumnLabelsStore } from '../../state/columnLabelsStore';
+import { newRuleId } from './FieldRules';
+import type { SortRule } from './SortPanel';
 
 export interface ColumnView {
   id: string;
@@ -38,6 +40,9 @@ interface ColumnsPanelProps {
   /** The rows of the "Available" list, when they are not every catalog entry
       (the catalog still names every column that can be shown). */
   listed?: PickColumn[];
+  /** The list's sort keys: each shown column gets a button to sort by it (none → A→Z → Z→A → none), the first key decides and the
+      next ones break ties. */
+  sort?: { rules: SortRule[]; onChange: (rules: SortRule[]) => void; /** Columns that cannot be sorted on get no button. */ canSort?: (id: string) => boolean };
   /** Twin layout: each listed property gets two checkboxes, the main model's
       (left) and the twin model's (right, its column id from `twinOf`). */
   twin?: {
@@ -52,7 +57,7 @@ interface ColumnsPanelProps {
 
 /** Column picker for the Configuration pane: a reorderable "Shown" list on
     top, then every available column grouped the way P6 groups them. */
-export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOrder = COLUMN_GROUPS, closedGroups = ['Relationships', 'Resources & Cost', 'Constraints'], onSavePreset, onDeletePreset, listed, twin, calculated }: ColumnsPanelProps) {
+export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOrder = COLUMN_GROUPS, closedGroups = ['Relationships', 'Resources & Cost', 'Constraints'], onSavePreset, onDeletePreset, listed, twin, calculated, sort }: ColumnsPanelProps) {
   const savedPresets = useUserPresetsStore((st) => st.presets);
   const [viewId, setViewId] = useState(views[0]?.id);
   const view = views.find((v) => v.id === viewId) ?? views[0];
@@ -86,6 +91,31 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
     ...presets.map((p) => ({ id: p.id, label: p.label, user: !!onSavePreset })),
     ...(onSavePreset ? [] : savedColumns.map((p) => ({ id: p.id, label: p.name, user: true }))),
   ];
+  const sortRules = sort?.rules ?? [];
+  /** Click cycles a column's sort: off → ascending → descending → off (a new key goes last). */
+  const cycleSort = (field: string) => {
+    if (!sort) return;
+    const r = sortRules.find((x) => x.field === field);
+    if (!r) sort.onChange([...sortRules, { id: newRuleId('sort'), field, direction: 'up' }]);
+    else if (r.direction === 'up') sort.onChange(sortRules.map((x) => (x.field === field ? { ...x, direction: 'down' } : x)));
+    else sort.onChange(sortRules.filter((x) => x.field !== field));
+  };
+  const hiddenSorts = sortRules.filter((r) => !shownSet.has(r.field));
+  const sortButton = (field: string, label: string) => {
+    const i = sortRules.findIndex((x) => x.field === field);
+    const r = sortRules[i];
+    return (
+      <button
+        type="button"
+        className={`rgrid__sort${r ? ' is-on' : ''}`}
+        onClick={() => cycleSort(field)}
+        aria-label={`Sort by ${label}`}
+        title={!r ? `Sort by ${label}` : `${r.direction === 'up' ? 'Ascending (A→Z, smallest first)' : 'Descending (Z→A, largest first)'}${sortRules.length > 1 ? `, sort key ${i + 1}` : ''}: click to ${r.direction === 'up' ? 'reverse it' : 'stop sorting by it'}`}
+      >
+        {r ? <>{r.direction === 'up' ? 'A→Z' : 'Z→A'}{sortRules.length > 1 && <sup>{i + 1}</sup>}</> : '⇅'}
+      </button>
+    );
+  };
   const toggle = (id: string) => set(shownSet.has(id) ? shown.filter((x) => x !== id) : [...shown, id]);
   const drop = (targetId: string) => {
     if (!dragId || dragId === targetId) return;
@@ -142,7 +172,7 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
       </div>
       {shown.length === 0 && <div className="cols__shown"><div className="cols__empty">No columns shown — add some below.</div></div>}
       {shown.length > 0 && (
-        <div className="rgrid" role="table" style={{ '--rg-cols': 'minmax(0, 1fr) 52px' } as React.CSSProperties}>
+        <div className="rgrid" role="table" style={{ '--rg-cols': ['minmax(0, 1fr)', sort && '54px'].filter(Boolean).join(' ') } as React.CSSProperties}>
           {shown.map((id, i) => (
             <div
               key={id}
@@ -170,16 +200,41 @@ export function ColumnsPanel({ catalog, views, presets = COLUMN_PRESETS, groupOr
                     aria-label="Column name"
                   />
                 ) : (
-                  <span className={`rgrid__cell${byId.get(id)!.baseLabel ? ' is-renamed' : ''}`} title={byId.get(id)!.baseLabel ? `${byId.get(id)!.label} (was “${byId.get(id)!.baseLabel}”)` : byId.get(id)!.label} onDoubleClick={() => calculated && setRenaming(id)}>{byId.get(id)!.label}</span>
+                  <span className={`rgrid__cell rgrid__cell--namebox${byId.get(id)!.baseLabel ? ' is-renamed' : ''}`}>
+                    <span className="rgrid__nametext" title={byId.get(id)!.baseLabel ? `${byId.get(id)!.label} (was “${byId.get(id)!.baseLabel}”)` : byId.get(id)!.label} onDoubleClick={() => calculated && setRenaming(id)}>{byId.get(id)!.label}</span>
+                    {calculated && (
+                      <span className="rgrid__acts">
+                        {byId.get(id)!.baseLabel && <button type="button" className="rgrid__ib" onClick={() => resetLabel(id)} aria-label={`Reset the name to “${byId.get(id)!.baseLabel}”`} title={`Reset the name to “${byId.get(id)!.baseLabel}”`}>↺</button>}
+                        <button type="button" className="rgrid__ib" onClick={() => setRenaming(id)} aria-label={`Rename ${byId.get(id)!.label}`} title="Give the column a short name of your own (double-click the name too)"><IconPencil width={14} height={14} /></button>
+                      </span>
+                    )}
+                  </span>
                 )}
-                <span className="rgrid__cell rgrid__cell--act">
-                  {calculated && byId.get(id)!.baseLabel && <button type="button" className="rgrid__ib" onClick={() => resetLabel(id)} aria-label={`Reset the name to “${byId.get(id)!.baseLabel}”`} title={`Reset the name to “${byId.get(id)!.baseLabel}”`}>↺</button>}
-                  {calculated && renaming !== id && <button type="button" className="rgrid__ib" onClick={() => setRenaming(id)} aria-label={`Rename ${byId.get(id)!.label}`} title="Give the column a short name of your own (double-click the name too)"><IconPencil width={14} height={14} /></button>}
-                </span>
+                {sort && <span className="rgrid__cell rgrid__cell--sort">{sort.canSort?.(id) === false ? null : sortButton(id, byId.get(id)!.label)}</span>}
               </div>
             </div>
           ))}
         </div>
+      )}
+
+      {sort && hiddenSorts.length > 0 && (
+        <>
+          <div className="cols__heading"><span>Also sorted by <b>{hiddenSorts.length}</b> <span className="cols__sub">(not shown as columns)</span></span></div>
+          <div className="rgrid" role="table" style={{ '--rg-cols': 'minmax(0, 1fr) 54px' } as React.CSSProperties}>
+            {hiddenSorts.map((r) => (
+              <div key={r.id} role="row" className="rgrid__row">
+                <span className="rgrid__n">
+                  <span className="rgrid__num">{sortRules.indexOf(r) + 1}</span>
+                  <button type="button" className="rgrid__del" onClick={() => sort.onChange(sortRules.filter((x) => x.id !== r.id))} aria-label={`Stop sorting by ${byId.get(r.field)?.label ?? r.field}`} title="Stop sorting by it"><IconRemove /></button>
+                </span>
+                <div className="rgrid__body">
+                  <span className="rgrid__cell" title={byId.get(r.field)?.label ?? r.field}>{byId.get(r.field)?.label ?? r.field}</span>
+                  <span className="rgrid__cell rgrid__cell--sort">{sortButton(r.field, byId.get(r.field)?.label ?? r.field)}</span>
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
       )}
 
       {calculated && <CalcColumnsEditor catalog={catalog as unknown as ColumnDef[]} />}

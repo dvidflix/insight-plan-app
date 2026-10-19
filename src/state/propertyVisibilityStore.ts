@@ -8,6 +8,9 @@ interface PropertyVisibilityState {
   hiddenProps: string[];
   /** How the Properties table opens: property sets closed, or open. */
   expandMode: 'collapsed' | 'expanded';
+  /** What is left out here is left out of the fields offered by filters, columns, grouping, sorting and colours too (on by default). */
+  applyToFields: boolean;
+  setApplyToFields: (on: boolean) => void;
   setPsetHidden: (pset: string, hidden: boolean) => void;
   setPropHidden: (key: string, hidden: boolean) => void;
   setAll: (hiddenPsets: string[], hiddenProps: string[]) => void;
@@ -26,6 +29,8 @@ export const usePropertyVisibilityStore = create<PropertyVisibilityState>()(
       hiddenProps: [],
       // Sets open, so a selected object's properties show straight away.
       expandMode: 'expanded',
+      applyToFields: true,
+      setApplyToFields: (applyToFields) => set({ applyToFields }),
       setPsetHidden: (pset, hidden) => set((s) => ({ hiddenPsets: toggle(s.hiddenPsets, pset, hidden) })),
       setPropHidden: (key, hidden) => set((s) => ({ hiddenProps: toggle(s.hiddenProps, key, hidden) })),
       setAll: (hiddenPsets, hiddenProps) => set({ hiddenPsets, hiddenProps }),

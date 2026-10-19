@@ -31,6 +31,8 @@ import { SearchSetsPanel } from './SearchSetsPanel';
 import { useListConfigStore } from '../state/listConfigStore';
 import { useDataTableStore } from '../state/dataTableStore';
 import { DockPanel } from './Dock';
+import { ScenarioTabContent } from './scenarios/ScenarioDock';
+import { ScenarioRulesDock } from './scenarios/ScenarioRules';
 import { DockGantt } from './sequence/DockGantt';
 import { useSequenceSchedule } from '../state/scheduleStore';
 import { useDockStore } from '../state/dockStore';
@@ -75,6 +77,8 @@ export function ModelToolsPanel() {
       <DockPanel id="checks" label="Model checks"><ModelChecksPanel /></DockPanel>
       <DockPanel id="compare" label="Compare models"><ModelComparePanel /></DockPanel>
       {scenarios && <DockPanel id="recipes" label="Recipes"><RecipesDock /></DockPanel>}
+      {scenarios && <DockPanel id="scenarios" label="Sequence"><ScenarioTabContent /></DockPanel>}
+      {scenarios && <DockPanel id="rules" label="Rules"><ScenarioRulesDock /></DockPanel>}
       {bcf && <DockPanel id="topics" label="Topics">{panels ? <div className="tpc-pad"><TopicsPanel /></div> : <div className="flt__hint">Starting viewer…</div>}</DockPanel>}
     </>
   );
@@ -248,23 +252,27 @@ export function ModelDockPanels({ page, views, colour }: { page: 'model' | 'sequ
   );
 }
 
-/** The Models page's panels: model browsing (tree, properties, sets, views with the view settings and fly-through,
-    colour) and placement, as dock panels. */
-export function ModelConfigPanel() {
-  const panels = useSequenceUiStore((s) => s.modelPanels);
-  // The data table's Configure button brings its setup panel up.
+/** What the Models page does on its own: the data table's Configure brings its setup up, splitting the view brings up Views. */
+function ModelPageReactions() {
   const configRequest = useDataTableStore((s) => s.configRequest);
   useEffect(() => {
     if (configRequest) useListConfigStore.getState().setNOpen(true);
   }, [configRequest]);
-  // Splitting the view brings up Views, to set the two views up.
   const split = useViewSettingsStore((s) => s.pages.model.split);
   useOnSplit(split);
   useViewpointsToggle('model');
+  return null;
+}
+
+/** The Models page's panels: model browsing (tree, properties, sets, views with the view settings and fly-through,
+    colour) and placement, as dock panels. */
+export function ModelConfigPanel({ background = false }: { /** Another view is the main window (the Programmes views): the panels are there to open beside it, without the Models page's own reactions and its Gantt. */ background?: boolean } = {}) {
+  const panels = useSequenceUiStore((s) => s.modelPanels);
   return (
     <>
+      {!background && <ModelPageReactions />}
       <ModelToolsPanel />
-      <ModelsGanttPanel />
+      {!background && <ModelsGanttPanel />}
       <ModelDockPanels
         page="model"
         colour

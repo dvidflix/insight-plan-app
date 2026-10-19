@@ -17,7 +17,7 @@ import { runIfcTool } from '../ifcTools/client';
 export function PropertyVisibilityPanel() {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
-  const { hiddenPsets, hiddenProps, setPsetHidden, setPropHidden, setAll } = usePropertyVisibilityStore();
+  const { hiddenPsets, hiddenProps, setPsetHidden, setPropHidden, setAll, applyToFields, setApplyToFields } = usePropertyVisibilityStore();
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState<Set<string>>(new Set());
   // The per-model indexes fill in after load; rebuild the list then.
@@ -104,6 +104,12 @@ export function PropertyVisibilityPanel() {
         <button type="button" className="btn btn--small" onClick={() => setAll([], [])} disabled={!hiddenPsets.length && !hiddenProps.length}>Show all</button>
         <button type="button" className="btn btn--small" onClick={() => setAll(catalog.map((c) => c.pset), hiddenProps)}>Hide all</button>
         <span className="pvis__count">{hiddenPsets.length} sets · {hiddenProps.length} properties hidden</span>
+      </div>
+      <div className="related__actions pvis__apply">
+        <span>Also hide them in the table fields <InfoTip>The properties and sets left out here are not offered as fields in the Data table (columns, filters, grouping, sorting, colours), Search sets and Colour either. Fields already in use stay.</InfoTip></span>
+        <button type="button" role="switch" aria-checked={applyToFields} className={`switch${applyToFields ? ' on' : ''}`} onClick={() => setApplyToFields(!applyToFields)}>
+          <span className="switch__thumb" />
+        </button>
       </div>
       {FEATURES.serverFiles && (
         <div className="related__actions">

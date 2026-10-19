@@ -11,6 +11,7 @@ import type { IdsByModel } from '../viewer/relations';
 import type { ModelIndex } from '../viewer/ViewerEngine';
 import { downloadCsv } from '../utils/csv';
 import { usePersistedState } from '../utils/persistedState';
+import { IconExpander } from './icons';
 
 const MAX_ROWS = 400;
 type GroupBy = 'none' | 'a' | 'b' | 'classes';
@@ -268,7 +269,7 @@ export function ClashPanel() {
                     {groups.flatMap((g) => {
                       const head = g.key
                         ? [<tr key={`g-${g.key}`} className="clash__group" onClick={() => setClosed((c) => { const n = new Set(c); if (n.has(g.key)) n.delete(g.key); else n.add(g.key); return n; })}>
-                            <td colSpan={5}>{closed.has(g.key) ? '▸' : '▾'} <b>{g.label}</b> <span className="clash__count">{g.rows.length}</span></td>
+                            <td colSpan={5}><IconExpander open={!closed.has(g.key)} width={14} height={14} /> <b>{g.label}</b> <span className="clash__count">{g.rows.length}</span></td>
                             <td className="clash__tools"><button type="button" className="mini-btn" onClick={(e) => { e.stopPropagation(); show(g.rows); }} title="Select these in 3D">Show</button></td>
                           </tr>]
                         : [];

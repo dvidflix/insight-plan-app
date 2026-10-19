@@ -1,4 +1,4 @@
-import { IconRemove } from '../icons';
+import { IconRemove, IconExpander } from '../icons';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { PALETTE, newId, shortName, useTimelinesStore, type Person, type Timeline, type TimelineRow } from '../../state/timelinesStore';
 import { editSpan } from './shared';
@@ -305,7 +305,7 @@ export function TimelineTable({ timeline, people, selectedRow, onSelect, addRow,
       const canSelect = !item.collapsed && first >= 0;
       cells.push(
         <div key={`g:${item.key}`} className="tl-gcell tl-gcell--group" style={{ gridRow, gridColumn: '1 / -1', paddingLeft: 8 + item.depth * 16 }} onClick={() => toggleGroup(item.key)}>
-          <span className="tl-chev">{item.collapsed ? '▸' : '▾'}</span>
+          <span className="tl-chev"><IconExpander open={!item.collapsed} width={14} height={14} /></span>
           <b className="tl-grouplabel">{item.label}</b>
           <span className="tl-groupcount">{item.count}</span>
           {canSelect && (

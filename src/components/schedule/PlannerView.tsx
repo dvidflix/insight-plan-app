@@ -17,6 +17,7 @@ import { useActivitySelectionStore } from '../../state/activitySelectionStore';
 import { usePersistedState } from '../../utils/persistedState';
 import { useDockStore } from '../../state/dockStore';
 import { useRowPx } from '../../state/tableStyleStore';
+import { IconExpander } from '../icons';
 
 /** The planner: the programme as a tree to build and edit, in the way of P6 and Synchro: WBS nodes as summary rows with their
     activities under them, every cell typed in place, rows moved (Alt+↑ ↓), indented (Tab) and outdented (Shift+Tab) with the
@@ -578,7 +579,7 @@ export function PlannerView({ model, selectedId, onSelect, onNote }: {
       return (
         <span className="planner__name" style={{ paddingLeft: r.depth * 16 }}>
           {r.kind === 'wbs' ? (
-            <button type="button" className="planner__twist" tabIndex={-1} onClick={(ev) => { ev.stopPropagation(); toggle(r.id); }} aria-label={collapsedSet.has(r.id) ? 'Expand' : 'Collapse'}>{r.hasChildren ? (collapsedSet.has(r.id) ? '▸' : '▾') : ''}</button>
+            <button type="button" className="planner__twist" tabIndex={-1} onClick={(ev) => { ev.stopPropagation(); toggle(r.id); }} aria-label={collapsedSet.has(r.id) ? 'Expand' : 'Collapse'}>{r.hasChildren ? <IconExpander open={!collapsedSet.has(r.id)} width={14} height={14} /> : ''}</button>
           ) : <span className="planner__twist" />}
           <span className="planner__text" title={text}>{text}</span>
         </span>

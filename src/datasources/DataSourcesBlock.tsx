@@ -1,14 +1,12 @@
 import { useDataTableStore } from '../state/dataTableStore';
 import { IconAddCircleOutline, IconRemove, IconSync } from '../components/icons';
 import { chooseDataFiles, chooseFileFor, showSource } from './addFiles';
-import { DataLinkSetup } from './DataLink';
 import { SOURCE_KIND_LABEL } from './parsers';
 import { useExternalTable } from './externalRows';
 import { useDataSourcesStore } from './store';
 
-/** The Data table's external data, in its settings panel: the sources (add, read again, remove) and, for the table showing, the
-    ID Match that couples its rows to the model and the triggers between the two. */
-export function DataSourcesBlock() {
+/** The Source tab of the Data table's setup: the sources of external data (add, read again, remove), and the table showing. */
+export function DataSourcesTab() {
   const sources = useDataSourcesStore((s) => s.sources);
   const data = useDataSourcesStore((s) => s.data);
   const busy = useDataSourcesStore((s) => s.busy);
@@ -20,7 +18,7 @@ export function DataSourcesBlock() {
   return (
     <div className="dtp__sources">
       <div className="cols__heading">
-        <span>External data</span>
+        <span>Sources</span>
         <button type="button" className="btn btn--small" onClick={() => void chooseDataFiles()} title="Add CSV / text, Excel or SQLite files: each table is then in the table's list above (you can also drop files on the table)">
           <IconAddCircleOutline width={14} height={14} /> Add data file…
         </button>
@@ -43,7 +41,6 @@ export function DataSourcesBlock() {
           </div>
         );
       })}
-      {ext && <DataLinkSetup sourceId={ext.source.id} tableName={ext.name} table={ext.table} match={ext.match} />}
     </div>
   );
 }

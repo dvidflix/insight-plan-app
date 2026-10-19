@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 import type { ViewKey } from './viewSettingsStore';
+import type { ColourScale } from '../viewer/colourScale';
 
 export interface ValueColor {
   value: string;
@@ -20,6 +21,9 @@ export interface ColourConfig {
   colors: ValueColor[];
   /** Colour for values without one; null keeps their own colours. */
   others: string | null;
+  /** 'values': a colour per value. 'grade': numbers coloured along `scale`. */
+  mode?: 'values' | 'grade';
+  scale?: ColourScale;
 }
 
 export const DEFAULT_COLOUR: ColourConfig = {

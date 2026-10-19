@@ -22,14 +22,19 @@ export function kindOfFile(name: string): SourceKind | null {
   return null;
 }
 
-/** The delimiter a text file uses: the one of tab, semicolon, comma and pipe that is most common in its first lines. */
+/** The delimiter a text file uses: the one of comma, semicolon, tab and pipe that splits its first lines into the same number of columns
+    (more than one), counting quoted cells as one; a delimiter that merely appears in the data ("A || B") does not win. */
 export function detectDelimiter(text: string): string {
-  const sample = text.slice(0, 4000).split(/\r?\n/).slice(0, 8).join('\n');
+  const head = text.slice(0, 20000).split(/\r?\n/).slice(0, 12).join('\n');
   let best = ',';
-  let bestCount = 0;
+  let bestScore = 0;
   for (const d of [',', ';', '\t', '|']) {
-    const n = sample.split(d).length - 1;
-    if (n > bestCount) { best = d; bestCount = n; }
+    const widths = parseDelimited(head, d).map((r) => r.length).filter((n) => n > 0);
+    if (!widths.length || widths[0] < 2) continue;
+    const same = widths.filter((n) => n === widths[0]).length / widths.length;
+    // Rows that agree on the width, then more columns.
+    const score = same * 1000 + widths[0];
+    if (score > bestScore) { best = d; bestScore = score; }
   }
   return best;
 }

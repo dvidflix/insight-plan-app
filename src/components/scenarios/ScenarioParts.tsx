@@ -47,7 +47,7 @@ import { totalRules } from '../../prs/rules';
 import { DEFAULT_PRESETS, normalizePresets, type RulePreset } from '../../prs/presets';
 import { ScenarioTableConfig, scnTabBadges } from './ScenarioTableConfig';
 import { ScenarioRulesEditor } from './ScenarioRules';
-import { IconArrowDown, IconArrowUp, IconColumns, IconFilter, IconGroup, IconPalette, IconRedo, IconReroute, IconSort, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash, IconDelete, IconRemove } from '../icons';
+import { IconArrowDown, IconArrowUp, IconColumns, IconFilter, IconGroup, IconPalette, IconRedo, IconReroute, IconSync, IconSplit, IconTune, IconUndo, IconUpload, IconChevronRight, IconExpandMore, IconCubeFocus, IconFlag, IconVideoCamera, IconVideoCameraSlash, IconDelete, IconRemove } from '../icons';
 import { useProjectDbStore } from '../../state/projectDbStore';
 import type { SidePaneTab } from '../SidePane';
 import { AddModelToProject, ModelCheckCard } from './ScenarioModelCheck';
@@ -668,7 +668,6 @@ export function useScenarioTabs(withRules = true): SidePaneTab<ScenarioCfgTab>[]
     { id: 'columns', label: 'Columns', icon: <IconColumns /> },
     { id: 'filters', label: 'Filters', icon: <IconFilter />, badge: badges.filters },
     { id: 'group', label: 'Group', icon: <IconGroup />, badge: badges.group },
-    { id: 'sort', label: 'Sort', icon: <IconSort />, badge: badges.sort },
     { id: 'color', label: 'Color', icon: <IconPalette />, badge: badges.color },
   ];
   return ready ? all.filter((t) => withRules || t.id !== 'rules') : all.slice(0, 1);

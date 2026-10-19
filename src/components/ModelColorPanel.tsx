@@ -9,6 +9,7 @@ import { SET_FOLDER, isSetFolderField, makeValueOf, setFolderOf } from '../viewe
 import { useIndexTick, useModelFields } from './modelFields';
 import { useColourValues } from './useColourValues';
 import { MODEL_PALETTES, paletteColors } from '../viewer/colorPalettes';
+import { DEFAULT_SCALE, SCALE_PRESETS, colourAt, gradeColorOf, scaleCss, scaleRange, type ColourScale } from '../viewer/colourScale';
 import { FieldPicker } from './schedule/FieldRules';
 import { CollapsibleSection, useOpenSections } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
@@ -25,7 +26,9 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
   const split = useViewSettingsStore((s) => s.pages[page].split);
   const [picked, setPicked] = useState<ViewKey>('main');
   const view: ViewKey = split ? picked : 'main';
-  const { enabled, field, palette, seed, colors, others } = useModelColorStore((s) => s.views[view]);
+  const { enabled, field, palette, seed, colors, others, mode, scale: storedScale } = useModelColorStore((s) => s.views[view]);
+  const grade = mode === 'grade';
+  const scale = storedScale ?? DEFAULT_SCALE;
   const patchView = useModelColorStore((s) => s.patch);
   const patch = (p: Partial<ColourConfig>) => patchView(view, p);
   const fields = useModelFields();
@@ -213,21 +216,32 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
           </select>
         </label>
         <label className="disp__row">
+          <span>
+            Colour as{' '}
+            <InfoTip>One colour per value, or grade a number along a colour scale (like Excel's colour scales): the lowest number gets the first colour, the highest the last.</InfoTip>
+          </span>
+          <select value={grade ? 'grade' : 'values'} onChange={(e) => patch({ mode: e.target.value as 'values' | 'grade', ...(e.target.value === 'grade' && storedScale === undefined ? { scale: DEFAULT_SCALE } : {}), enabled: true })}>
+            <option value="values">Value colours</option>
+            <option value="grade">Grading (a number on a scale)</option>
+          </select>
+        </label>
+        {grade && <ScaleEditor scale={scale} onChange={(s) => patch({ scale: s })} range={scaleRange(scale, gradeValues.map((v) => v.value))} />}
+        {!grade && <label className="disp__row">
           <span>Palette</span>
           <select value={palette} onChange={(e) => recolour(field, e.target.value, seed)}>
             {MODEL_PALETTES.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
             <option value="random">Random</option>
           </select>
-        </label>
-        <div className="model-colour__palette">
+        </label>}
+        {!grade && <div className="model-colour__palette">
           {paletteColors(palette, 12, seed).map((c, i) => <span key={i} style={{ background: c }} />)}
           <button type="button" className="btn btn--small" onClick={() => recolour(field, 'random', Math.random())} title="New random colours">Shuffle</button>
           <button type="button" className="btn btn--small" onClick={() => recolour(field, palette, seed)} title="Recolour every value from the palette (undoes hand-picked colours)">Reset colours</button>
-        </div>
+        </div>}
         <div className="disp__row">
           <span>
-            Other values{' '}
-            <InfoTip>Values without a colour of their own (beyond the {MAX_VALUES} most common): one colour for all, or keep their own colours.</InfoTip>
+            {grade ? 'Not a number' : 'Other values'}{' '}
+            <InfoTip>{grade ? 'Objects whose value is not a number: one colour for all, or keep their own colours.' : `Values without a colour of their own (beyond the ${MAX_VALUES} most common): one colour for all, or keep their own colours.`}</InfoTip>
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <label className="cols__check" style={{ margin: 0 }}>
@@ -240,7 +254,7 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
       </div>
       </CollapsibleSection>
 
-      <CollapsibleSection
+      {!grade && <CollapsibleSection
         title={`Values (${values.length})`}
         open={sections.isOpen('values')}
         onToggle={() => sections.toggle('values')}
@@ -314,7 +328,7 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
           </div>
           </>
         )}
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
       <CollapsibleSection title="Colour by…" open={sections.isOpen('field')} onToggle={() => sections.toggle('field')}>
         <div className="cols">
@@ -333,6 +347,75 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
   );
 }
 
+/** The colour scale of grading: a preset, the colour stops (add, move, recolour, remove) and the ends (Lowest / Highest number). */
+function ScaleEditor({ scale, onChange, range }: { scale: ColourScale; onChange: (s: ColourScale) => void; range: { min: number; max: number } | null }) {
+  const setStop = (i: number, p: Partial<{ at: number; color: string }>) => onChange({ ...scale, stops: scale.stops.map((s, k) => (k === i ? { ...s, ...p } : s)) });
+  const end = (key: 'min' | 'max', label: string, auto: number | undefined) => (
+    <span style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+      <label className="cols__check" style={{ margin: 0 }} title={`Take the ${label.toLowerCase()} number found`}>
+        <input type="checkbox" checked={scale[key] === null} onChange={(e) => onChange({ ...scale, [key]: e.target.checked ? null : auto ?? 0 })} />
+        <span>Auto</span>
+      </label>
+      <input
+        type="number"
+        style={{ width: 80 }}
+        disabled={scale[key] === null}
+        value={scale[key] ?? auto ?? ''}
+        onChange={(e) => e.target.value !== '' && Number.isFinite(Number(e.target.value)) && onChange({ ...scale, [key]: Number(e.target.value) })}
+        aria-label={label}
+      />
+    </span>
+  );
+  return (
+    <>
+      <label className="disp__row">
+        <span>Scale</span>
+        <select value="" onChange={(e) => { const p = SCALE_PRESETS.find((x) => x.id === e.target.value); if (p) onChange({ ...scale, stops: p.stops }); }}>
+          <option value="">— presets —</option>
+          {SCALE_PRESETS.map((p) => <option key={p.id} value={p.id}>{p.label}</option>)}
+        </select>
+      </label>
+      <div style={{ height: 14, borderRadius: 4, border: '1px solid var(--border)', background: scaleCss(scale.stops), margin: '2px 0 6px' }} aria-hidden />
+      {scale.stops.map((s, i) => (
+        <div className="disp__row" key={i}>
+          <span style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="color" className="model-colour__swatch" value={s.color} onChange={(e) => setStop(i, { color: e.target.value })} title="Colour of this stop" />
+            <input
+              type="number"
+              min={0}
+              max={100}
+              style={{ width: 56 }}
+              value={Math.round(s.at * 100)}
+              onChange={(e) => e.target.value !== '' && setStop(i, { at: Math.min(100, Math.max(0, Number(e.target.value))) / 100 })}
+              title="Where on the scale, in % from the lowest number to the highest"
+              aria-label="Stop position in percent"
+            />
+            <span>%</span>
+          </span>
+          <button type="button" className="btn btn--small" disabled={scale.stops.length <= 2} onClick={() => onChange({ ...scale, stops: scale.stops.filter((_, k) => k !== i) })} title="Remove this colour">×</button>
+        </div>
+      ))}
+      <div className="disp__row">
+        <span />
+        <button
+          type="button"
+          className="btn btn--small"
+          onClick={() => {
+            const s = [...scale.stops].sort((a, b) => a.at - b.at);
+            const last = s[s.length - 1];
+            const prev = s[s.length - 2];
+            onChange({ ...scale, stops: [...scale.stops, { at: prev ? (prev.at + last.at) / 2 : 0.5, color: colourAt(scale.stops, prev ? (prev.at + last.at) / 2 : 0.5) }] });
+          }}
+        >
+          Add colour
+        </button>
+      </div>
+      <div className="disp__row"><span>Lowest</span>{end('min', 'Lowest', range?.min)}</div>
+      <div className="disp__row"><span>Highest</span>{end('max', 'Highest', range?.max)}</div>
+    </>
+  );
+}
+
 /** Applies Models > Colour to the models while the Models page shows, and
     takes the colours off again when it hides or colouring is turned off —
     the main view's colouring on it, the right view's on the split's second view. */
@@ -347,9 +430,10 @@ export function ModelColorSync() {
 
 function ViewColourSync({ view }: { view: ViewKey }) {
   const engine = useViewerEngine();
-  const { enabled, field, colors, others } = useModelColorStore((s) => s.views[view]);
+  const { enabled, field, colors, others, mode, scale } = useModelColorStore((s) => s.views[view]);
   const sets = useSearchSetsStore((s) => s.sets);
   const models = useModelsStore((s) => s.models);
+  const gradeValues = useColourValues(mode === 'grade' ? field : '');
   const tick = useIndexTick();
   const secondaryTick = useSecondaryTick();
   // Applying and removing are async: queue them so a removal never lands on
@@ -360,13 +444,14 @@ function ViewColourSync({ view }: { view: ViewKey }) {
     const target = view === 'main' ? engine : engine.secondary;
     if (!enabled || !target) return;
     const byValue = new Map(colors.map((c) => [c.value, c.color]));
+    const grade = mode === 'grade' ? gradeColorOf(scale ?? DEFAULT_SCALE, gradeValues.map((v) => v.value)) : null;
     const valueOf = makeValueOf(field, engine.getIndexes(), sets);
     const applied: [string, number[]][] = [];
     enqueue(async () => {
       for (const [modelId, index] of engine.getIndexes()) {
         const byColor = new Map<string, number[]>();
         for (const [id, e] of index.elements) {
-          const c = byValue.get(valueOf(e)) ?? others;
+          const c = (grade ? grade(valueOf(e)) : byValue.get(valueOf(e))) ?? others;
           if (c) (byColor.get(c) ?? byColor.set(c, []).get(c)!).push(id);
         }
         const all: number[] = [];
@@ -384,7 +469,7 @@ function ViewColourSync({ view }: { view: ViewKey }) {
         await target.forceUpdate();
       });
     };
-  }, [engine, view, enabled, field, colors, others, models, sets, tick, secondaryTick]);
+  }, [engine, view, enabled, field, colors, others, mode, scale, gradeValues, models, sets, tick, secondaryTick]);
   return null;
 }
 

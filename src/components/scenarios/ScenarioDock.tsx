@@ -154,8 +154,8 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
           id="sequence"
           searchable
           label="Sequence table"
-          badges={{ filters: badges.filters, group: badges.group, sort: badges.sort, color: badges.color }}
-          panels={{ columns: tableTab('columns'), filters: tableTab('filters'), group: tableTab('group'), sort: tableTab('sort'), color: tableTab('color') }}
+          badges={{ filters: badges.filters, group: badges.group, color: badges.color }}
+          panels={{ columns: tableTab('columns'), filters: tableTab('filters'), group: tableTab('group'), color: tableTab('color') }}
         />
       )}
       <ScenarioSync />

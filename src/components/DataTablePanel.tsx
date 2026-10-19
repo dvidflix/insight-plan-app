@@ -1,3 +1,4 @@
+import { useListLevel, useTableSearchStore } from '../state/tableSearchStore';
 import { useMemo, useState } from 'react';
 import type { ElementSummary } from '../viewer/types';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
@@ -5,22 +6,24 @@ import { useModelsStore } from '../state/modelsStore';
 import { COL_CLASS, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore } from '../state/dataTableStore';
 import { useTwin } from './useTwin';
 import { SEVERAL } from '../viewer/twinMatch';
-import { useSearchSetsStore } from '../state/searchSetsStore';
 import { ATTRIBUTES, elementValue } from '../viewer/bimTables';
-import { conditionTest, countIds, runSearchSet, SEARCH_OPS, type SearchCondition } from '../viewer/searchSets';
-import { FilterShell, type FilterChip } from './FilterShell';
+import { conditionTest, SEARCH_OPS, type SearchCondition } from '../viewer/searchSets';
+import { PresetBar } from './schedule/PresetBar';
+import { combineTests } from '../viewer/filterLogic';
 import { ColumnsPanel } from './schedule/ColumnsPanel';
 import { GroupPanel } from './schedule/GroupPanel';
-import { SortPanel } from './schedule/SortPanel';
 import { ColorPanel } from './schedule/ColorPanel';
-import { FieldPicker, RuleRows, newRuleId, type PickField } from './schedule/FieldRules';
+import { newRuleId, type PickField } from './schedule/FieldRules';
+import { FilterRules, LogicRow } from './FilterRules';
 import { ConditionEditor } from './SearchSetsPanel';
 import { useIndexTick, useModelFields } from './modelFields';
 import { InfoTip } from './InfoTip';
 import { ListConfig } from './ListConfig';
+import { useVirtualFieldList } from './useVirtualFields';
 import { FEATURES } from '../features';
 import { pseudoObjects, useExternalTable } from '../datasources/externalRows';
-import { DataSourcesBlock } from '../datasources/DataSourcesBlock';
+import { DataSourcesTab } from '../datasources/DataSourcesBlock';
+import { DataLinkSetup, LinkTriggersBlock } from '../datasources/DataLink';
 
 const DEFAULT_COLUMNS = [COL_NAME, COL_CLASS, COL_MODEL];
 
@@ -32,12 +35,16 @@ export function DataTableListConfig() {
   const tick = useIndexTick();
   const store = useDataTableStore();
   const { columns, setColumns, filters, filterMatch, groupRules, sortRules, colorRules, patch } = store;
-  const modelFields = useModelFields();
+  // The fields in use stay offered even if they were left out in Show / hide properties.
+  const inUse = useMemo(() => [...columns, ...filters.map((f) => f.field), ...groupRules.map((r) => r.field), ...sortRules.map((r) => r.field), ...colorRules.map((r) => r.field)], [columns, filters, groupRules, sortRules, colorRules]);
+  const modelFields = useModelFields(inUse);
   const scope = useDataTableStore((s) => s.scope);
   // External data showing: its columns are the properties, one pseudo-object per row (see datasources/externalRows).
   const ext = useExternalTable(scope);
   const extObjects = useMemo(() => (ext ? pseudoObjects(ext.table, ext.source.name) : null), [ext?.table, ext?.source.name]); // eslint-disable-line react-hooks/exhaustive-deps
-  const baseFields = useMemo<PickField[]>(() => (ext ? ext.table.columns.map((c) => ({ id: c, label: c, group: ext.source.name })) : modelFields), [ext?.table, ext?.source.name, modelFields]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Besides the properties: the search / selection set folders and the Link Group of each object.
+  const virtualFields = useVirtualFieldList();
+  const baseFields = useMemo<PickField[]>(() => (ext ? ext.table.columns.map((c) => ({ id: c, label: c, group: ext.source.name })) : [...modelFields, ...virtualFields]), [ext?.table, ext?.source.name, modelFields, virtualFields]); // eslint-disable-line react-hooks/exhaustive-deps
   const twin = useTwin();
   // With a twin model, every property of its objects can be a column, filter, group, sort key or colour too.
   const fields = useMemo(() => {
@@ -94,15 +101,19 @@ export function DataTableListConfig() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, models, tick, twin.b, extObjects]);
 
+  const level = useListLevel('datatable');
   const badges = { columns: columns.length, filters: filters.filter((c) => conditionTest(c)).length, group: groupRules.length, sort: sortRules.length, color: colorRules.length };
   return (
     <ListConfig
       id="datatable"
       searchable
+      level={groupRules.length === 0 ? undefined : { value: level, max: groupRules.length - 1, set: (v) => useTableSearchStore.getState().setListLevel('datatable', v) }}
       label="Data table"
       badges={badges}
-      extra={<>{!ext && <PresetsRow />}{!ext && <TwinBlock twin={twin} />}{FEATURES.dataSources && <DataSourcesBlock />}</>}
+      extra={ext ? <LinkTriggersBlock /> : <><PresetsRow /><TwinBlock twin={twin} /></>}
       panels={{
+        source: FEATURES.dataSources ? <DataSourcesTab /> : undefined,
+        match: ext ? <DataLinkSetup sourceId={ext.source.id} tableName={ext.name} table={ext.table} groups={ext.groups} /> : undefined,
         columns: (
           <ColumnsPanel
             catalog={fields.map((f) => ({ id: f.id, label: f.label, group: f.group ?? 'Other' }))}
@@ -110,13 +121,13 @@ export function DataTableListConfig() {
             twin={twinColumns ? { titles: ['Main model', 'Twin'], hints: [twin.a!.name, twin.b!.name], twinOf: twinColumns.twinOf, hasOwn: twinColumns.hasOwn } : undefined}
             views={[{ id: 'table', label: 'Data table', selected: columns, defaults: ext ? ext.table.columns : DEFAULT_COLUMNS, onChange: setColumns }]}
             presets={[]}
+            sort={{ rules: sortRules, onChange: (r) => patch({ sortRules: r }) }}
             groupOrder={[ATTRIBUTES]}
             closedGroups={[]}
           />
         ),
-        filters: <FiltersTab fields={fields} filters={filters} match={filterMatch} onChange={(pp) => patch(pp)} objects={extObjects} />,
+        filters: <FiltersTab fields={fields} filters={filters} match={filterMatch} logic={store.filterLogic} onChange={(pp) => patch(pp)} objects={extObjects} />,
         group: <GroupPanel bare fields={fields} rules={groupRules} onChange={(r) => patch({ groupRules: r })} onClose={() => {}} onCollapseAll={() => store.setGroupsCollapsed(true)} onExpandAll={() => store.setGroupsCollapsed(false)} />,
-        sort: <SortPanel bare fields={fields} rules={sortRules} onChange={(r) => patch({ sortRules: r })} onClose={() => {}} />,
         color: <ColorPanel bare fields={fields} valuesOf={valuesOf} rules={colorRules} onChange={(r) => patch({ colorRules: r })} onClose={() => {}} />,
       }}
     />
@@ -198,18 +209,21 @@ function TwinBlock({ twin }: { twin: ReturnType<typeof useTwin> }) {
 
 /** Filters: conditions a row must meet — the same conditions as Search
     sets, so a filter can be saved as one (and a set loaded as the filter). */
-function FiltersTab({ fields, filters, match, onChange, objects }: {
+function FiltersTab({ fields, filters, match, logic, onChange, objects }: {
   /** External data showing: its rows as pseudo-objects (the counts are over those, not the model). */
   objects: ElementSummary[] | null;
   fields: PickField[];
   filters: SearchCondition[];
   match: 'all' | 'any';
-  onChange: (p: { filters?: SearchCondition[]; filterMatch?: 'all' | 'any' }) => void;
+  /** The formula over the rule numbers; empty: all / any of them. */
+  logic: string;
+  onChange: (p: { filters?: SearchCondition[]; filterMatch?: 'all' | 'any'; filterLogic?: string }) => void;
 }) {
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
-  const { sets, save } = useSearchSetsStore();
+  const savedFilters = useDataTableStore((st) => st.savedFilters);
+  const { saveFilter, removeFilter } = useDataTableStore.getState();
   const byId = new Map(fields.map((f) => [f.id, f]));
   const total = useMemo(() => {
     if (objects) return objects.length;
@@ -220,81 +234,69 @@ function FiltersTab({ fields, filters, match, onChange, objects }: {
   }, [engine, models, tick, objects]);
   const matched = useMemo(
     () => {
-      if (!filters.some((c) => conditionTest(c))) return total;
+      const keep = combineTests(filters.map((c) => conditionTest(c)), match, logic);
+      if (!keep) return total;
+      let n = 0;
       if (objects) {
-        const tests = filters.map((c) => conditionTest(c)).filter((t): t is (e: ElementSummary) => boolean => t !== null);
-        return objects.filter((e) => (match === 'all' ? tests.every((t) => t(e)) : tests.some((t) => t(e)))).length;
+        for (const e of objects) if (keep(e)) n++;
+        return n;
       }
-      return countIds(runSearchSet(engine.getIndexes(), { match, conditions: filters }));
+      for (const index of engine.getIndexes().values()) for (const e of index.elements.values()) if (keep(e)) n++;
+      return n;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [engine, filters, match, models, tick, total, objects],
+    [engine, filters, match, logic, models, tick, total, objects],
   );
   const setFilters = (next: SearchCondition[]) => onChange({ filters: next });
   const patchCondition = (id: string, p: Partial<SearchCondition>) => setFilters(filters.map((c) => (c.id === id ? { ...c, ...p } : c)));
-  const add = (f: PickField) => setFilters([...filters, { id: newRuleId('c'), field: f.id, op: 'anyOf', value: '', values: [] }]);
-  const saveAsSet = () => {
-    const name = window.prompt('Save the filter as a search set named:', `Data table filter ${sets.length + 1}`)?.trim();
-    if (name) save({ id: newRuleId('ss'), name, group: '', match, conditions: filters.map((c) => ({ ...c, id: newRuleId('c') })) });
+  // The condition being edited under the summary table (a new one opens at once).
+  const [editing, setEditing] = useState<string | null>(null);
+  const add = (f: PickField) => {
+    const c: SearchCondition = { id: newRuleId('c'), field: f.id, op: 'anyOf', value: '', values: [] };
+    setFilters([...filters, c]);
+    setEditing(c.id);
   };
-  const loadSet = (id: string) => {
-    const set = sets.find((s) => s.id === id);
-    if (set) onChange({ filters: set.conditions.map((c) => ({ ...c, id: newRuleId('c') })), filterMatch: set.match });
-  };
-
+  const active = filters.filter((c) => conditionTest(c)).length;
   const labelOf = (id: string) => byId.get(id)?.label ?? id;
+  /** A condition in a few words: how it compares, and with what. */
   const summaryOf = (c: SearchCondition) => {
     const picked = c.values?.length ? c.values.join(', ') : c.value;
     const op = SEARCH_OPS.find((o) => o.op === c.op)?.label ?? '';
     return [op, c.op === 'between' && c.value2 ? `${c.value} – ${c.value2}` : picked].filter(Boolean).join(' ');
   };
-  const [builderOpen, setBuilderOpen] = useState(false);
-  const chips: FilterChip[] = filters.filter((c) => conditionTest(c)).map((c) => ({
-    id: c.id,
-    label: labelOf(c.field),
-    summary: summaryOf(c),
-    onRemove: () => setFilters(filters.filter((x) => x.id !== c.id)),
-    onEdit: () => setBuilderOpen(true),
-  }));
+  const noun = objects ? 'rows' : 'objects';
+  const hint = total === 0
+    ? <div className="flt__hint">{objects ? 'This table has no rows.' : 'Load a model to filter its objects.'}</div>
+    : active > 0 ? <div className="flt__hint"><b>{matched.toLocaleString()}</b> of {total.toLocaleString()} {noun}{matched === 0 && <span className="flt__none"> — no matches</span>}</div> : null;
+  const editingCondition = filters.find((c) => c.id === editing);
   return (
-    <FilterShell
-      className="flt"
-      matched={matched}
-      total={total}
-      noun={objects ? 'rows' : 'objects'}
-      emptyHint={objects ? 'This table has no rows.' : 'Load a model to filter its objects.'}
-      chips={chips}
-      onClearAll={() => setFilters([])}
-      combine={(
-        <div className="disp__row">
-          <span>Rows matching</span>
-          <div className="segmented-choice">
-            <button type="button" className={match === 'all' ? 'active' : ''} onClick={() => onChange({ filterMatch: 'all' })}>All conditions</button>
-            <button type="button" className={match === 'any' ? 'active' : ''} onClick={() => onChange({ filterMatch: 'any' })}>Any condition</button>
-          </div>
-        </div>
-      )}
+    <FilterRules
       presets={(
-        <div className="dtp__sets">
-          <select value="" onChange={(e) => loadSet(e.target.value)} disabled={sets.length === 0}>
-            <option value="">{sets.length ? 'Use a saved filter (search set)…' : 'No saved filters yet'}</option>
-            {sets.map((s) => <option key={s.id} value={s.id}>{s.group ? `${s.group} › ${s.name}` : s.name}</option>)}
-          </select>
-          <button type="button" className="btn btn--small" disabled={!filters.some((c) => conditionTest(c))} onClick={saveAsSet}>Save as…</button>
-          <InfoTip>Filters are the same conditions as Search sets: load one as the filter, or keep this filter as a search set. The search box and the per-column boxes in the table filter on top of these.</InfoTip>
-        </div>
+        <PresetBar
+          noun="filter"
+          items={savedFilters.map((f) => ({ id: f.id, label: f.name, user: true }))}
+          saveDisabled={active === 0}
+          onApply={(id) => {
+            const f = savedFilters.find((x) => x.id === id);
+            if (f) onChange({ filters: f.filters.map((c) => ({ ...c, id: newRuleId('c') })), filterMatch: f.match, filterLogic: f.logic ?? '' });
+          }}
+          onSave={(name) => saveFilter(name, match, filters, logic)}
+          onDelete={removeFilter}
+        />
       )}
-      advanced={(
-        <>
-          <RuleRows rules={filters} onChange={setFilters} empty="No filter yet: pick a property below to add a condition.">
-            {(c) => <ConditionEditor condition={c} field={byId.get(c.field)} fields={fields} onChange={(p) => patchCondition(c.id, p)} />}
-          </RuleRows>
-          <div className="cols__heading"><span>Add a condition</span></div>
-          <FieldPicker catalog={fields} picked={new Set(filters.map((c) => c.field))} onPick={add} placeholder="Search properties…" />
-        </>
-      )}
-      advancedOpen={builderOpen}
-      onAdvancedOpen={setBuilderOpen}
+      tip="Conditions a row must meet. The search box in the header and the per-column boxes in the table filter on top of these."
+      hint={hint}
+      rows={filters.map((c) => ({ id: c.id, field: labelOf(c.field), summary: summaryOf(c), dim: !conditionTest(c) }))}
+      onRemove={(id) => setFilters(filters.filter((c) => c.id !== id))}
+      onReorder={(ids) => setFilters(ids.map((id) => filters.find((c) => c.id === id)!))}
+      onClearAll={() => setFilters([])}
+      editingId={editing}
+      onEdit={setEditing}
+      editor={editingCondition && <ConditionEditor key={editingCondition.id} condition={editingCondition} field={byId.get(editingCondition.field)} fields={fields} onChange={(p) => patchCondition(editingCondition.id, p)} />}
+      combine={<LogicRow count={filters.length} match={match} logic={logic} onChange={(p) => onChange({ ...(p.match ? { filterMatch: p.match } : {}), ...(p.logic !== undefined ? { filterLogic: p.logic } : {}) })} />}
+      fields={fields}
+      picked={new Set(filters.map((c) => c.field))}
+      onPick={add}
     />
   );
 }
