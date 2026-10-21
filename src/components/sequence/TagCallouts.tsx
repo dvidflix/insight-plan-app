@@ -217,12 +217,15 @@ export function TagCallouts({ view = 'main', callouts: given }: { view?: 'main' 
       if (!frame) frame = requestAnimationFrame(update);
     };
     schedule();
-    world.camera.controls.addEventListener('update', schedule);
-    world.renderer?.onResize.add(schedule);
+    // Kept now: when the right view closes, its world no longer has a camera by the time this cleans up.
+    const controls = world.camera.controls;
+    const renderer = world.renderer;
+    controls.addEventListener('update', schedule);
+    renderer?.onResize.add(schedule);
     return () => {
       if (frame) cancelAnimationFrame(frame);
-      world.camera.controls.removeEventListener('update', schedule);
-      world.renderer?.onResize.remove(schedule);
+      controls.removeEventListener('update', schedule);
+      renderer?.onResize.remove(schedule);
     };
     // sig only reads the callout
     // eslint-disable-next-line react-hooks/exhaustive-deps
