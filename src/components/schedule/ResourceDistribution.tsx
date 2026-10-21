@@ -45,7 +45,15 @@ export function ResourceDistribution({ model, activities }: { model: ScheduleMod
   const [measure, setMeasure] = usePersistedState<LabourMeasure>('distribution.labour', 'hours');
   const [wbsDepth, setWbsDepth] = usePersistedState<number>('distribution.wbsDepth', 0);
   const [shade, setShade] = usePersistedState<boolean>('distribution.shade', true);
+  const [cumulative, setCumulative] = usePersistedState<boolean>('distribution.cumulative', false);
   const [folded, setFolded] = useState<Set<string>>(new Set());
+
+  /** A row's figures as shown: running totals when Cumulative is on, for the rows that add up (hours, quantities); peaks stay per period. */
+  const figures = (row: DistRow) => {
+    if (!cumulative || !row.adds) return row.values;
+    let run = 0;
+    return row.values.map((v) => (run += v));
+  };
 
   const catalog = useMemo(() => [...(model.resourceCatalog ?? []), ...virtualCatalog], [model.resourceCatalog]);
   const withVirtual = useMemo(() => applyVirtualResources(activities), [activities]);
@@ -99,7 +107,7 @@ export function ResourceDistribution({ model, activities }: { model: ScheduleMod
     downloadCsv(
       `resource-distribution-${period}.csv`,
       ['Resource', 'Unit', ...buckets.map((b) => b.long), 'Total'],
-      all.map((r) => [`${'  '.repeat(r.depth)}${r.label}`, r.unit, ...(r.values.length ? r.values.map((v) => +v.toFixed(2)) : buckets.map(() => '')), r.values.length || r.depth ? +r.total.toFixed(2) : '']),
+      all.map((r) => [`${'  '.repeat(r.depth)}${r.label}`, r.unit, ...(r.values.length ? figures(r).map((v) => +v.toFixed(2)) : buckets.map(() => '')), r.values.length || r.depth ? +r.total.toFixed(2) : '']),
     );
   };
 
@@ -138,6 +146,10 @@ export function ResourceDistribution({ model, activities }: { model: ScheduleMod
           <input type="checkbox" checked={shade} onChange={(e) => setShade(e.target.checked)} />
           <span>Shade by size</span>
         </label>
+        <label className="rd-field" title="Running total over the periods, for hours and quantities (people and equipment in use are peaks, so they stay per period)">
+          <input type="checkbox" checked={cumulative} onChange={(e) => setCumulative(e.target.checked)} />
+          <span>Cumulative</span>
+        </label>
         <span className="rd-bar__spacer" />
         <span className="rd-bar__note">Equipment: most in use at once · Materials: quantity used · {buckets.length} {period}s</span>
         <button type="button" className="btn" onClick={exportCsv} title="Download this table as a CSV file">Export CSV</button>
@@ -167,7 +179,8 @@ export function ResourceDistribution({ model, activities }: { model: ScheduleMod
           </thead>
           <tbody>
             {lines.map(({ row, open }) => {
-              const max = row.values.reduce((m, v) => Math.max(m, v), 0);
+              const shown = figures(row);
+              const max = shown.reduce((m, v) => Math.max(m, v), 0);
               return (
                 <tr key={row.key} className={`rd-row rd-row--${row.depth}`}>
                   <td className="rd-name" style={{ paddingLeft: 8 + row.depth * 16 }}>
@@ -183,7 +196,7 @@ export function ResourceDistribution({ model, activities }: { model: ScheduleMod
                   <td className="rd-unit">{row.unit}</td>
                   <td className="rd-total">{row.values.length || row.depth ? fmtNum(row.total) : ''}</td>
                   {buckets.map((b, i) => {
-                    const v = row.values[i] ?? 0;
+                    const v = shown[i] ?? 0;
                     const tint = shade && max > 0 && v > 0 ? `linear-gradient(rgb(var(--accent-rgb) / ${(0.06 + 0.34 * (v / max)).toFixed(3)}), rgb(var(--accent-rgb) / ${(0.06 + 0.34 * (v / max)).toFixed(3)}))` : undefined;
                     return <td key={b.from} className="rd-num" style={tint ? { backgroundImage: tint } : undefined}>{v > 0 ? fmtNum(v) : ''}</td>;
                   })}

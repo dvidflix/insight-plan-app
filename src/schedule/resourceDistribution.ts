@@ -30,6 +30,8 @@ export interface DistRow {
   unit: string;
   /** One value per bucket. Empty for a group with nothing to add up. */
   values: number[];
+  /** The figures add up over time (hours, quantities), so they can run cumulative; people and equipment in use are peaks and cannot. */
+  adds: boolean;
   /** Over all periods: the sum, or the highest period when the figures are people / in use. */
   total: number;
   /** Rows under this one (the WBS levels of a resource, or the resources of a group). */
@@ -74,11 +76,11 @@ export function buildDistribution(loading: ResourceLoading, buckets: Bucket[], l
         }
         for (const path of [...byPath.keys()].sort(byName)) {
           const v = periodValues(loading, byPath.get(path)!, buckets, metric, hoursPerDay);
-          children.push({ key: `${r.name}\u0001${path}`, label: path, depth: 2, unit: '', values: v, total: total(v), children: [] });
+          children.push({ key: `${r.name}\u0001${path}`, label: path, depth: 2, unit: '', adds: addsUp(metric), values: v, total: total(v), children: [] });
         }
       }
       const unit = kind === 'labour' ? (labour === 'hours' ? 'man-hours' : 'people') : kind === 'equipment' ? 'in use' : unitOf(r.name);
-      return { key: r.name, label: `${r.virtual ? '◇ ' : ''}${shortName(r.name)}`, depth: 1, unit, values, total: total(values), children };
+      return { key: r.name, label: `${r.virtual ? '◇ ' : ''}${shortName(r.name)}`, depth: 1, unit, adds: addsUp(metric), values, total: total(values), children };
     });
 
     // Labour adds up across trades (people on the busiest day of each period, so the trades sum to it); the others are different things.
@@ -88,6 +90,7 @@ export function buildDistribution(loading: ResourceLoading, buckets: Bucket[], l
       label: KIND_LABEL[kind],
       depth: 0,
       unit: kind === 'labour' ? (labour === 'hours' ? 'man-hours' : 'people') : '',
+      adds: addsUp(metric),
       values: sums,
       total: sums.length ? total(sums) : 0,
       children: rows,
