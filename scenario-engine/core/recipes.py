@@ -24,6 +24,10 @@ def _follows_text(edges, phase):
         name = _text(e.get("from"))
         kind = _text(e.get("type")).upper()
         lag = _number(e.get("lagHours"))
+        pct_lag = _number(e.get("lagPct"))
+        if pct_lag:  # a share of a duration: "Rebar:SS+80%" (of the task it follows), "Rebar:FF-20%s" (of this task's own)
+            parts.append(f"{name}:{kind or 'FS'}{'+' if pct_lag >= 0 else '-'}{abs(pct_lag):g}%{'s' if _text(e.get('lagOf')) == 'succ' else ''}")
+            continue
         if (kind and kind != "FS") or lag:  # an explicit type and lag: "Rebar:SS+16" (hours)
             parts.append(f"{name}:{kind or 'FS'}{'+' if lag >= 0 else '-'}{abs(lag):g}")
             continue

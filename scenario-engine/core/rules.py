@@ -41,6 +41,8 @@ SETTINGS = {
     "levelGateSlabsOnly": ("LEVEL_GATE_SLABS_ONLY", _BOOL),
     "levelGateDeckingConcreteOnly": ("LEVEL_GATE_DECKING_CONCRETE_ONLY", _BOOL),
     "levelGateMaxDistanceM": ("LEVEL_GATE_MAX_DISTANCE_M", _NUM_OR_NONE),
+    "supportLinkFinishToFinish": ("SUPPORT_LINK_FF", _BOOL),
+    "supportLagPct": ("SUPPORT_LAG_PCT", _NUM),
     "completionCloseout": ("ENABLE_COMPLETION_CLOSEOUT", _BOOL),
     "openEndSequencing": ("ENABLE_OPEN_END_SEQUENCING", _BOOL),
     "openEndMaxDistanceM": ("OPEN_END_MAX_DISTANCE_M", _NUM),
@@ -598,7 +600,10 @@ class Rules:
         raw = row.get("max")
         size = _number(raw)
         if size is None:
-            size = self.parameters.get(str(raw or "").strip().lower())
+            name = str(raw or "").strip().lower()
+            # An equipment or crane of Resources (its ID or name): its quantity is the number, so it is typed in one place.
+            pool = next((p for p in self.pools() if p["kind"] != "material" and name in (p["id"].lower(), p["name"].lower())), None) if name else None
+            size = pool["quantity"] if pool else self.parameters.get(name)
         return int(size) if size and size >= 1 else 0
 
     def computed_days(self, rec, phase, default_crew=0.0):
@@ -804,13 +809,21 @@ def _parse_follows(value):
     import re
     global _FOLLOW_EXPLICIT
     if _FOLLOW_EXPLICIT is None:
-        _FOLLOW_EXPLICIT = re.compile(r"^(.*?)\s*:\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*h?$", re.IGNORECASE)
+        _FOLLOW_EXPLICIT = re.compile(r"^(.*?)\s*:\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*(h|d|%\s*s?)?$", re.IGNORECASE)
     for part in str(value or "").replace(";", ",").split(","):
+        shared = re.match(r"^(.*?)\s*:\s*(FS|SS|FF|SF)\s*@\s*(\d+(?:\.\d+)?)\s*%?$", part.strip(), re.IGNORECASE)
+        if shared and shared.group(1).strip() and float(shared.group(3)) > 0:
+            # "Rebar:SS@80": the type with a share of the task it follows (80 % of its duration)
+            out.append((shared.group(1).strip(), 100.0, shared.group(2).upper(), float(shared.group(3)), "pred"))
+            continue
         explicit = _FOLLOW_EXPLICIT.match(part.strip())
         if explicit and explicit.group(1).strip():
             # "Rebar:SS+16" = start-to-start, 16 hours after; "Rebar:FS-8" = finish-to-start, 8 hours before (an overlap); "Rebar:FF"
+            # "Rebar:SS+30%" = 30 % of Rebar's duration after its start; "Rebar:FF-20%s" = 20 % of this activity's own duration before (s: of the successor)
             lag = float((explicit.group(3) or "0").replace(" ", ""))
-            out.append((explicit.group(1).strip(), 100.0, explicit.group(2).upper(), lag))
+            unit = (explicit.group(4) or "h").replace(" ", "").lower()
+            basis = "h" if unit == "h" else "d" if unit == "d" else ("succ" if unit.endswith("s") else "pred")  # d: days of the activity's calendar
+            out.append((explicit.group(1).strip(), 100.0, explicit.group(2).upper(), lag, basis))
             continue
         name, _, pct = part.partition("@")
         name = name.strip()

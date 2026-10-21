@@ -248,7 +248,7 @@ export const ENGINE_AND_STRUCTURE: ScenarioRules = normalizeRules({ ...BASE, ...
 
 const empty = { relations: [], crews: [] };
 
-/** The first preset: the project's logic, which was hard-coded in the generator or spread over other features. */
+/** The tests' fixture: the project's logic as rules, which was hard-coded in the generator or spread over other features. Not offered in the app. */
 export const PRESET_1HDAB_TOC: RulePreset = {
   id: '1HDAB_TOC',
   name: '1HDAB_TOC',
@@ -258,7 +258,9 @@ export const PRESET_1HDAB_TOC: RulePreset = {
   content: { rules: ENGINE_AND_STRUCTURE, extras: HIGH_LEVEL_EXTRAS, ...empty },
 };
 
-export const DEFAULT_PRESETS: RulePreset[] = [PRESET_1HDAB_TOC];
+/** The presets the app ships with: none. Nothing is built in; a preset is one the project saved itself (PRESET_1HDAB_TOC above is only the fixture the
+    tests run the rules against, it is not offered). */
+export const DEFAULT_PRESETS: RulePreset[] = [];
 
 // ---------------------------------------------------------------- applying a preset
 

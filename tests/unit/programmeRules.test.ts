@@ -299,9 +299,9 @@ describe('the 1HDAB_TOC preset', () => {
     expect(saved[0].content.rules).toEqual(PRESET_1HDAB_TOC.content.rules);
     expect(countPreset(saved[0].content)).toBe(countPreset(PRESET_1HDAB_TOC.content));
     expect(presetId('1HDAB TOC', [])).toBe('1HDAB_TOC');
-    // a project that holds an older copy of the shipped preset gets the new one; a copy the user updated is left alone
+    // nothing ships with the app any more: a saved copy, old or not, is the project's own and is kept as it is
     const old = { ...JSON.parse(JSON.stringify(PRESET_1HDAB_TOC)), revision: undefined, content: { ...PRESET_1HDAB_TOC.content, rules: { version: 1, groups: [{ id: 'OLD', forEach: [], select: {} }] } } };
-    expect(normalizePresets([old])[0].content.rules.groups.map((g) => g.id)).toContain('NOT-SCHEDULED');
+    expect(normalizePresets([old])[0].content.rules.groups.map((g) => g.id)).toEqual(['OLD']);
     expect(normalizePresets([{ ...old, userEdited: true }])[0].content.rules.groups.map((g) => g.id)).toEqual(['OLD']);
     expect(presetId('1HDAB_TOC', ['1HDAB_TOC'])).toBe('1HDAB_TOC-2');
   });

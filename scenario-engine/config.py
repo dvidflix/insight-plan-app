@@ -172,6 +172,11 @@ ENABLE_BUILDING_COMPLETION = False
 # On, so each level's slabs wait for the level below's concrete (otherwise a slab
 # with nothing above touching it is left with no successor).
 ENABLE_LEVEL_GATE = True
+# How what supports a slab (walls, columns, pedestals under or beside it) is linked to the slab's first activity. False: finish-to-start (the slab
+# starts after they are cast). True: finish-to-finish, the slab's first activity finishing SUPPORT_LAG_PCT % of its own duration after they finish
+# (so it can start earlier and overlap them, as the programme the team builds by hand does; normally 80).
+SUPPORT_LINK_FF = False
+SUPPORT_LAG_PCT = 0.0
 # How the user's sequence steps follow each other: False = each step starts when the previous one is finished; True = a step starts SEQUENCE_LEAD_DAYS
 # working days after the previous one starts and the concrete is poured in step order (core/xml_builder.py).
 SEQUENCE_FLOW = False

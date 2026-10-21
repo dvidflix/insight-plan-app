@@ -232,7 +232,18 @@ export function fromRecipeSheets(sheets: RecipeSheets, current: { recipes: Recip
         const phases = new Set(tasks.map((t) => upper(t.phase)));
         for (const e of edges) if (!phases.has(upper(e.from))) out.warnings.push(`Recipe ${entry.id}: “${e.to}” follows “${e.from}”, which is not one of its activities.`);
         const recipe: Recipe = { ...(old ?? { id: entry.id }), group: entry.group || old?.group || '', tasks, ...(edges.length ? { edges } : { edges: undefined }) };
-        if (old) { next[was] = recipe; changed++; } else { next.push(recipe); added++; }
+        if (old) {
+          // Say what the sheet changed in it, so a file that is the same as what the app has is seen to be.
+          const differs = tasks.filter((t) => {
+            const was = old.tasks.find((x) => upper(x.phase) === upper(t.phase));
+            return !was || JSON.stringify(was) !== JSON.stringify(t) || followsText(old, t.phase) !== followsText({ edges }, t.phase);
+          }).map((t) => t.phase);
+          const gone = old.tasks.filter((x) => !phases.has(upper(x.phase))).map((x) => x.phase);
+          out.summary.push(differs.length || gone.length
+            ? `${entry.id}: ${differs.length ? `changed ${differs.join(', ')}` : ''}${differs.length && gone.length ? '; ' : ''}${gone.length ? `removed ${gone.join(', ')}` : ''}`
+            : `${entry.id}: the same as the app already has`);
+          next[was] = recipe; changed++;
+        } else { next.push(recipe); added++; }
       }
       out.recipes = next;
       out.summary.push(`Recipes: ${added} new, ${changed} changed (${byId.size} in the sheet)`);

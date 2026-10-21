@@ -173,7 +173,7 @@ export function groupsWithSets(groups: RuleGroup[], sets: SearchSet[], named: st
   // A set of the recipes folder is a group; so is a set of any other folder that a recipe names (the folder is not a fixed name).
   const wanted = new Set(named.map((n) => n.trim().toUpperCase()).filter(Boolean));
   const seenNames = new Set<string>();
-  const candidates = [...sets.filter((s) => s.group === recipeFolder()), ...sets.filter((s) => s.group !== recipeFolder() && wanted.has(s.name.trim().toUpperCase()))]
+  const candidates = [...sets.filter((s) => s.group !== recipeFolder() && wanted.has(s.name.trim().toUpperCase())), ...sets.filter((s) => s.group === recipeFolder())]
     .filter((s) => (seenNames.has(s.name.toUpperCase()) ? false : (seenNames.add(s.name.toUpperCase()), true)));
   const made = candidates.map((s) => groupFromSet(s, () => 'c')).filter((g) => g.group.filters.length > 0).map((g) => g.group);
   if (!made.length) return groups;
@@ -189,7 +189,8 @@ export function groupsWithSets(groups: RuleGroup[], sets: SearchSet[], named: st
 /** The sets for the groups of the rules that become sets without losing anything (no per-level groups, no objects named one by one, no
     condition a set cannot test), unless the folder already has a set of that name. The others stay groups. */
 export function setsForGroups(groups: RuleGroup[], existing: SearchSet[]): SearchSet[] {
-  const have = new Set(existing.filter((s) => s.group === recipeFolder()).map((s) => s.name.toUpperCase()));
+  // A set of that name in any folder is the group's set: a recipe finds its set by name, so the name is once (no copy next to the one you made).
+  const have = new Set(existing.filter((s) => s.kind !== 'selection').map((s) => s.name.toUpperCase()));
   return groups
     .filter((g) => !have.has(g.id.toUpperCase()) && g.filters.some((f) => !f.ignore))
     .map((g) => groupToSearchSet(g))
@@ -208,6 +209,21 @@ export function staleSets(groups: RuleGroup[], existing: SearchSet[]): SearchSet
     const key = (c: SearchCondition) => `${c.field}|${c.op}|${c.value}`;
     const have = new Set(full.set.conditions.map(key));
     return full.notes.length > 0 && set.conditions.every((c) => have.has(key(c)));
+  });
+}
+
+/** Sets of the folder that the app made from a group and that only repeat a set of the same name in another folder (the one you made): they hide
+    it (a recipe finds its set by name) and are removed. A set of the folder you changed, or one with no set of that name elsewhere, stays. */
+export function shadowCopies(groups: RuleGroup[], existing: SearchSet[]): SearchSet[] {
+  const key = (c: SearchCondition) => `${c.field}|${c.op}|${c.value}`;
+  return existing.filter((set) => {
+    if (set.group !== recipeFolder() || set.kind === 'selection') return false;
+    const name = set.name.toUpperCase();
+    if (!existing.some((o) => o.id !== set.id && o.group !== recipeFolder() && o.kind !== 'selection' && o.name.toUpperCase() === name)) return false;
+    const g = groups.find((x) => x.id.toUpperCase() === name);
+    if (!g) return false;
+    const made = new Set(groupToSearchSet(g, () => 'x').set.conditions.map(key));
+    return set.conditions.length === made.size && set.conditions.every((c) => made.has(key(c)));
   });
 }
 

@@ -42,7 +42,7 @@ import { useRecipeStore } from './recipeStore';
 import { stepSetNames, withFolderSteps } from '../prs/folderSteps';
 import { forGenerator } from '../prs/recipeRules';
 import { useSearchSetsStore } from './searchSetsStore';
-import { duplicateSets, groupsWithSets, setsForGroups, staleSets, uniqueGroups } from '../prs/groupSets';
+import { duplicateSets, groupsWithSets, setsForGroups, shadowCopies, staleSets, uniqueGroups } from '../prs/groupSets';
 import { calendarsFromProgrammes, syncCalendars } from '../prs/calendarsFromProgramme';
 
 /** The Scenarios work in progress — project, scenario, pour order, unsaved
@@ -782,7 +782,7 @@ function migrateOldRules(rules: ScenarioRules): ScenarioRules {
 /** The groups of a scenario that a search set can say exactly become sets of the "Recipes sets" folder, when it opens: the sets are the groups. */
 function groupsIntoSets(rules: ScenarioRules): ScenarioRules {
   const store = useSearchSetsStore.getState();
-  for (const set of [...staleSets(rules.groups, store.sets), ...duplicateSets(store.sets)]) store.remove(set.id);
+  for (const set of [...staleSets(rules.groups, store.sets), ...shadowCopies(rules.groups, store.sets), ...duplicateSets(store.sets)]) store.remove(set.id);
   for (const set of setsForGroups(rules.groups, useSearchSetsStore.getState().sets)) store.save(set);
   return rules;
 }
@@ -790,7 +790,15 @@ function groupsIntoSets(rules: ScenarioRules): ScenarioRules {
 function withLibrary(rules: ScenarioRules): ScenarioRules {
   const allSets = useSearchSetsStore.getState().sets;
   rules = withFolderSteps(rules, allSets);
-  const groups = groupsWithSets(uniqueGroups(rules.groups), allSets, [...useRecipeStore.getState().recipes.map((r) => r.group), ...stepSetNames(rules, allSets)]);
+  // A search set is the group of its name wherever it is used: by a recipe, a step, a level task or a limit.
+  const named = [
+    ...useRecipeStore.getState().recipes.map((r) => r.group),
+    ...stepSetNames(rules, allSets),
+    ...rules.levelTasks.map((t) => t.group),
+    ...rules.sequences.flatMap((q) => q.steps.map((s) => s.group)),
+    ...(rules.limits ?? []).map((l) => l.group ?? ''),
+  ];
+  const groups = groupsWithSets(uniqueGroups(rules.groups), allSets, named);
   const calendars = syncCalendars(rules.calendars, calendarsFromProgrammes(useScheduleStore.getState().schedules.flatMap((m) => m.calendars)));
   const synced = groups === rules.groups && calendars === rules.calendars ? rules : { ...rules, groups, calendars };
   return withRecipeLibrary(synced);

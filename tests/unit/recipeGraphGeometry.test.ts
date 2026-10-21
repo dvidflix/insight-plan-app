@@ -6,8 +6,8 @@ describe('the box on an arrow', () => {
   const base = { sharePct: 100, lagHours: 0 };
   it('says the type and the lag, like ALICE: FS | 0', () => {
     expect(edgeChip(base)).toEqual(['FS', '0']);
-    expect(edgeChip({ ...base, type: 'SS', lagHours: 16 })).toEqual(['SS', '16h']);
-    expect(edgeChip({ ...base, type: 'FS', lagHours: -8 })).toEqual(['FS', '-8h']);
+    expect(edgeChip({ ...base, type: 'SS', lagHours: 16 })).toEqual(['SS', '2d']);
+    expect(edgeChip({ ...base, type: 'FS', lagHours: -8 })).toEqual(['FS', '-1d']);
     expect(edgeChip({ ...base, type: 'FF' })).toEqual(['FF', '0']);
     expect(edgeChip({ ...base, sharePct: 80 })).toEqual(['SS', '80%']);
   });
@@ -24,12 +24,12 @@ describe('links with a type and a lag', () => {
     expect(between.map((e) => [e.type, e.lagHours, e.index])).toEqual([['SS', 32, 0], ['FF', 0, 1]]);
   });
 
-  it('are written for the generator as "Rebar:SS+32, Rebar:FF+0" and read back', () => {
-    expect(followsText(recipe, 'Formwork')).toBe('Rebar:SS+32, Rebar:FF+0');
-    expect(followsText(recipe, 'Concrete')).toBe('Formwork:FS-8');
-    expect(edgesFromFollows('Rebar:SS+32, Rebar:FF+0', 'Formwork')).toEqual([{ from: 'Rebar', to: 'Formwork', type: 'SS', lagHours: 32 }, { from: 'Rebar', to: 'Formwork', type: 'FF' }]);
+  it('are written for the generator as "Rebar:SS+4d, Rebar:FF+0" (days) and read back', () => {
+    expect(followsText(recipe, 'Formwork')).toBe('Rebar:SS+4d, Rebar:FF+0');
+    expect(followsText(recipe, 'Concrete')).toBe('Formwork:FS-1d');
+    expect(edgesFromFollows('Rebar:SS+4d, Rebar:FF+0', 'Formwork')).toEqual([{ from: 'Rebar', to: 'Formwork', type: 'SS', lagHours: 32 }, { from: 'Rebar', to: 'Formwork', type: 'FF' }]);
     expect(edgesFromFollows('Decking@80, Under Slab', 'Rebar')).toEqual([{ from: 'Decking', to: 'Rebar', sharePct: 80 }, { from: 'Under Slab', to: 'Rebar' }]);
-    expect(compileRecipes({ version: 1, recipes: [recipe] }).chains.find((c) => c.phase === 'Concrete')!.follows).toBe('Formwork:FS-8');
+    expect(compileRecipes({ version: 1, recipes: [recipe] }).chains.find((c) => c.phase === 'Concrete')!.follows).toBe('Formwork:FS-1d');
   });
 
   it('an FS with no lag is the plain link', () => {
@@ -45,5 +45,13 @@ describe('where an arrow leaves a card', () => {
     const diagonal = borderPoint(a, { x: 300, y: 300, w: 100, h: 50 });
     expect(diagonal.y).toBeCloseTo(50);
     expect(diagonal.x).toBeGreaterThan(50);
+  });
+});
+
+describe('a share of the duration as the lag', () => {
+  it('reads "Rebar:SS@80" as start-to-start at 80 % of Rebar, and writes it back as a share', () => {
+    const edges = edgesFromFollows('Rebar:SS@80, Rebar:FF+0', 'E/P On Slab');
+    expect(edges[0]).toMatchObject({ from: 'Rebar', type: 'SS', lagPct: 80, lagOf: 'pred' });
+    expect(followsText({ edges }, 'E/P On Slab')).toBe('Rebar:SS+80%, Rebar:FF+0');
   });
 });

@@ -183,6 +183,22 @@ export function addLevelTask(ctx: RuleContext, seed?: Partial<LevelTask>) {
   ctx.change((r) => ({ ...r, levelTasks: [...r.levelTasks, { id: freshId(seed?.id ?? 'TASK', r.levelTasks.map((t) => t.id)), name: seed?.name ?? '', group: seed?.group ?? r.groups[0]?.id ?? '' }] }));
 }
 
+/** The options of a group picker: the search sets, by folder (a value that is not one stays listed, marked). */
+function SetOptions({ ctx, value }: { ctx: RuleContext; value: string }) {
+  const known = ctx.groupIds.some((g) => g.toUpperCase() === value.trim().toUpperCase());
+  return (
+    <>
+      <option value="">{ctx.groupIds.length ? '—' : 'No search sets yet (Models › Search sets)'}</option>
+      {value && !known && <option value={value}>{value} (no search set of this name)</option>}
+      {ctx.groupFolders.filter((f) => f.names.length > 0).map((f) => (
+        <optgroup key={f.folder} label={`Search sets${f.folder ? ` · folder "${f.folder}"` : ''}`}>
+          {f.names.map((n) => <option key={`${f.folder}|${n}`} value={n}>{n}</option>)}
+        </optgroup>
+      ))}
+    </>
+  );
+}
+
 /** One level task for each group that is made per level (Walls, Slabs ...). */
 export const addStarterLevelTasks = (ctx: RuleContext) =>
   ctx.rules.groups
@@ -210,10 +226,9 @@ export function LevelTaskRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
     >
       <div className="rule-grid">
         <Field label="Name"><input value={t.name} onChange={(e) => update({ name: e.target.value })} placeholder="Walls" /></Field>
-        <Field label="Group">
+        <Field label="Group" help="A search set (Models › Search sets): the objects it finds are the group.">
           <select value={t.group} onChange={(e) => update({ group: e.target.value })}>
-            {!group && <option value={t.group}>{t.group || '—'}</option>}
-            {rules.groups.map((g) => <option key={g.id} value={g.id}>{g.id}{g.name ? ` — ${g.name}` : ''}</option>)}
+            <SetOptions ctx={ctx} value={t.group} />
           </select>
         </Field>
       </div>
@@ -283,8 +298,7 @@ export function SequenceRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
           <div key={k} className="rule-step">
             <span className="rule-step__n">{k + 1}</span>
             <select value={st.group} disabled={fromFolder} onChange={(e) => update({ steps: s.steps.map((x, j) => (j === k ? { ...x, group: e.target.value } : x)) })} aria-label="Group">
-              {!rules.groups.some((g) => g.id === st.group) && <option value={st.group}>{st.group || '—'}</option>}
-              {rules.groups.map((g) => <option key={g.id} value={g.id}>{g.id}{g.name ? ` — ${g.name}` : ''}</option>)}
+              <SetOptions ctx={ctx} value={st.group} />
             </select>
             <label className="rule-chip" title="Repeat this step for every level, in turn">
               <input type="checkbox" checked={!!st.perLevel} onChange={(e) => update({ steps: s.steps.map((x, j) => (j === k ? { ...x, perLevel: e.target.checked || undefined } : x)) })} />
@@ -295,7 +309,7 @@ export function SequenceRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
             {!fromFolder && <button type="button" className="cols__icon cols__icon--remove" onClick={() => update({ steps: s.steps.filter((_, j) => j !== k) })} aria-label="Remove step"><IconRemove /></button>}
           </div>
         ))}
-        {!fromFolder && <button type="button" className="mini-btn" onClick={() => update({ steps: [...s.steps, { group: rules.groups[0]?.id ?? '' }] })}>+ step</button>}
+        {!fromFolder && <button type="button" className="mini-btn" onClick={() => update({ steps: [...s.steps, { group: ctx.groupIds[0] ?? '' }] })}>+ step</button>}
       </div>
       <div className="rule-grid">
         <Field label="Link">

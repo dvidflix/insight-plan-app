@@ -1,8 +1,10 @@
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { END, START, edgeChip, graphEdges, positions, previewBars, type GraphEdge, type Rect } from '../../../prs/recipeGraph';
+import { END, HOURS_PER_DAY, START, edgeChip, graphEdges, positions, previewBars, type GraphEdge, type PreviewBar, type Rect } from '../../../prs/recipeGraph';
 import type { Recipe, RecipeEdge, RecipeLink, RecipeTask } from '../../../prs/recipes';
-import type { ScenarioRules } from '../../../prs/rules';
+import type { ParameterRow, ScenarioRules } from '../../../prs/rules';
+import { QUANTITY_NAMES } from '../../../prs/recipesWorkbook';
+import { formulaNames } from '../../../schedule/durationFormula';
 import { IconChevronDown, IconFullscreen, IconGear, IconRemove } from '../../icons';
 import { RecipeTaskDialog } from './RecipeTaskDialog';
 import { usePersistedState } from '../../../utils/persistedState';
@@ -22,10 +24,14 @@ const num = (v: string): number | undefined => (v.trim() === '' || !Number.isFin
 const same = (a: string, b: string) => a.trim().toUpperCase() === b.trim().toUpperCase();
 const countOf = (list?: { count?: number }[]) => (list ?? []).reduce((n, u) => n + (u.count ?? 1), 0);
 /** What a task shows under its header, one row each like the fields of a Blender node: the label, and its value in a field. */
-const rowsOf = (t: RecipeTask, crewPeople: number): [string, string][] => {
+const rowsOf = (t: RecipeTask, crewPeople: number, est?: PreviewBar): [string, string][] => {
   const rows: [string, string][] = [];
   if (t.crew) rows.push(['Crew', crewPeople ? `${t.crew} · ${crewPeople}` : t.crew]);
-  if (t.formula) rows.push(['Formula', t.formula]);
+  if (t.formula) {
+    rows.push(['Formula', t.formula]);
+    // What the formula gives for the preview's reference pour.
+    if (est) rows.push(['Duration', est.problem ? '? see Preview' : `~${Math.round(est.days * 10) / 10} ${est.days === 1 ? 'day' : 'days'}`]);
+  }
   else if (t.days !== undefined) rows.push(['Duration', `${t.days} ${t.days === 1 ? 'day' : 'days'}`]);
   else if (t.rate) rows.push(['Rate', t.rate]);
   if (t.calendar) rows.push(['Calendar', t.calendar]);
@@ -87,6 +93,10 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
   const [colors, setColors] = usePersistedState<'activity' | 'single'>('recipes.graph.colors', 'activity');
   const [opts, setOpts] = useState(false);
   const [ganttOpen, setGanttOpen] = usePersistedState('recipes.graph.preview', true);
+  // The quantities the preview works the formula tasks out for (a reference pour).
+  const [refConcrete, setRefConcrete] = usePersistedState('recipes.graph.refConcrete', 150);
+  const [refRebar, setRefRebar] = usePersistedState('recipes.graph.refRebar', 3.5);
+  const [refParams, setRefParams] = usePersistedState<Record<string, number>>('recipes.graph.refParams', {});
   // The preview's rows (drawn when the preview is open, and moved to the dock): measured when they are there, so the link arrows follow their width.
   const [gRows, setGRows] = useState<HTMLDivElement | null>(null);
   // In the Recipes dock the preview moves out to the dock's own scroller, so it can sit at the bottom edge of the panel.
@@ -190,7 +200,12 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
   };
   const task = (phase: string) => recipe.tasks.find((t) => same(t.phase, phase));
   const crewPeople = (id?: string) => rules.crewTemplates.find((c) => same(c.id, id ?? ''))?.trades.reduce((n, t) => n + (t.size || 0), 0) ?? 0;
-  const rowsFor = (t: RecipeTask) => (hide ? [] : rowsOf(t, crewPeople(t.crew)));
+  // The preview's days (also on the cards of the formula tasks). Parameters the scenario does not have (none open) take the values typed in the preview.
+  const known = new Set([...QUANTITY_NAMES.map((q) => q.toLowerCase()), ...(rules.parameters ?? []).map((p) => p.name.toLowerCase())]);
+  const missing = [...new Set(recipe.tasks.filter((t) => t.enabled !== false && t.formula).flatMap((t) => formulaNames(t.formula!)))].filter((n) => !known.has(n.toLowerCase()));
+  const typed: ParameterRow[] = Object.entries(refParams).filter(([n]) => missing.some((m) => m.toLowerCase() === n.toLowerCase())).map(([name, value]) => ({ id: name, name, value }));
+  const bars = previewBars(recipe, rules.rates, [...typed, ...(rules.parameters ?? [])], { concreteM3: refConcrete, rebarT: refRebar });
+  const rowsFor = (t: RecipeTask) => (hide ? [] : rowsOf(t, crewPeople(t.crew), bars.find((b) => same(b.phase, t.phase))));
   /** A node is a header, a row for its sockets, then a row per value it holds (a collapsed node, H, is only its header). */
   const sizeOf = (id: string) => {
     const t = id === START || id === END ? undefined : task(id);
@@ -382,7 +397,7 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
   const selEdge = picked?.kind === 'edge' ? writtenEdges[picked.index] : undefined;
   const mode = (e: RecipeEdge): 'FS' | 'SS' | 'FF' | 'SF' | 'pct' => (e.type ? e.type : e.sharePct !== undefined && e.sharePct < 100 ? 'pct' : 'FS');
   const setMode = (index: number, e: RecipeEdge, to: ReturnType<typeof mode>) =>
-    setEdge(index, to === 'pct' ? { from: e.from, to: e.to, sharePct: e.sharePct !== undefined && e.sharePct < 100 ? e.sharePct : 80 } : { from: e.from, to: e.to, type: to, ...(e.lagHours ? { lagHours: e.lagHours } : {}) });
+    setEdge(index, to === 'pct' ? { from: e.from, to: e.to, sharePct: e.sharePct !== undefined && e.sharePct < 100 ? e.sharePct : 80 } : { from: e.from, to: e.to, type: to, ...(e.lagHours ? { lagHours: e.lagHours } : {}), ...(e.lagPct ? { lagPct: e.lagPct, lagOf: e.lagOf } : {}) });
   const dialogTask = dialog ? task(dialog) : undefined;
 
   const bar = (
@@ -590,9 +605,26 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
                     <span className="np__unit"><input className="rel-cell" type="number" min={0} max={99} value={selEdge.sharePct ?? 80} onChange={(e) => setEdge(picked.index, { ...selEdge, sharePct: Math.min(99, Math.max(0, num(e.target.value) ?? 80)) })} /><i>%</i></span>
                   </label>
                 ) : (
-                  <label title="Hours (working time of the activity's calendar) added to the link; negative: the tasks overlap by that much">Lag
-                    <span className="np__unit"><input className="rel-cell" type="number" step="any" value={selEdge.lagHours ?? ''} placeholder="0" onChange={(e) => { const v = num(e.target.value); const { lagHours: _l, ...rest } = selEdge; setEdge(picked.index, v ? { ...rest, lagHours: v } : rest); }} /><i>h</i></span>
-                    <span className="np__hint">Negative makes the tasks overlap.</span>
+                  <label title="Added to the link: working days, or a share of a task's duration, so it follows the quantities; negative: the tasks overlap by that much">Lag
+                    <span className="np__unit">
+                      <input className="rel-cell" type="number" step="any" value={(selEdge.lagPct ?? (selEdge.lagHours ? Math.round((selEdge.lagHours / HOURS_PER_DAY) * 100) / 100 : 0)) || ''} placeholder="0" onChange={(e) => {
+                        const v = num(e.target.value);
+                        const { lagHours: _h, lagPct: _p, lagOf: _o, ...rest } = selEdge;
+                        setEdge(picked.index, !v ? rest : selEdge.lagPct !== undefined ? { ...rest, lagPct: v, lagOf: selEdge.lagOf ?? 'pred' } : { ...rest, lagHours: v * HOURS_PER_DAY });
+                      }} />
+                      <select className="rel-cell" aria-label="Lag unit" value={selEdge.lagPct !== undefined ? (selEdge.lagOf ?? 'pred') : 'd'} onChange={(e) => {
+                        const unit = e.target.value;
+                        // The figure stays as typed: days <-> % keeps the number, not the length of time.
+                        const v = selEdge.lagPct ?? (selEdge.lagHours ? selEdge.lagHours / HOURS_PER_DAY : 0);
+                        const { lagHours: _h, lagPct: _p, lagOf: _o, ...rest } = selEdge;
+                        setEdge(picked.index, !v ? rest : unit === 'd' ? { ...rest, lagHours: v * HOURS_PER_DAY } : { ...rest, lagPct: v, lagOf: unit as 'pred' | 'succ' });
+                      }}>
+                        <option value="d">days</option>
+                        <option value="pred">% of {selEdge.from}</option>
+                        <option value="succ">% of {selEdge.to}</option>
+                      </select>
+                    </span>
+                    <span className="np__hint">Negative makes the tasks overlap. A % is of that task's duration, so it follows the quantities.</span>
                   </label>
                 )}
               </div>
@@ -609,13 +641,26 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
       {(() => {
         // A rough Gantt of the recipe under the graph: a bar per task, as long as its days, placed by its links.
         if (!ganttOpen) return null;
-        const bars = previewBars(recipe, rules.rates, rules.parameters ?? []);
         const total = Math.max(1, ...bars.map((b) => b.start + b.days));
         const step = [1, 2, 5, 10, 20, 50, 100].find((s) => total / s <= 12) ?? 100;
         const ticks = Array.from({ length: Math.floor(total / step) + 1 }, (_, i) => i * step);
         return (
           <div className="rg__gantt" aria-label="Preview of the recipe as a Gantt chart">
-            <div className="rg__gantt-head"><strong>Preview</strong><span className="scn-dim">about {Math.round(total * 10) / 10} working days, bars to scale; ~ means the days depend on quantities</span></div>
+            <div className="rg__gantt-head"><strong>Preview</strong><span className="scn-dim">about {Math.round(total * 10) / 10} working days, bars to scale; ~ means the days depend on quantities</span>
+              <span className="scn-dim" style={{ marginLeft: 'auto', display: 'inline-flex', alignItems: 'center', gap: 6 }} title="The quantities the ~ bars are worked out for (a reference pour)">
+                Reference
+                <input type="number" min={0} step={10} value={refConcrete} onChange={(e) => setRefConcrete(Math.max(0, Number(e.target.value) || 0))} style={{ width: 64 }} aria-label="Reference concrete (m³)" />m³ concrete
+                <input type="number" min={0} step={0.5} value={refRebar} onChange={(e) => setRefRebar(Math.max(0, Number(e.target.value) || 0))} style={{ width: 56 }} aria-label="Reference rebar (t)" />t rebar
+                {missing.map((n) => (
+                  <span key={n} style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }} title={`${n} is a scenario parameter (Parameters) and no scenario is open: type the value the preview should use`}>
+                    {n}
+                    <input type="number" step="any" placeholder="value" value={refParams[n] ?? ''} onChange={(e) => { const v = num(e.target.value); setRefParams((p) => { const { [n]: _d, ...rest } = p; return v === undefined ? rest : { ...rest, [n]: v }; }); }} style={{ width: 64 }} aria-label={`Value of ${n} for the preview`} />
+                  </span>
+                ))}
+              </span></div>
+            {bars.filter((b) => b.problem).map((b) => (
+              <div key={b.phase} className="scn-dim" style={{ color: 'var(--warn, #b45309)' }}>{b.phase}: its formula could not be worked out for the preview, so it is drawn as one day — {b.problem}</div>
+            ))}
             <div className="rg__gantt-axis">{ticks.map((d) => <span key={d} style={{ left: `${(d / total) * 100}%` }}>{d}</span>)}</div>
             <div className="rg__gantt-rows" ref={setGRows}>
             {gw > 0 && (
@@ -652,7 +697,7 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
                   <span className="rg__gantt-name" title={t.name || t.phase}>{t.name || t.phase}</span>
                   <div className="rg__gantt-lane">
                     {ticks.map((d) => <i key={d} style={{ left: `${(d / total) * 100}%` }} />)}
-                    <span className="rg__gantt-bar" style={{ left: `${(b.start / total) * 100}%`, width: `${(b.days / total) * 100}%`, background: c, color: inkOn(c) }} title={`${t.name || t.phase}: day ${Math.round(b.start * 10) / 10} to ${Math.round((b.start + b.days) * 10) / 10}`}>{b.approx ? '~' : ''}{Math.round(b.days * 10) / 10}d</span>
+                    <span className="rg__gantt-bar" style={{ left: `${(b.start / total) * 100}%`, width: `${(b.days / total) * 100}%`, background: c, color: inkOn(c) }} title={`${t.name || t.phase}: day ${Math.round(b.start * 10) / 10} to ${Math.round((b.start + b.days) * 10) / 10}${b.problem ? ` (formula problem: ${b.problem})` : ''}`}>{b.approx ? '~' : ''}{Math.round(b.days * 10) / 10}d</span>
                   </div>
                 </div>
               );

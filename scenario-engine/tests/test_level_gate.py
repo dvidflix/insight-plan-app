@@ -92,3 +92,21 @@ def test_only_slabs_are_gated_and_stage_two_pours_are_left_out(gate):
     ok = pour("W3", 3, "WALL", 0, 0, 0.2, 10, 0.0, 3.0)
     result = gate([slab, wall_above, (box_out, fp), ok])
     assert result == {"S4-DK": ["W3-C"]}
+
+
+def test_a_recipes_slab_waits_at_its_first_activity_not_its_rebar_or_concrete(monkeypatch):
+    """A slab built from a recipe with its own activity names (ALL, Mills & Decking, ... Rebar, ... Concrete): what it waits for goes to the first
+    activity of its chain (by the chain's order), not to the Rebar, and never to the Concrete."""
+    slab, slab_fp = pour("S4", 4, "SLAB", 0, 0, 10, 10, 3.0, 3.3)
+    wall, wall_fp = pour("W3", 3, "WALL", 0, 0, 0.2, 10, 0.0, 3.0)
+    phases = ["ALL", "Mills & Decking", "E/P Under Slab", "Rebar", "E/P On Slab", "Formwork", "Concrete"]
+    acts = [{"rec": slab, "phase": p, "task_id": f"S4-{i}", "phase_order": i} for i, p in enumerate(phases)]
+    acts.append({"rec": wall, "phase": "Concrete", "task_id": "W3-C", "phase_order": 0})
+    footprints = {id(slab["element"]): slab_fp, id(wall["element"]): wall_fp}
+    monkeypatch.setattr(xml_builder, "ENABLE_LEVEL_GATE", True)
+    monkeypatch.setattr(xml_builder, "LEVEL_GATE_SLABS_ONLY", True)
+    monkeypatch.setattr(xml_builder, "LEVEL_GATE_DECKING_CONCRETE_ONLY", True)
+    monkeypatch.setattr(xml_builder, "LEVEL_GATE_MAX_DISTANCE_M", 0.05)
+    monkeypatch.setattr(xml_builder, "get_plan_footprint", lambda element: footprints.get(id(element)))
+    result = {k: sorted(v) for k, v in xml_builder._build_level_gate_predecessors(acts).items()}
+    assert result == {"S4-0": ["W3-C"]}

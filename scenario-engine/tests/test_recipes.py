@@ -346,3 +346,45 @@ def test_the_limit_follows_the_order_of_the_steps():
     first = relations[0]["pred"]
     top = {a["task_id"] for a in acts if a["rec"]["element"].GlobalId in ("S2", "S3")}
     assert first in top and len(relations) == 3
+
+
+def test_a_share_lag_reaches_the_generator():
+    """Rebar:SS@80 / a lag as a share of a duration is kept in the follows text and read back as a share, not hours."""
+    from core.recipes import _follows_text
+    from core.rules import _parse_follows
+    edges = [{"from": "Rebar", "to": "E/P On Slab", "type": "SS", "lagPct": 80, "lagOf": "pred"}, {"from": "Rebar", "to": "E/P On Slab", "type": "FF"}]
+    assert _follows_text(edges, "E/P On Slab") == "Rebar:SS+80%, Rebar:FF+0"
+    assert _parse_follows("Rebar:SS+80%, Rebar:FF+0") == [("Rebar", 100.0, "SS", 80.0, "pred"), ("Rebar", 100.0, "FF", 0.0, "h")]
+    assert _parse_follows("Rebar:SS@80") == [("Rebar", 100.0, "SS", 80.0, "pred")]
+    assert _parse_follows("Rebar:FF-20%s") == [("Rebar", 100.0, "FF", -20.0, "succ")]
+
+
+def test_the_main_slab_chain_writes_an_ss_and_an_ff_for_every_overlap_at_80_percent():
+    """ALL, Mills & Decking, E/P Under Slab, Rebar, E/P On Slab, Formwork, Concrete: each overlap is an SS at 80 % of the task before and an FF with it;
+    Formwork and Concrete follow finish to start."""
+    from core import activity_generator as gen, xml_builder
+    from core.wbs_manager import WBSManager
+    from test_rules import FakeWbs
+    tasks = [("ALL", "-ALL", 20), ("Mills & Decking", "-D", 20), ("E/P Under Slab", "-E", 15), ("Rebar", "-R", 25), ("E/P On Slab", "-E2", 15), ("Formwork", "-F", 6), ("Concrete", "-C", 1)]
+    edges = []
+    for (a, _, _), (b, _, _) in zip(tasks[:4], tasks[1:5]):
+        edges += [{"from": a, "to": b, "type": "SS", "lagPct": 80, "lagOf": "pred"}, {"from": a, "to": b, "type": "FF"}]
+    edges += [{"from": "E/P On Slab", "to": "Formwork"}, {"from": "Formwork", "to": "Concrete"}]
+    recipes = [{"id": "MAIN SLAB", "group": "", "tasks": [{"phase": p, "suffix": s, "days": d} for p, s, d in tasks], "edges": edges}]
+    rules.activate({"recipes": recipes})
+    acts = gen.create_activities(rec("S1", "SLAB"), FakeWbs())
+    intra = xml_builder._build_intra_pour_predecessors(acts)
+    for a in acts:
+        a["wbs_oid"] = 1
+    wbs = WBSManager("XML", start_counter=0)
+    wbs.register("B1 - Construction")
+    root = xml_builder.create_p6_xml_root()
+    xml_builder.add_project_and_calendar(root, building_code="B1", project_wbs_object_id="1", project_id="1")
+    xml_builder.write_activities_and_relationships(root, acts, xml_builder.add_resources(root), wbs, intra_predecessors=intra)
+    project = root.find("Project")
+    ids = {a.findtext("ObjectId"): a.findtext("Id").rsplit("-", 1)[-1] for a in project.findall("Activity")}
+    rels = {(ids[r.findtext("PredecessorActivityObjectId")], ids[r.findtext("SuccessorActivityObjectId")], r.findtext("Type")): float(r.findtext("Lag") or 0) for r in project.findall("Relationship")}
+    for pred, succ, days in [("ALL", "D", 20), ("D", "E", 20), ("E", "R", 15), ("R", "E2", 25)]:
+        assert (pred, succ, "FinishToFinish") in rels, (pred, succ)
+        assert abs(rels[(pred, succ, "StartToStart")] - days * 8 * 0.8) < 0.5, (pred, succ, rels.get((pred, succ, "StartToStart")))
+    assert ("E2", "F", "FinishToStart") in rels and ("F", "C", "FinishToStart") in rels

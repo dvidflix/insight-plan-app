@@ -5,6 +5,7 @@ import { STEPS_ID, fromRecipeSheets } from '../../../prs/recipesWorkbook';
 import { readRecipeWorkbook, writeRecipeWorkbook } from '../../../prs/recipesWorkbookFile';
 import type { LimitRow, ParameterRow, SequenceStep } from '../../../prs/rules';
 import { useRuleContext } from './RuleParts';
+import { IconDownload, IconUpload } from '../../icons';
 
 /** Download workbook / Upload workbook: the recipes, resources, parameters, limits and steps as one Excel workbook, edited there and read back. The same
     two buttons wherever recipes are worked on (the Recipes tab and the Parameters, limits and steps panel). `onNote` gets what the upload did. */
@@ -45,8 +46,8 @@ export function RecipeWorkbookButtons({ onNote }: { onNote: (note: { ok: boolean
 
   return (
     <>
-      <button type="button" className="btn btn--small" onClick={download} title="One Excel workbook: Recipes, Parameters, Limits, Steps and Resources. Edit it there and upload it again.">Download workbook</button>
-      <button type="button" className="btn btn--small" onClick={() => fileRef.current?.click()} title="Read a workbook made with Download workbook: the recipes, resources and (with a scenario open) the parameters, limits and steps follow it">Upload workbook</button>
+      <button type="button" className="btn btn--small" onClick={download} aria-label="Download workbook" title="Download workbook: one Excel workbook with Recipes, Parameters, Limits, Steps and Resources. Edit it there and upload it again."><IconDownload width={16} height={16} /></button>
+      <button type="button" className="btn btn--small" onClick={() => fileRef.current?.click()} aria-label="Upload workbook" title="Upload workbook: read a workbook made with Download workbook; the recipes, resources and (with a scenario open) the parameters, limits and steps follow it"><IconUpload width={16} height={16} /></button>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f); }} />
     </>
   );

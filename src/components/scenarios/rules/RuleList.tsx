@@ -3,7 +3,6 @@ import { ListConfig } from '../../ListConfig';
 import { configFocusProps } from '../../../state/listConfigStore';
 import { useListQuery, useTableSearchStore } from '../../../state/tableSearchStore';
 import { setCrews, setExtras, setRelations, setRules, useScenarioStore } from '../../../state/scenarioStore';
-import { addPreset, DEFAULT_PRESETS } from '../../../prs/presets';
 import { SETTINGS_META } from '../../../prs/rules';
 import { groupNamesUsed, replaceGroupName, retireSuperseded } from '../../../prs/replaceGroup';
 import { IconSectionChevron } from '../../icons';
@@ -11,7 +10,7 @@ import { useSearchSetsStore } from '../../../state/searchSetsStore';
 import { useRecipeFolderStore } from '../../../state/recipeFolderStore';
 import { useScenarioActivities } from '../ScenarioLinksCrews';
 import { SuggestedGroups } from '../SuggestedGroups';
-import { LevelLinkRowCard, LevelTaskRowCard, RuleGroupRowCard, SequenceRowCard, addStarterScope, addGroup, addLevelLink, addLevelTask, addSequence, addStarterGroups, addStarterLevelTasks } from './GroupsEditors';
+import { LevelLinkRowCard, LevelTaskRowCard, RuleGroupRowCard, SequenceRowCard, addStarterScope, addGroup, addLevelLink, addLevelTask, addSequence, addStarterLevelTasks } from './GroupsEditors';
 import { ContactRowCard, SLABS_ON_BELOW, addContact } from './ContactsEditor';
 import { SettingsRowCard } from './SettingsEditor';
 import { AssignmentsTableCard, ChainsTableCard, CrewsTableCard, RatesTableCard, TradesTableCard } from './RelationalTables';
@@ -205,7 +204,12 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
               if (done.count) { setSwapFrom(''); setSwapTo(''); }
             }}
           >Replace</button>
-          {(retire.groups.length > 0 || retire.rows > 0) && (
+        </div>
+      )}
+
+      {(retire.groups.length > 0 || retire.rows > 0) && (
+        <div className="rule-legacy" role="status">
+          <span>{retire.groups.length} rule group{retire.groups.length === 1 ? ' is' : 's are'} not a search set and nothing names {retire.groups.length === 1 ? 'it' : 'them'}, and {retire.rows} old chain / assignment row{retire.rows === 1 ? '' : 's'} {retire.rows === 1 ? 'is' : 'are'} replaced by the recipes. They are left over from a preset.</span>
             <button
               type="button" className="btn btn--small"
               title={`Take out what the recipes replaced: ${retire.rows} chain / assignment row${retire.rows === 1 ? '' : 's'} (the generator already ignores them) and the rule groups nothing names: ${retire.groups.join(', ') || 'none'}`}
@@ -221,23 +225,6 @@ The search sets stay. Switching the recipes off later would not bring these back
                 setConverted(`Retired ${retire.rows} old rows and ${retire.groups.length} unused group${retire.groups.length === 1 ? '' : 's'}. Save the scenario.`);
               }}
             >Retire old rules ({retire.rows} rows, {retire.groups.length} groups)</button>
-          )}
-        </div>
-      )}
-
-      {hasGroups && ctx.facts.length > 0 && !hasDurations(rules) && (
-        <div className="rule-legacy" role="status">
-          <span>This scenario has no durations: every phase takes 1 day and there is no rebar quantity (the generator has no table of its own). Add the durations, crews and chains of a preset, fill the Assignments table, or give the Recipes their days.</span>
-          <button
-            type="button" className="btn btn--small primary"
-            title="Adds the 1HDAB_TOC preset to this scenario: a rule with the same id is replaced, the others stay"
-            onClick={() => {
-              const s = useScenarioStore.getState();
-              const next = addPreset({ rules: s.rules, extras: s.extras, relations: s.relations, crews: s.crews }, DEFAULT_PRESETS[0].content);
-              setRules(next.rules); setExtras(next.extras); setRelations(next.relations); setCrews(next.crews);
-              setConverted('Added the 1HDAB_TOC preset. Save the scenario, then Update 4D to generate the programme again.');
-            }}
-          >Add 1HDAB_TOC</button>
         </div>
       )}
       {converted && <div className="rule-legacy rule-legacy--done" role="status">{converted}</div>}
@@ -256,7 +243,7 @@ The search sets stay. Switching the recipes off later would not bring these back
                 )}
                 {k.id === 'calendar' && <CalendarImport ctx={ctx} onDone={() => { setKinds(new Set([...kinds, 'calendar'])); setPicker(false); }} />}
                 {k.id === 'group' && <button type="button" className="mini-btn" onClick={() => { addStarterScope(ctx); setPicker(false); }} title="Groups for the types not scheduled, the objects under 0.25 m³ and the stair steps">scope: not scheduled, small, steps</button>}
-                {k.id === 'group' && rules.groups.length === 0 && <button type="button" className="mini-btn" onClick={() => { addStarterGroups(ctx); setPicker(false); }} title="Walls and slabs per building and level, rafts per building">Walls, slabs, rafts</button>}
+                
                 {k.id === 'levelTask' && rules.groups.some((g) => g.forEach.includes('level')) && <button type="button" className="mini-btn" onClick={() => { addStarterLevelTasks(ctx); setPicker(false); }} title="One for each group made per level">one per group</button>}
                 {k.id === 'contact' && <button type="button" className="mini-btn" onClick={() => { addContact(ctx, SLABS_ON_BELOW); setFresh(`contact:${counts.get('contact') ?? 0}`); setPicker(false); }} title="Slabs wait for everything in contact below">slabs on what is below</button>}
               </div>

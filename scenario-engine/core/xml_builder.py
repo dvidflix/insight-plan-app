@@ -47,6 +47,9 @@ ENABLE_COMPLETION_CLOSEOUT = getattr(_config, "ENABLE_COMPLETION_CLOSEOUT", Fals
 # every-start-task-to-every-lower-final behaviour.
 LEVEL_GATE_SLABS_ONLY = getattr(_config, "LEVEL_GATE_SLABS_ONLY", True)
 ENABLE_LEVEL_GATE = getattr(_config, "ENABLE_LEVEL_GATE", True)
+# How what supports a slab is linked to its first activity (Rules > Settings > Level gate): finish-to-finish with a lag that is a share of that activity's duration.
+SUPPORT_LINK_FF = getattr(_config, "SUPPORT_LINK_FF", False)
+SUPPORT_LAG_PCT = getattr(_config, "SUPPORT_LAG_PCT", 0.0)
 # How the user's sequence steps follow each other (Rules > Settings > Sequence): False = each step starts when the previous one is finished;
 # True = a step starts SEQUENCE_LEAD_DAYS working days after the previous one starts, and the concrete is poured in step order.
 SEQUENCE_FLOW = getattr(_config, "SEQUENCE_FLOW", False)
@@ -249,7 +252,7 @@ def _build_intra_pour_predecessors(activities, sequence_order=None):
                 pred = by_phase.get(entry[0].strip().upper())
                 if pred is not None and pred["task_id"] != curr:
                     if len(entry) > 2:  # an explicit type and lag ("Rebar:SS+16"): several may join the same two activities
-                        explicit.setdefault(pred["task_id"], []).append((entry[2], entry[3]))
+                        explicit.setdefault(pred["task_id"], []).append((entry[2], entry[3], entry[4] if len(entry) > 4 else "h"))
                     else:
                         edges[pred["task_id"]] = entry[1]
             if not edges and not explicit and index > 0 and ordered[index - 1]["task_id"] != curr:
@@ -268,6 +271,7 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
 
     guid_to_rec = {}
     guid_to_tasks = defaultdict(dict)
+    guid_first = {}  # the first activity of each pour's chain: (phase order, task id)
     for act in activities:
         rec = act.get("rec", {})
         element = rec.get("element")
@@ -279,6 +283,9 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
         task_id = act.get("task_id")
         if phase and task_id:
             guid_to_tasks[guid][phase] = task_id
+            order = act.get("phase_order", 0)
+            if guid not in guid_first or order < guid_first[guid][0]:
+                guid_first[guid] = (order, task_id)
 
     def _final_task_for_guid(guid):
         task_map = guid_to_tasks.get(guid, {})
@@ -296,6 +303,8 @@ def _build_slab_support_predecessors_from_clashes(activities, clash_results):
             task_map.get("Decking")
             or task_map.get("Under Slab")
             or task_map.get("Works before slab")
+            # A chain of other names (a recipe's own): the slab's first activity, not its Rebar or Concrete.
+            or (guid_first.get(guid) or (0, None))[1]
             or task_map.get("Concrete")
         )
 
@@ -561,6 +570,7 @@ def _build_level_gate_predecessors(activities):
 
     guid_to_rec = {}
     guid_to_tasks = defaultdict(dict)
+    guid_first = {}  # the first activity of each pour's chain: (phase order, task id)
 
     for act in activities:
         rec = act.get("rec", {})
@@ -573,6 +583,9 @@ def _build_level_gate_predecessors(activities):
         task_id = act.get("task_id")
         if phase and task_id:
             guid_to_tasks[guid][phase] = task_id
+            order = act.get("phase_order", 0)
+            if guid not in guid_first or order < guid_first[guid][0]:
+                guid_first[guid] = (order, task_id)
 
     def _final_task_for_guid(guid):
         task_map = guid_to_tasks.get(guid, {})
@@ -594,6 +607,8 @@ def _build_level_gate_predecessors(activities):
                 task_map.get("Decking")
                 or task_map.get("Under Slab")
                 or task_map.get("Works before slab")
+                # A chain of other names (a recipe's own): the slab's first activity, not its Rebar or Concrete.
+                or (guid_first.get(guid) or (0, None))[1]
                 or task_map.get("Rebar")
                 or task_map.get("Concrete")
                 or next(iter(task_map.values()), None)
@@ -863,6 +878,7 @@ def _build_open_end_successors(activities, open_tasks):
 
     guid_to_rec = {}
     guid_to_tasks = defaultdict(dict)
+    guid_first = {}  # the first activity of each pour's chain: (phase order, task id)
     task_guid = {}
     for act in activities:
         rec = act.get("rec", {})
@@ -875,6 +891,9 @@ def _build_open_end_successors(activities, open_tasks):
         task_id = act.get("task_id")
         if phase and task_id:
             guid_to_tasks[guid][phase] = task_id
+            order = act.get("phase_order", 0)
+            if guid not in guid_first or order < guid_first[guid][0]:
+                guid_first[guid] = (order, task_id)
             task_guid[task_id] = guid
 
     def _building(rec):
@@ -886,6 +905,7 @@ def _build_open_end_successors(activities, open_tasks):
             tasks.get("Decking")
             or tasks.get("Under Slab")
             or tasks.get("Works before slab")
+            or (guid_first.get(guid) or (0, None))[1]
             or tasks.get("Rebar")
             or tasks.get("Concrete")
             or next(iter(tasks.values()), None)
@@ -2294,7 +2314,17 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         for p_id in pred_list:
             explicit_links = (succ_act.get("intra_links") or {}).get(p_id)
             if explicit_links:
-                for link_type, link_lag in explicit_links:
+                for link_type, link_lag, basis in explicit_links:
+                    if basis == "d":
+                        # Days of this activity's calendar.
+                        link_lag = round(link_lag * _calendars.active().for_activity(succ_act.get("phase"), succ_act.get("rec", {})).hours_per_day, 2)
+                    elif basis != "h":
+                        # A share of the predecessor's (or this activity's own) duration, in that activity's working hours.
+                        of_act = activity_by_task.get(p_id) if basis == "pred" else succ_act
+                        if of_act is None:
+                            continue
+                        of_hours = float(of_act.get("duration_days", 0) or 0) * _calendars.active().for_activity(of_act.get("phase"), of_act.get("rec", {})).hours_per_day
+                        link_lag = round(of_hours * link_lag / 100.0, 2)
                     _emit_relationship(p_id, succ_id, {"FS": "FinishToStart", "SS": "StartToStart", "FF": "FinishToFinish", "SF": "StartToFinish"}[link_type], link_lag, source="intra")
                 continue
             pct = (succ_act.get("intra_edges") or {}).get(p_id, 100.0)
@@ -2333,7 +2363,14 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             if succ_id in override_successors:
                 continue
             for p_id in pred_list:
-                _emit_relationship(p_id, succ_id, "FinishToStart", source=source_label)
+                rel_type, lag = "FinishToStart", 0
+                if source_label in ("slab_support", "level_gate") and (SUPPORT_LINK_FF or SUPPORT_LAG_PCT):
+                    # What supports the slab: finish-to-finish (or finish-to-start), lagged by a share of the slab activity's own duration.
+                    succ_act = activity_by_task.get(succ_id) or {}
+                    hours = float(succ_act.get("duration_days", 0) or 0) * _calendars.active().for_activity(succ_act.get("phase"), succ_act.get("rec", {})).hours_per_day
+                    rel_type = "FinishToFinish" if SUPPORT_LINK_FF else "FinishToStart"
+                    lag = round(hours * float(SUPPORT_LAG_PCT or 0) / 100.0, 2)
+                _emit_relationship(p_id, succ_id, rel_type, lag, source=source_label)
 
     # 4. Concrete → GIVE relationships
     for give_id, concrete_ids in group_give_preds.items():

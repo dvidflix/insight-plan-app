@@ -1,5 +1,8 @@
 import type { Assignment, ChainRow, ScenarioRules } from './rules';
 
+/** Lags are kept in hours (what the generator reads) and shown in days. */
+export const HOURS_PER_DAY = 8;
+
 /** Recipes: how a kind of object is built, in their own file, apart from the scenario's sequence (docs/design/recipes.md).
     A recipe belongs to a rule group and holds the tasks (the activities of the object, in order, with the links between them) and the
     days, rate, crew and calendar of each. Step 1: a recipe is compiled into the Chains and Assignments the generator already reads
@@ -74,6 +77,9 @@ export interface RecipeEdge {
   /** An explicit link type, with a lag in hours (negative: an overlap). Without them: finish-to-start, or start-to-start at `sharePct`. Several edges may join the same two tasks (SS and FS). */
   type?: 'FS' | 'SS' | 'FF' | 'SF';
   lagHours?: number;
+  /** The lag as a share of a duration instead of hours (negative: an overlap): of the task it follows (`pred`, the usual) or of this task's own duration (`succ`). Replaces `lagHours`. */
+  lagPct?: number;
+  lagOf?: 'pred' | 'succ';
 }
 
 export interface Recipe {
@@ -132,7 +138,8 @@ export function followsText(recipe: Pick<Recipe, 'edges'>, phase: string): strin
     .filter((e) => upper(e.to) === upper(phase))
     .map((e) => {
       const lag = e.lagHours ?? 0;
-      if ((e.type && e.type !== 'FS') || lag) return `${e.from}:${e.type ?? 'FS'}${lag < 0 ? '-' : '+'}${Math.abs(lag)}`; // "Rebar:SS+16": start-to-start, 16 hours later
+      if (e.lagPct) return `${e.from}:${e.type ?? 'FS'}${e.lagPct < 0 ? '-' : '+'}${Math.abs(e.lagPct)}%${e.lagOf === 'succ' ? 's' : ''}`; // "Rebar:SS+30%": start-to-start, 30 % of Rebar's duration later
+      if ((e.type && e.type !== 'FS') || lag) return `${e.from}:${e.type ?? 'FS'}${lag < 0 ? '-' : '+'}${lag ? `${Math.round((Math.abs(lag) / HOURS_PER_DAY) * 100) / 100}d` : '0'}`; // "Rebar:SS+2d": start-to-start, 2 days later (no unit: hours)
       return e.sharePct !== undefined && e.sharePct < 100 ? `${e.from}@${e.sharePct}` : e.from;
     })
     .join(', ');
@@ -142,10 +149,18 @@ export function followsText(recipe: Pick<Recipe, 'edges'>, phase: string): strin
 export function edgesFromFollows(follows: string | undefined, to: string): RecipeEdge[] {
   const out: RecipeEdge[] = [];
   for (const part of String(follows ?? '').replace(/;/g, ',').split(',')) {
-    const explicit = /^(.*?)\s*:\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*h?$/i.exec(part.trim());
+    // "Rebar:SS@80": the type with a share of the task it follows (start-to-start, 80 % of Rebar's duration later), as "Rebar@80" is for finish-to-start.
+    const shared = /^(.*?)\s*:\s*(FS|SS|FF|SF)\s*@\s*(\d+(?:\.\d+)?)\s*%?$/i.exec(part.trim());
+    if (shared && shared[1].trim() && Number(shared[3]) > 0) {
+      out.push({ from: shared[1].trim(), to, type: shared[2].toUpperCase() as RecipeEdge['type'], lagPct: Number(shared[3]), lagOf: 'pred' });
+      continue;
+    }
+    const explicit = /^(.*?)\s*:\s*(FS|SS|FF|SF)\s*([+-]\s*\d+(?:\.\d+)?)?\s*(h|d|%\s*s?)?$/i.exec(part.trim());
     if (explicit && explicit[1].trim()) {
       const lag = Number((explicit[3] ?? '0').replace(/\s/g, ''));
-      out.push({ from: explicit[1].trim(), to, type: explicit[2].toUpperCase() as RecipeEdge['type'], ...(lag ? { lagHours: lag } : {}) });
+      const unit = (explicit[4] ?? 'h').replace(/\s/g, '').toLowerCase();
+      const share = unit === 'h' ? { lagHours: lag } : unit === 'd' ? { lagHours: lag * HOURS_PER_DAY } : { lagPct: lag, lagOf: unit.endsWith('s') ? 'succ' as const : 'pred' as const };
+      out.push({ from: explicit[1].trim(), to, type: explicit[2].toUpperCase() as RecipeEdge['type'], ...(lag ? share : {}) });
       continue;
     }
     const [name, pct] = part.split('@');

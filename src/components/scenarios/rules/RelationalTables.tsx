@@ -285,7 +285,7 @@ export function ChainsTableCard({ ctx }: { ctx: RuleContext }) {
   const { rules } = ctx;
   const rows = rules.chains;
   const phases = useScenarioStore((s) => s.crewOptions?.phases ?? []);
-  const groups = new Set(rules.groups.map((g) => g.id.toUpperCase()));
+  const groups = new Set(ctx.groupIds.map((g) => g.toUpperCase()));
   const set = (next: ChainRow[]) => ctx.change((r) => ({ ...r, chains: next.map((c) => ({ ...c, id: chainKey(c) })) }));
   const phaseList = [...new Set([...COMPONENT_PHASES, ...ACTIVITY_PHASES, ...phases])];
   return (
@@ -317,7 +317,7 @@ export function ChainsTableCard({ ctx }: { ctx: RuleContext }) {
         ]}
         help="The activities of the pours of a group, in order. A pour takes the chain of the group of the highest priority it is in (empty group: every pour); with none, in-situ pours have Rebar, Formwork and Concrete, and precast ones Installation. A phase can follow other phases by a share of their duration (Follows: Decking@80), which is a start-to-start with a lag, and finish after them (finish-to-finish). The days, crew and calendar of each phase are Assignments. The links the generator builds look for Concrete, Stitching, Installation, Decking and Rebar by name."
       />
-      <datalist id="chain-groups">{rules.groups.map((g) => <option key={g.id} value={g.id} />)}</datalist>
+      <datalist id="chain-groups">{ctx.groupIds.map((g) => <option key={g} value={g} />)}</datalist>
       <datalist id="chain-phases">{phaseList.map((p) => <option key={p} value={p} />)}</datalist>
     </>
   );
@@ -330,11 +330,11 @@ export function AssignmentsTableCard({ ctx }: { ctx: RuleContext }) {
   const rows = rules.assignments;
   const phases = useScenarioStore((s) => s.crewOptions?.phases ?? []);
   const known = useMemo(() => ({
-    groups: new Set(rules.groups.map((g) => g.id.toUpperCase())),
+    groups: new Set(ctx.groupIds.map((g) => g.toUpperCase())),
     rates: new Set(rules.rates.map((r) => r.id.toUpperCase())),
     crews: new Set(rules.crewTemplates.map((r) => r.id.toUpperCase())),
     calendars: new Set(rules.calendars.map((r) => r.id.toUpperCase())),
-  }), [rules.groups, rules.rates, rules.crewTemplates, rules.calendars]);
+  }), [ctx.groupIds, rules.rates, rules.crewTemplates, rules.calendars]);
   const set = (next: Assignment[]) => ctx.change((r) => ({ ...r, assignments: next.map((a) => ({ ...a, id: assignmentKey(a) })) }));
   const phaseList = [...new Set([...COMPONENT_PHASES, ...ACTIVITY_PHASES, ...phases])];
   return (
@@ -355,7 +355,7 @@ export function AssignmentsTableCard({ ctx }: { ctx: RuleContext }) {
         problems={(r) => assignmentProblems(r, known)}
         help="One row for a group and a phase: the rate (or fixed days), crew and calendar its objects get. All the conditions are in the groups. Where an object is in several groups, the higher priority wins, then the earlier row."
       />
-      <datalist id="rel-groups">{rules.groups.map((g) => <option key={g.id} value={g.id} />)}</datalist>
+      <datalist id="rel-groups">{ctx.groupIds.map((g) => <option key={g} value={g} />)}</datalist>
       <datalist id="rel-phases">{phaseList.map((p) => <option key={p} value={p} />)}</datalist>
       <datalist id="rel-rates">{rules.rates.map((r) => <option key={r.id} value={r.id} />)}</datalist>
       <datalist id="rel-crews">{rules.crewTemplates.map((r) => <option key={r.id} value={r.id} />)}</datalist>

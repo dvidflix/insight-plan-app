@@ -3,6 +3,7 @@ import { IconCopy, IconEye, IconEyeOff, IconSectionChevron, IconRemove } from '.
 import { KIND_BY_ID, type RuleKind } from './kinds';
 import { setRules, useScenarioStore } from '../../../state/scenarioStore';
 import { useScenarioView } from '../../../scenarios/useScenarioView';
+import { useSearchSetsStore } from '../../../state/searchSetsStore';
 import { countWhen, factsOf, groupMembership, levelNumber, type PourFact } from '../../../prs/match';
 import { FAMILIES, FILTER_FIELDS, NO_RULES, WHEN_KEYS, isEmptyRules, mergeTrades, whenText, type EngineDefaults, type ScenarioRules, type When, type WhenKey } from '../../../prs/rules';
 
@@ -20,7 +21,10 @@ export interface RuleContext {
   levels: string[];
   types: string[];
   stages: string[];
+  /** The groups to choose from: the search sets (Models › Search sets), nothing else. A group is a search set of that name. */
   groupIds: string[];
+  /** The same by folder, for a picker that says where each comes from. */
+  groupFolders: { folder: string; names: string[] }[];
   /** The fields a group condition can read: the object's own, and the properties of the object table. */
   fields: { value: string; label: string }[];
   /** Objects a `when` fits, of all the scenario's objects. */
@@ -44,6 +48,13 @@ export function useRuleContext(): RuleContext {
   const headers = loaded?.headers;
   const fields = useMemo(() => [...FILTER_FIELDS, ...(headers ?? []).filter((h) => h.trim()).map((h) => ({ value: `prop:CWA Pour/${h}`, label: `CWA Pour / ${h}` }))], [headers]);
   const membership = useMemo(() => groupMembership(rules.groups, facts), [rules.groups, facts]);
+  const allSets = useSearchSetsStore((s) => s.sets);
+  const groupFolders = useMemo(() => {
+    const by = new Map<string, string[]>();
+    for (const x of allSets) if (x.kind !== 'selection') by.set(x.group ?? '', [...(by.get(x.group ?? '') ?? []), x.name]);
+    return [...by.entries()].sort(([a], [b]) => a.localeCompare(b)).map(([folder, list]) => ({ folder, names: [...new Set(list)].sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) }));
+  }, [allSets]);
+  const groupIds = useMemo(() => [...new Set(groupFolders.flatMap((f) => f.names))], [groupFolders]);
   return useMemo<RuleContext>(
     () => ({
       rules,
@@ -58,11 +69,12 @@ export function useRuleContext(): RuleContext {
       levels: uniq(facts.map((f) => f.level)).sort((a, b) => (levelNumber(a) ?? 0) - (levelNumber(b) ?? 0)),
       types: uniq([...facts.map((f) => f.type), ...(defaults?.pourTypes ?? [])]).sort(),
       stages: uniq(facts.map((f) => f.stage)).sort(),
-      groupIds: rules.groups.map((g) => g.id),
+      groupIds,
+      groupFolders,
       fields,
       fits: (when) => countWhen(when, facts, membership),
     }),
-    [rules, defaults, facts, membership, fields],
+    [rules, defaults, facts, membership, fields, groupIds, groupFolders],
   );
 }
 

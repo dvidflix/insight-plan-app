@@ -46,7 +46,7 @@ describe('the recipes workbook', () => {
     expect(s.recipes).toHaveLength(3);
     expect(s.recipes[0]).toMatchObject({ 'Recipe*': 'EXT-WALL', 'Logical Group': 'External Wall', Order: 1, 'Activity*': 'Rebar', 'Duration Formula': 'Rebar_kg / Rebar_Rate', 'Quantity driver (read only)': 'Rebar_kg' });
     expect(s.recipes[1]).toMatchObject({ Follows: 'Rebar@80', Days: 5 });
-    expect(s.recipes[2].Follows).toBe('Formwork:SS+16');
+    expect(s.recipes[2].Follows).toBe('Formwork:SS+2d');
     expect(s.parameters[0]).toMatchObject({ 'Name*': 'Rebar_Rate', 'Value*': 500 });
     expect(s.limits[0]).toMatchObject({ 'Activity*': 'Formwork', 'Max at once': 'Formwork_Sets_Available' });
     expect(s.steps[1]).toMatchObject({ Step: 2, 'Search set / group*': 'Walls L01', 'Per level': 'yes', 'Link into it': 'SS', 'Lag (h)': 16 });

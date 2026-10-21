@@ -11,13 +11,13 @@ import { ModelsGanttPanel } from '../components/ModelConfigPanel';
 import { ListSetupButton } from '../components/ViewPicker';
 import { createPortal } from 'react-dom';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
-import { useShownGenerateTab } from '../components/scenarios/GenerateTabs';
+import { ADVANCED_TABS, useGenerateTab, useShownAdvancedTab, useShownGenerateTab } from '../components/scenarios/GenerateTabs';
 
 /** Generate: the whole of programme generation in one view, in tabs you take in order, no panels. 1 Scenario (project, building, start date, Update 4D,
-    Save), 2 Order (the pours in the order they are built, with the table's columns, filters, grouping and colours), 3 Recipes (how each kind of
-    object is built), 4 Productivity (parameters, rates and crews on one page: what sets the durations), 5 Resources (equipment, cranes and materials, and how many),
-    6 Sequence (the steps, in the order the search sets are built, and the limits on what runs at once), 7 Rules (extra activities, manual links, settings,
-    the logic between objects). Each scenario is a folder under <project>/scenarios. 4D Sequencing's Scenarios panel works on the same store
+    Save), 2 Resources (equipment, cranes and materials, and how many: the one place a count is typed), 3 Recipes (how each kind of object is built),
+    4 Order (the pours in the order they are built, with the table's columns, filters, grouping and colours), and Advanced: parameters, rates and crews
+    (what sets the durations), Rules (extra activities, manual links, settings, the logic between objects), and Steps & limits (the search sets in the
+    order they are built, and the limits on what runs at once). Each scenario is a folder under <project>/scenarios. 4D Sequencing's Scenarios panel works on the same store
     (state/scenarioStore.ts), so the two stay in step. */
 
 const CONFIG_TABS = [['columns', 'Columns'], ['filters', 'Filters'], ['group', 'Group'], ['color', 'Color']] as const;
@@ -41,6 +41,10 @@ function OrderTab() {
       </div>
       )}
       {cfgOpen && isTableCfgTab(cfg) && <div className="gen-order__cfgbody scn-panel"><ScenarioPanelBody tab={cfg} /></div>}
+      <details className="gen-steps" open>
+        <summary className="gen-h" title="Which group of objects is built first, then next">What is built first (steps)</summary>
+        <PlanTablesPanel only={['steps']} />
+      </details>
       <div className="gen-order__table"><ScenarioTable /></div>
     </div>
   );
@@ -53,6 +57,24 @@ function ProductivityTab() {
       <section><h3 className="gen-h">Parameters</h3><PlanTablesPanel only={['parameters']} /></section>
       <section><h3 className="gen-h">Rates</h3><ResourcesPanel only={['rates']} bare /></section>
       <section><h3 className="gen-h">Crews and trades</h3><ResourcesPanel only={['crews']} bare /></section>
+    </div>
+  );
+}
+
+/** The parts most projects set once or never: parameters, rates and crews; the rules; the steps and limits. */
+function AdvancedTab() {
+  const part = useShownAdvancedTab();
+  const setAdvanced = useGenerateTab((s) => s.setAdvanced);
+  const setTab = useGenerateTab((s) => s.setTab);
+  return (
+    <div className="gen-advanced">
+      <div className="scn-rules__tabs" role="tablist" aria-label="Advanced">
+        {ADVANCED_TABS.map((t) => (
+          <button key={t.id} type="button" role="tab" aria-selected={part === t.id} className={part === t.id ? 'is-active' : ''} title={t.tip} onClick={() => { setTab('advanced'); setAdvanced(t.id); }}>{t.label}</button>
+        ))}
+      </div>
+      {part === 'productivity' && <ProductivityTab />}
+      {part === 'rules' && <ScenarioRulesEditor />}
     </div>
   );
 }
@@ -73,10 +95,13 @@ export function ScenariosPage({ picker }: { /** The page picker with the search 
         {tab === 'scenario' && <div className="gen-scenario scn-panel scn-panel__body"><ScenarioPanelBody tab="scenario" /></div>}
         {tab === 'order' && <OrderTab />}
         {tab === 'recipes' && <RecipesEditor />}
-        {tab === 'productivity' && <ProductivityTab />}
-        {tab === 'resources' && <ResourcesPanel only={['equipment', 'cranes', 'materials']} />}
-        {tab === 'sequence' && <PlanTablesPanel only={['steps', 'limits']} />}
-        {tab === 'rules' && <ScenarioRulesEditor />}
+        {tab === 'resources' && (
+          <div className="gen-stack">
+            <section><ResourcesPanel only={['equipment', 'cranes', 'materials']} /></section>
+            <section><h3 className="gen-h">Limits: how many at once</h3><PlanTablesPanel only={['limits']} /></section>
+          </div>
+        )}
+        {tab === 'advanced' && <AdvancedTab />}
       </main>
     </div>
   );

@@ -612,3 +612,12 @@ def test_what_touched_a_joined_object_touches_its_main_object():
     assert clashes[0]["Pour A GUID"] == "B"  # the generator's own list is untouched
     rules.activate({})
     assert rules.active().remap_clashes(clashes) is clashes
+
+
+def test_support_link_settings_reach_the_builder():
+    """Rules > Settings > Level gate: supports of a slab finish-to-finish, lagged by a share (normally 80 %) of the slab activity's duration."""
+    from core import xml_builder
+    rules.activate({"settings": {"supportLinkFinishToFinish": True, "supportLagPct": 80}})
+    assert xml_builder.SUPPORT_LINK_FF is True and xml_builder.SUPPORT_LAG_PCT == 80.0
+    rules.activate({})
+    assert xml_builder.SUPPORT_LINK_FF is False and xml_builder.SUPPORT_LAG_PCT == 0.0

@@ -229,9 +229,8 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
             <button type="button" className={`btn btn--small${view === 'graph' ? ' primary' : ''}`} onClick={() => setView('graph')} title="The tasks as boxes and arrows">Graph</button>
           </span>
           <details className="scn-more">
-            <summary className="btn btn--small" title="Group, priority, every column of the tasks">Advanced</summary>
+            <summary className="btn btn--small" title="Priority, what the recipe does, every column of the tasks">Advanced</summary>
             <div className="scn-more__menu scn-more__menu--wide">
-              <label className="scn-dim">Group <GroupSelect value={recipe.group} groups={rules.groups.map((g) => g.id)} onChange={(group) => onChange({ ...recipe, group })} width={170} /></label>
               <label className="scn-dim">Priority <Cell type="number" value={recipe.priority} onChange={(v) => onChange({ ...recipe, priority: num(v) })} width={60} title="Where an object is in several recipes, the highest priority decides" /></label>
               <select className="rel-cell" value={chain ? 'chain' : 'values'} onChange={(e) => onChange({ ...recipe, chain: e.target.value === 'chain' ? undefined : false })} title="Activities: the tasks are the activities the objects get. Values only: it sets the days, rate, crew and calendar of tasks whose activities come from another recipe.">
                 <option value="chain">Defines the activities</option>
@@ -447,8 +446,11 @@ export function RecipesEditor() {
   // A recipe is linked to a search set by name, whatever folder the set is in: the sets of the recipes folder, and any set a recipe names.
   const usableSets = useMemo(() => {
     const named = new Set(recipes.map((r) => r.group.trim().toUpperCase()).filter(Boolean));
-    const have = new Set(folderSets.map((x) => x.name.trim().toUpperCase()));
-    return [...folderSets, ...allSets.filter((x) => x.kind !== 'selection' && x.group !== recipeSetsFolder && named.has(x.name.trim().toUpperCase()) && !have.has(x.name.trim().toUpperCase()))];
+    // The set you made (in another folder) comes before a copy of the same name in the recipes folder: the copy only hides it.
+    const elsewhere = new Set(allSets.filter((x) => x.kind !== 'selection' && x.group !== recipeSetsFolder).map((x) => x.name.trim().toUpperCase()));
+    const own = folderSets.filter((x) => !elsewhere.has(x.name.trim().toUpperCase()));
+    const have = new Set(own.map((x) => x.name.trim().toUpperCase()));
+    return [...own, ...allSets.filter((x) => x.kind !== 'selection' && x.group !== recipeSetsFolder && (named.has(x.name.trim().toUpperCase()) || folderSets.some((f) => f.name.trim().toUpperCase() === x.name.trim().toUpperCase())) && !have.has(x.name.trim().toUpperCase()))];
   }, [allSets, folderSets, recipes, recipeSetsFolder]);
   // Every search set to choose from, by folder.
   const setFolders = useMemo(() => {
@@ -674,7 +676,7 @@ A backup file of them is downloaded first (Import file brings them back). The se
               <div className="rec-head">
                 <input className="rec-head__name" value={r.id} spellCheck={false} aria-label="Recipe name" onChange={(e) => set(recipes.map((x, j) => (j === i ? { ...x, id: e.target.value } : x)))} />
                 <span className="rec-head__for" title="The search set (or group) whose objects get these activities">
-                  for <GroupSelect value={r.group} hideRuleGroups={setFolders.some((f) => f.names.length > 0)} setFolders={setFolders} ruleGroups={rules.groups.map((g) => g.id)} width={200} onChange={(group) => set(recipes.map((x, j) => (j === i ? { ...x, group } : x)))} />
+                  for <GroupSelect value={r.group} hideRuleGroups setFolders={setFolders} ruleGroups={rules.groups.map((g) => g.id)} width={200} onChange={(group) => set(recipes.map((x, j) => (j === i ? { ...x, group } : x)))} />
                   {objects !== null && <span className="scn-dim"> · {objects.toLocaleString()} object{objects === 1 ? '' : 's'} in the loaded models</span>}
                 </span>
               </div>
@@ -703,7 +705,7 @@ A backup file of them is downloaded first (Import file brings them back). The se
           </div>
         </div>
       )}
-      <datalist id="recipe-groups">{[...new Set([...setFolders.flatMap((f) => f.names), ...rules.groups.map((g) => g.id)])].map((g) => <option key={g} value={g} />)}</datalist>
+      <datalist id="recipe-groups">{[...new Set(setFolders.flatMap((f) => f.names))].map((g) => <option key={g} value={g} />)}</datalist>
       <datalist id="recipe-phases">{phaseList.map((p) => <option key={p} value={p} />)}</datalist>
       <datalist id="recipe-rates">{rules.rates.map((r) => <option key={r.id} value={r.id} />)}</datalist>
       <datalist id="recipe-crews">{rules.crewTemplates.map((r) => <option key={r.id} value={r.id} />)}</datalist>

@@ -68,7 +68,15 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
       }));
     },
   });
-  const problemOf = (l: LimitRow) => (typeof l.max === 'string' && l.max.trim() !== '' && !names.some((n) => n.toLowerCase() === l.max.toString().trim().toLowerCase()) ? `“${l.max}” is not a parameter` : '');
+  // "Max at once" is a number, or the equipment / crane it is limited by (its quantity is the number), or a parameter.
+  const poolStore = useRecipeStore((s) => s.pools);
+  const limitedBy = poolStore.filter((p) => p.kind !== 'material');
+  const sizeNames = [...limitedBy.map((p) => p.id), ...names];
+  const problemOf = (l: LimitRow) => {
+    const t = typeof l.max === 'string' ? l.max.trim().toLowerCase() : '';
+    if (!t) return '';
+    return sizeNames.some((n) => n.toLowerCase() === t) || limitedBy.some((p) => p.name.trim().toLowerCase() === t) ? '' : `“${l.max}” is not an equipment ID or a parameter`;
+  };
   // A sample pour for the preview: 150 m³ of concrete and 3.5 t of rebar.
   const sample = { Concrete_m3: 150, Rebar_t: 3.5, Rebar_kg: 3500, Footprint_m2: 200, Sides_m2: 120 };
   const withFormula = recipes.filter((r) => r.chain !== false).flatMap((r) => r.tasks.filter((t) => t.formula).map((t) => ({ r, t })));
@@ -140,7 +148,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                 <button type="button" className="btn btn--small primary" onClick={() => setLimits([...limits, { id: `Formwork-${limits.length + 1}`, phase: 'Formwork', max: 1 }])}>+ Limit</button>
                 <span className="scn-dim">At most this many activities of the kind run at once (formwork sets, a specialist crew, a crane team). The programme is linked in lanes, in the order of the Steps. “Maximize resource availability” lifts every limit.</span>
               </div>
-              {limits.length === 0 ? <div className="scn-dim scn-editor__help">None yet: add Formwork with the number of sets you have (or the parameter Formwork_Sets_Available).</div> : (
+              {limits.length === 0 ? <div className="scn-dim scn-editor__help">None yet: add Formwork and the number of sets you have, or name the equipment (Resources › Equipment, e.g. RES-1) so the number lives in one place.</div> : (
                 <table className="xl xgrid" {...lGrid.grid}>
                   <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 200 }} /><col style={{ width: 200 }} /><col style={{ width: 240 }} /><col /><col style={{ width: 32 }} /></colgroup>
                   <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this limit" /><th>Activity</th><th>Logical group</th><th>Max at once</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
@@ -154,7 +162,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                           <td className="xl__check"><input type="checkbox" checked={l.enabled !== false} onChange={(e) => set({ enabled: e.target.checked ? undefined : false })} aria-label="On" /></td>
                           <td className={`xl__cell xgrid__cell${lGrid.sel('phase', at)}`} data-col="phase" data-row={at}><input {...lGrid.cell('phase', at)} list="recipe-phases" value={l.phase} onChange={(e) => set({ phase: e.target.value })} />{lGrid.handle('phase', at)}</td>
                           <td className={`xl__cell xgrid__cell${lGrid.sel('group', at)}`} data-col="group" data-row={at}><input {...lGrid.cell('group', at)} list="recipe-groups" value={l.group ?? ''} placeholder="every pour" onChange={(e) => set({ group: e.target.value || undefined })} />{lGrid.handle('group', at)}</td>
-                          <td className={`xl__cell xgrid__cell${lGrid.sel('max', at)}${problem ? ' is-bad' : ''}`} data-col="max" data-row={at}><input {...lGrid.cell('max', at)} list="plan-parameters" value={l.max} placeholder="4 or Formwork_Sets_Available" aria-invalid={!!problem} title={problem} onChange={(e) => set({ max: limitMax(e.target.value) })} />{lGrid.handle('max', at)}</td>
+                          <td className={`xl__cell xgrid__cell${lGrid.sel('max', at)}${problem ? ' is-bad' : ''}`} data-col="max" data-row={at}><input {...lGrid.cell('max', at)} list="plan-limit-sizes" value={l.max} placeholder="4, or an equipment ID (RES-1)" aria-invalid={!!problem} title={problem} onChange={(e) => set({ max: limitMax(e.target.value) })} />{lGrid.handle('max', at)}</td>
                           <td className={`xl__cell xgrid__cell${lGrid.sel('note', at)}`} data-col="note" data-row={at}><input {...lGrid.cell('note', at)} value={l.note ?? ''} onChange={(e) => set({ note: e.target.value || undefined })} />{lGrid.handle('note', at)}</td>
                           <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" onClick={() => setLimits(limits.filter((_, j) => j !== i))} aria-label="Delete"><IconRemove /></button></td>
                         </tr>
@@ -169,7 +177,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
             <div>
               <div className="rel-bar">
                 <button type="button" className="btn btn--small primary" onClick={() => setSteps([...steps, { group: '' }])}>+ Step</button>
-                <span className="scn-dim">The search sets in the order they are built. Each step starts when the one before it is done (finish to start) unless its link says otherwise. Per level repeats the step for every level in turn.</span>
+                <span className="scn-dim">One line per group of objects, in the order they are built: for example rafts, then walls, then slabs. Each line starts when the one above it has finished, unless you change its link. Tick Per level to build that group level by level.</span>
               </div>
               {steps.length === 0 ? <div className="scn-dim scn-editor__help">No steps: the pours follow the order of the scenario. Add a step for each search set (Raft, Double height walls, L01 internal walls ...).</div> : (
                 <table className="rel-table">
@@ -206,6 +214,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
           )}
       </div>
       <datalist id="plan-parameters">{names.map((n) => <option key={n} value={n} />)}</datalist>
+      <datalist id="plan-limit-sizes">{sizeNames.map((n) => <option key={n} value={n} />)}</datalist>
     </div>
   );
 }

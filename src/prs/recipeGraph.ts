@@ -1,4 +1,5 @@
-import type { Recipe, RecipeEdge } from './recipes';
+import { HOURS_PER_DAY, type Recipe, type RecipeEdge } from './recipes';
+export { HOURS_PER_DAY };
 import { previewDays } from './recipesWorkbook';
 import type { ParameterRow } from './rules';
 
@@ -16,6 +17,9 @@ export interface GraphEdge {
   /** An explicit type, with its lag in hours (negative: an overlap). */
   type?: RecipeEdge['type'];
   lagHours: number;
+  /** The lag as a share of a duration (negative: an overlap), of the task it follows or of this task's own; replaces `lagHours`. */
+  lagPct?: number;
+  lagOf?: 'pred' | 'succ';
   /** A link the task has because it has no other: it follows the task before it. Shown dashed; connecting the task to something else replaces it. */
   implicit: boolean;
   /** Its place in the recipe's `edges` (-1 for a link that is not written). */
@@ -28,7 +32,6 @@ const COL_GAP = 70;
 const ROW_GAP = 24;
 
 const key = (s: string) => s.trim().toUpperCase();
-
 /** The links the generator will build between the recipe's tasks, plus the links to and from the boundary nodes (START: the work before, END: the
     work after, for the tasks nothing follows). Several links may join the same two tasks (SS and FF). */
 export function graphEdges(recipe: Pick<Recipe, 'tasks' | 'edges'>): GraphEdge[] {
@@ -39,7 +42,7 @@ export function graphEdges(recipe: Pick<Recipe, 'tasks' | 'edges'>): GraphEdge[]
     const from = names.get(key(e.from));
     const to = names.get(key(e.to));
     if (!from || !to || key(from) === key(to)) return;
-    out.push({ from, to, sharePct: e.sharePct ?? 100, ...(e.type ? { type: e.type } : {}), lagHours: e.lagHours ?? 0, implicit: false, index });
+    out.push({ from, to, sharePct: e.sharePct ?? 100, ...(e.type ? { type: e.type } : {}), lagHours: e.lagHours ?? 0, ...(e.lagPct ? { lagPct: e.lagPct, lagOf: e.lagOf ?? 'pred' } : {}), implicit: false, index });
     hasIn.add(key(to));
   });
   recipe.tasks.forEach((t, i) => {
@@ -52,8 +55,9 @@ export function graphEdges(recipe: Pick<Recipe, 'tasks' | 'edges'>): GraphEdge[]
 }
 
 /** What the box on an arrow says: the type and its lag, as ALICE's "FS | 0": "SS | 16h", "FS | -8h", "SS | 80%" (start when 80 % is done). */
-export function edgeChip(e: Pick<GraphEdge, 'sharePct' | 'type' | 'lagHours'>): [string, string] {
-  if ((e.type && e.type !== 'FS') || e.lagHours) return [e.type ?? 'FS', e.lagHours ? `${e.lagHours}h` : '0'];
+export function edgeChip(e: Pick<GraphEdge, 'sharePct' | 'type' | 'lagHours' | 'lagPct' | 'lagOf'>): [string, string] {
+  if (e.lagPct) return [e.type ?? 'FS', `${e.lagPct}%${e.lagOf === 'succ' ? ' own' : ''}`];
+  if ((e.type && e.type !== 'FS') || e.lagHours) return [e.type ?? 'FS', e.lagHours ? `${Math.round((e.lagHours / HOURS_PER_DAY) * 100) / 100}d` : '0'];
   if (e.sharePct < 100) return ['SS', `${e.sharePct}%`];
   return ['FS', '0'];
 }
@@ -127,19 +131,21 @@ export interface PreviewBar {
   days: number;
   /** The days are a guess (the task has no fixed days: its rate depends on the quantities of the objects). */
   approx: boolean;
+  /** Why the days of a formula task could not be worked out (so it is drawn as one day). */
+  problem?: string;
 }
 
 /** A rough programme of one recipe, in working days, for the preview under the graph: each task as long as its fixed days (or its rate's days),
     placed by its links (FS after the finish, SS at a share done, FF and SF by the end). Quantity-based rates count as a day, shown as approximate. */
-export function previewBars(recipe: Pick<Recipe, 'tasks' | 'edges'>, rates: { id: string; type: string; days?: number }[], parameters: ParameterRow[] = []): PreviewBar[] {
+export function previewBars(recipe: Pick<Recipe, 'tasks' | 'edges'>, rates: { id: string; type: string; days?: number }[], parameters: ParameterRow[] = [], reference: { concreteM3: number; rebarT: number } = { concreteM3: 150, rebarT: 3.5 }): PreviewBar[] {
   const tasks = recipe.tasks.filter((t) => t.enabled !== false);
-  const dur = new Map<string, { days: number; approx: boolean }>();
+  const dur = new Map<string, { days: number; approx: boolean; problem?: string }>();
   for (const t of tasks) {
     const rate = t.rate ? rates.find((r) => key(r.id) === key(t.rate!)) : undefined;
-    // A formula is worked out for a sample pour (150 m³, 3.5 t of rebar): approximate, like a rate that depends on quantities.
-    const sample = t.formula ? previewDays(t.formula, parameters, { Concrete_m3: 150, Rebar_t: 3.5, Rebar_kg: 3500, Footprint_m2: 200, Sides_m2: 120 }) : null;
+    // A formula is worked out for a reference pour (150 m³ and 3.5 t of rebar unless the preview is given others): approximate, like a rate that depends on quantities.
+    const sample = t.formula ? previewDays(t.formula, parameters, { Concrete_m3: reference.concreteM3, Rebar_t: reference.rebarT, Rebar_kg: reference.rebarT * 1000, Footprint_m2: 200, Sides_m2: 120 }) : null;
     const fixed = sample && 'days' in sample ? sample.days : t.days ?? (rate?.type === 'days' ? rate.days : undefined);
-    dur.set(key(t.phase), { days: Math.max(0.25, fixed ?? 1), approx: fixed === undefined || !!t.formula });
+    dur.set(key(t.phase), { days: Math.max(0.25, fixed ?? 1), approx: fixed === undefined || !!t.formula, ...(sample && 'error' in sample ? { problem: sample.error } : {}) });
   }
   const links = graphEdges(recipe).filter((e) => e.from !== START && e.to !== END && dur.has(key(e.from)) && dur.has(key(e.to)));
   const start = new Map(tasks.map((t) => [key(t.phase), 0]));
@@ -150,7 +156,7 @@ export function previewBars(recipe: Pick<Recipe, 'tasks' | 'edges'>, rates: { id
       const b = key(e.to);
       const da = dur.get(a)!.days;
       const db = dur.get(b)!.days;
-      const lag = e.lagHours / 8;
+      const lag = e.lagPct ? (e.lagPct / 100) * (e.lagOf === 'succ' ? db : da) : e.lagHours / HOURS_PER_DAY;
       const s = start.get(a)!;
       const at = e.type === 'SS' ? s + lag
         : e.type === 'FF' ? s + da + lag - db
