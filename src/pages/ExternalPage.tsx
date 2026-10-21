@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { FullscreenButton } from '../components/ViewerToolbar';
 import { dbRoot } from '../state/projectDbStore';
 
@@ -54,11 +55,11 @@ export function ExternalPage({ target, active }: { target: Target; active: boole
   const to = landing ?? LANDING[target];
   const open = `/api/external/open?target=${target}${to ? `&to=${encodeURIComponent(to)}` : ''}`;
   const [building, setBuilding] = useState(false);
-  const buildCompare = async () => {
+  const buildCompare = async (which: 'build-dashboard' | 'build-rates-dashboard' = 'build-dashboard') => {
     setBuilding(true);
     setUpdateMsg(null);
     try {
-      const res = await fetch('/api/external/build-dashboard', { method: 'POST' });
+      const res = await fetch(`/api/external/${which}`, { method: 'POST' });
       const r = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || !r.url) throw new Error(r.error ?? `Superset: ${res.status}`);
       setLanding(r.url);
@@ -80,27 +81,37 @@ export function ExternalPage({ target, active }: { target: Target; active: boole
     return () => { live = false; };
   }, [active, target, nonce]);
 
+  // The tools go in the main header (the slot in the page bar) while this page is showing.
+  const [slot, setSlot] = useState<HTMLElement | null>(null);
+  useEffect(() => { if (active) setSlot(document.getElementById('ws-pagebar-slot')); }, [active]);
+  const bar = (
+    <>
+      <span className="external-page__sub">{t.name}{status?.url ? ` · ${status.url}` : ''}</span>
+      {target === 'superset' && updateMsg && <span className={`external-page__note ${updateMsg.ok ? 'scn-dim' : 'scn-error'}`} title={updateMsg.text}>{updateMsg.text.slice(0, 120)}</span>}
+      {target === 'superset' && (
+        <button type="button" className="btn btn--small" disabled={updating} onClick={() => void updateData()} title="Rebuild the dashboards' data from the programmes loaded in the app (Inputs) and the Project A extract: run it after loading a programme or a scenario">
+          {updating ? 'Updating data…' : 'Update data'}
+        </button>
+      )}
+      {target === 'superset' && (
+        <button type="button" className="btn btn--small" disabled={building} onClick={() => void buildCompare()} title="Make (or update) the Compare programmes dashboard in Superset and open it: concrete and rebar by week, programmes over each other">
+          {building ? 'Building…' : 'Compare programmes'}
+        </button>
+      )}
+      {target === 'superset' && (
+        <button type="button" className="btn btn--small" disabled={building} onClick={() => void buildCompare('build-rates-dashboard')} title="Make (or update) the Rates by concrete volume dashboard in Superset and open it: days per 100 m3 and m3 per day of decking, formwork, embeds under and on top, curing and rebar, each activity linked to the pour it belongs to">
+          {building ? 'Building…' : 'Rates by volume'}
+        </button>
+      )}
+      <FullscreenButton />
+      <button type="button" className="btn btn--small" onClick={() => setNonce((n) => n + 1)} title="Reload and sign in again">Reload</button>
+      <button type="button" className="btn btn--small" onClick={() => window.open(open, '_blank', 'noopener')} title={`Open ${t.name} in its own window, signed in`}>Open in a window</button>
+    </>
+  );
+
   return (
     <div className="external-page" style={active ? undefined : { display: 'none' }}>
-      <div className="external-page__bar">
-        <b>{t.title}</b>
-        <span className="external-page__sub">{t.name}{status?.url ? ` · ${status.url}` : ''}</span>
-        <span className="external-page__spacer" />
-        {target === 'superset' && updateMsg && <span className={updateMsg.ok ? 'scn-dim' : 'scn-error'} title={updateMsg.text}>{updateMsg.text.slice(0, 120)}</span>}
-        {target === 'superset' && (
-          <button type="button" className="btn btn--small" disabled={updating} onClick={() => void updateData()} title="Rebuild the dashboards' data from the programmes loaded in the app (Inputs) and the Project A extract: run it after loading a programme or a scenario">
-            {updating ? 'Updating data…' : 'Update data'}
-          </button>
-        )}
-        {target === 'superset' && (
-          <button type="button" className="btn btn--small" disabled={building} onClick={() => void buildCompare()} title="Make (or update) the Compare programmes dashboard in Superset and open it: concrete and rebar by week, programmes over each other">
-            {building ? 'Building…' : 'Compare programmes'}
-          </button>
-        )}
-        <FullscreenButton />
-        <button type="button" className="btn btn--small" onClick={() => setNonce((n) => n + 1)} title="Reload and sign in again">Reload</button>
-        <button type="button" className="btn btn--small" onClick={() => window.open(open, '_blank', 'noopener')} title={`Open ${t.name} in its own window, signed in`}>Open in a window</button>
-      </div>
+      {active && slot && createPortal(bar, slot)}
       {status === null && <div className="external-page__msg">Checking {t.name}…</div>}
       {status && !status.reachable && (
         <div className="external-page__msg">

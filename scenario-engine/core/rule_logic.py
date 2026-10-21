@@ -261,11 +261,11 @@ def build_sequences(rules, tasks, wbs_manager, taken_ids):
             return out
 
         for building in buildings:
-            items = []  # (label, [guids]) in order
+            items = []  # (label, [guids], the step) in order
             i = 0
             while i < len(steps):
                 if not steps[i].get("perLevel"):
-                    items.append((steps[i]["group"], members(steps[i], building, None)))
+                    items.append((steps[i]["group"], members(steps[i], building, None), steps[i]))
                     i += 1
                     continue
                 j = i
@@ -275,11 +275,11 @@ def build_sequences(rules, tasks, wbs_manager, taken_ids):
                 levels = _ordered_levels(tasks, [members(s, building, None) for s in block])
                 for level in levels:
                     for s in block:
-                        items.append((f"{s['group']} {level}", members(s, building, level)))
+                        items.append((f"{s['group']} {level}", members(s, building, level), s))
                 i = j
-            items = [(label, guids) for label, guids in items if guids]
+            items = [item for item in items if item[1]]
             wbs = None
-            for n, ((label_a, a), (label_b, b)) in enumerate(zip(items, items[1:]), start=1):
+            for n, ((label_a, a, _step_a), (label_b, b, step_b)) in enumerate(zip(items, items[1:]), start=1):
                 rec = tasks.rec[a[0]]
                 milestone = _join(PROJECT_SHORT, building, "SEQ", seq["id"], f"{n:03d}")
                 if milestone.upper() in taken:
@@ -298,7 +298,8 @@ def build_sequences(rules, tasks, wbs_manager, taken_ids):
                     final = tasks.final(g)
                     if final:
                         relations.append(_relation(final, milestone, "FS", 0.0, source))
-                kind, lag = _type(seq), _lag(seq)
+                # A step may set its own link into it (its type and lag in hours); otherwise the sequence's.
+                kind, lag = (_type(step_b, _type(seq)), _lag(step_b)) if (step_b.get("type") or step_b.get("lagHours")) else (_type(seq), _lag(seq))
                 for g in b:
                     first = tasks.first(g)
                     if first:
@@ -438,6 +439,56 @@ def build_recipe_links(rules, tasks):
                 messages.append(f"Recipe link {link['id']}: stopped at {_MAX_RECIPE_LINKS} links (use a narrower scope)")
                 break
         messages.append(f"Recipe link {link['id']}: {len(subjects)} pour(s), {added} link(s)")
+    return relations, messages
+
+
+def _build_order(rules, tasks):
+    """The pours in the order the scenario builds them: the steps of the first sequence that has some (each step's pours, in the programme's order),
+    then every pour the steps do not name; with no steps, the programme's own order."""
+    order, seen = [], set()
+    for seq in rules.sequences:
+        if not _on(seq):
+            continue
+        steps = [s for s in seq.get("steps") or [] if isinstance(s, dict) and str(s.get("group", "")).strip()]
+        if not steps:
+            continue
+        for step in steps:
+            when = {"group": str(step["group"]).strip()}
+            for g in tasks.order:
+                if g not in seen and rules.matches(when, tasks.rec[g]):
+                    seen.add(g)
+                    order.append(g)
+        break
+    return order + [g for g in tasks.order if g not in seen]
+
+
+def build_limit_links(rules, tasks):
+    """Limits on how many activities of one kind run at once (Formwork_Sets_Available = 4: no more than 4 formwork activities at the same time).
+    The activities of that phase (of the pours of the limit's group, if it names one), taken in the order the scenario builds them, go to N lanes in
+    turn; each waits for the one before it in its lane (finish to start), so never more than N run together. Returns (relations, messages)."""
+    relations, messages = [], []
+    order = None
+    for limit in getattr(rules, "limits", []):
+        size = rules.limit_size(limit)
+        phase = str(limit.get("phase") or "").strip()
+        if size < 1:
+            continue
+        if order is None:
+            order = _build_order(rules, tasks)
+        when = {"group": str(limit.get("group") or "").strip()} if str(limit.get("group") or "").strip() else {}
+        queue, seen = [], set()
+        for g in order:
+            if not rules.matches(when, tasks.rec[g]):
+                continue
+            tid = _task_in(tasks, g, phase)
+            if tid and tid not in seen:
+                seen.add(tid)
+                queue.append(tid)
+        added = 0
+        for i in range(size, len(queue)):
+            relations.append(_relation(queue[i - size], queue[i], "FS", 0.0, f"limit:{limit.get('id') or phase}"))
+            added += 1
+        messages.append(f"Limit {limit.get('id') or phase}: {len(queue)} {phase} activit{'y' if len(queue) == 1 else 'ies'}, at most {size} at once, {added} link(s)")
     return relations, messages
 
 

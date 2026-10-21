@@ -1,6 +1,5 @@
 import { FEATURES } from '../features';
 import { PropertiesGrid } from './PropertiesGrid';
-import { RecipesDock } from './scenarios/rules/RecipesEditor';
 import { BottomDock } from './BottomDock';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
@@ -32,8 +31,9 @@ import { useListConfigStore } from '../state/listConfigStore';
 import { useDataTableStore } from '../state/dataTableStore';
 import { DockPanel } from './Dock';
 import { ScenarioTabContent } from './scenarios/ScenarioDock';
-import { ScenarioRulesDock } from './scenarios/ScenarioRules';
 import { DockGantt } from './sequence/DockGantt';
+import { SequenceResources } from './sequence/SequenceResources';
+import { ResourceDistribution } from './schedule/ResourceDistribution';
 import { useSequenceSchedule } from '../state/scheduleStore';
 import { useDockStore } from '../state/dockStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
@@ -42,7 +42,7 @@ import { useViewSettingsStore } from '../state/viewSettingsStore';
 
 /** The Gantt as a panel on the Models page too (4D Sequencing and Programmes have it as well): the same Gantt, here without a
     timeline to follow beyond the date line, so a programme can sit beside the 3D view whichever page it is. */
-function ModelsGanttPanel() {
+export function ModelsGanttPanel() {
   const model = useSequenceSchedule();
   const [picked, setPicked] = useState<string | null>(null);
   return (
@@ -55,6 +55,18 @@ function ModelsGanttPanel() {
 }
 const NO_IDS = new Set<string>();
 
+/** The Resources panel's content on the views that are not 4D Sequencing: the loading of the programme being shown. */
+function ResourcesDockBody() {
+  const model = useSequenceSchedule();
+  return model ? <SequenceResources model={model} /> : <div style={{ padding: 12, color: 'var(--text-dim)' }}>Load a programme in Inputs to see it here.</div>;
+}
+
+/** The Resource distribution panel's content: the programme being shown, its resources by week / month / quarter / year. */
+function DistributionDockBody() {
+  const model = useSequenceSchedule();
+  return model ? <ResourceDistribution model={model} activities={model.activities} /> : <div style={{ padding: 12, color: 'var(--text-dim)' }}>Load a programme in Inputs to see it here.</div>;
+}
+
 /** The Models page's tools (Model checks, Compare models, Topics): dock panels beside / under the 3D view, like 4D
     Sequencing's Gantt, Tasks and Scenarios — each can sit left, bottom or right (the Panels menu), and panels on the
     same side are tabs. */
@@ -62,7 +74,6 @@ export function ModelToolsPanel() {
   const panels = useSequenceUiStore((s) => s.modelPanels);
   // The Topics tool (BCF) is an experimental feature.
   const bcf = useAppPrefsStore((s) => s.experimental.bcf);
-  // Recipes (the library) are shown here too: they do not need a scenario.
   const scenarios = useAppPrefsStore((s) => s.experimental.scenarios);
   // A topic marker clicked in 3D brings the Topics tool up.
   const openRequest = useTopicsStore((st) => st.openRequest);
@@ -76,9 +87,10 @@ export function ModelToolsPanel() {
     <>
       <DockPanel id="checks" label="Model checks"><ModelChecksPanel /></DockPanel>
       <DockPanel id="compare" label="Compare models"><ModelComparePanel /></DockPanel>
-      {scenarios && <DockPanel id="recipes" label="Recipes"><RecipesDock /></DockPanel>}
+      {/* Resources opens beside whatever view is showing (Generate, Models, Programmes), never by taking you to 4D Sequencing. */}
+      <DockPanel id="resources" label="Resources"><ResourcesDockBody /></DockPanel>
+      <DockPanel id="distribution" label="Resource distribution"><DistributionDockBody /></DockPanel>
       {scenarios && <DockPanel id="scenarios" label="Sequence"><ScenarioTabContent /></DockPanel>}
-      {scenarios && <DockPanel id="rules" label="Rules"><ScenarioRulesDock /></DockPanel>}
       {bcf && <DockPanel id="topics" label="Topics">{panels ? <div className="tpc-pad"><TopicsPanel /></div> : <div className="flt__hint">Starting viewer…</div>}</DockPanel>}
     </>
   );

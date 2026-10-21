@@ -4,14 +4,17 @@ import { FREE_MODE } from '../licence/freeMode';
 import { scenes, type Scene } from '../state/scenes';
 import { dropFiles } from '../state/fileDrop';
 import { openDefaultWorkspace } from '../state/workspaces';
-import { homeOpen, useHomeSelection } from '../state/homeSelection';
+import { useHomeSelection } from '../state/homeSelection';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
-import { DOCK_DEFAULTS, useDockStore } from '../state/dockStore';
+import { useDockStore } from '../state/dockStore';
 import { usePersistedState } from '../utils/persistedState';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { thumbFromFile, thumbFromView } from '../components/sceneThumb';
-import { IconCamera, IconChevronDown, IconChevronRight, IconCube, IconDownload, IconFolder, IconGantt, IconGear, IconBlocksFour, IconList, IconMoreHorizontal, IconPencil, IconPlus, IconRemove, IconUpload } from '../components/icons';
+import { IconCamera, IconChevronDown, IconChevronRight, IconCube, IconDownload, IconFolder, IconGantt, IconBlocksFour, IconList, IconMoreHorizontal, IconPencil, IconPlus, IconRemove, IconUpload } from '../components/icons';
 import { SceneTools } from '../components/SceneTools';
+import { ListSetupButton } from '../components/ViewPicker';
+import { configFocusProps } from '../state/listConfigStore';
+import { useListQuery } from '../state/tableSearchStore';
 import { buildCombinedGroups, buildGroups, NO_VALUE, useInputDetailsStore, type GroupNode } from '../state/inputDetailsStore';
 import { FILE_VIEW_PROPS, foreignView } from '../state/fileView';
 import { sceneMatches, sortScenes, useSceneDetailsStore, valuesOfScene } from '../state/sceneDetailsStore';
@@ -52,14 +55,14 @@ const ago = (iso: string) => {
 /** Home: the first page of the app. The scenes of the project as tiles or a list, with the basics of each; a scene opens with its
     layout and lists (the page reloads), the one you are in is saved as you work. The files (models, site context, programmes) are
     one click away. */
-export function HomePage({ picker, search }: { /** The global search, at the right end of the bar. */ search?: ReactNode; /** The top-left buttons (Home, Workspace, View, search), as the other pages hold them in their toolbar. */ picker?: ReactNode }) {
+export function HomePage({ picker }: { /** The top-left buttons (Home, Workspace, View, search), as the other pages hold them in their toolbar. */ picker?: ReactNode }) {
   const engine = useViewerEngine();
   const [store, setStore] = useState(scenes.get);
   const [view, setView] = usePersistedState<'tiles' | 'list'>('home.view', 'tiles');
   const [menu, setMenu] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const headerSlot = useHeaderSlotStore((h) => h.el);
-  const settingsOpen = useDockStore((s) => (s.placement.settings ?? DOCK_DEFAULTS.settings) !== 'closed');
+  const search = useListQuery('scenes').toLowerCase();
   const [renaming, setRenaming] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const importRef = useRef<HTMLInputElement>(null);
@@ -92,7 +95,7 @@ export function HomePage({ picker, search }: { /** The global search, at the rig
   const groupCombine = useSceneDetailsStore((s) => s.groupCombine);
   const collapsed = useSceneDetailsStore((s) => s.collapsed);
   useEffect(() => { useSceneDetailsStore.getState().prune(store.scenes.map((s) => s.id)); }, [store.scenes]);
-  const listed = useMemo(() => sortScenes(store.scenes.filter((s) => sceneMatches(s, filters, details)), sortRules, details), [store.scenes, filters, details, sortRules]);
+  const listed = useMemo(() => sortScenes(store.scenes.filter((s) => sceneMatches(s, filters, details) && (!search || s.name.toLowerCase().includes(search))), sortRules, details), [store.scenes, filters, details, sortRules, search]);
   const groups = useMemo(() => {
     const valuesOf = (field: string, s: Scene) => valuesOfScene(field, s, details);
     return groupRules.length ? (groupCombine ? buildCombinedGroups(listed, groupRules, valuesOf) : buildGroups(listed, groupRules, valuesOf)) : [];
@@ -148,16 +151,10 @@ export function HomePage({ picker, search }: { /** The global search, at the rig
   useEffect(() => () => useHomeSelection.getState().clear(), []);
 
   const open = (s: Scene) => {
-    // The scene you are in: the models the filters leave in the Files list are added to the ones it brings back, then its workspace opens (the page
-    // reloads, as a new session does, and the viewer loads them there: it is not running on Home).
+    // The scene you are in: its workspace opens (the page reloads, as a new session does, and the viewer loads the models the scene
+    // was saved with: only those, not every stored model in the Files list).
     if (s.id === store.activeId) {
       try {
-        const names = homeOpen.names();
-        if (names.length) {
-          let have: string[] = [];
-          try { const v = JSON.parse(localStorage.getItem('models.loaded') ?? 'null'); if (Array.isArray(v)) have = v as string[]; } catch { /* none */ }
-          localStorage.setItem('models.loaded', JSON.stringify([...new Set([...have, ...names])]));
-        }
         if (!openDefaultWorkspace()) setError('Open: no workspace to open. Choose one in the workspace menu at the bottom right.');
         else window.location.reload();
       } catch (e) {
@@ -165,12 +162,11 @@ export function HomePage({ picker, search }: { /** The global search, at the rig
       }
       return;
     }
-    const names = homeOpen.names();
     if (window.confirm(`Open the scene “${s.name}”?
 
-The page reloads with its layout and lists and goes to your workspace${names.length ? `, loading ${names.length} more model${names.length === 1 ? '' : 's'} from its Files list` : ''}. “${current?.name ?? 'This scene'}” is saved first.`)) {
+The page reloads with its layout, lists and models and goes to your workspace. “${current?.name ?? 'This scene'}” is saved first.`)) {
       openDefaultWorkspace();
-      void attempt('The scene was not opened', async () => { await scenes.addLoaded(s.id, names); await scenes.activate(s.id); });
+      void attempt('The scene was not opened', () => scenes.activate(s.id));
     }
   };
   const create = (empty: boolean) => {
@@ -268,7 +264,7 @@ The page reloads with its layout and lists and goes to your workspace${names.len
   if (FREE_MODE) return <div className="home"><p style={{ padding: 16 }}>Scenes keep your arrangement and lists between visits. The free edition keeps nothing when you close the page, so they come with a licence.</p></div>;
 
   return (
-    <div className="home" onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }} onDragLeave={(e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }} onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); setDragging(false); useDockStore.getState().move('files', 'bottom'); dropFiles([...e.dataTransfer.files]); }}>
+    <div className="home" {...configFocusProps('scenes')} onDragOver={(e) => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); setDragging(true); } }} onDragLeave={(e) => { if (e.currentTarget === e.target || !e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false); }} onDrop={(e) => { if (!e.dataTransfer.files.length) return; e.preventDefault(); setDragging(false); useDockStore.getState().move('files', 'bottom'); dropFiles([...e.dataTransfer.files]); }}>
       {dragging && <div className="home__drop" aria-hidden><div>Drop to add to the project<small>Models (.ifc), site context (.glb) and programmes</small></div></div>}
       {/* The bar runs across the whole width: the panels on the sides start below it. */}
       {(() => { const bar = (
@@ -284,8 +280,7 @@ The page reloads with its layout and lists and goes to your workspace${names.len
             <button type="button" className={view === 'list' ? 'is-on' : ''} aria-pressed={view === 'list'} onClick={() => setView('list')} title="List" aria-label="List"><IconList width={20} height={20} /></button>
           </span>
           <SceneTools scenes={store.scenes} onCollapseAll={() => useSceneDetailsStore.getState().setCollapsedAll(groupKeys(groups))} onExpandAll={() => useSceneDetailsStore.getState().setCollapsedAll([])} />
-          {search}
-          <button type="button" className={`ws-page__btn ws-top__btn home__settings${settingsOpen ? ' is-on' : ''}`} aria-pressed={settingsOpen} onClick={() => (settingsOpen ? useDockStore.getState().close('settings') : useDockStore.getState().reveal('settings'))} title="Settings" aria-label="Settings"><IconGear width={20} height={20} /></button>
+          <ListSetupButton />
         </div>
       </div>
       ); return headerSlot ? createPortal(bar, headerSlot) : bar; })()}

@@ -6,7 +6,7 @@ and calendar of each. They are compiled here into the `chains` and `assignments`
 no second path. Keep this in step with compileRecipes in src/prs/recipes.ts: tests/unit/recipes.test.ts and tests/test_recipes.py check both
 against the same preset.
 
-A recipe is {id, group, priority, chain, tasks: [{phase, name, suffix, material, days, rate, density, crew, calendar, priority, finishAfter,
+A recipe is {id, group, priority, chain, tasks: [{phase, name, suffix, material, days, formula, rate, density, crew, calendar, priority, finishAfter,
 gates, enabled, note}], edges: [{from, to, sharePct}], enabled}. `chain` false (default true): the recipe only sets the values of its tasks.
 """
 
@@ -40,7 +40,7 @@ def _row_id(group, phase):
 
 
 def _has_values(task):
-    return task.get("days") is not None or any(_text(task.get(k)) for k in ("rate", "density", "crew", "calendar"))
+    return task.get("days") is not None or any(_text(task.get(k)) for k in ("rate", "density", "crew", "calendar", "formula"))
 
 
 # A task's equipment, cranes and materials: [{type, count}] each, kept apart as resources of that kind.
@@ -88,7 +88,7 @@ def compile_recipes(data):
         if in_chain:
             for order, t in enumerate(tasks, 1):
                 phase = _text(t.get("phase"))
-                row = {"id": _row_id(group, phase), "group": group, "order": order, "phase": phase, "priority": priority}
+                row = {"id": _row_id(group, phase), "group": group, "order": order, "phase": phase, "priority": priority, "recipe": _text(recipe.get("id"))}
                 if t.get("suffix") is not None:
                     row["suffix"] = t["suffix"]
                 if t.get("name") is not None:
@@ -110,7 +110,7 @@ def compile_recipes(data):
                 continue
             phase = _text(t.get("phase"))
             row = {"id": _row_id(group, phase), "group": group, "phase": phase, "priority": t.get("priority") or 0}
-            for key in ("rate", "days", "density", "crew", "calendar"):
+            for key in ("rate", "days", "density", "crew", "calendar", "formula"):
                 if t.get(key) is not None and _text(t.get(key)) != "":
                     row[key] = t[key]
             if not in_chain and t.get("enabled") is False:

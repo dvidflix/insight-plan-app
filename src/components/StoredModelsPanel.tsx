@@ -7,6 +7,7 @@ import { dbRoot, useProjectDbStore } from '../state/projectDbStore';
 import { deleteStoredModel, getStoredIfc, listStoredVersions, restoreStoredVersion, type StoredModel, type StoredVersion } from '../db/modelsApi';
 import { loadStoredModel } from '../viewer/modelStore';
 import { downloadBlob } from '../utils/download';
+import { linkToActive } from '../state/sceneModels';
 
 /** The note after an open / restore: shown in the status bar (StoredModelsStatus), and cleared after a while. */
 const useStoredNote = create<{ text: string | null; set: (t: string | null) => void }>((set) => ({ text: null, set: (text) => set({ text }) }));
@@ -51,6 +52,7 @@ export function useStoredModels() {
       const stuck = new Promise<never>((_, no) => window.setTimeout(() => no(new Error(`${m.name} did not open: the 3D viewer did not answer. Reload the page and try again.`)), 90000));
       const { info, fast } = await Promise.race([loadStoredModel(engine, root, m.name, m.ifcHash), stuck]);
       addModel(info);
+      linkToActive(m.name);
       setMessage(`${m.name} opened${fast ? ' from its converted copy' : ' (converted from the IFC; the copy is kept for next time)'}.`);
       void refresh(root);
     } catch (e) {

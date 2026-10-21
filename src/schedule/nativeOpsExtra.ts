@@ -29,6 +29,8 @@ export function assignmentColumns(r: ResourceAssignment, prev?: ResourceAssignme
     out.remain_qty_per_hr = r.unitsPerTime ?? null;
   }
   if (!prev || r.targetCost !== prev.targetCost) out.target_cost = r.targetCost;
+  // ip_primary is the project database's own column (the crew that sets the pace), left out of an XER.
+  if (!!r.primary !== !!prev?.primary) out.ip_primary = r.primary ? 1 : 0;
   return out;
 }
 

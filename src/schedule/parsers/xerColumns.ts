@@ -20,8 +20,8 @@ export const XER_TABLE_COLUMNS: Record<string, string[] | null> = {
     'late_start_date', 'late_end_date', 'restart_date', 'reend_date', 'suspend_date', 'resume_date', 'expect_end_date',
     'cstr_type', 'cstr_date', 'cstr_type2', 'cstr_date2', 'duration_type', 'complete_pct_type', 'driving_path_flag', 'ip_seq',
   ],
-  TASKPRED: ['task_id', 'pred_task_id', 'proj_id', 'pred_proj_id', 'pred_type', 'lag_hr_cnt'],
-  TASKRSRC: ['task_id', 'proj_id', 'rsrc_id', 'rsrc_type', 'target_qty', 'remain_qty', 'target_qty_per_hr', 'target_cost', 'act_reg_cost', 'act_ot_cost'],
+  TASKPRED: ['task_id', 'pred_task_id', 'proj_id', 'pred_proj_id', 'pred_type', 'lag_hr_cnt', 'ip_soft'],
+  TASKRSRC: ['task_id', 'proj_id', 'rsrc_id', 'rsrc_type', 'target_qty', 'remain_qty', 'target_qty_per_hr', 'target_cost', 'act_reg_cost', 'act_ot_cost', 'ip_primary'],
   TASKACTV: ['task_id', 'actv_code_type_id', 'actv_code_id'],
   UDFVALUE: ['udf_type_id', 'fk_id', 'udf_text', 'udf_number'],
 };

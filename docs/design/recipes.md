@@ -186,3 +186,13 @@ A recipe task asks for crews (min to max); the generator takes them from this po
 ## Open questions
 
 - Does the generator wait for a free crew in version 1, or only report where demand exceeds the pool? Proposal: report only.
+
+## Tables you can edit (2026-10-20): parameters, formulas, limits, steps, workbook
+
+A planner who does not want a graph can run the whole recipe set from plain tables. Nothing here replaces the recipes; it is how their numbers and the logic around them are written.
+
+- **Parameters** (`rules.parameters`: name, value, unit): named values the duration formulas read (`Rebar_Rate`, `Concrete_Rate`, `Curing_Days`, `Formwork_Sets_Available`). The scenario's own, so two scenarios can test two rates.
+- **Duration formula** (`RecipeTask.formula`, compiled to the assignment's `formula`): working days from the pour's quantities and the parameters, e.g. `Rebar_kg / Rebar_Rate` or `max(1, Concrete_m3 / Concrete_Rate)`. Quantities: `Concrete_m3`, `Rebar_t`, `Rebar_kg`, `Footprint_m2`, `Sides_m2`, `crews`. It beats a rate; a name with no value is noted in the run's messages and the task keeps its other days. The language is the one of `src/schedule/durationFormula.ts`; `core/formula.py` is the same parser for the generator.
+- **Limits** (`rules.limits`: phase, optional group, `max` as a number or a parameter name): at most N activities of that phase run at once. `core/rule_logic.build_limit_links` sends the activities, in the order of the steps, to N lanes in turn and makes each wait for the one before it in its lane (FS), so formwork sets, a specialist crew or a crane team limit the programme without hand-drawn links. "Maximize resource availability" lifts every limit. The limit follows the build order, so a limit can only add links that run forward in that order.
+- **Steps**: the search sets (rule groups) in the order they are built, kept as the sequence `STEPS`. Each step may carry its own link into it (type and lag in hours: `SequenceStep.type`, `lagHours`); the default stays finish to start. This is the existing sequence rule, written as a table.
+- **Workbook** (`src/prs/recipesWorkbook.ts`): Recipes, Parameters, Limits, Steps and Resources as one .xlsx (Parameters, limits, steps… › Download workbook / Upload workbook). Columns are matched by name; each sheet is the whole list for what it holds, except that a recipe the Recipes sheet does not name is kept. An upload reports what is wrong (a formula name with no value, a step with no search set, a limit that is neither a number nor a parameter) and still applies the rest.

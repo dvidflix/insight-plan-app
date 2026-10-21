@@ -4,7 +4,7 @@ import { ViewPicker } from './components/ViewPicker';
 import { initialView, noteView } from './state/workspaces';
 import { FullScreenOnStart } from './components/FullScreenOnStart';
 import { lazy, Suspense, useEffect, useMemo, useRef, useState } from 'react';
-import { setHomeDock, useDockStore } from './state/dockStore';
+import { enterDockView, setHomeDock, useDockStore } from './state/dockStore';
 import { createPortal } from 'react-dom';
 import { useFilesCountStore, useTableCountStore } from './state/tableCountStore';
 import { GlobalSearch } from './components/GlobalSearch';
@@ -18,7 +18,7 @@ import { SettingsSync, hideStatusBar } from './components/SettingsMenu';
 import { CustomFieldsSync } from './components/CustomFieldsSync';
 import { SettingsDock, SidePaneHost } from './components/SidePane';
 import { AutoLinkGenerator } from './components/schedule/AutoLinkGenerator';
-import { ScenarioSync } from './components/scenarios/ScenarioParts';
+import { ScenarioStatusItems, ScenarioSync } from './components/scenarios/ScenarioParts';
 import { ViewerWorkspace } from './viewer/ViewerWorkspace';
 import { SchedulePage, type TabId as ScheduleTabId } from './pages/SchedulePage';
 import { takePendingTab, useScheduleLayoutsStore } from './state/scheduleLayoutsStore';
@@ -26,6 +26,7 @@ import { SequencePanel } from './pages/SequencePage';
 import { FourDSetupPanel } from './components/sequence/FourDSetupPanel';
 import { useSatelliteModelsStore } from './state/satelliteModels';
 import { ScenariosPage } from './pages/ScenariosPage';
+import { GenerateTabs } from './components/scenarios/GenerateTabs';
 import { HelpPage } from './pages/HelpPage';
 
 import { ExternalPage } from './pages/ExternalPage';
@@ -51,6 +52,7 @@ import { useActivitySelectionStore } from './state/activitySelectionStore';
 import { takeDroppedFiles } from './state/fileDrop';
 import { restoreStatus } from './state/restoreStatus';
 import { homeOpen, useHomeSelection } from './state/homeSelection';
+import { linkToActive, useSceneLinks } from './state/sceneModels';
 import { DbStatusChip } from './components/ProjectDbPanel';
 import { WorkspaceStatus } from './components/WorkspaceBar';
 import { FEATURES } from './features';
@@ -105,7 +107,7 @@ const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
   { id: 'inputs', label: 'Files', icon: <IconFolder /> },
   { id: 'model', label: 'Models', icon: <IconCube /> },
   { id: 'schedule', label: 'Programmes', icon: <IconGantt /> },
-  { id: 'scenarios', label: 'Scenarios', icon: <IconSplit /> },
+  { id: 'scenarios', label: 'Generate', icon: <IconSplit /> },
   { id: 'sequence', label: '4D Sequencing', icon: <IconSchema /> },
   { id: 'timelines', label: 'Timelines', icon: <IconTimeline /> },
   { id: 'external', label: 'External data', icon: <IconExternalData /> },
@@ -216,7 +218,7 @@ export default function App() {
   const pageRef = useRef(page);
   pageRef.current = page;
   // Which page's docks (panels around the 3D view, or around the programme views) are showing.
-  useEffect(() => { setHomeDock(page === 'home'); useDockStore.getState().setHost(page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' ? 'viewer' : null); }, [page]);
+  useEffect(() => { setHomeDock(page === 'home'); useDockStore.getState().setHost(page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' || page === 'scenarios' ? 'viewer' : null); }, [page]);
   const setPage = (next: PageId | ((current: PageId) => PageId)) => {
     const from = pageRef.current;
     const to = typeof next === 'function' ? next(from) : next;
@@ -241,9 +243,7 @@ export default function App() {
     // setPage reads the current page from a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // Settings › Window › Show Scenarios tab (off by default — Scenarios is
-  // also in 4D Sequencing).
-  const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
+  // The Generate page (id 'scenarios') shows whenever Settings › Experimental features › Scenarios is on.
   const scenariosOn = useAppPrefsStore((s) => s.experimental.scenarios);
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
@@ -251,12 +251,12 @@ export default function App() {
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => (p.id !== 'scenarios' || (scenariosOn && showScenariosTab)) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
-    [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
+    () => PAGES.filter((p) => (p.id !== 'scenarios' || scenariosOn) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    [scenariosOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
-    if (((!showScenariosTab || !scenariosOn) && page === 'scenarios') || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || ((!FEATURES.help || !showHelpTab) && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
-  }, [scenariosOn, showScenariosTab, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab, page]);
+    if ((!scenariosOn && page === 'scenarios') || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || ((!FEATURES.help || !showHelpTab) && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
+  }, [scenariosOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab, page]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab step through the top tabs (wrapping round).
   // Alt+PageDown / Alt+PageUp do the same: a normal browser tab keeps Ctrl+Tab
@@ -298,6 +298,9 @@ export default function App() {
   }, [pages]);
   // Programmes opens on the Gantt.
   const [scheduleTab, setScheduleTab] = useState<ScheduleTabId>((IS_SATELLITE && SATELLITE_VIEW ? SATELLITE_VIEW : initialView()?.tab ?? 'gantt') as ScheduleTabId);
+  // Each view remembers which panels it had open, per workspace: entering a view puts its panels back.
+  const dockView = page === 'schedule' ? `schedule:${scheduleTab}` : page === 'model' || page === 'sequence' || page === 'scenarios' ? page : null;
+  useEffect(() => { enterDockView(dockView); }, [dockView]);
   // The workspace keeps the page and view it is on.
   useEffect(() => { noteView(page, scheduleTab); }, [page, scheduleTab]);
   // A second window says what it shows, so the workspace opens it there again.
@@ -309,14 +312,14 @@ export default function App() {
     if (tab) setScheduleTab(tab as ScheduleTabId);
   }, [layoutRevision]);
   // Models, 4D Sequencing and Programmes are one workspace: the 3D view's shell and docks, with the Programmes views taking the 3D view's place.
-  const viewerVisible = page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home';
+  const viewerVisible = page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' || page === 'scenarios';
 
   // On the pages with docks the status bar sits under the centre only, so the docks on the sides run down to the bottom of the page.
   const footerEl = useHeaderSlotStore((h) => h.footer);
   const statusBar = (
     <div className="statusbar-host">
       <span id="rec-statusbar-needs" className="rec-statusbar-needs" />
-      {page === 'home' ? <footer className="app-statusbar app-statusbar--home"><span>The scene you are in is saved as you work.</span><HomeFilesCount /><span className="app-statusbar__tools" /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'sequence' ? <><SequenceTimelineStatusBar /><StatusBar page={page} /></> : page === 'inputs' ? <InputsStatusBar /> : page === 'scenarios' || page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? <footer className="app-statusbar"><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : <StatusBar page={page} />}
+      {page === 'home' ? <footer className="app-statusbar app-statusbar--home"><span>The scene you are in is saved as you work.</span><HomeFilesCount /><DbStatusChip /><span className="app-statusbar__tools" /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'sequence' ? <><SequenceTimelineStatusBar /><StatusBar page={page} /></> : page === 'scenarios' ? <footer className="app-statusbar"><ScenarioStatusItems /><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'inputs' ? <InputsStatusBar /> : page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? <footer className="app-statusbar"><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : <StatusBar page={page} />}
       <button type="button" className="statusbar-close" onClick={hideStatusBar} title="Hide the status bar (Settings brings it back)" aria-label="Hide the status bar"><IconClose width={14} height={14} /></button>
     </div>
   );
@@ -325,7 +328,7 @@ export default function App() {
       <ThemeSync />
       {/* A second window loads the models only once it shows a page with the 3D view (loading them is the slow part). */}
       <StoredModelsStatus />
-      {FEATURES.browserData && <ModelsRestoreSync enabled={!IS_SATELLITE || visited.has('model') || visited.has('sequence') || wantModels} />}
+      {(FEATURES.browserData || !IS_SATELLITE) && <ModelsRestoreSync enabled={!IS_SATELLITE || visited.has('model') || visited.has('sequence') || wantModels} />}
       <ProgrammeChoiceSync />
       <FitOnModelsTab page={page} />
       <SettingsSync />
@@ -339,8 +342,8 @@ export default function App() {
       <div className="app-shell">
         {IS_SATELLITE
           ? !viewerVisible && <header className="ws-bar"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></header>
-          // No bar along the top: Programmes, Models and 4D hold the picker in their own toolbar; the other pages get it as a small button in the corner.
-          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && page !== 'home' && <div className="ws-float"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></div>}
+          // No bar along the top: Programmes, Models and 4D hold the picker in their own toolbar; the other pages get the same bar (Home, view, search) along the top.
+          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && page !== 'home' && page !== 'scenarios' && <header className="ws-pagebar"><ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /><div className="ws-pagebar__slot" id="ws-pagebar-slot" /></header>}
         <div className="app-body">
           <div
             style={
@@ -360,20 +363,20 @@ export default function App() {
               search={<GlobalSearch pages={pages} onPage={goPage} onTab={setScheduleTab} />}
               layout={page === 'sequence' ? 'sequence' : 'model'}
               paneActive={page === 'model'}
-              backgroundPanels={page === 'schedule'}
+              backgroundPanels={page === 'schedule' || page === 'scenarios'}
               panel={page === 'sequence' ? <SequencePanel /> : <FourDSetupPanel />}
               overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
               center={
                 <>
                   {(page === 'schedule' || visited.has('schedule')) && <div style={{ display: page === 'schedule' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}><SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={goPage} /></div>}
-                  {page === 'home' && <HomePage search={<GlobalSearch pages={pages} onPage={goPage} onTab={setScheduleTab} />} picker={<ViewPicker named hideSearch hideView pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} />} />}
+                  {page === 'scenarios' && <ScenariosPage picker={<ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} afterSearch={<GenerateTabs />} />} />}
+                  {page === 'home' && <HomePage picker={<ViewPicker named hideView pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} />} />}
                 </>
               }
-              centerShown={page === 'schedule' || page === 'home'}
+              centerShown={page === 'schedule' || page === 'home' || page === 'scenarios'}
             />
           </div>
           {page === 'inputs' && <InputsPage />}
-          {page === 'scenarios' && <ScenariosPage />}
           {page === 'timelines' && <Suspense fallback={null}><TimelinesPage /></Suspense>}
           {page === 'wiki' && <Suspense fallback={null}><WikiPage /></Suspense>}
           {page === 'help' && <HelpPage />}
@@ -561,6 +564,23 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
   const formatOfRow = (r: InputRow) => (r.programme?.db?.sourceFormat ?? /\.([a-z0-9]+)$/i.exec(r.name)?.[1] ?? '').toUpperCase();
   // The scene chosen on Home (not the one you are in): its saved Files filters stand in for the ones set now.
   const sceneFilters = useHomeSelection((s) => s.filters);
+  // Home: each model has a tick box, ticked when it is linked to the chosen scene (opening a scene loads exactly the ticked models).
+  const homeScene = useHomeSelection((s) => s.sceneId);
+  const sceneLinks = useSceneLinks(homeScene);
+  const tickModel = (row: InputRow, on: boolean) => {
+    sceneLinks.set([row.name], on);
+    if (!sceneLinks.isActive) return; // another scene: only its list changes, nothing is loaded here
+    if (on) { if (row.unloaded && row.stored) void storedActions.open(row.stored); }
+    else if (!row.unloaded) void removeModelEverywhere(row.key);
+  };
+  // Programmes get the same tick box: ticked = loaded (shown) in the scene you are in, linked to it otherwise; unticking hides it.
+  const hasTick = (r: InputRow) => !!homeScene && ((r.kind === 'model' && !!r.stored) || r.kind === 'programme');
+  const isTicked = (r: InputRow) => (r.kind === 'programme' && sceneLinks.isActive ? !r.hidden : sceneLinks.linked.has(r.name));
+  const tickRow = (row: InputRow, on: boolean) => {
+    if (row.kind !== 'programme') { tickModel(row, on); return; }
+    sceneLinks.set([row.name], on);
+    if (sceneLinks.isActive && row.hidden === on) toggleRowHidden(row);
+  };
   const visibleRows = useMemo(() => {
     const on = sceneFilters ?? filters;
     return Object.keys(on).length === 0 ? rows : rows.filter((r) => isOpenRow(r) || passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, on, detailValues));
@@ -652,10 +672,17 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
   const flipSelectedRows = () => {
     const keys = selectedKeys.size ? selectedKeys : new Set(activeKey ? [activeKey] : []);
     const picked = listedRows.filter((r) => keys.has(rowId(r)));
-    const targets = picked.filter((r) => !r.unloaded);
+    // Rows with a tick box: Space unticks them (unloads) if any is ticked, otherwise ticks them (loads).
+    const ticks = picked.filter(hasTick);
+    if (ticks.length) {
+      const on = !ticks.some(isTicked);
+      for (const r of ticks) if (isTicked(r) !== on) tickRow(r, on);
+    }
+    const rest = picked.filter((r) => !hasTick(r));
+    const targets = rest.filter((r) => !r.unloaded);
     const anyShown = targets.some((r) => !r.hidden);
     for (const r of targets) if (r.hidden !== anyShown) toggleRowHidden(r);
-    const toOpen = picked.filter((r) => r.unloaded && r.stored).map((r) => r.stored!);
+    const toOpen = rest.filter((r) => r.unloaded && r.stored).map((r) => r.stored!);
     if (toOpen.length) void (async () => { for (const m of toOpen) await storedActions.open(m); })();
   };
   // Home's Open button: the stored models the filters leave in the list are loaded first (the rows are those of the scene chosen there).
@@ -819,7 +846,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
       const root = dbRoot();
       if (root && file.name.toLowerCase().endsWith('.ifc')) {
         void storeLoadedIfc(engine, root, file.name, buffer, info.modelId)
-          .then(() => useModelStoreState.getState().refresh(root))
+          .then(() => { linkToActive(file.name); return useModelStoreState.getState().refresh(root); })
           .catch((e) => setModelError(`${file.name}: not kept in the model store: ${e instanceof Error ? e.message : String(e)}`));
       }
       clearPendingModel(file.name);
@@ -938,8 +965,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
     <div className={`inputs-page${detailsOpen ? ' inputs-page--details' : ''}`} {...configFocusProps('files')}>
       <DockToolbar id="files">
       <div className="inputs-panel__header inputs-bar">
-        <button type="button" className="icon-btn inputs-fold" onClick={() => { const d = useDockStore.getState(); d.setFolded(d.sideOf('files') === 'closed' ? 'bottom' : (d.sideOf('files') as 'left' | 'bottom' | 'right'), true); }} title="Fold the Files panel away" aria-label="Fold the Files panel away"><IconChevronDown width={16} height={16} /></button>
-        <span className="inputs-panel__spacer" />
+        {inDock ? <button type="button" className="mdt__fold" onClick={() => { const d = useDockStore.getState(); d.setFolded(d.sideOf('files') === 'closed' ? 'bottom' : (d.sideOf('files') as 'left' | 'bottom' | 'right'), true); }} title="Fold the Files panel away" aria-label="Fold the Files panel away"><IconChevronDown width={16} height={16} /></button> : <span className="inputs-panel__spacer" />}
         <span className="tp-row inputs-add">
           <ToolPopover icon={<IconPlus width={18} height={18} />} label="Add files" iconOnly={false} width={360}>
             <FileDrop label="Drop files here or click to upload" hint={`Models: .ifc, .frag · Site context (terrain, surroundings): .glb · Programmes: P6 .xer / .xml, MS Project .xml (File › Save As › XML), Excel .xlsx / .xls / .csv${dbOpen ? ' — programmes are imported into the project database' : ''}`} accept={`.ifc,.frag,.glb,.gltf,${SCHEDULE_ACCEPT},.mpp`} multiple onFile={handleFile} />
@@ -962,6 +988,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
             { label: 'Sync all', icon: <IconSync />, hidden: rows.length === 0, onClick: syncAll },
           ]}
         />
+        {inDock && <button type="button" className="icon-btn inputs-fold" onClick={() => useDockStore.getState().close('files')} title="Close the Files panel (the Panels menu brings it back)" aria-label="Close the Files panel"><IconClose width={16} height={16} /></button>}
       </div>
       </DockToolbar>
       <div className="inputs-panel">
@@ -1034,8 +1061,17 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
                         >
                           <td>
                             <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
-                              {row.unloaded && row.stored ? (
-                                inputBtns.shown('open') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.open(row.stored!)} aria-label="Open" title="Open the model">
+                              {hasTick(row) ? (
+                                <input
+                                  type="checkbox"
+                                  checked={isTicked(row)}
+                                  disabled={storedActions.busy === row.name}
+                                  onChange={(e) => tickRow(row, e.target.checked)}
+                                  aria-label={`Link ${row.name} to the scene`}
+                                  title={sceneLinks.linked.has(row.name) ? 'Linked to the scene: it opens with the scene. Untick to unlink it.' : 'Not linked to the scene. Tick to link it (and open it if this is the scene you are in).'}
+                                />
+                              ) : row.unloaded && row.stored ? (
+                                inputBtns.shown('open') && <button type="button" className="mini-btn mini-btn--icon" disabled={storedActions.busy === row.name} onClick={() => void storedActions.open(row.stored!)} aria-label="Open" title="Open the model (links it to the scene you are in)">
                                   <IconCheckboxUnchecked width={16} height={16} />
                                 </button>
                               ) : (

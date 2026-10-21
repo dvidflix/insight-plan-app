@@ -43,6 +43,13 @@ def test_the_recipes_compile_to_the_presets_rows():
     assert slab["follows"] == "Decking@80, Under Slab@80" and slab["finishAfter"] is True and slab["material"] == "rebar"
 
 
+def test_every_chain_row_names_the_recipe_that_made_it():
+    recipes = FIXTURE["recipes"]["recipes"]
+    out = compile_recipes({"recipes": recipes})
+    ids = {r["id"] for r in recipes}
+    assert out["chains"] and all(c["recipe"] in ids for c in out["chains"])
+
+
 def test_a_recipe_switched_off_gives_nothing():
     recipes = [{**r, "enabled": False} for r in FIXTURE["recipes"]["recipes"]]
     assert compile_recipes({"recipes": recipes}) == {"chains": [], "assignments": [], "uses": [], "links": []}
@@ -255,3 +262,87 @@ def test_a_task_can_follow_another_with_a_type_and_a_lag_and_two_links_between_t
     rels = {(ids[r.findtext("PredecessorActivityObjectId")], ids[r.findtext("SuccessorActivityObjectId")], r.findtext("Type")): float(r.findtext("Lag") or 0) for r in project.findall("Relationship")}
     assert rels[("R", "F", "StartToStart")] == 32.0 and ("R", "F", "FinishToFinish") in rels and ("R", "F", "FinishToStart") not in rels
     assert rels[("F", "C", "FinishToStart")] == -8.0
+
+
+# ---------------------------------------------------------------- parameters, formulas and limits
+
+def test_a_formula_reads_the_pours_quantities_and_the_scenarios_parameters():
+    from core import formula
+    values = {"Concrete_m3": 150, "Rebar_kg": 3500, "Rebar_Rate": 500, "Concrete_Rate": 40}
+    assert formula.evaluate("Rebar_kg / Rebar_Rate", values) == 7
+    assert formula.evaluate("max(1, ceil(concrete_m3 / Concrete_Rate))", values) == 4
+    assert formula.evaluate("2 ^ 3 - -1", values) == 9
+    for bad in ("", "Nope * 2", "1 +", "1 / 0", "import os", "(1"):
+        with pytest.raises(formula.FormulaError):
+            formula.evaluate(bad, values)
+
+
+def test_a_recipe_tasks_formula_sets_its_days_from_the_quantity_and_the_rate():
+    from core import activity_generator as gen
+    from test_rules import FakeWbs
+    recipes = [{"id": "SLAB", "group": "", "tasks": [
+        {"phase": "Rebar", "suffix": "-R", "formula": "Rebar_kg / Rebar_Rate"},
+        {"phase": "Concrete", "suffix": "-C", "formula": "max(1, Concrete_m3 / Concrete_Rate)"}]}]
+    parameters = [{"name": "Rebar_Rate", "value": 500}, {"name": "Concrete_Rate", "value": 40}]
+    rules.activate({"recipes": recipes, "parameters": parameters})
+    r = rec("S1", "SLAB")
+    r["volume"], r["rebar_weight_tonnes"] = 150.0, 3.5
+    days = {a["phase"]: a["duration_days"] for a in gen.create_activities(r, FakeWbs())}
+    assert days == {"Rebar": 7.0, "Concrete": 3.75}
+    # change a rate and regenerate: the days follow
+    rules.activate({"recipes": recipes, "parameters": [{"name": "Rebar_Rate", "value": 1000}, {"name": "Concrete_Rate", "value": 150}]})
+    days = {a["phase"]: a["duration_days"] for a in gen.create_activities(r, FakeWbs())}
+    assert days == {"Rebar": 3.5, "Concrete": 1.0}
+
+
+def test_a_formula_with_a_name_that_has_no_value_is_noted_and_the_task_keeps_its_other_days():
+    from core import activity_generator as gen
+    from test_rules import FakeWbs
+    recipes = [{"id": "SLAB", "group": "", "tasks": [{"phase": "Rebar", "suffix": "-R", "days": 4, "formula": "Rebar_kg / Missing_Rate"}]}]
+    r = rules.activate({"recipes": recipes})
+    acts = gen.create_activities(rec("S1", "SLAB"), FakeWbs())
+    assert [a["duration_days"] for a in acts] == [4.0]
+    assert any("Missing_Rate" in n for n in r.formula_notes)
+
+
+def _limit_acts(count):
+    from core import activity_generator as gen
+    from test_rules import FakeWbs
+    return [a for i in range(count) for a in gen.create_activities(rec(f"S{i}", "SLAB", level=i + 1), FakeWbs())]
+
+
+def test_a_limit_keeps_at_most_n_activities_of_a_kind_running_at_once():
+    from core.rule_logic import PourTasks, build_limit_links
+    recipes = [{"id": "SLAB", "group": "", "tasks": [{"phase": "Formwork", "suffix": "-F", "days": 2}, {"phase": "Concrete", "suffix": "-C", "days": 1}]}]
+    r = rules.activate({"recipes": recipes, "parameters": [{"name": "Formwork_Sets_Available", "value": 2}],
+                        "limits": [{"id": "FW", "phase": "Formwork", "max": "Formwork_Sets_Available"}]})
+    acts = _limit_acts(5)
+    relations, messages = build_limit_links(r, PourTasks(acts))
+    forms = [a["task_id"] for a in acts if a["phase"] == "Formwork"]
+    assert [(x["pred"], x["succ"], x["type"]) for x in relations] == [(forms[0], forms[2], "FS"), (forms[1], forms[3], "FS"), (forms[2], forms[4], "FS")]
+    assert messages and "at most 2 at once" in messages[0]
+
+
+def test_a_limit_of_none_or_with_maximize_resources_adds_no_links():
+    from core.rule_logic import PourTasks, build_limit_links
+    recipes = [{"id": "SLAB", "group": "", "tasks": [{"phase": "Formwork", "suffix": "-F", "days": 2}]}]
+    acts = _limit_acts(4)
+    r = rules.activate({"recipes": recipes, "limits": [{"phase": "Formwork", "max": 0}]})
+    assert build_limit_links(r, PourTasks(acts))[0] == []
+    r = rules.activate({"recipes": recipes, "limits": [{"phase": "Formwork", "max": 2}], "settings": {"maximizeResources": True}})
+    assert build_limit_links(r, PourTasks(acts))[0] == []
+
+
+def test_the_limit_follows_the_order_of_the_steps():
+    from core.rule_logic import PourTasks, build_limit_links
+    groups = [{"id": "TOP", "forEach": [], "filters": [{"id": "c1", "field": "levelNumber", "op": "atLeast", "value": "3", "conj": "and"}]},
+              {"id": "LOW", "forEach": [], "filters": [{"id": "c1", "field": "levelNumber", "op": "lessThan", "value": "3", "conj": "and"}]}]
+    recipes = [{"id": "SLAB", "group": "", "tasks": [{"phase": "Formwork", "suffix": "-F", "days": 2}]}]
+    r = rules.activate({"recipes": recipes, "groups": groups, "limits": [{"phase": "Formwork", "max": 1}],
+                        "sequences": [{"id": "STEPS", "steps": [{"group": "TOP"}, {"group": "LOW"}]}]})
+    acts = _limit_acts(4)  # levels 1..4: the steps put levels 3 and 4 first
+    relations, _ = build_limit_links(r, PourTasks(acts))
+    level_of = {a["task_id"]: a["rec"]["level_code"] if "level_code" in a["rec"] else a["task_id"] for a in acts}
+    first = relations[0]["pred"]
+    top = {a["task_id"] for a in acts if a["rec"]["element"].GlobalId in ("S2", "S3")}
+    assert first in top and len(relations) == 3

@@ -1,7 +1,6 @@
 import { useEffect, useMemo } from 'react';
 import * as THREE from 'three';
 import { useFocusStore } from '../../state/focusStore';
-import { SidePaneDock } from '../SidePane';
 import { useViewerEngine } from '../../viewer/ViewerEngineContext';
 import { useModelsStore } from '../../state/modelsStore';
 import { baseStem } from '../../scenarios/fromProgramme';
@@ -13,7 +12,7 @@ import { configFocusProps } from '../../state/listConfigStore';
 import { ScenarioTableConfig, scnTabBadges, type ScnConfigTab } from './ScenarioTableConfig';
 import { useScenarioView } from '../../scenarios/useScenarioView';
 import { useJoinShortcut } from '../../scenarios/useJoinShortcut';
-import { ScenarioNotice, ScenarioPanelBody, ScenarioStatus, ScenarioSync, ScenarioTable, ScenarioToolbar } from './ScenarioParts';
+import { ScenarioNotice, ScenarioStatus, ScenarioSync, ScenarioTable, ScenarioToolbar } from './ScenarioParts';
 
 /** Pours (rows, keyed by GlobalId) <-> elements of the scenario's building
     model in the 3D view. */
@@ -171,24 +170,5 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
       )}
       <ScenarioStatus className="scn-4d__status" />
     </div>
-  );
-}
-
-/** The Scenario panel (scenario card, table Columns / Filters / Group /
-    Sort / Color), in the lower part of the side pane under the page's own
-    tabs; the divider between them is draggable. */
-export function ScenarioDock() {
-  const cfgTab = useScenarioStore((s) => s.cfgTab);
-  // Rules has a dock panel of its own here, and the table's Columns / Filters / Group / Sort / Colour are in List setup.
-  void cfgTab;
-  const tab = 'scenario' as const;
-  return (
-    <SidePaneDock id="scenarioSettings" label="Scenarios settings">
-      <div className="scn-dock" aria-label="Scenario">
-        <div className="scn-panel scn-panel__body scn-dock__body">
-          <ScenarioPanelBody tab={tab} />
-        </div>
-      </div>
-    </SidePaneDock>
   );
 }

@@ -74,7 +74,9 @@ type View = Pick<ListConfigState, 'targets' | 'recent' | 'pinned'>;
 /** The list the panels are for: the pinned one, else the one last clicked in, else any that there is. */
 export function activeTargetId(s: View): string | null {
   if (s.pinned && s.targets[s.pinned]) return s.pinned;
-  return s.recent.find((id) => s.targets[id]) ?? Object.keys(s.targets)[0] ?? null;
+  // With none clicked yet: the first real list (one with settings of its own), so the lists that only take the header's search (Rules, Recipes) do not stand in for the Gantt.
+  const ids = Object.keys(s.targets);
+  return s.recent.find((id) => s.targets[id]) ?? ids.find((id) => s.targets[id].kinds.length > 0) ?? ids[0] ?? null;
 }
 
 /** Spread on a list's container: clicking or tabbing into it makes it the list the panels are for. */

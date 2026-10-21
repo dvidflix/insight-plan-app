@@ -18,6 +18,8 @@ import { useLinkGroupsStore } from '../../state/linkGroupsStore';
 import { useScheduleStore } from '../../state/scheduleStore';
 import { computeGroupLinks, matchesObjectFilters } from '../../schedule/linkGroups';
 import type { RelationType } from '../../schedule/types';
+import { LogicTools } from './LogicTools';
+import { WorkbookTools } from './WorkbookTools';
 
 interface EditToolsProps {
   /** The programme edited in place that is shown (the only one). */
@@ -204,6 +206,8 @@ export function EditTools({ model, selectedId, onSelect, onNote, keys }: EditToo
           <button type="button" className="btn btn--small primary" onClick={link} title={`Link the picked activities with ${linkKind}: ${LINK_KINDS.find(([k]) => k === linkKind)![1]} ${linkKind === 'FS' ? 'They are chained in start order.' : 'Each is linked from the earliest one.'}`}>Link</button>
         </span>
       )}
+      <LogicTools model={model} picked={ids()} onNote={onNote} />
+      <WorkbookTools model={model} onNote={onNote} />
       {count >= 2 && <button type="button" className="btn btn--small" onClick={unlink} title="Break the links between the picked activities">Unlink</button>}
       {count === 1 && <button type="button" className="btn btn--small" onClick={split} title="Split the activity into parts one after the other">Split</button>}
       {count >= 1 && (

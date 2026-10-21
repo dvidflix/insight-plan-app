@@ -3,6 +3,7 @@ import { TaskResources } from './TaskResources';
 import type { PoolKind, ScenarioRules } from '../../../prs/rules';
 import type { RecipeTask, ResourceUse } from '../../../prs/recipes';
 import { IconChevronDown, IconRemove } from '../../icons';
+import { QUANTITY_NAMES, formulaProblem, previewDays } from '../../../prs/recipesWorkbook';
 
 /** The operation dialog of a task, like ALICE's: its name and tag, and the tabs Labor, Equipment, Cranes, Materials, Rates and Duration. Opens from
     the graph (double-click a task); every change goes straight into the recipe. */
@@ -121,21 +122,36 @@ export function RecipeTaskDialog({ task, rules, onPatch, onRename, onDelete, onC
   // The duration is either fixed days, or worked out from a quantity (a productivity rate: quantity x man-hours per unit / (people x shifts x hours)).
   const productivity = rules.rates.filter((r) => r.type === 'productivity');
   const rateRow = rules.rates.find((r) => r.id === task.rate);
-  const fromQuantity = task.days === undefined && rateRow?.type === 'productivity';
+  const fromFormula = task.formula !== undefined;
+  const fromQuantity = !fromFormula && task.days === undefined && rateRow?.type === 'productivity';
+  const parameters = rules.parameters ?? [];
+  const formulaIssue = task.formula ? formulaProblem(task.formula, parameters.map((p) => p.name)) : '';
+  const formulaSample = task.formula && !formulaIssue ? previewDays(task.formula, parameters, { Concrete_m3: 150, Rebar_t: 3.5, Rebar_kg: 3500, Footprint_m2: 200, Sides_m2: 120 }) : null;
   const BASIS: Record<string, string> = { rebar: 'tonnes of rebar', concrete: 'm³ of concrete', footprint: 'footprint area', sides: 'side area', property: 'a model quantity' };
   const rateText = (r: (typeof productivity)[number]) => `${BASIS[r.basis ?? 'rebar'] ?? r.basis} × ${r.manhoursPerUnit ?? '?'} man-hours per unit ÷ (${r.people || people || 'crew'} people × ${r.shifts ?? 1} shift${(r.shifts ?? 1) === 1 ? '' : 's'} × ${r.hoursPerShift ?? 8} h)`;
   const setFromQuantity = (on: boolean) => {
-    if (!on) { onPatch({ days: task.days ?? 1 }); return; }
+    if (!on) { onPatch({ formula: undefined, days: task.days ?? 1 }); return; }
     const pick = rateRow?.type === 'productivity' ? rateRow : productivity[0];
-    onPatch({ days: undefined, ...(pick ? { rate: pick.id } : {}), ...(pick && (pick.basis ?? 'rebar') === 'rebar' && !task.material ? { material: 'rebar' as const } : {}) });
+    onPatch({ formula: undefined, days: undefined, ...(pick ? { rate: pick.id } : {}), ...(pick && (pick.basis ?? 'rebar') === 'rebar' && !task.material ? { material: 'rebar' as const } : {}) });
   };
   const duration = (
         <div className="rtd__pane rtd__grid">
           <div className="segmented-choice" title="How the duration of this task is decided">
-            <button type="button" className={!fromQuantity ? 'active' : ''} onClick={() => setFromQuantity(false)}>Fixed days</button>
+            <button type="button" className={!fromQuantity && !fromFormula ? 'active' : ''} onClick={() => setFromQuantity(false)}>Fixed days</button>
             <button type="button" className={fromQuantity ? 'active' : ''} onClick={() => setFromQuantity(true)} title="From the quantity of the objects (for example the tonnes of rebar) and a productivity rate">From quantity</button>
+            <button type="button" className={fromFormula ? 'active' : ''} onClick={() => onPatch({ formula: task.formula ?? (task.days !== undefined ? String(task.days) : '1') })} title="A formula of the pour's quantities and the scenario's parameters, such as max(1, Concrete_m3 / Concrete_Rate)">Formula</button>
           </div>
-          {fromQuantity ? (
+          {fromFormula ? (
+            <>
+              <label style={{ gridColumn: '1 / -1' }}>Duration formula (working days)
+                <input className="rel-cell" style={{ width: '100%' }} value={task.formula ?? ''} spellCheck={false} aria-invalid={!!formulaIssue} placeholder="Rebar_kg / Rebar_Rate" onChange={(e) => onPatch({ formula: e.target.value })} title="Names: the pour's quantities and the scenario's parameters (Parameters, limits, steps…)" />
+              </label>
+              <p className="scn-dim" style={{ gridColumn: '1 / -1' }}>
+                {formulaIssue ? <span style={{ color: 'var(--danger, #c0392b)' }}>{formulaIssue}</span> : formulaSample && 'days' in formulaSample ? `For a pour of 150 m³ with 3.5 t of rebar: ${Math.round(formulaSample.days * 100) / 100} days.` : ''}
+                {' '}Names: {QUANTITY_NAMES.join(', ')}{parameters.length ? `, ${parameters.filter((p) => p.enabled !== false).map((p) => p.name).join(', ')}` : ''}. Functions: min, max, ceil, floor, round, sqrt, abs.
+              </p>
+            </>
+          ) : fromQuantity ? (
             <>
               <label>Productivity rate
                 <select className="rel-cell" value={task.rate ?? ''} onChange={(e) => onPatch({ rate: e.target.value || undefined })}>

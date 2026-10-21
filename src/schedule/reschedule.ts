@@ -1,5 +1,6 @@
 import type { ScheduleModel } from './types';
 import { recomputeCpm } from './cpm';
+import { followProductivity, formulaOf } from './planResources';
 import { clearLevelling, describeOverloads, levelResources } from './leveling';
 import { useBaselineChoiceStore } from '../state/baselines';
 import { editStructure } from '../state/programmeEdits';
@@ -39,7 +40,7 @@ export async function rescheduleProgramme(model: ScheduleModel): Promise<string>
       }
     }
   }
-  const r = commit('Schedule', () => editStructure(programmeKey(model), (m) => ({ model: recomputeCpm(m, { keepOwnStarts: true }) })));
+  const r = commit('Schedule', () => editStructure(programmeKey(model), (m) => ({ model: recomputeCpm(followProductivity(m, m.activities.filter((a) => formulaOf(a)).map((a) => a.id)), { keepOwnStarts: true }) })));
   if ('error' in r) return r.error;
   // What the run did: the programme as it was against as it is now.
   const now = useScheduleStore.getState().schedules.find((x) => x.id === model.id);

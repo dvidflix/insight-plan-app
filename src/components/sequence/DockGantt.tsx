@@ -1,4 +1,6 @@
-import { OverflowRow } from '../OverflowRow';
+import { OverflowMenu } from '../TablePopovers';
+import { DockToolbar } from '../Dock';
+import { useDockStore } from '../../state/dockStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import type { Activity, ScheduleModel } from '../../schedule/types';
 import { GanttChart, ZOOMS, type GanttHandle, type Zoom } from '../schedule/GanttChart';
@@ -11,14 +13,14 @@ import { useViewSettings } from '../../pages/SchedulePage';
 import { usePersistedState } from '../../utils/persistedState';
 import { useSequenceTimelineStore } from '../../state/sequenceTimelineStore';
 import { activityFinishMs, activityStartMs } from '../../schedule/linking';
-import { ExpandCollapseToggle } from '../ExpandCollapseToggle';
 import { configFocusProps } from '../../state/listConfigStore';
 import { ListConfig } from '../ListConfig';
 import { useListQuery } from '../../state/tableSearchStore';
 import { ColumnsPanel } from '../schedule/ColumnsPanel';
 import { GroupPanel } from '../schedule/GroupPanel';
 import { ColorPanel } from '../schedule/ColorPanel';
-import { IconCopy, IconDownload, IconRedo, IconUndo } from '../icons';
+import { IconChevronLeft, IconCopy, IconDownload, IconRedo, IconUndo } from '../icons';
+import { useAggregateStore } from '../../state/aggregateStore';
 import { EditTools } from '../schedule/EditTools';
 import { EditableStatus } from '../schedule/EditableStatus';
 import { BaselineMenu } from '../schedule/BaselineMenu';
@@ -56,6 +58,8 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
   const columnCtx = useMemo(() => buildColumnContext(model), [model]);
   const [columnIds, setColumnIds] = usePersistedState<string[]>('gantt.columns', DEFAULT_GANTT_COLUMNS);
   const columns = useMemo(() => resolveColumns(catalog, columnIds), [catalog, columnIds]);
+  const showTotals = useAggregateStore((a) => a.showTotals);
+  const setShowTotals = useAggregateStore((a) => a.setShowTotals);
   const set = useViewSettings('gantt');
   const [zoom, setZoom] = usePersistedState<Zoom>('schedule.zoom', 'week');
   const [links, setLinks] = usePersistedState('schedule.showGanttLinks', false);
@@ -145,42 +149,54 @@ export function DockGantt({ model, getColor, selectedId, highlightedIds, scrollT
   return (
     <div className="dockgantt" {...configFocusProps('gantt')}>
       {note && <div className="shortcut-note" role="status">{note}</div>}
-      {/* One row: what does not fit goes into the ⋯ menu at its right, the last tools first. */}
-      <OverflowRow
-        className="dockgantt__bar"
-        items={[
-          { key: 'basis', node: (
-            <select value={basis} onChange={(e) => setBasis(e.target.value as 'planned' | 'actual')} title="Date basis: which dates drive the 4D playback" aria-label="Date basis">
-              <option value="planned">Planned</option>
-              <option value="actual">Actual</option>
-            </select>
-          ) },
-          { key: 'date4d', node: <button type="button" className="btn btn--small" disabled={date === null} onClick={() => date !== null && ref.current?.scrollToDate(date)} title="Scroll to the 4D timeline's date">4D date</button> },
-          { key: 'undo', menu: true, node: <button type="button" className="btn btn--small" disabled={!undoLabel} onClick={() => undo()} title={undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo'} aria-label="Undo"><IconUndo width={16} height={16} /></button> },
-          { key: 'redo', menu: true, node: <button type="button" className="btn btn--small" disabled={!redoLabel} onClick={() => redo()} title={redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo'} aria-label="Redo"><IconRedo width={16} height={16} /></button> },
-          ...(single?.editable ? [{ key: 'edit', node: <EditTools model={single} selectedId={selectedId} onSelect={(id) => { const a = single.activities.find((x) => x.id === id); if (a) onSelect(a); }} onNote={flash} keys /> }] : []),
-          ...(baselineBase ? [{ key: 'baselines', node: <BaselineMenu model={baselineBase} /> }] : []),
-          { key: 'expand', node: <ExpandCollapseToggle className="btn btn--small" onCollapse={() => setCollapseAll((n) => n + 1)} onExpand={() => setExpandAll((n) => n + 1)} /> },
-          ...options.map(([label, on, setter, tip]) => ({ key: `opt-${label}`, node: <button type="button" className={`tags__chip${on ? ' active' : ''}`} aria-pressed={on} title={tip} onClick={() => setter(!on)}>{label}</button> })),
-          { key: 'status', node: <EditableStatus /> },
-          ...(pickFirst ? [{ key: 'pick', menu: true, node: (
-            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 4, cursor: 'pointer', whiteSpace: 'nowrap' }} title="On: picking an object in the 3D view picks its first linked activity here. Ctrl+Shift+F then moves the timeline to the start of the picked activity.">
-              <input type="checkbox" checked={pickFirst.on} onChange={(e) => pickFirst.set(e.target.checked)} /> Pick first activity
-            </label>
-          ) }] : []),
-          { key: 'copy', menu: true, node: <button type="button" className="icon-btn" onClick={copyRows} title="Copy the rows to the clipboard to paste into Excel. Change them there, copy them back and paste them in the Gantt (Ctrl+V): rows are matched by Activity ID and only what changed is set"><IconCopy /></button> },
-          { key: 'export', node: <button type="button" className="icon-btn" onClick={exportGantt} title="Export the Gantt to Excel as it is shown"><IconDownload /></button> },
-          { key: 'zoom', node: (
-            <select value={zoom} onChange={(e) => setZoom(e.target.value as Zoom)} title="Time scale" aria-label="Time scale">
-              {ZOOMS.map((z) => <option key={z} value={z}>{ZOOM_LABEL[z]}</option>)}
-            </select>
-          ) },
-          { key: 'fit', node: <button type="button" className="btn btn--small" onClick={() => ref.current?.fit()} title="Fit the whole programme in the panel">Fit</button> },
-          { key: 'today', node: <button type="button" className="btn btn--small" onClick={() => ref.current?.scrollToToday()} title="Scroll to today">Today</button> },
-          { key: 'zoomout', node: <button type="button" className="icon-btn icon-btn--sm" onClick={() => ref.current?.zoomOut()} title="Zoom out" aria-label="Zoom out">−</button> },
-          { key: 'zoomin', node: <button type="button" className="icon-btn icon-btn--sm" onClick={() => ref.current?.zoomIn()} title="Zoom in" aria-label="Zoom in">+</button> },
-        ]}
-      />
+      {/* The header of the panel is the Gantt view's own, in the dock's header: Baselines, the zoom group, then More (the view's tick items, copy, export,
+          undo, redo) and the fold strip. The tools of an editable programme and its status come first. */}
+      <DockToolbar id="gantt">
+        <div className="mdt__bar dockgantt__head">
+          {baselineBase && <BaselineMenu model={baselineBase} />}
+          {single?.editable && <EditTools model={single} selectedId={selectedId} onSelect={(id) => { const a = single.activities.find((x) => x.id === id); if (a) onSelect(a); }} onNote={flash} keys />}
+          <button type="button" className="mdt__fold" onClick={() => useDockStore.getState().setFolded('bottom', true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: 'rotate(-90deg)' }} /></button>
+          <div className="mdt__actions">
+            <EditableStatus />
+            {/* The same group as the Gantt view's header: Zoom, Today, Fit, − and +. */}
+            <span className="schedule-toolbar__view dockgantt__view">
+              <select value={zoom} onChange={(e) => setZoom(e.target.value as Zoom)} title="Zoom: the time scale of the Gantt (Alt + wheel zooms too)" aria-label="Zoom">
+                {ZOOMS.map((z) => <option key={z} value={z}>{ZOOM_LABEL[z]}</option>)}
+              </select>
+              <button className="btn btn--small" type="button" onClick={() => ref.current?.scrollToToday()} title="Scroll to today">Today</button>
+              <button className="btn btn--small" type="button" onClick={() => ref.current?.fit()} title="Fit whole programme in view">Fit</button>
+              <button className="icon-btn icon-btn--sm" type="button" onClick={() => ref.current?.zoomOut()} title="Zoom out (Alt + wheel)">−</button>
+              <button className="icon-btn icon-btn--sm" type="button" onClick={() => ref.current?.zoomIn()} title="Zoom in (Alt + wheel)">+</button>
+            </span>
+            <span className="panels-btn mdt__more">
+              <OverflowMenu
+                items={[
+                  { label: 'View', heading: true, onClick: () => {} },
+                  { label: 'Follow the 4D timeline', checked: follow, onClick: () => setFollow(!follow), title: 'Keep the 4D timeline date, and the task in progress then, in view while it plays' },
+                  { label: 'Relationship links', checked: links, onClick: () => setLinks(!links), title: 'Draw the links between tasks' },
+                  { label: 'Critical path', checked: critical, onClick: () => setCritical(!critical), title: 'Highlight the critical path' },
+                  { label: 'Baseline bars', checked: baseline, onClick: () => setBaseline(!baseline), title: 'Show the target (baseline) bars' },
+                  { label: 'Names beside bars', checked: labels, onClick: () => setLabels(!labels), title: 'Task names beside the bars' },
+                  { label: 'Group by WBS', checked: set.groupByWbs, onClick: () => set.setGroupByWbs(!set.groupByWbs), title: "Group by WBS (the Gantt page's group rules, when set, win)" },
+                  { label: 'Totals', icon: <span className="tp__glyph" aria-hidden>Σ</span>, checked: showTotals, onClick: () => setShowTotals(!showTotals), title: 'Totals row and group subtotals; pick how each column sums up in the totals row' },
+                  { label: '-3', separator: true, onClick: () => {} },
+                  { label: 'Date basis', heading: true, onClick: () => {} },
+                  { label: 'Planned dates', checked: basis === 'planned', onClick: () => setBasis('planned'), title: 'Which dates drive the 4D playback' },
+                  { label: 'Actual dates', checked: basis === 'actual', onClick: () => setBasis('actual'), title: 'Which dates drive the 4D playback' },
+                  { label: 'Go to the 4D date', disabled: date === null, onClick: () => { if (date !== null) ref.current?.scrollToDate(date); }, title: "Scroll to the 4D timeline's date" },
+                  ...(pickFirst ? [{ label: 'Pick first activity', checked: pickFirst.on, onClick: () => pickFirst.set(!pickFirst.on), title: 'On: picking an object in the 3D view picks its first linked activity here' }] : []),
+                  { label: '-4', separator: true, onClick: () => {} },
+                  { label: 'Copy rows', icon: <IconCopy width={16} height={16} />, onClick: copyRows, title: 'Copy the rows to the clipboard to paste into Excel. Change them there, copy them back and paste them in the Gantt (Ctrl+V): rows are matched by Activity ID' },
+                  { label: 'Export to Excel', icon: <IconDownload width={16} height={16} />, onClick: exportGantt, title: 'Export the Gantt to Excel as it is shown' },
+                  { label: '-2', separator: true, onClick: () => {} },
+                  { label: 'Undo', icon: <IconUndo width={16} height={16} />, disabled: !undoLabel, onClick: () => undo(), title: undoLabel ? `Undo: ${undoLabel} (Ctrl+Z)` : 'Nothing to undo' },
+                  { label: 'Redo', icon: <IconRedo width={16} height={16} />, disabled: !redoLabel, onClick: () => redo(), title: redoLabel ? `Redo: ${redoLabel} (Ctrl+Y)` : 'Nothing to redo' },
+                ]}
+              />
+            </span>
+          </div>
+        </div>
+      </DockToolbar>
       <ListConfig
         id="gantt"
         searchable

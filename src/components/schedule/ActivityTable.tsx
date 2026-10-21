@@ -72,6 +72,12 @@ function groupValue(catalog: ColumnDef[], ctx: ColumnCtx, a: Activity, fieldId: 
   return catalog.find((c) => c.id === fieldId)?.text(a, ctx) ?? '';
 }
 
+/** Text sorts compare with one shared collator: String.localeCompare builds a new one on every call, which is slow over tens of thousands of rows. */
+const COLLATOR = new Intl.Collator(undefined, { numeric: false });
+/** The table draws only the rows near the view once it has more than this many, and this many beyond each edge. */
+const WINDOW_AFTER = 300;
+const OVERSCAN = 30;
+
 export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>(function ActivityTable({
   activities,
   selectedId,
@@ -117,7 +123,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
     const dir = sortAsc ? 1 : -1;
     const keyed = activities.map((a) => ({ a, k: col.sort(a, columnCtx) }));
     keyed.sort((x, y) =>
-      typeof x.k === 'number' && typeof y.k === 'number' ? dir * (x.k - y.k) : dir * String(x.k).localeCompare(String(y.k)));
+      typeof x.k === 'number' && typeof y.k === 'number' ? dir * (x.k - y.k) : dir * COLLATOR.compare(String(x.k), String(y.k)));
     return keyed.map((e) => e.a);
   }, [activities, catalog, columnCtx, sortCol, sortAsc]);
 
@@ -269,13 +275,39 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
   const listedIds = (): string[] => (groupItems ? groupItems.flatMap((i) => (i.kind === 'row' ? [i.row.id] : [])) : rows.map((r) => r.id));
   const shownActs = useMemo(() => (groupItems ? groupItems.flatMap((i) => (i.kind === 'row' ? [i.row] : [])) : rows), [groupItems, rows]);
   const scrollRef = useRef<HTMLDivElement>(null);
+  // 90,000 activities are 90,000 table rows: only the ones in (and just beyond) the view are drawn, with a spacer row above and below.
+  const flat = useMemo<GroupItem[]>(() => groupItems ?? rows.map((row) => ({ kind: 'row' as const, row })), [groupItems, rows]);
+  const windowed = flat.length > WINDOW_AFTER;
+  const [rowH, setRowH] = useState(26);
+  const [view, setView] = useState({ top: 0, h: 900 });
+  const frame = useRef(0);
+  const onScroll = () => {
+    if (!windowed || frame.current) return;
+    frame.current = requestAnimationFrame(() => {
+      frame.current = 0;
+      const el = scrollRef.current;
+      if (el) setView((v) => (Math.abs(v.top - el.scrollTop) < rowH * 2 && v.h === el.clientHeight ? v : { top: el.scrollTop, h: el.clientHeight }));
+    });
+  };
+  useEffect(() => { onScroll(); /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [windowed, flat.length]);
+  useLayoutEffect(() => {
+    const first = scrollRef.current?.querySelector<HTMLElement>('tbody tr[data-id]');
+    if (first && first.offsetHeight > 8 && first.offsetHeight !== rowH) setRowH(first.offsetHeight);
+  });
   const goDown = (delta: number) => {
     const at = shownActs.findIndex((a) => a.id === selectedId);
     const next = shownActs[Math.min(shownActs.length - 1, Math.max(0, at + delta))];
     if (!next) return;
     useActivitySelectionStore.getState().click(next.id, {}, listedIds());
     onSelect(next);
-    scrollRef.current?.querySelector(`tr[data-id="${CSS.escape(next.id)}"]`)?.scrollIntoView({ block: 'nearest' });
+    // Only the rows near the view are in the page (see `windowed`), so the scroll is worked out from the row's place.
+    const el = scrollRef.current;
+    const place = flat.findIndex((i) => i.kind === 'row' && i.row.id === next.id);
+    if (el && place >= 0) {
+      const y = place * rowH;
+      if (y < el.scrollTop + headHeight) el.scrollTop = Math.max(0, y - headHeight);
+      else if (y + rowH > el.scrollTop + el.clientHeight) el.scrollTop = y + rowH - el.clientHeight;
+    }
   };
   const sheet = useSheetEditing({
     editor, columns, catalog, columnCtx, shown: shownActs, selectedId, picked: multi,
@@ -345,10 +377,14 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
     },
   }));
 
+  // An even first row keeps the zebra stripes where they are.
+  const start = windowed ? Math.max(0, Math.floor(view.top / rowH / 2) * 2 - OVERSCAN) : 0;
+  const end = windowed ? Math.min(flat.length, Math.ceil((view.top + view.h) / rowH) + OVERSCAN) : flat.length;
+
   return (
     <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
       <div className="activity-table-shell">
-        <div className="activity-table-scroll" ref={scrollRef} tabIndex={0} onKeyDown={onKeyDown} onCopy={sheet.onCopy} onPaste={sheet.onPaste}>
+        <div className="activity-table-scroll" ref={scrollRef} tabIndex={0} onScroll={onScroll} onKeyDown={onKeyDown} onCopy={sheet.onCopy} onPaste={sheet.onPaste}>
           <table className={`data-table no-resize${wrapHeaders ? ' wrap-headers' : ''}`}>
             <thead>
               <tr ref={headRowRef}>
@@ -396,8 +432,9 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
               )}
             </thead>
             <tbody>
-              {groupItems
-                ? groupItems.map((item) => {
+              {windowed && start > 0 && <tr aria-hidden="true" className="win-spacer" style={{ height: start * rowH }}><td colSpan={columns.length} style={{ padding: 0, border: 0 }} /></tr>}
+              {groupItems || windowed
+                ? flat.slice(start, end).map((item) => {
                     if (item.kind === 'row') return renderRow(item.row);
                     const isCollapsed = collapsedGroups.has(item.path);
                     const { bg, fg } = isWbsGroup ? wbsGroupColors(item.path, wbsPalette) : { bg: undefined, fg: undefined };
@@ -424,6 +461,7 @@ export const ActivityTable = forwardRef<ActivityTableHandle, ActivityTableProps>
                     );
                   })
                 : rows.map(renderRow)}
+              {windowed && end < flat.length && <tr aria-hidden="true" className="win-spacer" style={{ height: (flat.length - end) * rowH }}><td colSpan={columns.length} style={{ padding: 0, border: 0 }} /></tr>}
             </tbody>
           </table>
         </div>

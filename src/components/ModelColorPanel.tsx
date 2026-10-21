@@ -14,6 +14,8 @@ import { FieldPicker } from './schedule/FieldRules';
 import { CollapsibleSection, useOpenSections } from './CollapsibleSection';
 import { InfoTip } from './InfoTip';
 import { IconEye, IconEyeOff } from './icons';
+import { useColorModeStore } from '../state/colorModeStore';
+import { SetOptions, SetValuesTable } from './sequence/ColorModePanel';
 import { orderValues, useColourOrderStore, type ColourSort } from '../state/colourOrderStore';
 
 const MAX_VALUES = 150;
@@ -28,6 +30,11 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
   const view: ViewKey = split ? picked : 'main';
   const { enabled, field, palette, seed, colors, others, mode, scale: storedScale } = useModelColorStore((s) => s.views[view]);
   const grade = mode === 'grade';
+  // 4D's "Search / Selection Sets" colour mode: each set is a row of the Values table.
+  const seqMode = useColorModeStore((st) => st[view === 'main' ? 'a' : 'b'].mode);
+  const bySets = page === 'sequence' && seqMode === 'sets';
+  // 4D colours by these properties only in its "By property" mode: Appearance Profiles and Original colours need none of it.
+  const noProps = page === 'sequence' && seqMode !== 'property';
   const scale = storedScale ?? DEFAULT_SCALE;
   const patchView = useModelColorStore((s) => s.patch);
   const patch = (p: Partial<ColourConfig>) => patchView(view, p);
@@ -181,7 +188,7 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
           </div>
         </div>
       )}
-      <CollapsibleSection title="Options" open={sections.isOpen('options')} onToggle={() => sections.toggle('options')} flush>
+      {!noProps && <CollapsibleSection title="Options" open={sections.isOpen('options')} onToggle={() => sections.toggle('options')} flush>
       <div className="disp model-colour__top">
         {/* 4D Sequencing switches these colours on with its Color mode (By property) instead. */}
         {page === 'model' && (
@@ -198,7 +205,8 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
             {setFolder ? `Set folder › ${setFolderOf(field) || '(no folder)'}` : fieldLabel ? `${fieldLabel.group} › ${fieldLabel.label}` : field}
           </b>
         </div>
-        <label className="disp__row">
+        {/* 4D colours by sets in its own "Search / Selection Sets" mode (with its Folder), so the row is for the Models page only. */}
+        {page === 'model' && <label className="disp__row">
           <span>
             Set folder{' '}
             <InfoTip>Colour each object by the search or selection set that holds it, from one folder of Search sets. An object in several sets takes the first one in the list.</InfoTip>
@@ -214,7 +222,7 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
               <option key={g} value={`${SET_FOLDER}${g}`}>{g || '(no folder)'}</option>
             ))}
           </select>
-        </label>
+        </label>}
         <label className="disp__row">
           <span>
             Colour as{' '}
@@ -251,10 +259,23 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
             {others !== null && <HexColorInput value={others} onChange={(hex) => patch({ others: hex })} />}
           </span>
         </div>
+        {!grade && <div className="disp__row">
+            <span>Order</span>
+            <select value={sort} onChange={(e) => setSort(e.target.value as ColourSort)} title="Drag a row to put it where you want it (switches to Manual)">
+              <option value="count">Most objects</option>
+              <option value="az">A → Z</option>
+              <option value="za">Z → A</option>
+              <option value="manual">Manual (drag rows)</option>
+            </select>
+        </div>}
       </div>
-      </CollapsibleSection>
+      </CollapsibleSection>}
 
-      {!grade && <CollapsibleSection
+      {bySets && <CollapsibleSection title="Options" open={sections.isOpen('options')} onToggle={() => sections.toggle('options')} flush><SetOptions view={view === 'main' ? 'a' : 'b'} /></CollapsibleSection>}
+
+      {bySets && <CollapsibleSection title="Values" open={sections.isOpen('values')} onToggle={() => sections.toggle('values')} flush tip="The sets of the folder chosen under Color mode: the eye leaves a set out of the colouring, the box changes its colour."><SetValuesTable view={view === 'main' ? 'a' : 'b'} /></CollapsibleSection>}
+
+      {!noProps && !grade && <CollapsibleSection
         title={`Values (${values.length})`}
         open={sections.isOpen('values')}
         onToggle={() => sections.toggle('values')}
@@ -265,17 +286,6 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
           <div className="disp"><div className="flt__hint">Load a model to colour it.</div></div>
         ) : (
           <>
-          <div className="disp model-colour__top">
-          <div className="disp__row">
-            <span>Order</span>
-            <select value={sort} onChange={(e) => setSort(e.target.value as ColourSort)} title="Drag a row to put it where you want it (switches to Manual)">
-              <option value="count">Most objects</option>
-              <option value="az">A → Z</option>
-              <option value="za">Z → A</option>
-              <option value="manual">Manual (drag rows)</option>
-            </select>
-          </div>
-          </div>
           {/* (A button would also "click" on Space's release: kept from doing so.) */}
           <div tabIndex={0} style={{ outline: 'none' }} onKeyDown={onValuesKey} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }} aria-label="Values: arrow keys move, Shift or Ctrl select several, Space hides or shows the selected">
           <table className="seq-grid">
@@ -330,7 +340,7 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
         )}
       </CollapsibleSection>}
 
-      <CollapsibleSection title="Colour by…" open={sections.isOpen('field')} onToggle={() => sections.toggle('field')}>
+      {!noProps && <CollapsibleSection title="Colour by…" open={sections.isOpen('field')} onToggle={() => sections.toggle('field')}>
         <div className="cols">
           <FieldPicker
             catalog={fields}
@@ -342,7 +352,7 @@ export function ModelColorPanel({ page = 'model' }: { page?: 'model' | 'sequence
             }}
           />
         </div>
-      </CollapsibleSection>
+      </CollapsibleSection>}
     </div>
   );
 }

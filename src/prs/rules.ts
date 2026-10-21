@@ -143,6 +143,8 @@ export interface Assignment extends Row {
   crew?: string;
   calendar?: string;
   priority?: number;
+  /** A duration formula in working days (prs/recipes RecipeTask.formula): quantities and parameters by name. */
+  formula?: string;
 }
 
 /** One activity of a pour's chain: the activities of the pours of a group, in order. The group of the highest priority that fits a pour decides its
@@ -263,12 +265,18 @@ export interface SequenceStep {
   group: string;
   /** Repeated for every level in turn (the steps marked this way are interleaved level by level). */
   perLevel?: boolean;
+  /** The link into this step from the one before (default: the sequence's, finish to start), with a lag in hours. */
+  type?: RelType;
+  lagHours?: number;
+  note?: string;
 }
 
 /** Groups put in order: the next step starts when the previous one is done. */
 export interface RuleSequence extends Row {
   name?: string;
   steps: SequenceStep[];
+  /** A folder of search sets whose sets are the steps, in the folder's order (the steps are then made from it, each set a group). */
+  stepsFolder?: string;
   type?: RelType;
   lagHours?: number;
 }
@@ -351,6 +359,22 @@ export interface PoolRow extends Row {
   quantity: number;
 }
 
+/** A named value the duration formulas read (Rebar_Rate = 500, Curing_Days = 3, Formwork_Sets_Available = 4). The scenario's own: change one and update 4D. */
+export interface ParameterRow extends Row {
+  /** The name, as formulas write it (letters, digits, _; not case sensitive). */
+  name: string;
+  value: number;
+  unit?: string;
+}
+
+/** At most `max` activities of one phase run at once (formwork sets, a specialist crew ...): the generator chains them in lanes, in the order of the
+    steps. `max` is a number or the name of a parameter; empty or 0: no limit. `group` limits it to the pours of a group. */
+export interface LimitRow extends Row {
+  phase: string;
+  group?: string;
+  max: number | string;
+}
+
 export interface ScenarioRules {
   version: 1;
   settings: Record<string, SettingValue>;
@@ -375,6 +399,9 @@ export interface ScenarioRules {
   recipes: Recipe[];
   /** How many of each equipment, crane and material type the scenario has (the recipes' resources). The scenario's own, like its recipes. */
   resourcePools: PoolRow[];
+  /** Named values for the duration formulas, and the limits on activities running at once (the scenario's own, saved with its rules). */
+  parameters: ParameterRow[];
+  limits: LimitRow[];
   /** Where an extra activity belongs, by its ID: its building and level (for the level links and the WBS), where it goes in the WBS, and
       which level task it is tied to. */
   extraTags: Record<string, ExtraTag>;
@@ -384,7 +411,7 @@ export interface ScenarioRules {
 export const NO_RULES: ScenarioRules = Object.freeze({
   version: 1,
   settings: Object.freeze({}) as Record<string, SettingValue>,
-  durations: [], productivity: [], rebar: [], crews: [], trades: [], rates: [], crewTemplates: [], assignments: [], chains: [], calendars: [], calendarRules: [], groups: [], levelTasks: [], sequences: [], contacts: [], levelLinks: [], joins: [], recipes: [], resourcePools: [],
+  durations: [], productivity: [], rebar: [], crews: [], trades: [], rates: [], crewTemplates: [], assignments: [], chains: [], calendars: [], calendarRules: [], groups: [], levelTasks: [], sequences: [], contacts: [], levelLinks: [], joins: [], recipes: [], resourcePools: [], parameters: [], limits: [],
   extraTags: Object.freeze({}) as ScenarioRules['extraTags'],
 }) as ScenarioRules;
 
@@ -416,6 +443,8 @@ export function normalizeRules(raw: unknown): ScenarioRules {
     joins: arr<ObjectJoin>(r.joins).filter((j) => typeof j.main === 'string' && j.main).map((j) => ({ ...j, members: Array.isArray(j.members) ? j.members.filter((m) => typeof m === 'string' && m && m !== j.main) : [] })),
     recipes: normalizeRecipes({ recipes: r.recipes }).recipes,
     resourcePools: arr<PoolRow>(r.resourcePools).filter((p) => typeof p.id === 'string' && p.id.trim() !== '').map((p) => ({ ...p, kind: p.kind === 'crane' || p.kind === 'material' ? p.kind : 'equipment', name: p.name ?? '', quantity: Number.isFinite(Number(p.quantity)) ? Number(p.quantity) : 0 })),
+    parameters: arr<ParameterRow>(r.parameters).filter((p) => typeof p.name === 'string' && p.name.trim() !== '').map((p) => ({ ...p, id: p.id || p.name, value: Number.isFinite(Number(p.value)) ? Number(p.value) : 0 })),
+    limits: arr<LimitRow>(r.limits).filter((l) => typeof l.phase === 'string' && l.phase.trim() !== '').map((l) => ({ ...l, id: l.id || `${l.group ? `${l.group}|` : ''}${l.phase}` })),
     extraTags: r.extraTags && typeof r.extraTags === 'object' && !Array.isArray(r.extraTags) ? { ...r.extraTags } : {},
   };
   return isEmptyRules(out) ? NO_RULES : out;
@@ -433,10 +462,12 @@ export const isEmptyRules = (r: ScenarioRules): boolean =>
   (r.joins ?? []).length === 0 &&
   (r.recipes ?? []).length === 0 &&
   (r.resourcePools ?? []).length === 0 &&
+  (r.parameters ?? []).length === 0 &&
+  (r.limits ?? []).length === 0 &&
   Object.keys(r.extraTags).length === 0;
 
 export const totalRules = (r: ScenarioRules): number =>
-  SECTIONS.reduce((n, s) => n + sectionCount(r, s), 0) + (r.joins ?? []).length + (r.recipes ?? []).length + (r.resourcePools ?? []).length;
+  SECTIONS.reduce((n, s) => n + sectionCount(r, s), 0) + (r.joins ?? []).length + (r.recipes ?? []).length + (r.resourcePools ?? []).length + (r.parameters ?? []).length + (r.limits ?? []).length;
 
 /** A new row id that no row of the section has: "WALLS", "WALLS-2", ... (or prefix-1, prefix-2 ...). */
 export function freshId(prefix: string, existing: string[]): string {
@@ -584,6 +615,8 @@ export function mergeRules(base: ScenarioRules, incoming: ScenarioRules): Scenar
     joins: base.joins ?? [], // (the objects joined in this scenario stay; joins belong to the scenario's order, not to a file or preset)
     recipes: base.recipes ?? [], // (so do its recipes: their own file, not a preset's)
     resourcePools: base.resourcePools ?? [], // (and its pools of equipment, cranes and materials)
+    parameters: byId(base.parameters ?? [], incoming.parameters ?? []),
+    limits: byId(base.limits ?? [], incoming.limits ?? []),
     extraTags: { ...base.extraTags, ...incoming.extraTags },
   };
   return isEmptyRules(next) ? NO_RULES : next;

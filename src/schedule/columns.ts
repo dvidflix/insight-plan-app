@@ -142,6 +142,8 @@ const STATIC_COLUMNS: ColumnDef[] = [
   text('percentCompleteType', '% Complete Type', 'General', 120, (a) => a.percentCompleteType ?? ''),
   text('primaryResource', 'Primary Resource', 'General', 150, (a) => a.primaryResource ?? ''),
   text('notes', 'Notes', 'General', 240, (a) => noteText(a)),
+  // The recipe that made a generated activity (the generator writes it in the CWA-Recipe field); blank in a programme that did not come from a recipe.
+  text('recipe', 'Recipe', 'General', 150, (a) => String(a.udf['CWA-Recipe'] ?? '')),
 
   // Dates
   date('start', 'Start', 'Dates', startOf),
@@ -243,6 +245,7 @@ export function buildColumns(model: ScheduleModel): ColumnDef[] {
   // The app-only resource (see virtualResources.ts): never in the programme file, but a column here.
   cols.push(num(`res:${PRECAST_RESOURCE}`, `◇ ${PRECAST_RESOURCE} (units)`, 'Resource Units', (a) => precastVolume(a), 130, '', true));
   for (const key of collectUdfKeys(model)) {
+    if (key === 'CWA-Recipe') continue; // it has its own Recipe column (General)
     cols.push({
       id: `udf:${key}`, label: key, group: 'User Fields', width: 130,
       text: (a) => {

@@ -868,7 +868,9 @@ export function ScenarioPanelBody({ tab }: { tab: ScenarioCfgTab }) {
 }
 
 /** Busy / result message, log toggle and the order's counts. */
-export function ScenarioStatus({ className, extra }: { className?: string; extra?: ReactNode }) {
+/** What the Generate status line says: the message of the last job, its log, the counts. Shown in the main status bar on the Generate page,
+    and in ScenarioStatus' own footer in the 4D Scenarios panel. */
+export function ScenarioStatusItems({ extra }: { extra?: ReactNode }) {
   const busy = useScenarioStore((s) => s.busy);
   const message = useScenarioStore((s) => s.message);
   const log = useScenarioStore((s) => s.log);
@@ -876,7 +878,7 @@ export function ScenarioStatus({ className, extra }: { className?: string; extra
   const selected = useScenarioStore((s) => s.selected);
   const { ready, rows, stepCount, unsequencedCount, moved } = useScenarioView();
   return (
-    <footer className={className ?? 'app-statusbar scn-statusbar'}>
+    <>
       <span className={`scn-statusbar__msg${message && !busy ? ` scn-statusbar__msg--${message.kind}` : ''}`} title={busy ?? message?.text ?? ''}>
         {busy ?? message?.text ?? (ready ? 'Ready' : '')}
       </span>
@@ -893,6 +895,14 @@ export function ScenarioStatus({ className, extra }: { className?: string; extra
       {extra}
       {/* The recipe editor puts what its recipe needs here (RecipesEditor > NeedsLine). */}
       <span id="scn-statusbar-needs" className="scn-statusbar__needs" />
+    </>
+  );
+}
+
+export function ScenarioStatus({ className, extra }: { className?: string; extra?: ReactNode }) {
+  return (
+    <footer className={className ?? 'app-statusbar scn-statusbar'}>
+      <ScenarioStatusItems extra={extra} />
     </footer>
   );
 }

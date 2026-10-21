@@ -114,7 +114,7 @@ export function buildLoading(activities: Activity[], catalog: ResourceInfo[], ca
 
 // ---- Periods and figures for the graphs ----
 
-export type Period = 'day' | 'week' | 'month' | 'year';
+export type Period = 'day' | 'week' | 'month' | 'quarter' | 'year';
 /** peak: people on the busiest day of the period (the day the stack is
     taken from, so trades add up to it); avg: people per weekday; hours:
     man-hours; sum: quantity (materials). */
@@ -139,15 +139,18 @@ export function bucketsOf(origin: Date, dayCount: number, period: Period): Bucke
   if (period === 'week') from = -((origin.getDay() + 6) % 7);
   if (period === 'month') from = -(origin.getDate() - 1);
   if (period === 'year') from = -Math.round((midnightOf(origin).getTime() - new Date(origin.getFullYear(), 0, 1).getTime()) / 86400000);
+  if (period === 'quarter') from = -Math.round((midnightOf(origin).getTime() - new Date(origin.getFullYear(), Math.floor(origin.getMonth() / 3) * 3, 1).getTime()) / 86400000);
+  const quarterOf = (d: Date) => Math.floor(d.getMonth() / 3) + 1;
   while (from < dayCount) {
     const start = dateOfDay(origin, from);
     let to: number;
     if (period === 'day') to = from;
     else if (period === 'week') to = from + 6;
     else if (period === 'year') to = from + (new Date(start.getFullYear() + 1, 0, 1).getTime() - new Date(start.getFullYear(), 0, 1).getTime()) / 86400000 - 1;
+    else if (period === 'quarter') to = from + Math.round((new Date(start.getFullYear(), start.getMonth() + 3, 1).getTime() - start.getTime()) / 86400000) - 1;
     else to = from + new Date(start.getFullYear(), start.getMonth() + 1, 0).getDate() - 1;
-    const label = period === 'year' ? String(start.getFullYear()) : period === 'month' ? `${MONTHS[start.getMonth()]} ${String(start.getFullYear()).slice(2)}` : `${start.getDate()} ${MONTHS[start.getMonth()]}`;
-    const long = period === 'year' ? String(start.getFullYear()) : period === 'day' ? fmtDay(start) : period === 'week' ? `Week of ${fmtDay(start)}` : `${MONTHS[start.getMonth()]} ${start.getFullYear()}`;
+    const label = period === 'year' ? String(start.getFullYear()) : period === 'quarter' ? `Q${quarterOf(start)} ${String(start.getFullYear()).slice(2)}` : period === 'month' ? `${MONTHS[start.getMonth()]} ${String(start.getFullYear()).slice(2)}` : `${start.getDate()} ${MONTHS[start.getMonth()]}`;
+    const long = period === 'year' ? String(start.getFullYear()) : period === 'quarter' ? `Q${quarterOf(start)} ${start.getFullYear()}` : period === 'day' ? fmtDay(start) : period === 'week' ? `Week of ${fmtDay(start)}` : `${MONTHS[start.getMonth()]} ${start.getFullYear()}`;
     out.push({ from, to, label, long });
     from = to + 1;
   }

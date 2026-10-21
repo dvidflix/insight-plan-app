@@ -1,3 +1,4 @@
+import { IconMoreHorizontal } from './icons';
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
 
 export interface OverflowItem {
@@ -74,7 +75,7 @@ export function OverflowRow({ items, className = '' }: { items: OverflowItem[]; 
       ))}
       {inMenu.length > 0 && (
         <span ref={more} className="ofr__more">
-          <button type="button" className={`icon-btn${open ? ' is-open' : ''}`} aria-expanded={open} aria-label="More tools" title="More tools" onClick={() => setOpen(!open)}>⋯</button>
+          <button type="button" className={`tp__btn tp__btn--dots${open ? ' is-open' : ''}`} aria-expanded={open} aria-haspopup="menu" aria-label="More" title="More" onClick={() => setOpen(!open)}><IconMoreHorizontal width={18} height={18} /></button>
           {open && <div className="ofr__menu" role="menu">{inMenu.map((x) => <span key={x.key} className="ofr__menu-item">{x.node}</span>)}</div>}
         </span>
       )}

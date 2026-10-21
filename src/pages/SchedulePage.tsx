@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { ActivityTable, type ActivityTableHandle } from '../components/schedule/ActivityTable';
 import { GanttChart, ZOOMS, type GanttHandle, type Zoom } from '../components/schedule/GanttChart';
 import { ResourcesView } from '../components/schedule/ResourcesView';
+import { ResourceDistribution } from '../components/schedule/ResourceDistribution';
 import { WbsView } from '../components/schedule/WbsView';
 import { toggleFullscreen, useFullscreenStore } from '../components/ViewerToolbar';
 import { OverflowMenu } from '../components/TablePopovers';
@@ -69,7 +70,7 @@ import { redo, undo, useProgrammeHistory, useProgrammeHistoryKeys } from '../sta
 import { useAggregateStore } from '../state/aggregateStore';
 import { useAppPrefsStore, type ExperimentalId } from '../state/appPrefsStore';
 
-export type TabId = 'planner' | 'explorer' | 'activities' | 'wbs' | 'gantt' | 'resources' | 'heatmap' | 'calendars' | 'codes' | 'network' | 'checks' | 'reports' | 'whatif' | 'compare' | 'concrete' | 'lookahead' | 'ppc' | 'montecarlo' | 'anonymise' | 'bulkedit' | 'renumber';
+export type TabId = 'planner' | 'explorer' | 'activities' | 'wbs' | 'gantt' | 'resources' | 'distribution' | 'heatmap' | 'calendars' | 'codes' | 'network' | 'checks' | 'reports' | 'whatif' | 'compare' | 'concrete' | 'lookahead' | 'ppc' | 'montecarlo' | 'anonymise' | 'bulkedit' | 'renumber';
 
 /** The Views list, in this order. Views marked `experimental` are still being tried out and
     only show when switched on in Settings › Experimental features. */
@@ -81,6 +82,7 @@ export const SCHEDULE_TABS: { id: TabId; label: string; experimental?: Experimen
   { id: 'wbs', label: 'WBS' },
   { id: 'codes', label: 'Activity Codes' },
   { id: 'resources', label: 'Resources' },
+  { id: 'distribution', label: 'Resource Distribution' },
   { id: 'checks', label: 'Quality Checks' },
   { id: 'calendars', label: 'Calendars' },
   { id: 'heatmap', label: 'Calendar Heatmap' },
@@ -373,8 +375,18 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
 
 
   if (!model) {
+    // The main header stays, so the other views are one click away.
+    const emptyBar = (
+      <div className="filterbar schedule-toolbar">
+        <div className="schedule-toolbar__left">
+          <ViewPicker named pages={pages} page="schedule" onPage={(id) => (onPage ? onPage(id) : undefined)} tab={tab} onTab={(t) => onTabChange?.(t)} />
+        </div>
+        <div className="schedule-toolbar__right"><ListSetupButton /></div>
+      </div>
+    );
     return (
       <div className="page">
+        {headerSlot && active ? createPortal(emptyBar, headerSlot) : emptyBar}
         <div className="empty-input-state">
           <div className="empty-input-state__title">No schedule inputs loaded</div>
           <div className="empty-input-state__text">Use the Inputs tab to add P6 exports.</div>
@@ -601,6 +613,9 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
             <DockPanel id="gantt" label="Gantt" shown={ganttPanelOpen} setShown={setGanttPanelOpen}>
               {ganttPanelOpen && <DockGantt model={model} activities={ganttList} dimmedIds={ganttDimmed} selectedId={selectedId} highlightedIds={drivingIds ?? new Set<string>()} scrollToId={null} onSelect={handleSelect} onOpen={(a) => { handleSelect(a); setDetailsOpen(true); }} onLinkShortcut={linkShortcut} onLagChange={lagChange} />}
             </DockPanel>
+            <DockPanel id="distribution" label="Resource distribution">
+              <ResourceDistribution model={model} activities={filtered} />
+            </DockPanel>
             <DockPanel id="dictionary" label="Dictionary" shown={dictionaryOpen} setShown={setDictionaryOpen}>
               <div style={{ flex: 1, minHeight: 0, overflow: 'auto' }}><DictionaryPanel model={model} onNote={flash} /></div>
             </DockPanel>
@@ -620,6 +635,7 @@ function SchedulePageView({ selectedTab, onTabChange, active = true, pages = [],
             />
           )}
           {tab === 'resources' && <ResourcesView model={model} activities={filtered} onSelect={handleSelect} />}
+          {tab === 'distribution' && <ResourceDistribution model={model} activities={filtered} />}
           {tab === 'calendars' && <CalendarsPanel model={model} onSelectActivity={(a) => { handleSelect(a); setDetailsOpen(true); onTabChange?.('activities'); }} />}
           {tab === 'codes' && (
             <ActivityCodesView

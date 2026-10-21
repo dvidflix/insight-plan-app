@@ -1008,6 +1008,8 @@
   "joins": [],
   "recipes": [],
   "resourcePools": [],
+  "parameters": [],
+  "limits": [],
   "extraTags": {}
  },
  "converted": {
@@ -2460,6 +2462,8 @@
   "joins": [],
   "recipes": [],
   "resourcePools": [],
+  "parameters": [],
+  "limits": [],
   "extraTags": {}
  }
 }

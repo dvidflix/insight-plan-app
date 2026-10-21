@@ -1,9 +1,8 @@
 import { useMemo, useState } from 'react';
-import { ToolPopover } from './TablePopovers';
+import { ListConfig } from './ListConfig';
 import { FilterRules } from './FilterRules';
 import { GroupPanel } from './schedule/GroupPanel';
 import { SortPanel } from './schedule/SortPanel';
-import { IconFilter, IconGroup, IconSort } from './icons';
 import { NO_VALUE } from '../state/inputDetailsStore';
 import { SCENE_BUILT_INS, sceneMatches, useSceneDetailsStore, valuesOfScene } from '../state/sceneDetailsStore';
 import type { Scene } from '../state/scenes';
@@ -69,7 +68,7 @@ function SceneFilters({ scenes }: { scenes: Scene[] }) {
   );
 }
 
-/** Home's tools, as the Files table has them: Filter, Sort and Group, each a popover under its button. */
+/** Home's Filter, Sort and Group, in the List setup panel (N) like every other list; the header's search box narrows the scenes by name. */
 export function SceneTools({ scenes, onCollapseAll, onExpandAll }: { scenes: Scene[]; onCollapseAll: () => void; onExpandAll: () => void }) {
   const fields = useSceneDetailsStore((s) => s.fields);
   const filters = useSceneDetailsStore((s) => s.filters);
@@ -82,37 +81,41 @@ export function SceneTools({ scenes, onCollapseAll, onExpandAll }: { scenes: Sce
   const groupFields = useMemo(() => [...SCENE_BUILT_INS.filter((b) => b.id === 'programme').map((b) => ({ ...b, group: 'Scene' })), ...detailFields], [detailFields]);
   const filterCount = Object.keys(filters).length;
   return (
-    <span className="tp-row">
-      <ToolPopover icon={<IconFilter width={16} height={16} />} label="Filter" active={filterCount} activeLabel={`${filterCount} filter${filterCount === 1 ? '' : 's'}`} width={400}>
-        <SceneFilters scenes={scenes} />
-      </ToolPopover>
-      <ToolPopover icon={<IconSort width={16} height={16} />} label="Sort" active={sortRules.length} activeLabel={`${sortRules.length} sort${sortRules.length === 1 ? '' : 's'}`}>
-        <SortPanel
-          bare
-          fields={sortFields}
-          rules={sortRules}
-          onChange={setSortRules}
-          onClose={() => {}}
-          presets={[
-            { label: 'Latest saved', rules: [{ field: 'saved', direction: 'down' }] },
-            { label: 'Name', rules: [{ field: 'name', direction: 'up' }] },
-            { label: 'Status', rules: [{ field: 'Status', direction: 'up' }, { field: 'name', direction: 'up' }] },
-          ]}
-        />
-      </ToolPopover>
-      <ToolPopover icon={<IconGroup width={16} height={16} />} label="Group" active={groupRules.length} activeLabel={`Grouped by ${groupRules.length}`}>
-        <GroupPanel
-          bare
-          fields={groupFields}
-          presets={[{ label: 'Project / Area', fields: ['Project', 'Area'] }, { label: 'Status', fields: ['Status'] }, { label: 'Project', fields: ['Project'] }]}
-          rules={groupRules}
-          onChange={setGroupRules}
-          extraToggle={{ label: 'Levels on one line', tip: 'On: several fields make one group per combination ("Project A  |  Area 1"). Off: each field is a level nested in the one before.', on: groupCombine, onToggle: () => setGroupCombine(!groupCombine) }}
-          onClose={() => {}}
-          onCollapseAll={onCollapseAll}
-          onExpandAll={onExpandAll}
-        />
-      </ToolPopover>
-    </span>
+    <ListConfig
+      id="scenes"
+      label="Scenes"
+      searchable
+      badges={{ filters: filterCount, sort: sortRules.length, group: groupRules.length }}
+      panels={{
+        filters: <SceneFilters scenes={scenes} />,
+        sort: (
+          <SortPanel
+            bare
+            fields={sortFields}
+            rules={sortRules}
+            onChange={setSortRules}
+            onClose={() => {}}
+            presets={[
+              { label: 'Latest saved', rules: [{ field: 'saved', direction: 'down' }] },
+              { label: 'Name', rules: [{ field: 'name', direction: 'up' }] },
+              { label: 'Status', rules: [{ field: 'Status', direction: 'up' }, { field: 'name', direction: 'up' }] },
+            ]}
+          />
+        ),
+        group: (
+          <GroupPanel
+            bare
+            fields={groupFields}
+            presets={[{ label: 'Project / Area', fields: ['Project', 'Area'] }, { label: 'Status', fields: ['Status'] }, { label: 'Project', fields: ['Project'] }]}
+            rules={groupRules}
+            onChange={setGroupRules}
+            extraToggle={{ label: 'Levels on one line', tip: 'On: several fields make one group per combination ("Project A  |  Area 1"). Off: each field is a level nested in the one before.', on: groupCombine, onToggle: () => setGroupCombine(!groupCombine) }}
+            onClose={() => {}}
+            onCollapseAll={onCollapseAll}
+            onExpandAll={onExpandAll}
+          />
+        ),
+      }}
+    />
   );
 }

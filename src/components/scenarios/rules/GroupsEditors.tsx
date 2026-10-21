@@ -5,6 +5,7 @@ import { FILTER_OPS, freshId, type GroupFilter, type FilterOp, type LevelLink, t
 import { CellPick } from '../../CellPick';
 import { IconSectionChevron, IconRemove } from '../../icons';
 import { Field, NumberInput, RuleCard, type RuleContext } from './RuleParts';
+import { useSearchSetsStore } from '../../../state/searchSetsStore';
 
 /** Rule types Group, Level task, Sequence and Level link (rows of the Rules list). Groups are named selections of objects that
     live in the rules (they are not the 4D Link Groups) and can be far more granular; the others use them by name. */
@@ -245,6 +246,9 @@ export function SequenceRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
   const { rules, change } = ctx;
   const s = rules.sequences[i];
   const update = (patch: Partial<RuleSequence>) => change((r) => ({ ...r, sequences: r.sequences.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
+  const sets = useSearchSetsStore((st) => st.sets);
+  const folders = [...new Set(sets.map((x) => x.group ?? '').filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const fromFolder = !!s.stepsFolder;
   const moveStep = (k: number, d: -1 | 1) => {
     const steps = [...s.steps];
     const to = k + d;
@@ -265,11 +269,20 @@ export function SequenceRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
       summary={s.steps.map((st) => `${st.group || '—'}${st.perLevel ? '/level' : ''}`).join(' → ')}
     >
       <SequencePreview ctx={ctx} seq={s} />
+      <div className="rule-grid">
+        <Field label="Steps from a folder of sets" help="Each search set of the folder is a step, in the folder's order (by number when the names start with one). Add, remove or reorder the sets there, in Models > Search sets, and the sequence follows. Choose none to write the steps here.">
+          <select value={s.stepsFolder ?? ''} onChange={(e) => update({ stepsFolder: e.target.value || undefined })} aria-label="Steps from a folder of sets">
+            <option value="">None: the steps below</option>
+            {s.stepsFolder && !folders.includes(s.stepsFolder) && <option value={s.stepsFolder}>{s.stepsFolder} (not found)</option>}
+            {folders.map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </Field>
+      </div>
       <div className="rule-steps">
         {s.steps.map((st, k) => (
           <div key={k} className="rule-step">
             <span className="rule-step__n">{k + 1}</span>
-            <select value={st.group} onChange={(e) => update({ steps: s.steps.map((x, j) => (j === k ? { ...x, group: e.target.value } : x)) })} aria-label="Group">
+            <select value={st.group} disabled={fromFolder} onChange={(e) => update({ steps: s.steps.map((x, j) => (j === k ? { ...x, group: e.target.value } : x)) })} aria-label="Group">
               {!rules.groups.some((g) => g.id === st.group) && <option value={st.group}>{st.group || '—'}</option>}
               {rules.groups.map((g) => <option key={g.id} value={g.id}>{g.id}{g.name ? ` — ${g.name}` : ''}</option>)}
             </select>
@@ -277,12 +290,12 @@ export function SequenceRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
               <input type="checkbox" checked={!!st.perLevel} onChange={(e) => update({ steps: s.steps.map((x, j) => (j === k ? { ...x, perLevel: e.target.checked || undefined } : x)) })} />
               per level
             </label>
-            <button type="button" className="mini-btn" onClick={() => moveStep(k, -1)} disabled={k === 0} aria-label="Move step up">↑</button>
-            <button type="button" className="mini-btn" onClick={() => moveStep(k, 1)} disabled={k === s.steps.length - 1} aria-label="Move step down">↓</button>
-            <button type="button" className="cols__icon cols__icon--remove" onClick={() => update({ steps: s.steps.filter((_, j) => j !== k) })} aria-label="Remove step"><IconRemove /></button>
+            {!fromFolder && <button type="button" className="mini-btn" onClick={() => moveStep(k, -1)} disabled={k === 0} aria-label="Move step up">↑</button>}
+            {!fromFolder && <button type="button" className="mini-btn" onClick={() => moveStep(k, 1)} disabled={k === s.steps.length - 1} aria-label="Move step down">↓</button>}
+            {!fromFolder && <button type="button" className="cols__icon cols__icon--remove" onClick={() => update({ steps: s.steps.filter((_, j) => j !== k) })} aria-label="Remove step"><IconRemove /></button>}
           </div>
         ))}
-        <button type="button" className="mini-btn" onClick={() => update({ steps: [...s.steps, { group: rules.groups[0]?.id ?? '' }] })}>+ step</button>
+        {!fromFolder && <button type="button" className="mini-btn" onClick={() => update({ steps: [...s.steps, { group: rules.groups[0]?.id ?? '' }] })}>+ step</button>}
       </div>
       <div className="rule-grid">
         <Field label="Link">

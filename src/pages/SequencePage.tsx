@@ -1,8 +1,6 @@
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
-import { ScenarioDock, ScenarioTabContent } from '../components/scenarios/ScenarioDock';
-import { RecipesDock } from '../components/scenarios/rules/RecipesEditor';
-import { ScenarioRulesDock } from '../components/scenarios/ScenarioRules';
+import { ScenarioTabContent } from '../components/scenarios/ScenarioDock';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule } from '../state/scheduleStore';
 import { useModelsStore } from '../state/modelsStore';
@@ -24,11 +22,12 @@ import { placementOf, tagStyleOf, useActiveTagsStore, useTagsStore, type ActiveT
 import { lerpStage, type AppearanceProfile, type AppearanceStage } from '../schedule/appearance';
 import { DockPanel } from '../components/Dock';
 import { MATERIAL_CLASS_COLOURS, encodeSurfaceInColour } from '../viewer/materialClasses';
-import { isShowing, useDockStore } from '../state/dockStore';
+import { useDockStore } from '../state/dockStore';
 import { useListConfigStore } from '../state/listConfigStore';
 import { DockGantt } from '../components/sequence/DockGantt';
 import { TasksDock } from '../components/sequence/TasksDock';
 import { SequenceResources } from '../components/sequence/SequenceResources';
+import { ResourceDistribution } from '../components/schedule/ResourceDistribution';
 import { LinkGroupsPanel, exportLinkGroupMatches, useLinkGroupsUiStore } from '../components/sequence/LinkGroupsPanel';
 import { AppearancePanel, useAppearanceUiStore } from '../components/sequence/AppearancePanel';
 import { TaskFieldFromSets } from '../components/sequence/TaskFieldFromSets';
@@ -39,7 +38,6 @@ import { usePersistedState } from '../utils/persistedState';
 import { buildColumnContext } from '../schedule/columns';
 import { useColumnCatalog } from '../schedule/calculatedColumns';
 import { TasksPanel } from '../components/sequence/TasksPanel';
-import { isSettingsOpen, useSettingsPaneStore } from '../state/settingsPaneStore';
 import { useSequenceUiStore } from '../state/sequenceUiStore';
 import { ColorModeRow, ViewColorSettings, setColorOf } from '../components/sequence/ColorModePanel';
 import { View3DPanel } from '../components/View3DPanel';
@@ -225,8 +223,6 @@ export function SequencePanel() {
   const [unassignedMode, setUnassignedMode] = usePersistedState<'original' | 'red'>('sequence.unassignedMode', 'original');
   // Gantt, Tasks, Resources, Scenarios, Clash and Topics are dock panels (components/Dock.tsx): the user puts each on the
   // left, at the bottom or on the right. Scenarios has a second part (its dock) that goes with it while it shows.
-  const settingsTarget = useSettingsPaneStore((s) => s.target);
-  const scenariosShowing = useDockStore((d) => isShowing(d, 'scenarios'));
   useEffect(() => {
     if (topicOpenRequest === topicSeen.current) return;
     topicSeen.current = topicOpenRequest;
@@ -851,6 +847,9 @@ export function SequencePanel() {
       <DockPanel id="resources" label="Resources">
         {ready && model ? <SequenceResources model={model} /> : needProgramme}
       </DockPanel>
+      <DockPanel id="distribution" label="Resource distribution">
+        {ready && model ? <ResourceDistribution model={model} activities={model.activities} /> : needProgramme}
+      </DockPanel>
       {/* The colours the 4D plays with: appearance profiles, the model's own, or by a property (per view when split). */}
       <DockPanel id="colour" label="Colour">
         <div className="config-panel__body model-config__body" style={{ flex: 1, minHeight: 0 }}>
@@ -863,10 +862,8 @@ export function SequencePanel() {
         </div>
       </DockPanel>
       {experimental.scenarios && <DockPanel id="scenarios" label="Sequence"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
-      {experimental.scenarios && <DockPanel id="recipes" label="Recipes"><RecipesDock /></DockPanel>}
-      {experimental.scenarios && <DockPanel id="rules" label="Rules"><ScenarioRulesDock /></DockPanel>}
       {experimental.bcf && <DockPanel id="topics" label={`Topics${topicCount ? ` (${topicCount})` : ''}`}><div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div></DockPanel>}
-      {experimental.scenarios && scenariosShowing && isSettingsOpen(settingsTarget, 'scenarios') && <ScenarioDock />}
+      {/* Scenarios settings (the scenarios list, New scenario, Start date) is a tab of its own whenever the scenarios are on, so it can always be opened from the navigation bar. */}
     </>
   );
 

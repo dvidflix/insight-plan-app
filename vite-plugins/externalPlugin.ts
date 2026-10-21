@@ -5,6 +5,7 @@ import type { Plugin } from 'vite';
 import { HttpError, readBody, send, sendError } from './http';
 import { Superset, SupersetError } from './supersetApi';
 import { buildCompareDashboard } from './supersetDashboard';
+import { buildRatesDashboard } from './supersetRates';
 
 /** External data (SeaTable) and Dashboards (Superset): the app's two tabs that show those
     programs in a frame. This bridge signs in for the user, so the frame opens already logged in.
@@ -183,6 +184,14 @@ export function externalPlugin(): Plugin {
           if (route === 'build-dashboard' && req.method === 'POST') {
             try {
               return send(res, 200, await buildCompareDashboard(await new Superset(config('superset')).connect()));
+            } catch (e) {
+              if (e instanceof SupersetError) throw new HttpError(e.status, e.message);
+              throw e;
+            }
+          }
+          if (route === 'build-rates-dashboard' && req.method === 'POST') {
+            try {
+              return send(res, 200, await buildRatesDashboard(await new Superset(config('superset')).connect()));
             } catch (e) {
               if (e instanceof SupersetError) throw new HttpError(e.status, e.message);
               throw e;

@@ -9,6 +9,9 @@ export interface Relationship {
   succId: string;
   type: RelationType;
   lagHours: number;
+  /** Soft (preferential) logic: how the planner would like the work to run, as against a hard link that physics or the contract forces. The
+      dates treat both alike; "Remove soft logic" takes the soft ones away to see what the work allows. Kept in the project database only (ip_soft). */
+  soft?: boolean;
 }
 
 export interface ResourceAssignment {
@@ -26,6 +29,9 @@ export interface ResourceAssignment {
   /** App-only: added by this app (see virtualResources.ts), not part of the
       programme file, so it is never written back to XML. */
   virtual?: boolean;
+  /** The crew the duration follows: when any crew of an activity is primary, only those count (a gang of carpenters sets the pace, the crane
+      does not). App-only, kept in the project database (ip_primary). */
+  primary?: boolean;
 }
 
 /** A resource of the programme, with its site capacity when known. */

@@ -37,7 +37,7 @@ const SCENE_DATA = new Set([
   'ip.viewer.finderQueries',
 ]);
 
-/** Layout keys a scene written before they were part of scenes does not have: opening it keeps what the browser has
+/** Layout keys a scene written before they were part of scenes does not have, or has empty (saved before a folder was open): opening it keeps what the browser has
     (the project folder, so an older scene does not open with none). */
 const KEEP_WHEN_ABSENT = ['scenarios.root'];
 
@@ -232,7 +232,7 @@ function applyKeys(snap: Snapshot, alsoKeep: string[] = []) {
         if (key && match(key)) localStorage.removeItem(key);
       }
     };
-    const kept = [...KEEP_WHEN_ABSENT.filter((k) => !(k in snap.settings)), ...alsoKeep].map((k) => [k, localStorage.getItem(k)] as const);
+    const kept = [...KEEP_WHEN_ABSENT.filter((k) => !snap.settings[k] || snap.settings[k] === '""'), ...alsoKeep].map((k) => [k, localStorage.getItem(k)] as const);
     drop(isLayoutKey);
     for (const [k, v] of Object.entries(snap.settings)) if (isLayoutKey(k) && typeof v === 'string') localStorage.setItem(k, v);
     for (const [k, v] of kept) if (v !== null) localStorage.setItem(k, v);
@@ -378,6 +378,26 @@ export const scenes = {
     if (!snap) return;
     const text = snap.settings[FILE_VIEW_KEY] ?? JSON.stringify({ state: {}, version: 0 });
     await putSnap(id, { ...snap, settings: { ...snap.settings, [FILE_VIEW_KEY]: withView(text, JSON.stringify({ state: view })) } });
+  },
+
+  /** The models linked to a scene (by name), read from its snapshot; null when it has no list yet. */
+  async linkedOf(id: string): Promise<string[] | null> {
+    await ready;
+    if (read().activeId === id) await sync();
+    const snap = await getSnap(id);
+    try { const v = JSON.parse(snap?.settings['models.loaded'] ?? 'null'); return Array.isArray(v) ? (v as string[]) : null; } catch { return null; }
+  },
+
+  /** Sets the models linked to a scene other than the one you are in (that one keeps its list in the browser: see sceneModels.ts). */
+  async setLinked(id: string, names: string[]) {
+    await ready;
+    const snap = await getSnap(id);
+    if (!snap) return;
+    const list = [...new Set(names)];
+    await putSnap(id, { ...snap, settings: { ...snap.settings, 'models.loaded': JSON.stringify(list) } });
+    const store = read();
+    store.scenes = store.scenes.map((s) => (s.id === id ? { ...s, counts: { ...(s.counts ?? { viewpoints: 0, topics: 0, markers: 0 }), models: list.length } } : s));
+    write(store);
   },
 
   /** Adds models (by name) to the ones a scene brings back when it is opened. */

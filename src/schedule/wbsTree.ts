@@ -16,7 +16,8 @@ export interface WbsTreeNode<T> {
   descendantCount: number;
 }
 
-const byNumericText = (a: string, b: string) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+const NUMERIC_BASE = new Intl.Collator(undefined, { numeric: true, sensitivity: 'base' });
+const byNumericText = (a: string, b: string) => NUMERIC_BASE.compare(a, b);
 
 /** `codePathOf` (segment-for-segment parallel to `pathOf`) orders siblings by
     WBS code, so "Level 2" comes before "Level 10" the way the schedule's own

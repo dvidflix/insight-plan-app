@@ -58,7 +58,7 @@ function GridCard<T extends { id: string; enabled?: boolean }>({
   }, [rows]);
 
   // ---- Spreadsheet behaviour of the columns that name their field: range, fill down (Ctrl+D, the corner square), copy and paste.
-  const grid = useEditableGrid({
+  const grid = useEditableGrid({ widthsKey: `rules.${kind}`,
     rows: shown,
     get: (col, { r }) => { const f = columns[Number(col)]?.field; const v = f ? (r as Record<string, unknown>)[f] : undefined; return v === undefined || v === null ? '' : String(v); },
     write: (col, cells) => {

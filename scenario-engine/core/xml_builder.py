@@ -1226,6 +1226,7 @@ def add_udf_types(root):
         ("11", "CWA-Rate Unit", "Text"),
         ("12", "CWA-Rate Basis", "Text"),
         ("13", "CWA-Measured", "Text"),
+        ("14", "CWA-Recipe", "Text"),
     ]:
         udf = ET.SubElement(root, "UDFType")
         ET.SubElement(udf, "ObjectId").text = oid
@@ -2188,6 +2189,13 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             u = ET.SubElement(act, "UDF")
             ET.SubElement(u, "TypeObjectId").text = "6"
             ET.SubElement(u, "TextValue").text = building_code
+
+        # The recipe that made the activity (the Recipe column of the Gantt); the engine's own chain has none.
+        recipe_id = str(act_data.get("recipe") or "").strip()
+        if recipe_id:
+            u = ET.SubElement(act, "UDF")
+            ET.SubElement(u, "TypeObjectId").text = "14"
+            ET.SubElement(u, "TextValue").text = recipe_id
 
         # Wall class and rate assumptions (SeaTable "Wall Classes", see core/rates_info.py).
         element_for_rates = rec.get("element") if rec else None

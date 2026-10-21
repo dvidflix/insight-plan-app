@@ -3,7 +3,7 @@
     project database (shared by every scene) and workspaces only ever carry the details, never the view. */
 
 export const FILE_VIEW_KEY = 'models.fileDetails';
-export const FILE_VIEW_PROPS = ['filters', 'groupRules', 'groupCombine', 'sortRules', 'columns', 'collapsed'] as const;
+export const FILE_VIEW_PROPS = ['filters', 'paused', 'groupRules', 'groupCombine', 'sortRules', 'columns', 'collapsed'] as const;
 
 type Saved = { state?: Record<string, unknown> } & Record<string, unknown>;
 const parse = (text: string | null | undefined): Saved | null => {

@@ -6,6 +6,7 @@ import { useProjectDbStore } from '../state/projectDbStore';
 import { fetchSettings, saveSetting } from '../db/api';
 import { loadStoredModel } from '../viewer/modelStore';
 import { restoreStatus } from '../state/restoreStatus';
+import { setActiveLinked } from '../state/sceneModels';
 
 const KEY = 'loadedModels';
 /** The scene's own copy of the list (a browser key, so each scene saves and brings back its own models); the project database's list is the
@@ -57,12 +58,14 @@ export function ModelsRestoreSync({ enabled = true }: { /** False: not yet (a se
     })();
   }, [root, engine, enabled]);
 
-  // Only after the restore, so the empty page at start does not overwrite the saved list.
+  // The scene's list is the one ticked in the Files panel (state/sceneModels.ts): what happens to be loaded no longer rewrites it.
+  // A scene that has no list yet (made before) takes what was restored for it, once, so it has an explicit list from then on.
   const names = JSON.stringify(models.map((m) => m.name).filter((n) => stored.some((s) => s.name === n)).sort());
   useEffect(() => {
     if (!root || restoredFor !== root) return;
     const list = [...new Set([...(JSON.parse(names) as string[]), ...failed.current])];
-    try { localStorage.setItem(SCENE_KEY, JSON.stringify(list)); } catch { /* not kept */ }
+    if (sceneList() === null) setActiveLinked(list);
+    // The project database keeps the last list only as the start for a scene without one.
     const t = setTimeout(() => void saveSetting(root, KEY, list).catch(() => undefined), 100);
     return () => clearTimeout(t);
   }, [root, restoredFor, names]);

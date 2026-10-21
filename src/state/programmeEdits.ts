@@ -1,3 +1,4 @@
+import { describeLoop, newLoops } from '../schedule/loops';
 import type { Activity, ScheduleModel } from '../schedule/types';
 import type { Result } from '../schedule/programmeCommands';
 import { applyEdits, useActivityOverridesStore, type LinkOp } from './activityOverridesStore';
@@ -32,7 +33,12 @@ export function resetEdits(key: string, codes?: string[]) {
 /** Adds, takes out or changes a link, by the two Activity IDs. */
 export function setLinkOp(key: string, op: LinkOp) {
   const m = editable(key);
-  if (m) replace(m.id, applyEdits(m, new Map(), [op]));
+  if (m) {
+    const next = applyEdits(m, new Map(), [op]);
+    // A link that would close a loop is not made (the editing screens say so before they get here; this is the last guard).
+    if (newLoops(m, next).length) return;
+    replace(m.id, next);
+  }
   else useActivityOverridesStore.getState().setLink(key, op);
 }
 
@@ -48,6 +54,9 @@ export function editStructure<T extends object>(key: string, command: (m: Schedu
   const result = command(m);
   if ('error' in result) return result;
   const { model, ...rest } = result;
+  // No edit may leave a loop in the logic: the activities in it could never start. The programme is left as it was.
+  const loops = newLoops(m, model);
+  if (loops.length) return { error: `That would make a loop in the logic (${describeLoop(model, loops[0])}), so nothing was changed.` };
   if (model !== m) replace(m.id, { ...model, id: m.id, dbProgrammeId: m.dbProgrammeId, editable: true, sourceFileName: m.sourceFileName });
   return rest as Omit<{ model: ScheduleModel } & T, 'model'>;
 }

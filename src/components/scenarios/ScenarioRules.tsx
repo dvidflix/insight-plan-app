@@ -56,16 +56,3 @@ export function ScenarioRulesEditor() {
   );
 }
 
-/** Rules as a dock panel of its own (4D Sequencing): the same editor, with the room of a panel, and a word when no
-    scenario is open. Opening or saving the scenario is done in the Scenarios panel. */
-export function ScenarioRulesDock() {
-  const { ready, scenario } = useScenarioView();
-  if (!ready) {
-    return <div className="scn-rules scn-rules--empty">Open a scenario in the Scenarios panel to give it extra activities, links and crews{scenario ? '' : '.'}</div>;
-  }
-  return (
-    <div className="scn-rules scn-rules--dock">
-      <ScenarioRulesEditor />
-    </div>
-  );
-}

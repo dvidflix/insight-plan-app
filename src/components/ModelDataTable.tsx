@@ -13,7 +13,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type * as OBC from '@thatopen/components';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
-import { useSettingsPaneStore } from '../state/settingsPaneStore';
+import { useListConfigStore } from '../state/listConfigStore';
 import { COL_CLASS, COL_GUID, COL_MODEL, COL_NAME, TWIN_PREFIX, useDataTableStore, type DataAgg, type DataTableScope } from '../state/dataTableStore';
 import type { ElementSummary } from '../viewer/types';
 import { NO_VALUE, elementValue } from '../viewer/bimTables';
@@ -619,7 +619,7 @@ export function ModelDataTable() {
                 { label: 'Export CSV', icon: <IconDownloadFile width={16} height={16} />, disabled: shown.length === 0 || columns.length === 0, onClick: exportCsv, title: 'Export the ' + shown.length.toLocaleString() + ' rows shown, with the shown columns, to a CSV file (search and filters applied)' },
                 { label: 'Totals', icon: <IconTotals width={16} height={16} />, checked: totals, onClick: () => patch({ totals: !totals }), title: 'A totals row under the table and a subtotal on each group row; click a total to pick sum, average, min, max, count or none for that column' },
                 { label: '-1', separator: true, onClick: () => {} },
-                { label: 'Saved lists and twin models…', icon: <IconTune width={16} height={16} />, onClick: () => { useSettingsPaneStore.getState().setTarget('datatable'); configure(); }, title: summary ? 'Now: ' + summary : 'Set up the table' },
+                { label: 'Saved lists and twin models…', icon: <IconTune width={16} height={16} />, onClick: () => { configure(); useListConfigStore.getState().setNOpen(true); }, title: summary ? 'Now: ' + summary : 'Set up the table' },
               ]}
             />
           </span>

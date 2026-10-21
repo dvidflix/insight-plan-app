@@ -28,7 +28,7 @@ export function TaskResources({ task, rules, onPatch }: { task: RecipeTask; rule
     for (const u of task[KEY[kind]] ?? []) if (!rows.some((r) => r.kind === kind && same(r.type, u.type))) rows.push({ kind, type: u.type, name: '' });
   }
   // The Units column as a spreadsheet's: range, fill down (Ctrl+D, the corner square), copy and paste. One patch for all the cells.
-  const grid = useEditableGrid({
+  const grid = useEditableGrid({ widthsKey: 'recipe.taskResources',
     rows,
     get: (_col, r) => { const n = countOf(r.kind, r.type); return n === undefined ? '' : String(n); },
     write: (_col, cells) => {

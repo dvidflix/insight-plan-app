@@ -51,6 +51,9 @@ interface InputDetailsState {
   setWidth: (col: string, w: number) => void;
   /** Filters: group id ('type', 'format' or a field) -> the values kept (absent or empty = no filter). */
   filters: Record<string, string[]>;
+  /** Filters switched off with the eye: kept (not deleted) with their values, and not applied until switched on again. */
+  paused: Record<string, string[]>;
+  togglePaused: (key: string) => void;
   /** The files of the Inputs page right now (set by the page, not saved): what the Settings panel counts values over. */
   files: PushFile[];
   /** Push the files to SeaTable as soon as a file is uploaded. */
@@ -88,6 +91,7 @@ export const useInputDetailsStore = create<InputDetailsState>()(
       collapsed: [],
       readAt: null,
       filters: {},
+      paused: {},
       files: [],
       pending: [],
       autoPush: true,
@@ -102,9 +106,19 @@ export const useInputDetailsStore = create<InputDetailsState>()(
         const filters = { ...s.filters };
         if (values.length) filters[key] = values;
         else delete filters[key];
-        return { filters };
+        // Changing a paused filter's values (or removing it) takes it out of the paused ones.
+        const paused = { ...s.paused };
+        delete paused[key];
+        return { filters, paused };
       }),
-      clearFilters: () => set({ filters: {} }),
+      togglePaused: (key) => set((s) => {
+        const filters = { ...s.filters };
+        const paused = { ...s.paused };
+        if (filters[key]?.length) { paused[key] = filters[key]; delete filters[key]; }
+        else if (paused[key]) { filters[key] = paused[key]; delete paused[key]; }
+        return { filters, paused };
+      }),
+      clearFilters: () => set({ filters: {}, paused: {} }),
       setFiles: (files) => set({ files }),
       setColumns: (columns) => set({ columns }),
       setSortRules: (sortRules) => set({ sortRules }),
@@ -175,7 +189,7 @@ export const useInputDetailsStore = create<InputDetailsState>()(
         if (next.filters) delete next.filters.folder;
         return next;
       },
-      partialize: (s) => ({ fields: s.fields, columns: s.columns, sortRules: s.sortRules, groupRules: s.groupRules, groupCombine: s.groupCombine, values: s.values, filters: s.filters, widths: s.widths, collapsed: s.collapsed, readAt: s.readAt, autoPush: s.autoPush, pending: s.pending }),
+      partialize: (s) => ({ fields: s.fields, columns: s.columns, sortRules: s.sortRules, groupRules: s.groupRules, groupCombine: s.groupCombine, values: s.values, filters: s.filters, paused: s.paused, widths: s.widths, collapsed: s.collapsed, readAt: s.readAt, autoPush: s.autoPush, pending: s.pending }),
     },
   ),
 );

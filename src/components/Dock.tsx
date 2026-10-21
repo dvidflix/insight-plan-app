@@ -5,16 +5,15 @@ import { useDockNavStore } from '../state/dockNavStore';
 import { DockNav } from './DockNav';
 import { panelColor } from './panelColors';
 import { activeOn, isShowing, DOCK_DEFAULTS, DOCK_SIDES, panelsOn, SIDE_LABEL, useDockStore, type DockHost, type DockPanelId, type DockSide } from '../state/dockStore';
-import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconChevronDown, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconCompare, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus, IconFolder } from './icons';
+import { IconCube, IconPalette, IconSchema, IconSearch, IconTree, IconBookmark, IconCamera, IconChat, IconChevronLeft, IconChevronDown, IconClose, IconChecklist, IconGantt, IconLineGraph, IconList, IconSplit, IconTune, IconCompare, IconViewTable, IconWarning, IconInfo, IconArrowUp, IconArrowDown, IconColumns, IconFilter, IconGroup, IconSort, IconBookingsOpen, IconGear, IconCubeFocus, IconFolder, IconGridTable } from './icons';
 
 /** What a tab shows instead of its name when the tabs don't fit. */
 export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement>>> = {
   gantt: IconGantt,
   tasks: IconList,
   resources: IconLineGraph,
+  distribution: IconGridTable,
   scenarios: IconSplit,
-  recipes: IconList,
-  rules: IconTune,
   clash: IconWarning,
   topics: IconChat,
   viewpoints: IconCamera,
@@ -43,7 +42,6 @@ export const TAB_ICONS: Record<DockPanelId, ComponentType<SVGProps<SVGSVGElement
   cfgColor: IconPalette,
   generated: IconBookingsOpen,
   settings: IconGear,
-  scenarioSettings: IconTune,
 };
 
 /** A panel that lives in one of the three docks around the 3D view (left, bottom, right). Mount it wherever its state
@@ -71,12 +69,12 @@ export function DockPanel({ id, label, shown, setShown, host = 'viewer', childre
   return keep ? createPortal(children, parked) : null;
 }
 
-/** A panel's own toolbar: in the bottom dock it joins the tabs in one header row, elsewhere it stays at the top of the panel. */
+/** A panel's own toolbar: in a dock it joins the tabs in one header row; undocked it stays at the top of the panel. */
 export function DockToolbar({ id, children }: { id: DockPanelId; children: ReactNode }) {
   const side = useDockStore((s) => { const p = s.placement[id] ?? DOCK_DEFAULTS[id]; return p === 'closed' ? null : p; });
   const here = useDockStore((s) => !!side && activeOn(s, side) === id);
-  const slot = useDockStore((s) => (side === 'bottom' ? s.tools.bottom : null));
-  if (side === 'bottom' && here && slot) return createPortal(children, slot);
+  const slot = useDockStore((s) => (side ? s.tools[side] : null));
+  if (side && here && slot) return createPortal(children, slot);
   return <>{children}</>;
 }
 
@@ -191,6 +189,15 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
     if (mine && (tabs.length === 0 || folded)) setBody(side, null);
   }, [mine, tabs.length, folded, side, setBody]);
 
+  // Every panel closed: the navigation bar stays, collapsed to its strip on the right, so the panels can be brought back from its menu.
+  const nothingOpen = useDockStore((s) => DOCK_SIDES.every((sd) => panelsOn(s, sd).length === 0));
+  if (mine && tabs.length === 0 && side === 'right' && nothingOpen) {
+    return (
+      <aside className="config-panel seq-panel dock dock--right dock--nav dock--empty" style={{ width: 'var(--nav-w, 38px)', minWidth: 0, flex: '0 0 auto' }}>
+        <DockNav side="right" tabs={[]} active={null} icons={TAB_ICONS} />
+      </aside>
+    );
+  }
   if (!mine || tabs.length === 0) return null;
   const store = useDockStore.getState;
   const horizontal = side === 'bottom';
@@ -236,7 +243,7 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
   const toolButtons = (
     <>
       {active !== 'files' && <button type="button" className="icon-btn dock__tool dock__tool--fold" onClick={() => store().setFolded(side, true)} title="Fold these panels away" aria-label="Fold away"><IconChevronLeft style={{ transform: side === 'right' ? 'rotate(180deg)' : side === 'left' ? undefined : 'rotate(-90deg)' }} /></button>}
-      {active && active !== 'files' && <button type="button" className="icon-btn dock__tool" onClick={() => store().close(active)} title={`Close ${entries[active]?.label ?? 'the panel'} (the Panels menu brings it back)`} aria-label="Close panel"><IconClose /></button>}
+      {active && active !== 'files' && <button type="button" className="icon-btn dock__tool dock__tool--close" onClick={() => store().close(active)} title={`Close ${entries[active]?.label ?? 'the panel'} (the Panels menu brings it back)`} aria-label="Close panel"><IconClose /></button>}
     </>
   );
 
@@ -253,19 +260,20 @@ export function DockSideView({ side, host = 'viewer' }: { side: DockSide; host?:
     <>
       {side !== 'left' && handle}
       <aside data-active={active ?? undefined} className={`config-panel seq-panel dock dock--${side}${navBar ? ` dock--nav${barOnLeft ? '' : ' dock--nav-right'}` : ''}`} style={horizontal ? { height: size, width: 'auto', marginTop: 0 } : { width: size, minWidth: 0 }}>
-        {!navBar && <div className={`filter-sidebar-header seq-righthead dock__head${stacked ? ' is-stacked' : ''}`} ref={headEl}>
-          <div className={`config-tabs seq-righttabs${compact ? ' is-compact' : ''}`} role="tablist" ref={tabsEl}>
-            {dropdown ? (
+        {/* Every dock has the same header as the bottom one: the tab (in the left and right docks only the panel showing; the others are in the navigation bar), a fold strip and the close button. */}
+        {<div className={`filter-sidebar-header seq-righthead dock__head${stacked && !navBar ? ' is-stacked' : ''}`} ref={headEl}>
+          <div className={`config-tabs seq-righttabs${compact && !navBar ? ' is-compact' : ''}`} role="tablist" ref={tabsEl}>
+            {dropdown && !navBar ? (
               <select className="dock__tabselect" value={active ?? ''} onChange={(e) => store().select(side, e.target.value as typeof tabs[number]['id'])} aria-label="Panel">
                 {tabs.map((t) => <option key={t.id} value={t.id}>{t.label}</option>)}
               </select>
             ) : (
               <>
-              {tabs.map((t) => {
+              {(navBar ? tabs.filter((t) => t.id === active) : tabs).map((t) => {
                 const TabIcon = TAB_ICONS[t.id];
                 return (
-                  <button key={t.id} type="button" role="tab" aria-selected={active === t.id} aria-label={t.label} title={compact ? `${t.label} (drag to the left, bottom or right to move it)` : 'Drag to the left, bottom or right to move it'} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => store().setDragging(t.id), 0); }} onDragEnd={() => store().setDragging(null)} className={`config-tab${active === t.id ? ' active' : ''}`} onClick={() => store().select(side, t.id)}>
-                    {compact && TabIcon ? <TabIcon className="dock__tabicon" style={{ color: panelColor(t.id) }} /> : t.label}
+                  <button key={t.id} type="button" role="tab" aria-selected={active === t.id} aria-label={t.label} title={compact && !navBar ? `${t.label} (drag to the left, bottom or right to move it)` : 'Drag to the left, bottom or right to move it'} draggable onDragStart={(e) => { e.dataTransfer.setData('text/plain', t.id); e.dataTransfer.effectAllowed = 'move'; setTimeout(() => store().setDragging(t.id), 0); }} onDragEnd={() => store().setDragging(null)} className={`config-tab${active === t.id ? ' active' : ''}`} onClick={() => store().select(side, t.id)}>
+                    {compact && !navBar && TabIcon ? <TabIcon className="dock__tabicon" style={{ color: panelColor(t.id) }} /> : t.label}
                   </button>
                 );
               })}

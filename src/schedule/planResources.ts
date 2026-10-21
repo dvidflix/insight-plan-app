@@ -1,6 +1,7 @@
 import type { Activity, ResourceAssignment, ResourceInfo, ScheduleModel, UdfTypeDef } from './types';
 import type { Result } from './programmeCommands';
-import { DRIVEN_LABEL, hoursPerDayOfCalendar, patchActivities } from './planEdit';
+import { DRIVEN_LABEL, FORMULA_LABEL, hoursPerDayOfCalendar, patchActivities } from './planEdit';
+import { evaluateFormula, type FormulaResult } from './durationFormula';
 
 /** Resources, what the activities have of them, and the duration that follows from quantity and productivity. Each returns the new
     model, or an error to show; what it does not change is the same objects (which is how saving finds the rows that changed). */
@@ -100,10 +101,17 @@ export function unassignResource(m: ScheduleModel, activityIds: string[], resour
 }
 
 /** Changes an assignment: the crew size (units at once), or the quantity (material). */
-export function setAssignment(m: ScheduleModel, activityId: string, resourceId: string, o: { units?: number; qty?: number }): Result {
+export function setAssignment(m: ScheduleModel, activityId: string, resourceId: string, o: { units?: number; qty?: number; primary?: boolean }): Result {
   const a = m.activities.find((x) => x.id === activityId);
   const cur = a?.resources.find((x) => x.resourceId === resourceId);
   if (!a || !cur) return { error: 'That resource is not assigned to the activity.' };
+  if (o.primary !== undefined && o.units === undefined && o.qty === undefined) {
+    if (!isCrew(cur.resourceType)) return { error: 'Only a crew (labour or equipment) can be the primary one.' };
+    const { primary: _was, ...rest } = cur;
+    const flagged: ResourceAssignment = o.primary ? { ...rest, primary: true } : rest;
+    const set = patchActivities(m, new Map([[activityId, { resources: a.resources.map((x) => (x === cur ? flagged : x)) }]]));
+    return 'error' in set ? set : { model: followProductivity(set.model, [activityId]) };
+  }
   const value = o.units ?? o.qty;
   if (value === undefined || !Number.isFinite(value) || value < 0) return { error: 'Type a number, 0 or more.' };
   const next: ResourceAssignment = isCrew(cur.resourceType) && o.units !== undefined
@@ -115,7 +123,10 @@ export function setAssignment(m: ScheduleModel, activityId: string, resourceId: 
 
 /** The crew of an activity: the labour and equipment working at once (a crew of 1 when none is assigned). */
 export function crewOf(a: Activity): number {
-  const units = a.resources.filter((r) => !r.virtual && isCrew(r.resourceType)).reduce((s, r) => s + (r.unitsPerTime ?? 0), 0);
+  const crews = a.resources.filter((r) => !r.virtual && isCrew(r.resourceType));
+  // The crews marked primary set the pace: when there are any, only they count.
+  const pace = crews.some((r) => r.primary) ? crews.filter((r) => r.primary) : crews;
+  const units = pace.reduce((s, r) => s + (r.unitsPerTime ?? 0), 0);
   return units > 0 ? units : 1;
 }
 
@@ -125,7 +136,7 @@ export const QTY_LABEL = 'Quantity';
 export const UNIT_LABEL = 'Quantity unit';
 export const PROD_LABEL = 'Productivity (per day)';
 
-const UDF_KINDS: Record<string, UdfTypeDef['dataType']> = { [QTY_LABEL]: 'number', [UNIT_LABEL]: 'text', [PROD_LABEL]: 'number', [DRIVEN_LABEL]: 'number' };
+const UDF_KINDS: Record<string, UdfTypeDef['dataType']> = { [QTY_LABEL]: 'number', [UNIT_LABEL]: 'text', [PROD_LABEL]: 'number', [DRIVEN_LABEL]: 'number', [FORMULA_LABEL]: 'text' };
 
 export interface Productivity {
   quantity: number | null;
@@ -185,12 +196,55 @@ export function setProductivity(m: ScheduleModel, id: string, patch: Partial<Pro
   return { model: followProductivity(done.model, [id]) };
 }
 
-/** The activities whose duration follows productivity get it again (after their quantity, productivity or crew changed). */
+// ---- Duration formulas ----
+
+export const formulaOf = (a: Activity): string => (typeof a.udf[FORMULA_LABEL] === 'string' ? (a.udf[FORMULA_LABEL] as string).trim() : '');
+
+/** The names a formula can use for an activity: qty, rate (productivity per crew unit per day), crews, hours_per_day, and each number user field as
+    udf_<Name> (spaces and signs become "_"). */
+export function formulaVars(m: ScheduleModel, a: Activity): Record<string, number | null> {
+  const p = productivityOf(a);
+  const vars: Record<string, number | null> = { qty: p.quantity, quantity: p.quantity, rate: p.perDay, productivity: p.perDay, crews: crewOf(a), hours_per_day: hoursPerDayOfCalendar(m, a.calendarId) };
+  for (const [k, v] of Object.entries(a.udf)) if (typeof v === 'number') vars[`udf_${k.replace(/[^A-Za-z0-9]+/g, '_')}`] = v;
+  return vars;
+}
+
+/** Working days the activity's formula gives (an error says what is wrong); null when it has no formula. */
+export function daysFromFormula(m: ScheduleModel, a: Activity): FormulaResult | null {
+  const f = formulaOf(a);
+  return f ? evaluateFormula(f, formulaVars(m, a)) : null;
+}
+
+/** Gives the picked activities this formula (empty: takes it off). The text must read, with the names the activities have; the duration then follows it. */
+export function setDurationFormula(m: ScheduleModel, ids: string[], text: string): Result<{ changed: number }> {
+  const formula = text.trim();
+  const picked = m.activities.filter((a) => ids.includes(a.id) && (a.type === 'task' || a.type === 'loe'));
+  if (!picked.length) return { error: 'Pick tasks to give the formula to.' };
+  if (formula) {
+    // The text is checked with every name set to 1: a typing error shows now, not as a missing duration later.
+    const probe = evaluateFormula(formula, { ...formulaVars(m, picked[0]), ...Object.fromEntries(Object.keys(formulaVars(m, picked[0])).map((k) => [k, 1])) });
+    if ('error' in probe && !/has no value/.test(probe.error)) return probe;
+  }
+  const patches = new Map<string, Partial<Activity>>();
+  for (const a of picked) {
+    const udf = { ...a.udf };
+    if (formula) udf[FORMULA_LABEL] = formula; else delete udf[FORMULA_LABEL];
+    patches.set(a.id, { udf });
+  }
+  const prepared = formula ? withUdfTypes(m, [FORMULA_LABEL]) : m;
+  const done = patchActivities(prepared, patches);
+  if ('error' in done) return done;
+  return { model: followProductivity(done.model, picked.map((a) => a.id)), changed: picked.length };
+}
+
+/** The activities whose duration follows a formula or productivity get it again (after their quantity, productivity or crew changed). */
 export function followProductivity(m: ScheduleModel, ids: string[]): ScheduleModel {
   const patches = new Map<string, Partial<Activity>>();
   for (const a of m.activities) {
-    if (!ids.includes(a.id) || !productivityOf(a).driven) continue;
-    const days = daysFromProductivity(a);
+    if (!ids.includes(a.id)) continue;
+    const formula = daysFromFormula(m, a);
+    if (!formula && !productivityOf(a).driven) continue;
+    const days = formula ? ('value' in formula ? formula.value : null) : daysFromProductivity(a);
     if (days === null) continue;
     const hours = round4(days * hoursPerDayOfCalendar(m, a.calendarId));
     if (hours === a.durationHours) continue;

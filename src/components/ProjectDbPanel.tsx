@@ -4,6 +4,7 @@ import { fetchLegacyFolders, fetchP6Projects, migrateFolderLayout, type DbProjec
 import { ProjectPicker } from './schedule/ProjectPicker';
 import { FEATURES } from '../features';
 import { useWebFolderStore } from '../web/folderStore';
+import { useScheduleStore } from '../state/scheduleStore';
 
 const baseName = (p: string) => p.split(/[\\/]/).pop() ?? p;
 
@@ -58,7 +59,13 @@ export function ProjectDbBar({ bare = false }: { bare?: boolean } = {}) {
       <div className={bare ? 'project-db__reload' : 'inputs-panel__header'}>
         {!bare && <span>Project database</span>}
         {db && (
-          <button className={`mini-btn${changed ? ' project-db__changed' : ''}`} disabled={!!busy} onClick={() => void reloadFromDb()} title="Read programmes, scenarios, link groups, capacities and settings from the database again">
+          <button className={`mini-btn${changed ? ' project-db__changed' : ''}`} disabled={!!busy} onClick={() => void reloadFromDb().then(() => {
+            const st = useProjectDbStore.getState();
+            if (st.error) { setNote(null); return; }
+            const shown = useScheduleStore.getState().schedules.filter((m) => m.dbProgrammeId !== undefined && !useScheduleStore.getState().hiddenScheduleIds.has(m.id)).length;
+            const hidden = st.programmes.filter((p) => p.hidden).length;
+            setNote(`Reloaded from the database: ${st.programmes.length} programmes, ${shown} showing${hidden ? `, ${hidden} hidden (show one in Files to load it)` : ''}.`);
+          })} title="Read programmes, scenarios, link groups, capacities and settings from the database again">
             ⟳ Reload from database{changed ? ' — changed outside the app' : ''}
           </button>
         )}

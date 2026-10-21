@@ -16,6 +16,8 @@ const round4 = (n: number) => Math.round(n * 4) / 4;
 
 /** The user field that says the duration follows quantity and productivity (see planResources.ts). */
 export const DRIVEN_LABEL = 'Duration from productivity';
+/** The user field that holds a duration formula (see durationFormula.ts); it wins over the productivity rule. */
+export const FORMULA_LABEL = 'Duration formula';
 
 /** The quantity of the crew resources (labour, equipment) follows the duration: the crew working at once × the hours. */
 function resyncAssignments(a: Activity, patch: Partial<Activity>): Partial<Activity> {
@@ -57,7 +59,7 @@ export function setDurationDays(m: ScheduleModel, id: string, days: number): Res
   const hours = round4(days * hoursPerDayOfCalendar(m, a.calendarId));
   const patch: Partial<Activity> = { durationHours: hours };
   // A duration typed here is the planner's own: it no longer follows quantity and productivity.
-  if (a.udf[DRIVEN_LABEL] === 1) { const { [DRIVEN_LABEL]: _off, ...udf } = a.udf; patch.udf = udf; }
+  if (a.udf[DRIVEN_LABEL] === 1 || a.udf[FORMULA_LABEL]) { const { [DRIVEN_LABEL]: _off, [FORMULA_LABEL]: _formula, ...udf } = a.udf; patch.udf = udf; }
   if (a.status === 'not-started') patch.remainingDurationHours = hours;
   else if (a.status === 'in-progress') patch.remainingDurationHours = Math.max(0, round4(hours * (1 - a.percentComplete / 100)));
   return patchActivities(m, new Map([[id, patch]]));

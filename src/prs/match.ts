@@ -241,7 +241,7 @@ export function validateRules(rules: ScenarioRules, extraIds: string[] = []): Ru
       || rules.assignments.some((a) => on(a) && rateOf(a.rate)?.type === 'productivity' && (rateOf(a.rate)?.basis ?? 'rebar') === 'rebar');
     const hasDensity = rules.rebar.some(on) || rules.assignments.some((a) => on(a) && (rateOf(a.rate)?.type === 'rebar' || rateOf(a.density)?.type === 'rebar'));
     if (usesRebar && !hasDensity) {
-      out.push({ section: 'productivity', id: '', fix: 'rebarRate', text: 'Durations are worked out from rebar tonnes but no Rebar rate gives tonnes per m³ of concrete: every pour has 0 t and gets the minimum days (add a rebar rate to the Rates and put it in the Rebar rate column of an assignment for the Rebar phase)' });
+      out.push({ section: 'productivity', id: '', fix: 'rebarRate', text: 'Durations are worked out from rebar tonnes but no Rebar rate gives tonnes per m³ of concrete, so every pour is taken as 0.25 t per m³ (or the Rebar_kg_per_m3 value the formula of the Rebar task reads). Add a rebar rate to the Rates and put it in the Rebar rate column of an assignment for the Rebar phase to set it yourself' });
     }
   }
   {

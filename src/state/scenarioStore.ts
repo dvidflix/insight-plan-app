@@ -39,6 +39,7 @@ import { getWbsOrder } from './wbsOrder';
 import { NO_RULES, isEmptyRules, normalizeRules, type EngineDefaults, type ScenarioRules } from '../prs/rules';
 import { convertLegacyRules, legacyCount } from '../prs/convert';
 import { useRecipeStore } from './recipeStore';
+import { stepSetNames, withFolderSteps } from '../prs/folderSteps';
 import { forGenerator } from '../prs/recipeRules';
 import { useSearchSetsStore } from './searchSetsStore';
 import { duplicateSets, groupsWithSets, setsForGroups, staleSets, uniqueGroups } from '../prs/groupSets';
@@ -390,7 +391,7 @@ export const setRelations = (relations: ScenarioRelation[]) => set({ relations }
 export const setCrews = (crews: ScenarioCrew[]) => set({ crews });
 export const setExtras = (extras: ScenarioExtra[]) => set({ extras });
 /** The programme rules are edited in place (a new object per change); Save stores them, Update 4D generates with them. */
-export const setRules = (rules: ScenarioRules) => set({ rules });
+export const setRules = (rules: ScenarioRules) => set({ rules: rules.sequences.some((q) => q.stepsFolder) ? withLibrary(rules) : rules });
 
 /** Sets (or, with null, clears) the review flag of these pours / groups. */
 export const setFlags = (keys: string[], state: FlagState | null) => {
@@ -787,7 +788,9 @@ function groupsIntoSets(rules: ScenarioRules): ScenarioRules {
 }
 
 function withLibrary(rules: ScenarioRules): ScenarioRules {
-  const groups = groupsWithSets(uniqueGroups(rules.groups), useSearchSetsStore.getState().sets);
+  const allSets = useSearchSetsStore.getState().sets;
+  rules = withFolderSteps(rules, allSets);
+  const groups = groupsWithSets(uniqueGroups(rules.groups), allSets, [...useRecipeStore.getState().recipes.map((r) => r.group), ...stepSetNames(rules, allSets)]);
   const calendars = syncCalendars(rules.calendars, calendarsFromProgrammes(useScheduleStore.getState().schedules.flatMap((m) => m.calendars)));
   const synced = groups === rules.groups && calendars === rules.calendars ? rules : { ...rules, groups, calendars };
   return withRecipeLibrary(synced);

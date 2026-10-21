@@ -87,7 +87,7 @@ def create_activities(rec, wbs_manager, overrides=None):
         chain = _rules.active().chain_for(rec) or (DEFAULT_HEAVY_PRECAST_CHAIN if _rules.family_of(rec) == "heavyPrecast" else DEFAULT_PRECAST_CHAIN)
         phase_definitions = [
             {"name": c["phase"], "suffix": c["suffix"], "resource": "", "duration_days": c.get("days", DEFAULT_PHASE_DAYS), "task_name_suffix": f" - {c.get('label') or c['phase']}",
-             "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates"))}
+             "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates")), "recipe": c.get("recipe") or ""}
             for c in chain
         ]
 
@@ -129,6 +129,7 @@ def create_activities(rec, wbs_manager, overrides=None):
                 "predecessor": prev_task_id,
                 "follows": phase.get("follows") or [],
                 "finish_after": bool(phase.get("finish_after")),
+                "recipe": phase.get("recipe") or "",
             }
             if phase.get("gates"):
                 _rules.active().gate_tasks.add(final_task_id)
@@ -195,7 +196,7 @@ def create_activities(rec, wbs_manager, overrides=None):
     chain = _rules.active().chain_for(rec) or DEFAULT_CHAIN
     phase_sequence = [
         {"original_name": c["phase"], "display_name": c["phase"], "suffix": c["suffix"], "short_label": c.get("label") or c["phase"], "material": c.get("material", ""),
-         "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates"))}
+         "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates")), "recipe": c.get("recipe") or ""}
         for c in chain
     ]
 
@@ -272,6 +273,7 @@ def create_activities(rec, wbs_manager, overrides=None):
             "predecessor": prev_task_id,
             "follows": seq.get("follows") or [],
             "finish_after": bool(seq.get("finish_after")),
+            "recipe": seq.get("recipe") or "",
         }
         if seq.get("gates"):
             _rules.active().gate_tasks.add(final_task_id)

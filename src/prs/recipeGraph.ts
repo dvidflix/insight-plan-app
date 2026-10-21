@@ -1,4 +1,6 @@
 import type { Recipe, RecipeEdge } from './recipes';
+import { previewDays } from './recipesWorkbook';
+import type { ParameterRow } from './rules';
 
 /** The graph of a recipe for its editor: the links between tasks (the ones written as edges, and the ones a task has by default: it follows the
     task before it, finished), where the tasks sit when nobody has placed them (Auto Layout), and the geometry of the arrows. */
@@ -129,13 +131,15 @@ export interface PreviewBar {
 
 /** A rough programme of one recipe, in working days, for the preview under the graph: each task as long as its fixed days (or its rate's days),
     placed by its links (FS after the finish, SS at a share done, FF and SF by the end). Quantity-based rates count as a day, shown as approximate. */
-export function previewBars(recipe: Pick<Recipe, 'tasks' | 'edges'>, rates: { id: string; type: string; days?: number }[]): PreviewBar[] {
+export function previewBars(recipe: Pick<Recipe, 'tasks' | 'edges'>, rates: { id: string; type: string; days?: number }[], parameters: ParameterRow[] = []): PreviewBar[] {
   const tasks = recipe.tasks.filter((t) => t.enabled !== false);
   const dur = new Map<string, { days: number; approx: boolean }>();
   for (const t of tasks) {
     const rate = t.rate ? rates.find((r) => key(r.id) === key(t.rate!)) : undefined;
-    const fixed = t.days ?? (rate?.type === 'days' ? rate.days : undefined);
-    dur.set(key(t.phase), { days: Math.max(0.25, fixed ?? 1), approx: fixed === undefined });
+    // A formula is worked out for a sample pour (150 m³, 3.5 t of rebar): approximate, like a rate that depends on quantities.
+    const sample = t.formula ? previewDays(t.formula, parameters, { Concrete_m3: 150, Rebar_t: 3.5, Rebar_kg: 3500, Footprint_m2: 200, Sides_m2: 120 }) : null;
+    const fixed = sample && 'days' in sample ? sample.days : t.days ?? (rate?.type === 'days' ? rate.days : undefined);
+    dur.set(key(t.phase), { days: Math.max(0.25, fixed ?? 1), approx: fixed === undefined || !!t.formula });
   }
   const links = graphEdges(recipe).filter((e) => e.from !== START && e.to !== END && dur.has(key(e.from)) && dur.has(key(e.to)));
   const start = new Map(tasks.map((t) => [key(t.phase), 0]));

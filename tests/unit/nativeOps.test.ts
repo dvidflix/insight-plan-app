@@ -145,3 +145,39 @@ describe('a programme edited in place', () => {
     });
   });
 });
+
+describe('soft logic', () => {
+  it('is kept in the project database and read back', async () => {
+    await withDbs((db, source) => {
+      const copy = db.copyProgramme(source, 'Soft');
+      const before = load(db, copy.id);
+      expect(before.relationships.every((r) => !r.soft)).toBe(true);
+      const after: ScheduleModel = { ...before, relationships: before.relationships.map((r, i) => (i === 0 ? { ...r, soft: true } : r)) };
+      db.applyOps(copy.id, programmeRowOps(before, after));
+      const reloaded = load(db, copy.id);
+      expect(reloaded.relationships.filter((r) => r.soft)).toHaveLength(1);
+      expect(reloaded.relationships.find((r) => r.soft)).toMatchObject({ predId: before.relationships[0].predId, succId: before.relationships[0].succId });
+      // And back to hard.
+      db.applyOps(copy.id, programmeRowOps(after, before));
+      expect(load(db, copy.id).relationships.some((r) => r.soft)).toBe(false);
+    });
+  });
+});
+
+describe('primary crew', () => {
+  it('is kept in the project database and read back, and sets the pace of the duration', async () => {
+    const { crewOf } = await import('../../src/schedule/planResources');
+    await withDbs((db, source) => {
+      const copy = db.copyProgramme(source, 'Primary');
+      const before = load(db, copy.id);
+      const a = before.activities[0];
+      const gang = { resourceId: '9', resourceName: 'Gang', resourceType: 'labor' as const, targetQty: 0, remainQty: 0, targetCost: 0, actualCost: 0, unitsPerTime: 4 };
+      const crane = { resourceId: '9', resourceName: 'Crane', resourceType: 'equipment' as const, targetQty: 0, remainQty: 0, targetCost: 0, actualCost: 0, unitsPerTime: 1 };
+      expect(crewOf({ ...a, resources: [gang, { ...crane, resourceId: '8' }] })).toBe(5);
+      expect(crewOf({ ...a, resources: [{ ...gang, primary: true }, { ...crane, resourceId: '8' }] })).toBe(4);
+      const after: ScheduleModel = { ...before, activities: before.activities.map((x) => (x.id === a.id ? { ...x, resources: x.resources.map((r) => ({ ...r, primary: true })) } : x)) };
+      db.applyOps(copy.id, programmeRowOps(before, after));
+      expect(load(db, copy.id).activities.find((x) => x.id === a.id)!.resources.every((r) => r.primary === true)).toBe(true);
+    });
+  });
+});

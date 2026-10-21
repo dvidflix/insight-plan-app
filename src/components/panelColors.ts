@@ -12,9 +12,9 @@ export const PANEL_KIND_COLOR: Record<PanelKind, string> = {
 };
 
 const PLANNING: DockPanelId[] = ['details', 'links', 'predecessors', 'successors', 'layouts', 'planning'];
-const COMMON: DockPanelId[] = ['files', 'datatable', 'gantt', 'tasks', 'resources', 'scenarios', 'recipes', 'rules'];
+const COMMON: DockPanelId[] = ['files', 'datatable', 'gantt', 'tasks', 'resources', 'distribution', 'scenarios'];
 const MODELS: DockPanelId[] = ['related', 'tree', 'properties', 'search', 'views', 'viewpoints', 'colour', 'clash', 'topics', 'fourD', 'checks', 'compare'];
-const SETTINGS: DockPanelId[] = ['settings', 'scenarioSettings', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'generated'];
+const SETTINGS: DockPanelId[] = ['settings', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'generated'];
 /** The groups of the Navigation Bar menu, in order: the planning-only panels, those common to both, the 3D / 4D ones, and the secondary ones (settings and the like). */
 export const PANEL_KIND_ORDER: PanelKind[] = ['planning', 'others', 'models', 'settings'];
 

@@ -202,13 +202,13 @@ def oid_of(project, rel, tag):
     return next(a.findtext("Id") for a in project.findall("Activity") if a.findtext("ObjectId") == wanted)
 
 
-def test_productivity_from_rebar_needs_a_rebar_rate_or_every_pour_gets_the_minimum_days():
+def test_productivity_from_rebar_without_a_rebar_rate_assumes_a_quarter_tonne_per_m3():
     base = {"groups": GROUPS, "rates": [{"id": "R75", "type": "productivity", "basis": "rebar", "manhoursPerUnit": 75, "people": 12, "shifts": 2, "hoursPerShift": 9.17, "rounding": "ceil", "minDays": 1}],
             "assignments": [{"group": "WALLS", "phase": "Rebar", "rate": "R75"}]}
     wall = rec("W1", "WALL", volume=117.0)
     rules.activate(base)
     wall["rebar_weight_tonnes"] = resources.rebar_tonnes(wall)
-    assert wall["rebar_weight_tonnes"] == 0.0 and days(gen.create_activities(wall, FakeWbs()))["Rebar"] == 1  # no density: 0 t, the minimum
+    assert wall["rebar_weight_tonnes"] == 29.25 and days(gen.create_activities(wall, FakeWbs()))["Rebar"] == 10  # no density: the 0.25 t/m3 fallback
     rules.activate({**base, "rates": [*base["rates"], {"id": "D", "type": "rebar", "tonnesPerM3": 0.25}], "assignments": [*base["assignments"], {"group": "", "phase": "Rebar", "rate": "D"}]})
     wall["rebar_weight_tonnes"] = resources.rebar_tonnes(wall)
     assert wall["rebar_weight_tonnes"] == 29.25 and days(gen.create_activities(wall, FakeWbs()))["Rebar"] == 10  # 29.25 t x 75 / 220.08 h/day

@@ -3,7 +3,7 @@ import { IconRemove } from '../icons';
 import { useEditableGrid } from '../useEditableGrid';
 import type { Activity, ResourceAssignment, ScheduleModel } from '../../schedule/types';
 import type { Result } from '../../schedule/programmeCommands';
-import { addResource, assignResource, crewOf, daysFromProductivity, deleteResource, productivityOf, RESOURCE_TYPES, setAssignment, setProductivity, unassignResource, updateResource } from '../../schedule/planResources';
+import { addResource, assignResource, crewOf, daysFromFormula, daysFromProductivity, deleteResource, formulaOf, productivityOf, setDurationFormula, RESOURCE_TYPES, setAssignment, setProductivity, unassignResource, updateResource } from '../../schedule/planResources';
 import { addCodeType, addCodeValue, assignCode, deleteCodeType, deleteCodeValue, renameCodeType, renameCodeValue } from '../../schedule/planCodes';
 import { hoursPerDayOfCalendar } from '../../schedule/planEdit';
 import { editStructure } from '../../state/programmeEdits';
@@ -70,6 +70,8 @@ export function ActivityPlanningPanel({ model, selectedId, onNote }: { model: Sc
   const perDay = hoursPerDayOfCalendar(model, a.calendarId);
   const crew = crewOf(a);
   const days = daysFromProductivity(a);
+  const formula = formulaOf(a);
+  const formulaDays = daysFromFormula(model, a);
   const chosen = catalog.find((r) => r.id === resource);
   const crewType = chosen ? chosen.type === 'labor' || chosen.type === 'equipment' : true;
   const types = model.activityCodeCatalog ?? [];
@@ -111,6 +113,22 @@ export function ActivityPlanningPanel({ model, selectedId, onNote }: { model: Sc
           <span className="pp__track" aria-hidden="true" />
           Duration follows quantity and productivity
         </label>
+        <label className="pp__field" title="A duration written as a formula, in working days: qty (quantity), rate (productivity per day), crews (the crew working at once, the primary crew when one is marked), hours_per_day, udf_<Name> (a number user field). Functions: ceil, floor, round, min, max, abs, sqrt. It follows the quantity, productivity and crew when they change; typing a duration in the Planner takes it off.">
+          <span>Duration formula</span>
+          <input
+            className="pp__in"
+            aria-label="Duration formula"
+            placeholder="ceil(qty / (rate * crews))"
+            defaultValue={formula}
+            key={`${a.id}:${formula}`}
+            spellCheck={false}
+            onBlur={(e) => { const text = e.target.value.trim(); if (text !== formula) run('Set the duration formula', (m) => setDurationFormula(m, ids, text)); }}
+            onKeyDown={(e) => { if (e.key === 'Enter') (e.target as HTMLInputElement).blur(); }}
+          />
+        </label>
+        {formula && formulaDays && (
+          <div className="pp__dim">{'value' in formulaDays ? `= ${fmt(formulaDays.value)} d` : formulaDays.error}</div>
+        )}
       </section>
 
       <section className="pp__card">
@@ -128,6 +146,7 @@ export function ActivityPlanningPanel({ model, selectedId, onNote }: { model: Sc
               {crewR
                 ? <><NumberBox cls="pp__in pp__in--sm" width={64} label={`${r.resourceName}: units at once`} value={r.unitsPerTime ?? 0} onApply={(v) => v !== null && run('Set the crew', (m) => setAssignment(m, a.id, r.resourceId, { units: v }))} /><span className="pp__dim pp__calc" title="Quantity: units × hours">× {a.durationHours} h = {Math.round(r.targetQty)}</span></>
                 : <><NumberBox cls="pp__in pp__in--sm" width={84} label={`${r.resourceName}: quantity`} value={r.targetQty} onApply={(v) => v !== null && run('Set the quantity', (m) => setAssignment(m, a.id, r.resourceId, { qty: v }))} /><span className="pp__dim pp__calc">total</span></>}
+              {crewR && <button type="button" className={`pp__primary${r.primary ? ' is-on' : ''}`} aria-pressed={!!r.primary} aria-label={`${r.resourceName}: primary crew`} title={r.primary ? 'Primary crew: the duration follows this crew alone. Click to take it off.' : 'Make this the primary crew: the duration follows it, not the total of all crews.'} onClick={() => run('Primary crew', (m) => setAssignment(m, a.id, r.resourceId, { primary: !r.primary }))}>{r.primary ? '★' : '☆'}</button>}
               <button type="button" className="icon-btn" aria-label={`Take ${r.resourceName} off`} title="Take it off the picked activities" onClick={() => run('Unassign resource', (m) => unassignResource(m, ids, r.resourceId))}><IconRemove /></button>
             </div>
           );
@@ -182,7 +201,7 @@ export function DictionaryPanel({ model, onNote }: { model: ScheduleModel; onNot
   const [valueFor, setValueFor] = useState<Record<string, string>>({});
   const used = (id: string) => model.activities.filter((a) => a.resources.some((r) => r.resourceId === id)).length;
   // Type, Available and Cost / unit typed as a spreadsheet's: range, fill down (Ctrl+D, the corner square), copy and paste; one undo step.
-  const grid = useEditableGrid({
+  const grid = useEditableGrid({ widthsKey: 'planning.panel',
     rows: resources,
     get: (col, r) => (col === 'type' ? r.type : col === 'capacity' ? (r.capacity === null || r.capacity === undefined ? '' : String(r.capacity)) : r.costPerUnit === undefined ? '' : String(r.costPerUnit)),
     write: (col, cells) => {

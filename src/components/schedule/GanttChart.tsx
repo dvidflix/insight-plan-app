@@ -143,6 +143,8 @@ interface Tip {
   y: number;
 }
 
+/** One shared collator for the sort: String.localeCompare builds a new one on every call, which is slow over tens of thousands of rows. */
+const NUMERIC_COLLATOR = new Intl.Collator(undefined, { numeric: true });
 export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function GanttChart(
   {
     activities,
@@ -253,7 +255,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
       for (let i = 0; i < keys.length; i++) {
         const a = x.k[i];
         const b = y.k[i];
-        const c = typeof a === 'number' && typeof b === 'number' ? a - b : String(a).localeCompare(String(b), undefined, { numeric: true });
+        const c = typeof a === 'number' && typeof b === 'number' ? a - b : NUMERIC_COLLATOR.compare(String(a), String(b));
         if (c !== 0) return keys[i].dir * c;
       }
       return 0;
@@ -659,7 +661,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
         key: `${rel.predId}>${rel.succId}:${rel.type}:${rel.lagHours}:${links.length}`,
         handle: selected && onLagChange ? { x: xFor(toLeft ? s.s : s.f), y: si * ROW_H + ROW_H / 2, rel, lag: Math.round((rel.lagHours / (succCal.hoursPerDay || 8)) * 10) / 10, perWeek: succCal.workingDaysPerWeek || 5 } : undefined,
         d,
-        cls: selected ? 'gantt-link gantt-link--selected' : critical ? 'gantt-link gantt-link--critical' : 'gantt-link',
+        cls: `${selected ? 'gantt-link gantt-link--selected' : critical ? 'gantt-link gantt-link--critical' : 'gantt-link'}${rel.soft ? ' gantt-link--soft' : ''}`,
         marker: selected ? 'gantt-arrow-sel' : critical ? 'gantt-arrow-crit' : 'gantt-arrow',
       });
     };
@@ -831,7 +833,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
   const tipLeft = tip ? (tip.x > window.innerWidth - 320 ? tip.x - 300 : tip.x + 14) : 0;
 
   return (
-    <div style={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
+    <div style={{ height: '100%', minWidth: 0, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
     <div style={{ flex: 1, minHeight: 0, display: 'flex' }}>
       <div
         ref={containerRef}
@@ -993,7 +995,7 @@ export const GanttChart = forwardRef<GanttHandle, GanttChartProps>(function Gant
       </div>
       {totalsOn && (
         <div className="gantt-totals">
-          <div className="gantt-totals__cells" style={{ width: LABEL_W }}>
+          <div className="gantt-totals__cells" style={{ width: LABEL_W, marginLeft: -scroll.left }}>
             {visibleLabelColumns.map((c, i) => (
               <span key={c.id} className="gantt-totals__cell" style={{ ...cellStyle(c), justifyContent: c.align ? 'flex-end' : undefined }}>
                 {aggType(c)

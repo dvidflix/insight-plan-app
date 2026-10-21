@@ -852,6 +852,8 @@
   "joins": [],
   "recipes": [],
   "resourcePools": [],
+  "parameters": [],
+  "limits": [],
   "extraTags": {
    "SZC-1HDAB-C-NR-40": {
     "building": "1HDAB",

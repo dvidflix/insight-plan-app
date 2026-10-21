@@ -169,8 +169,8 @@ export function buildProperties(indexes: ReadonlyMap<string, ModelIndex>, select
   const classLabel = classes.size === 1 ? prettyClass([...classes][0]) : 'Objects';
   const title =
     selected.length === 1
-      ? `Properties: ${selected[0].name || classLabel}`
-      : `Properties: ${hasSelection ? classLabel : `All ${classLabel === 'Objects' ? 'objects' : classLabel}`} (${selected.length})`;
+      ? `${selected[0].name || classLabel}`
+      : `${hasSelection ? classLabel : `All ${classLabel === 'Objects' ? 'objects' : classLabel}`} (${selected.length})`;
 
   // The IFC attributes, hideable like a property set (as "Attributes").
   const attributes: [string, (e: ElementSummary) => string | undefined][] = [

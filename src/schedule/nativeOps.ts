@@ -83,7 +83,8 @@ export function activityColumns(a: Activity, prev?: Activity): Record<string, Ce
 }
 
 export function relationshipColumns(r: Relationship): Record<string, Cell> {
-  return { pred_type: `PR_${r.type}`, lag_hr_cnt: r.lagHours };
+  // ip_soft is the project database's own column (soft logic), left out of an XER.
+  return { pred_type: `PR_${r.type}`, lag_hr_cnt: r.lagHours, ip_soft: r.soft ? 1 : 0 };
 }
 
 /** The CALENDAR columns of a changed or new calendar: the name, and the week, hours and exceptions (clndr_data) when those changed. */
@@ -170,7 +171,7 @@ export function programmeRowOps(before: ScheduleModel, after: ScheduleModel): Db
 
   for (const [k, r] of afterLinks) {
     const prev = beforeLinks.get(k);
-    if (prev && prev.type === r.type && prev.lagHours === r.lagHours) continue;
+    if (prev && prev.type === r.type && prev.lagHours === r.lagHours && !!prev.soft === !!r.soft) continue;
     const proj = (id: string) => idValue(projectOf(afterActs.get(id)?.projectId));
     made.push({
       table: 'TASKPRED', op: 'upsert', key: { column: 'task_pred_id', value: null }, match: linkMatch(r),

@@ -1,5 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { SearchRow } from './SearchRow';
+import { ExpandCollapseToggle } from './ExpandCollapseToggle';
+import { DockToolbar } from './Dock';
+import { ListConfig } from './ListConfig';
+import { configFocusProps } from '../state/listConfigStore';
+import { useListQuery } from '../state/tableSearchStore';
 import type * as OBC from '@thatopen/components';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useModelsStore } from '../state/modelsStore';
@@ -116,7 +120,8 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [engine, models, tick]);
-  const [query, setQuery] = useState('');
+  // The words come from the search box of the main header ("Search on Sets").
+  const query = useListQuery('sets');
   const [closed, setClosed] = useState<Set<string>>(new Set());
   const [dragId, setDragId] = useState<string | null>(null);
   const [importing, setImporting] = useState(false);
@@ -352,6 +357,14 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
     }, 500);
     return () => window.clearTimeout(timer);
   }, [recording, selection]);
+  /** Gives a folder another name (its sets move with it; a name that is already a folder joins the two). */
+  const renameFolder = (g: string) => {
+    const next = (window.prompt(`Rename the folder “${g}” to:`, g) ?? '').trim();
+    if (!next || next === g) return;
+    if (sets.some((x) => x.group === next) && !window.confirm(`A folder “${next}” exists already: the sets of “${g}” join it?`)) return;
+    for (const x of sets.filter((y) => y.group === g)) useSearchSetsStore.getState().save({ ...x, group: next });
+  };
+
   /** Renumbers a folder's sets 1, 2, 3… in the order they are kept (the manual order): the leading number of each name is
       replaced (or added), the rest of the name stays — "7 Stitch" becomes "3 Stitch". */
   const renumber = (g: string) => {
@@ -368,7 +381,8 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
 
   return (
     // (A button would also "click" on the key's release: kept from doing so for Space.)
-    <div className="flt ss" onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }}>
+    <div className="flt ss" {...configFocusProps('sets')} onKeyDown={onKeyDown} onKeyUp={(e) => { if (e.key === ' ' && !/^(INPUT|SELECT|TEXTAREA)$/.test((e.target as HTMLElement).tagName)) e.preventDefault(); }}>
+      <ListConfig id="sets" label="Sets" searchable panels={{}} />
       <div className="ss__sticky">
       <div className="ss__top">
         <button type="button" className="btn ss__tool" onClick={create} title="New search set: finds objects by their properties" aria-label="New search set">
@@ -402,18 +416,19 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
       {importing && <ImportSteps onDone={() => setImporting(false)} />}
       {spooling && <SpoolSets onDone={() => setSpooling(false)} />}
       {converting && <BulkConvert ids={converting} onDone={() => setConverting(null)} />}
-      {sets.length > 0 && (
-        groups.some((g) => g !== '') ? (
-          <SearchRow
-            collapsed={groups.filter((g) => g !== '').every((g) => closed.has(g))}
-            onCollapse={() => setClosed(new Set(groups.filter((g) => g !== '')))}
-            onExpand={() => setClosed(new Set())}
-          >
-            <input className="cols__search" type="search" placeholder="Search sets…" value={query} onChange={(e) => setQuery(e.target.value)} />
-          </SearchRow>
-        ) : (
-          <input className="cols__search" type="search" placeholder="Search sets…" value={query} onChange={(e) => setQuery(e.target.value)} />
-        )
+      {sets.length > 0 && groups.some((g) => g !== '') && (
+        <DockToolbar id="search">
+          {/* (the same header cell as the Properties panel's: an empty title, then the button) */}
+          <div className="props-grid__head">
+            <span className="props-grid__title" />
+            <ExpandCollapseToggle
+              className="btn btn--small"
+              collapsed={groups.filter((g) => g !== '').every((g) => closed.has(g))}
+              onCollapse={() => setClosed(new Set(groups.filter((g) => g !== '')))}
+              onExpand={() => setClosed(new Set())}
+            />
+          </div>
+        </DockToolbar>
       )}
       </div>
       {sets.length === 0 && <div className="cols__shown"><div className="cols__empty">No sets yet. Make a search set to find objects by their properties, or select objects and save them as a selection set.</div></div>}
@@ -440,6 +455,9 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                   aria-label={`Renumber the sets of ${g}`}
                 >#</button>
                 {shownBtn('eye') && eye(mergeIds(sets.filter((x) => x.group === g).map((x) => results.get(x.id) ?? {})), `the ${sets.filter((x) => x.group === g).length} sets of “${g}”`)}
+                {shownBtn('edit') && (
+                  <button type="button" className="cols__icon" onClick={() => renameFolder(g)} title="Rename this folder" aria-label={`Rename folder ${g}`}><IconPencil width={14} height={14} /></button>
+                )}
                 {shownBtn('del') && (
                   <button
                     type="button"

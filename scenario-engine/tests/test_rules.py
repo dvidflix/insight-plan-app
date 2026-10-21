@@ -175,7 +175,12 @@ def test_the_numbers_of_an_element_are_collected_from_its_property_sets():
 def test_rebar_tonnes_follow_a_rate_row():
     rules.activate({"rebar": [{"when": {"family": "raft"}, "tonnesPerM3": 0.4}]})
     assert resources.rebar_tonnes(rec("R1", "RAFT", volume=10)) == pytest.approx(4.0)
-    assert resources.rebar_tonnes(rec("S1", "SLAB", volume=10)) == 0.0  # no rate row fits: no rebar quantity (the engine has no rates of its own)
+    assert resources.rebar_tonnes(rec("S1", "SLAB", volume=10)) == pytest.approx(2.5)  # no rate row fits: the 0.25 t/m3 fallback
+
+def test_rebar_tonnes_read_the_density_parameter_of_the_rebar_formula():
+    rules.activate({"parameters": [{"name": "Rebar_Rate", "value": 500}, {"name": "Rebar_kg_per_m3_Wall", "value": 300}],
+                    "assignments": [{"group": "", "phase": "Rebar", "formula": "(Concrete_m3 * Rebar_kg_per_m3_Wall) / Rebar_Rate"}]})
+    assert resources.rebar_tonnes(rec("W1", "WALL", volume=10)) == pytest.approx(3.0)  # 300 kg/m3, not the 0.25 t/m3 fallback
 
 
 def test_a_crew_row_replaces_the_crew_of_that_phase():
@@ -271,6 +276,20 @@ def test_a_sequence_steps_through_the_levels():
     last = new[-1]["task_id"]
     assert {x["succ"] for x in relations if x["pred"] == last} == {tasks.first("S2")}
     assert all(a["rule_milestone"] and a["milestone"] for a in new)
+
+
+def test_a_step_can_set_its_own_link_into_it():
+    r = rules.activate({"groups": GROUPS, "sequences": [{
+        "id": "UP", "type": "FS",
+        "steps": [{"group": "RAFTS"}, {"group": "WALLS", "type": "SS", "lagHours": 16}, {"group": "SLABS"}],
+    }]})
+    pours, acts = model()
+    tasks = rule_logic.PourTasks(acts)
+    new, relations, _ = rule_logic.build_sequences(r, tasks, wbs_for(acts), [a["task_id"] for a in acts])
+    into_walls = [x for x in relations if x["succ"] == tasks.first("W1") or x["succ"] == tasks.first("W2")]
+    into_slabs = [x for x in relations if x["succ"] == tasks.first("S1")]
+    assert into_walls and {(x["type"], x["lag"]) for x in into_walls} == {("SS", 16.0)}
+    assert into_slabs and {(x["type"], x["lag"]) for x in into_slabs} == {("FS", 0.0)}
 
 
 # ---------------------------------------------------------------- contacts from the clash results

@@ -29,6 +29,10 @@ import sys
 
 from core import quantities
 from core.recipes import compile_recipes
+from core import formula as _formula
+
+# Tonnes of rebar per m3 of concrete when no Rebar rate rule and no Rebar_kg_per_m3_* parameter says otherwise.
+DEFAULT_REBAR_T_PER_M3 = 0.25
 
 # JSON setting -> (module global it replaces, how the value is read)
 _BOOL, _NUM, _NUM_OR_NONE, _LIST = "bool", "num", "num_or_none", "list"
@@ -331,6 +335,17 @@ class Rules:
         # Equipment, cranes and materials the recipes' tasks use, and the scenario's pool of each type (its count).
         self.uses = compiled["uses"]
         self.recipe_links = compiled["links"]
+        # Named values the formulas read (Rebar_Rate, Concrete_Rate, Curing_Days ...), and the limits on how many activities of a kind run at once.
+        self.parameters = {}
+        for r in data.get("parameters") or []:
+            if isinstance(r, dict) and r.get("enabled") is not False:
+                name = str(r.get("name") or r.get("id") or "").strip()
+                value = _number(r.get("value"))
+                if name and value is not None:
+                    self.parameters[name.lower()] = value
+        self.limits = [r for r in data.get("limits") or [] if isinstance(r, dict) and str(r.get("phase", "")).strip() and r.get("enabled") is not False]
+        self.formulas = []
+        self.formula_notes = []
         self.pool_rows = [r for r in data.get("resourcePools") or [] if isinstance(r, dict) and str(r.get("id", "")).strip() and r.get("enabled") is not False]
         self._group_cache = {}
         self._phase_cache = {}
@@ -340,7 +355,7 @@ class Rules:
 
     @property
     def empty(self):
-        return not any((self.pool_rows, self.settings, self.durations, self.productivity, self.rebar, self.crews, self.groups,
+        return not any((self.pool_rows, self.parameters, self.limits, self.formulas, self.settings, self.durations, self.productivity, self.rebar, self.crews, self.groups,
                         self.level_tasks, self.sequences, self.contacts, self.level_links, self.trade_rows, self.calendars,
                         self.calendar_rules, self.rate_rows, self.crew_templates, self.assignments, self.chains, self.joins))
 
@@ -372,7 +387,7 @@ class Rules:
             for _o, _i, r in sorted(best, key=lambda t: (t[0], t[1])):
                 phase = str(r.get("phase")).strip()
                 result.append({"follows": _parse_follows(r.get("follows")), "finish_after": bool(r.get("finishAfter")), "gates": bool(r.get("gates")), "phase": phase, "suffix": str(r.get("suffix") or "").strip() or "-" + "".join(w[0] for w in phase.replace(",", " ").split()).upper(),
-                               "label": str(r.get("label") or "").strip() or phase, "material": str(r.get("material") or "").strip().lower()})
+                               "label": str(r.get("label") or "").strip() or phase, "material": str(r.get("material") or "").strip().lower(), "recipe": str(r.get("recipe") or "").strip()})
         cache[key] = (rec, result)
         return result
 
@@ -393,6 +408,9 @@ class Rules:
                 days = _number(rate.get("days"))
             if phase and days is not None and days >= 0:
                 self.durations.append({**base, "phases": {phase: days}})
+            formula = str(a.get("formula", "") or "").strip()
+            if formula and phase:
+                self.formulas.append({**base, "phase": phase, "formula": formula})
             if rate is not None and kind == "productivity" and phase:
                 self.productivity.append({
                     **base, "phase": phase, "basis": rate.get("basis") or "rebar", "pset": rate.get("pset"), "property": rate.get("property"),
@@ -543,9 +561,52 @@ class Rules:
                 return None
         return number(rec.get("rebar_weight_tonnes")) if basis == "rebar" else number(rec.get("volume"))
 
+    def formula_values(self, rec, text):
+        """The names a duration formula can use for this pour: the scenario's parameters, and the pour's own quantities (Concrete_m3, Rebar_t, Rebar_kg,
+        Footprint_m2, Sides_m2), with the crews (1) a task has."""
+        used = _formula.names_in(text)
+        values = dict(self.parameters)
+        values.setdefault("crews", 1.0)
+        volume = _number(rec.get("volume"), 0.0) or 0.0
+        tonnes = _number(rec.get("rebar_weight_tonnes"), 0.0) or 0.0
+        values.update({"concrete_m3": volume, "volume": volume, "rebar_t": tonnes, "rebar_kg": tonnes * 1000.0})
+        for name, basis in (("footprint_m2", "footprint"), ("sides_m2", "sides")):
+            if name in used:
+                values[name] = self.quantity_for({"basis": basis}, rec)
+        return values
+
+    def formula_days(self, rec, phase):
+        """Days from the best matching formula for this phase (a recipe task's Duration formula), or None; a formula that cannot be worked out
+        for this pour (a name it has no value for) is noted once and gives None, so the phase keeps its other days."""
+        row = self.best(self.formulas, rec, lambda r: str(r.get("phase", "")).strip() == phase)
+        if row is None:
+            return None
+        try:
+            days = _formula.evaluate(row["formula"], self.formula_values(rec, row["formula"]))
+        except _formula.FormulaError as e:
+            note = f"Duration formula of {phase} ({row['formula']}): {e}"
+            if note not in self.formula_notes:
+                self.formula_notes.append(note)
+            return None
+        return max(days, 0.0)
+
+    def limit_size(self, row):
+        """How many may run at once under a limit row: a number, or the name of a parameter (Formwork_Sets_Available); 0 or none: no limit.
+        "Maximize resource availability" lifts every limit."""
+        if _maximize():
+            return 0
+        raw = row.get("max")
+        size = _number(raw)
+        if size is None:
+            size = self.parameters.get(str(raw or "").strip().lower())
+        return int(size) if size and size >= 1 else 0
+
     def computed_days(self, rec, phase, default_crew=0.0):
-        """Days worked out from a quantity for this phase, or None: quantity x man-hours per unit
+        """Days worked out from a quantity for this phase, or None: a formula first; else quantity x man-hours per unit
         / (crew x shifts x hours per shift), rounded as the row says, never under its minimum."""
+        from_formula = self.formula_days(rec, phase)
+        if from_formula is not None:
+            return from_formula
         row = self.best(self.productivity, rec, lambda r: str(r.get("phase", "")).strip() == phase)
         if row is None:
             return None
@@ -570,7 +631,15 @@ class Rules:
     def rebar_rate(self, rec):
         """Tonnes of rebar per m3 for this pour from the rules, or None (no rebar quantity)."""
         row = self.best(self.rebar, rec)
-        return _number(row.get("tonnesPerM3")) if row else None
+        if row:
+            return _number(row.get("tonnesPerM3"))
+        # No Rebar rate rule: the density the Rebar task's duration formula reads (a Rebar_kg_per_m3_* parameter, kg per m3), else 0.25 t per m3.
+        formula = self.best(self.formulas, rec, lambda r: str(r.get("phase", "")).strip().lower() == "rebar")
+        if formula:
+            for name in sorted(_formula.names_in(formula["formula"])):
+                if name.startswith("rebar_kg_per_m3") and self.parameters.get(name):
+                    return self.parameters[name] / 1000.0
+        return DEFAULT_REBAR_T_PER_M3
 
     def crew_for(self, phase, rec):
         """[(trade, size)] the rules give this phase of this pour, or None to use the crew table."""

@@ -1,10 +1,14 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ListConfig } from '../../ListConfig';
+import { configFocusProps } from '../../../state/listConfigStore';
+import { useListQuery, useTableSearchStore } from '../../../state/tableSearchStore';
 import { setCrews, setExtras, setRelations, setRules, useScenarioStore } from '../../../state/scenarioStore';
 import { addPreset, DEFAULT_PRESETS } from '../../../prs/presets';
 import { SETTINGS_META } from '../../../prs/rules';
+import { groupNamesUsed, replaceGroupName, retireSuperseded } from '../../../prs/replaceGroup';
 import { IconSectionChevron } from '../../icons';
 import { useSearchSetsStore } from '../../../state/searchSetsStore';
-import { RECIPE_SETS_FOLDER } from '../../../prs/groupSets';
+import { useRecipeFolderStore } from '../../../state/recipeFolderStore';
 import { useScenarioActivities } from '../ScenarioLinksCrews';
 import { SuggestedGroups } from '../SuggestedGroups';
 import { LevelLinkRowCard, LevelTaskRowCard, RuleGroupRowCard, SequenceRowCard, addStarterScope, addGroup, addLevelLink, addLevelTask, addSequence, addStarterGroups, addStarterLevelTasks } from './GroupsEditors';
@@ -53,10 +57,15 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
   const crews = useScenarioStore((s) => s.crews);
   const { source, byCode } = useScenarioActivities();
   const [kinds, setKindsState] = useState<Set<RuleKind>>(() => loadKinds(storeKey));
-  const [q, setQ] = useState('');
+  // The main header's search box narrows this list while it is the active one.
+  const q = useListQuery('rules');
+  const setQ = (v: string) => useTableSearchStore.getState().setListQuery('rules', v);
   const [picker, setPicker] = useState(false);
   const [fresh, setFresh] = useState<string | null>(null);
   const [tools, setTools] = useState(false);
+  const [swapping, setSwapping] = useState(false);
+  const [swapFrom, setSwapFrom] = useState('');
+  const [swapTo, setSwapTo] = useState('');
   const [settingsPinned, setSettingsPinned] = useState(false);
   const [extrasPinned, setExtrasPinned] = useState(false);
   const [converted, setConverted] = useState<string | null>(null);
@@ -74,7 +83,9 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
   }, [focus?.n]);
 
   const allSets = useSearchSetsStore((s) => s.sets);
-  const setNames = useMemo(() => new Set(allSets.filter((s) => s.group === RECIPE_SETS_FOLDER).map((s) => s.name.toUpperCase())), [allSets]);
+  const recipeFolder = useRecipeFolderStore((f) => f.folder);
+  const setNames = useMemo(() => new Set(allSets.filter((s) => s.group === recipeFolder).map((s) => s.name.toUpperCase())), [allSets, recipeFolder]);
+  const retire = useMemo(() => retireSuperseded(rules, [...setNames]), [rules, setNames]);
   const entries = useMemo<Entry[]>(() => {
     const out: Entry[] = [];
     const push = (kind: RuleKind, rows: unknown[]) => rows.forEach((row, i) => out.push({ kind, i, key: `${kind}:${i}`, text: text(row) }));
@@ -171,11 +182,48 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
   const hasGroups = !only || only.includes('group');
 
   return (
-    <div className="rule-list-panel">
+    <div className="rule-list-panel" {...configFocusProps('rules')}>
+      <ListConfig id="rules" label="Rules" searchable panels={{}} />
       <div className="rule-toolbar">
-        <input className="rule-toolbar__search" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Search ${entries.length} rule${entries.length === 1 ? '' : 's'}…`} aria-label="Search the rules" />
         <button type="button" className={`btn${picker ? '' : ' primary'}`} aria-expanded={picker} onClick={() => setPicker(!picker)}>{picker ? 'Close' : '+ Add rule'}</button>
+        <button type="button" className="btn" aria-expanded={swapping} onClick={() => setSwapping(!swapping)} title="Change the group a rule names (a step, a limit, a level task ...) to another, in every rule at once">Replace group…</button>
       </div>
+      {swapping && (
+        <div className="rule-legacy" role="group" aria-label="Replace a group">
+          <span>Every rule that names</span>
+          <input className="rel-cell" list="rule-groups-used" value={swapFrom} onChange={(e) => setSwapFrom(e.target.value)} placeholder="old group (SLABS)" aria-label="Old group" />
+          <span>names</span>
+          <input className="rel-cell" list="rule-groups-sets" value={swapTo} onChange={(e) => setSwapTo(e.target.value)} placeholder="new group, or A|B for several (Main Slab)" aria-label="New group" />
+          <datalist id="rule-groups-used">{groupNamesUsed(rules).map((n) => <option key={n} value={n} />)}</datalist>
+          <datalist id="rule-groups-sets">{[...new Set(allSets.map((x) => x.name))].map((n) => <option key={n} value={n} />)}</datalist>
+          <button
+            type="button" className="btn btn--small primary" disabled={!swapFrom.trim() || !swapTo.trim()}
+            onClick={() => {
+              const done = replaceGroupName(useScenarioStore.getState().rules, swapFrom, swapTo);
+              if (done.count) setRules(done.rules);
+              setConverted(done.count ? `${swapFrom.trim()} is now ${swapTo.trim()} in ${done.count} place${done.count === 1 ? '' : 's'}. Save the scenario, then Update 4D.` : `No rule names “${swapFrom.trim()}”.`);
+              if (done.count) { setSwapFrom(''); setSwapTo(''); }
+            }}
+          >Replace</button>
+          {(retire.groups.length > 0 || retire.rows > 0) && (
+            <button
+              type="button" className="btn btn--small"
+              title={`Take out what the recipes replaced: ${retire.rows} chain / assignment row${retire.rows === 1 ? '' : 's'} (the generator already ignores them) and the rule groups nothing names: ${retire.groups.join(', ') || 'none'}`}
+              onClick={() => {
+                if (!window.confirm(`Retire what the recipes replaced?
+
+• ${retire.rows} chain / assignment rows (the Chains and Assignments tables; the generator already uses the recipes instead)
+• ${retire.groups.length} rule group${retire.groups.length === 1 ? '' : 's'} that no rule or recipe names:
+${retire.groups.join(', ') || '—'}
+
+The search sets stay. Switching the recipes off later would not bring these back.`)) return;
+                setRules(retire.rules);
+                setConverted(`Retired ${retire.rows} old rows and ${retire.groups.length} unused group${retire.groups.length === 1 ? '' : 's'}. Save the scenario.`);
+              }}
+            >Retire old rules ({retire.rows} rows, {retire.groups.length} groups)</button>
+          )}
+        </div>
+      )}
 
       {hasGroups && ctx.facts.length > 0 && !hasDurations(rules) && (
         <div className="rule-legacy" role="status">

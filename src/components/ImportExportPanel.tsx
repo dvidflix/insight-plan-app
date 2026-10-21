@@ -75,16 +75,14 @@ ${r.written.join(', ')}` });
     >
       <div className="rgrid ie__grid" role="table" style={{ '--rg-cols': 'minmax(0, 1fr) 52px 76px' } as React.CSSProperties}>
         <div className="rgrid__head" role="row">
-          <span className="rgrid__n rgrid__n--head" />
           <div className="rgrid__body">
             <span className="rgrid__th" role="columnheader">Data</span>
             <span className="rgrid__th ie__right" role="columnheader">Items</span>
             <span className="rgrid__th" role="columnheader" style={{ textAlign: "center" }}>Actions</span>
           </div>
         </div>
-        {DATA_PORTS.map((p, i) => (
+        {DATA_PORTS.map((p) => (
           <div key={p.id} className="rgrid__row" role="row">
-            <span className="rgrid__n"><span className="rgrid__num">{i + 1}</span></span>
             <div className="rgrid__body">
               <span className="rgrid__cell rgrid__cell--name" title={p.hint}>{p.label}</span>
               <span className="rgrid__cell rgrid__cell--num">{p.count()}</span>

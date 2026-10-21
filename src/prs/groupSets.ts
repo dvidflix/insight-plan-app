@@ -1,4 +1,5 @@
 import type { GroupFilter, RuleGroup } from './rules';
+import { DEFAULT_RECIPE_FOLDER, recipeFolder } from '../state/recipeFolderStore';
 import type { SearchCondition, SearchOp, SearchSet } from '../viewer/searchSets';
 
 /** A rule group as a search set (the "Recipes sets" folder of Models > Search sets). A group tests the pour table's columns (Building, Level,
@@ -6,7 +7,7 @@ import type { SearchCondition, SearchOp, SearchSet } from '../viewer/searchSets'
     cannot say is reported, not dropped silently: the derived fields (family, level number, external, double height, general type), the
     objects a group names one by one (`include`), and a mix of "and" / "or" between conditions. */
 
-export const RECIPE_SETS_FOLDER = 'Recipes sets';
+export const RECIPE_SETS_FOLDER = DEFAULT_RECIPE_FOLDER;
 const PSET = 'CWA Pour';
 
 /** The pour table's column behind each field of a group condition. */
@@ -94,7 +95,7 @@ export function groupToSearchSet(group: RuleGroup, newId: () => string = () => c
   if (group.include?.length) notes.push(`${group.include.length} object${group.include.length === 1 ? '' : 's'} named one by one are not in the set`);
   if (group.forEach.length) approx.push(`the group is made per ${group.forEach.join(' and ')}: the set holds all of them`);
   return {
-    set: { id: newId(), name: group.id, group: RECIPE_SETS_FOLDER, kind: 'search', match: conj.size === 1 && conj.has('or') ? 'any' : 'all', conditions },
+    set: { id: newId(), name: group.id, group: recipeFolder(), kind: 'search', match: conj.size === 1 && conj.has('or') ? 'any' : 'all', conditions },
     notes,
     approx,
   };
@@ -121,7 +122,7 @@ export function recipeGroupSets(groups: RuleGroup[], recipeGroups: string[], exi
       continue;
     }
     const r = groupToSearchSet(group);
-    const old = existing.find((s) => s.group === RECIPE_SETS_FOLDER && s.name === r.set.name);
+    const old = existing.find((s) => s.group === recipeFolder() && s.name === r.set.name);
     sets.push(old ? { ...r.set, id: old.id } : r.set);
     if (r.notes.length || r.approx.length) notes.push({ name: r.set.name, notes: [...r.notes, ...r.approx] });
   }
@@ -144,9 +145,11 @@ export function groupFromSet(set: SearchSet, newId: () => string = () => crypto.
   const conj = set.match === 'any' ? 'or' : 'and';
   const add = (field: string, op: GroupFilter['op'], value: string) => filters.push({ id: newId(), field, op, value, conj });
   for (const c of set.conditions) {
+    // A pour column ("CWA Pour.Level"), or a property of the model object ("Pset_Name.Property": the generator reads those as prop:<set>/<name>).
     const m = /^CWA Pour\.(.+)$/.exec(c.field);
-    if (!m) { lost.push(`${c.field} ${c.op}`); continue; }
-    const field = FIELD_OF_COLUMN[m[1]] ?? `prop:CWA Pour/${m[1]}`;
+    const model = m ? null : /^(?!Attributes\.)([^.]+)\.(.+)$/.exec(c.field);
+    if (!m && !model) { lost.push(`${c.field} ${c.op}`); continue; }
+    const field = m ? FIELD_OF_COLUMN[m[1]] ?? `prop:CWA Pour/${m[1]}` : `prop:${model![1]}/${model![2]}`;
     const numeric = BACK_NUMERIC[c.op];
     const text = BACK_TEXT[c.op];
     const eq = /^\^\((.*)\)\$$/.exec(c.value);
@@ -158,7 +161,7 @@ export function groupFromSet(set: SearchSet, newId: () => string = () => crypto.
     else if (c.op === 'anyOf' || c.op === 'noneOf') add(field, c.op === 'anyOf' ? 'equals' : 'notEquals', (c.values ?? []).join('|'));
     else if (c.op === 'regex' && eq) add(field, 'equals', unflex(eq[1]));
     else if (c.op === 'regex' && ne) add(field, 'notEquals', unflex(ne[1]));
-    else lost.push(`${m[1]} ${c.op} ${c.value}`);
+    else lost.push(`${c.field} ${c.op} ${c.value}`);
   }
   if (set.kind === 'selection') lost.push('a selection set has no conditions to test');
   return { group: { id: set.name, name: set.name, forEach: [], filters }, lost };
@@ -166,8 +169,13 @@ export function groupFromSet(set: SearchSet, newId: () => string = () => crypto.
 
 /** The rules' groups with those of the sets of the folder: a set replaces the group of its name, and the groups of other names stay. A set with no
     condition that can be tested is not made a group (a group with none holds nothing). Returns `groups` itself when nothing changes. */
-export function groupsWithSets(groups: RuleGroup[], sets: SearchSet[]): RuleGroup[] {
-  const made = sets.filter((s) => s.group === RECIPE_SETS_FOLDER).map((s) => groupFromSet(s, () => 'c')).filter((g) => g.group.filters.length > 0).map((g) => g.group);
+export function groupsWithSets(groups: RuleGroup[], sets: SearchSet[], named: string[] = []): RuleGroup[] {
+  // A set of the recipes folder is a group; so is a set of any other folder that a recipe names (the folder is not a fixed name).
+  const wanted = new Set(named.map((n) => n.trim().toUpperCase()).filter(Boolean));
+  const seenNames = new Set<string>();
+  const candidates = [...sets.filter((s) => s.group === recipeFolder()), ...sets.filter((s) => s.group !== recipeFolder() && wanted.has(s.name.trim().toUpperCase()))]
+    .filter((s) => (seenNames.has(s.name.toUpperCase()) ? false : (seenNames.add(s.name.toUpperCase()), true)));
+  const made = candidates.map((s) => groupFromSet(s, () => 'c')).filter((g) => g.group.filters.length > 0).map((g) => g.group);
   if (!made.length) return groups;
   // A group a set cannot say exactly keeps being the group (its set is a view of it).
   const inexact = new Set(groups.filter((g) => !isExact(g)).map((g) => g.id.toUpperCase()));
@@ -181,7 +189,7 @@ export function groupsWithSets(groups: RuleGroup[], sets: SearchSet[]): RuleGrou
 /** The sets for the groups of the rules that become sets without losing anything (no per-level groups, no objects named one by one, no
     condition a set cannot test), unless the folder already has a set of that name. The others stay groups. */
 export function setsForGroups(groups: RuleGroup[], existing: SearchSet[]): SearchSet[] {
-  const have = new Set(existing.filter((s) => s.group === RECIPE_SETS_FOLDER).map((s) => s.name.toUpperCase()));
+  const have = new Set(existing.filter((s) => s.group === recipeFolder()).map((s) => s.name.toUpperCase()));
   return groups
     .filter((g) => !have.has(g.id.toUpperCase()) && g.filters.some((f) => !f.ignore))
     .map((g) => groupToSearchSet(g))
@@ -193,7 +201,7 @@ export function setsForGroups(groups: RuleGroup[], existing: SearchSet[]): Searc
     group is not exact and the set holds only part of its conditions. They are removed so the group is made into a set again. */
 export function staleSets(groups: RuleGroup[], existing: SearchSet[]): SearchSet[] {
   return existing.filter((set) => {
-    if (set.group !== RECIPE_SETS_FOLDER || set.kind === 'selection') return false;
+    if (set.group !== recipeFolder() || set.kind === 'selection') return false;
     const g = groups.find((x) => x.id.toUpperCase() === set.name.toUpperCase());
     if (!g) return false;
     const full = groupToSearchSet(g, () => 'x');
@@ -213,7 +221,7 @@ export function uniqueGroups(groups: RuleGroup[]): RuleGroup[] {
 export function duplicateSets(existing: SearchSet[]): SearchSet[] {
   const seen = new Set<string>();
   return existing.filter((s) => {
-    if (s.group !== RECIPE_SETS_FOLDER) return false;
+    if (s.group !== recipeFolder()) return false;
     const key = s.name.toUpperCase();
     if (seen.has(key)) return true;
     seen.add(key);

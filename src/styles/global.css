@@ -8327,6 +8327,33 @@ body.hide-statusbar .app-statusbar:not(.sequence-statusbar) {
 
 .rv-empty { padding: 32px; max-width: 560px; color: var(--text-dim); }
 .rv-empty__title { font-weight: 600; color: var(--text); margin-bottom: 6px; }
+
+/* Programmes > Resource Distribution (ResourceDistribution): the Gantt's time scale with quantities in the cells. */
+.rd { flex: 1; min-height: 0; min-width: 0; display: flex; flex-direction: column; }
+.rd-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.rd-bar__spacer { flex: 1; }
+.rd-bar__note { font-size: 11px; color: var(--text-dim); }
+.rd-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.rd-seg { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; background: var(--bg-elevated); }
+.rd-seg button { border: 0; background: transparent; padding: 5px 10px; font: inherit; font-size: 12px; cursor: pointer; color: var(--text-dim); }
+.rd-seg button + button { border-left: 1px solid var(--border); }
+.rd-seg button.active { background: var(--accent); color: #fff; }
+.rd-scroll { flex: 1; min-height: 0; overflow: auto; }
+.rd-table { border-collapse: separate; border-spacing: 0; font-size: 12px; }
+.rd-table th, .rd-table td { height: 24px; padding: 0 6px; white-space: nowrap; background-color: var(--bg-elevated); border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.rd-table thead th { position: sticky; top: 0; z-index: 2; background-color: var(--bg-soft); color: var(--text-dim); font-weight: 600; text-align: center; }
+.rd-table thead tr:nth-child(2) th { top: 24px; }
+.rd-table thead th.rd-top { text-align: left; }
+.rd-name { position: sticky; left: 0; z-index: 1; width: 260px; min-width: 260px; max-width: 260px; overflow: hidden; text-overflow: ellipsis; text-align: left; }
+.rd-unit { position: sticky; left: 260px; z-index: 1; width: 84px; min-width: 84px; color: var(--text-dim); text-align: left; }
+.rd-total { position: sticky; left: 344px; z-index: 1; width: 84px; min-width: 84px; text-align: right; font-weight: 600; border-right: 2px solid var(--border) !important; }
+.rd-table thead th.rd-name, .rd-table thead th.rd-unit, .rd-table thead th.rd-total { z-index: 3; }
+.rd-num { min-width: 56px; text-align: right; }
+.rd-row--0 td { background-color: var(--bg-soft); font-weight: 700; }
+.rd-row--1 td.rd-name { font-weight: 600; }
+.rd-row--2 td { color: var(--text-dim); }
+.rd-twisty { display: inline-flex; align-items: center; justify-content: center; width: 18px; height: 18px; margin-right: 4px; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; vertical-align: middle; }
+span.rd-twisty { cursor: default; }
 @media (max-width: 900px) {
   .rv { flex-direction: column; }
   .rv-side { width: 100%; position: static; }
@@ -10006,12 +10033,16 @@ select:not([multiple]):focus {
 }
 
 /* Properties tab: collapsible property sets as compact ruled grids, like the Activity pane. */
-.props-grid__bar { padding: 10px 12px 4px; }
-.props-grid__title { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.props-grid__tools { display: flex; gap: 6px; padding: 4px 8px 8px; align-items: center; }
-.props-grid__tools input { flex: 1; min-width: 0; height: 30px; min-height: 30px; box-sizing: border-box; padding: 2px 8px; }
-/* The expand / collapse button keeps its size, and the filter box is as tall as it. */
-.props-grid__tools > .btn { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; box-sizing: border-box; width: 38px; height: 30px; padding: 0; }
+/* The title and the expand / collapse button sit in the dock's header, after the tab. */
+.props-grid__head { flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; }
+.props-grid__title { flex: 1 1 auto; min-width: 0; display: flex; align-items: center; justify-content: flex-start; text-align: left; font-weight: 400; color: var(--text-dim); padding: 0 8px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.props-grid__head > .btn { flex-shrink: 0; align-self: stretch; height: 100%; padding: 0 12px; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; display: inline-flex; align-items: center; justify-content: center; }
+.props-grid__head > .btn, .dock-head-tool { box-sizing: border-box; flex: 0 0 var(--head-btn-w); width: var(--head-btn-w); min-width: 0; padding: 0; color: var(--text); }
+.props-grid__head > .btn:hover { background: rgba(0, 0, 0, 0.07); }
+.dock-head-tool { margin-left: auto; flex-shrink: 0; align-self: stretch; height: 100%; padding: 0 12px; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; display: inline-flex; align-items: center; justify-content: center; }
+.dock-head-tool:hover { background: rgba(0, 0, 0, 0.07); }
+.dock:not(.dock--bottom) .dock__panel-tools { flex: 1 1 auto; min-width: 0; display: flex; align-items: stretch; align-self: stretch; overflow: hidden; }
+.dock:not(.dock--bottom) .dock__panel-tools:empty { display: none; }
 .props-table th { width: 44%; }
 .props-twisty { background: none; border: 0; padding: 0 4px 0 0; cursor: pointer; color: var(--text-dim); font-size: 11px; }
 .props-value { background: none; border: 0; padding: 0; font: inherit; color: inherit; cursor: pointer; text-decoration: underline dotted; text-underline-offset: 3px; text-align: left; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -10922,7 +10953,7 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 .scn-panel__body .scn-compact-row .dl-split__caret { width: 22px; font-size: 16px; line-height: 1; }
 
 /* Start, Update 4D, auto-update, Save, Load and the download on one line. */
-.scn-panel__body .scn-compact-row--one { flex-wrap: nowrap; align-items: center; }
+.scn-panel__body .scn-compact-row--one { flex-wrap: wrap; align-items: center; row-gap: 6px; }
 .scn-panel__body .scn-compact-row--one > * { flex: none; }
 .scn-panel__body .scn-compact-row--one .scn-inline--head input { width: 108px; }
 
@@ -14153,10 +14184,10 @@ body.hide-statusbar .statusbar-host:has(.sequence-statusbar) .statusbar-close { 
 .rec-top .rec-top__slot .rg__bar { display: contents; }
 .rec-top .rec-top__slot .rg__view { margin-left: auto; }
 /* In the status bar's own row, after what the bar says (never over it): the bar gives way, this keeps its width up to 55%. */
-.statusbar-host:has(.rec-statusbar-needs:not(:empty)) { display: flex; align-items: stretch; }
-.statusbar-host:has(.rec-statusbar-needs:not(:empty)) > :not(.rec-statusbar-needs):not(.statusbar-close) { flex: 1 1 0; min-width: 0; overflow: hidden; }
-.statusbar-host:has(.rec-statusbar-needs:not(:empty)) .app-statusbar:last-of-type { padding-right: 8px; }
-.rec-statusbar-needs { order: 2; flex: 0 1 auto; max-width: 55%; margin-right: var(--nav-w, 38px); min-height: 32px; display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 12px; background: inherit; border-top: 1px solid var(--border); padding-left: 8px; }
+.statusbar-host:not(:has(.sequence-statusbar)):has(.rec-statusbar-needs:not(:empty)) { display: flex; align-items: stretch; }
+.statusbar-host:not(:has(.sequence-statusbar)):has(.rec-statusbar-needs:not(:empty)) > :not(.rec-statusbar-needs):not(.statusbar-close) { flex: 1 1 0; min-width: 0; overflow: hidden; }
+.statusbar-host:not(:has(.sequence-statusbar)):has(.rec-statusbar-needs:not(:empty)) .app-statusbar:last-of-type { order: 1; justify-content: flex-end; padding-right: calc(var(--nav-w, 38px) + 8px); }
+.rec-statusbar-needs { order: 0; flex: 0 1 auto; max-width: 55%; margin-right: 0; min-height: 32px; display: flex; align-items: center; gap: 6px; overflow: hidden; font-size: 12px; background: inherit; border-top: 1px solid var(--border); padding-left: 8px; }
 .rec-statusbar-needs:empty { display: none; }
 .rec-statusbar-needs .rel-bar { margin: 0; flex-wrap: nowrap; white-space: nowrap; }
 body.hide-statusbar .statusbar-host:not(:has(.sequence-statusbar)) .rec-statusbar-needs { display: none; }
@@ -14237,3 +14268,250 @@ body.hide-statusbar .statusbar-host:not(:has(.sequence-statusbar)) .rec-statusba
 /* Data table header: the fold button takes the free space and the scope, pin and list sit at the right, beside the table buttons. */
 .dock--bottom .dock__panel-tools .mdt__bar > .mdt__fold { order: -1; }
 .dock--bottom .dock__panel-tools .mdt__bar > .mdt__scope:first-of-type { border-left: 1px solid var(--border) !important; }
+
+/* Home: a gap between the Home button and the search box. */
+.home__bar .gs { margin: 0 10px 0 12px; }
+
+/* Import / Export: the table starts right under the section header (no gap from the body padding). */
+.ie__grid { margin-top: -10px; }
+
+/* Pages without a toolbar of their own (Files, Scenarios, Wiki, Help ...): the same header as Home and Programmes, in the page's flow. */
+.ws-pagebar { display: flex; align-items: stretch; flex: none; min-height: var(--header-h, 40px); background: var(--bg-elevated); border-bottom: 1px solid var(--border); position: relative; z-index: 40; }
+.ws-pagebar .ws-top { align-self: stretch; height: 100%; }
+.ws-pagebar .ws-top > .ws-top__btn[aria-label="Home"], .ws-pagebar .ws-top > .ws-page, .ws-pagebar .ws-top .ws-page > .ws-page__btn { height: 100% !important; align-self: stretch; }
+.ws-pagebar .gs { align-self: center; margin: 0 10px 0 12px; }
+/* A page's own tools (Dashboards, External data) sit at the right of the main header: flat, full height, a 1px line between. */
+.ws-pagebar__slot { display: flex; align-items: stretch; margin-left: auto; min-width: 0; }
+.ws-pagebar__slot > * { align-self: stretch; }
+.ws-pagebar__slot .btn, .ws-pagebar__slot .icon-btn { height: 100%; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; box-shadow: none; padding: 0 14px; }
+.ws-pagebar__slot .btn:hover:not(:disabled), .ws-pagebar__slot .icon-btn:hover:not(:disabled) { background: rgba(0, 0, 0, 0.07); }
+.ws-pagebar__slot .external-page__note { align-self: center; padding: 0 12px; font-size: 12px; max-width: 360px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ws-pagebar__slot .external-page__sub { align-self: center; padding: 0 12px; }
+body.viewer-fullscreen .ws-pagebar { display: none; }
+
+/* 4D has two bars stacked (the timeline and the status line): the recipe's needs line goes above them, not beside them, so neither is squeezed. */
+.statusbar-host:has(.sequence-statusbar) > .rec-statusbar-needs:not(:empty) { display: flex; max-width: none; margin: 0; padding: 4px 12px; border-top: 1px solid var(--border); }
+
+/* Soft (preferential) logic is drawn dashed. */
+.gantt-link--soft { stroke-dasharray: 4 3; }
+
+.pp__primary { border: 0; background: transparent; color: var(--text-dim); cursor: pointer; font-size: 15px; line-height: 1; padding: 0 2px; }
+.pp__primary.is-on { color: var(--accent); }
+
+/* ---- Generate view (pages/ScenariosPage.tsx): tabs across the top, one full-width body ---- */
+.gen-page { height: 100%; }
+.gen-tabs { padding: 6px 12px 0; flex: none; }
+.gen-tabs button { padding: 6px 16px; font-size: 13px; }
+.gen-tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+.gen-main { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.gen-main > .scn-recipes, .gen-main > .scn-rules { flex: 1; min-height: 0; }
+.gen-scenario { width: 100%; padding: 12px; box-sizing: border-box; }
+.gen-panel { display: flex; flex-direction: column; min-height: 0; flex: 1; }
+.gen-bar { position: static; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 12px; }
+.gen-body { position: static; flex: 1; overflow: auto; padding: 8px 12px; }
+.gen-order { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+.gen-order__cfg { display: flex; align-items: center; gap: 12px; padding: 6px 12px; }
+.gen-order__cfgbody { max-height: 38vh; overflow: auto; border-bottom: 1px solid var(--border); padding: 0 12px 8px; }
+.gen-order__table { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }.gen-bar .btn { margin-left: 0; }
+.gen-stack { display: flex; flex-direction: column; gap: 8px; padding-bottom: 24px; }
+.gen-h { margin: 12px 12px 0; font-size: 14px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.gen-page > .scn-toolbar { height: auto; min-height: 48px; }
+.gen-tabs { overflow-x: auto; white-space: nowrap; }
+.gen-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 6px 12px; height: auto; flex: none; }
+.gen-tools > * { position: static; }
+
+/* The table tools of the Order tab in one row (it scrolls sideways on a narrow window). */
+.gen-tools { overflow-x: auto; }
+.gen-tools .schedule-toolbar__left { flex-wrap: nowrap; width: max-content; gap: 8px; }
+.gen-tools .scn-tools { display: flex; flex-direction: row; flex-wrap: nowrap; align-items: center; gap: 8px; width: auto; }
+.gen-tools .scn-tools__row { display: contents; }
+.gen-tools .scn-grp { display: flex; flex-wrap: nowrap; align-items: center; gap: 4px; width: auto; flex: none; }
+.gen-tools .scn-grp--fill { flex: 0 1 200px; }
+.gen-tools .scn-filter { width: 180px; }
+.gen-tools .scn-step-input { width: 70px; }
+.gen-tools .btn { white-space: nowrap; }
+
+/* Every tab of the Generate view on white. */
+.gen-page, .gen-main, .gen-tabs, .gen-panel, .gen-body, .gen-order, .gen-scenario, .gen-tools, .gen-order__cfg, .gen-order__cfgbody, .gen-order__table, .gen-stack,
+.gen-main .scn-recipes, .gen-main .scn-rules, .gen-main .scn-panel { background: var(--n-ffffff, #fff); }
+
+/* Recipes: a list of recipes beside the one being edited. */
+.rec-browse { display: grid; grid-template-columns: var(--rec-list-w, 280px) minmax(0, 1fr); gap: 0; flex: 1; min-height: 0; }
+.rec-list { position: relative; display: flex; flex-direction: column; min-height: 0; border-right: 1px solid var(--border); background: var(--n-ffffff, #fff); }
+.rec-list__search { margin: 8px; width: auto; }
+.rec-list__items { overflow-y: auto; flex: 1; padding: 0 6px 12px; display: flex; flex-direction: column; gap: 2px; }
+.rec-list__item { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; text-align: left; border: 1px solid transparent; border-radius: 6px; background: none; padding: 7px 10px; cursor: pointer; color: var(--text); }
+.rec-list__item:hover { background: var(--bg-soft, #f3f3f3); }
+.rec-list__item.is-on { background: var(--accent-dim, #e0f0f0); border-color: var(--accent); }
+.rec-list__item.is-off { opacity: 0.5; }
+.rec-list__name { display: flex; width: 100%; justify-content: space-between; gap: 8px; font-weight: 600; font-size: 13px; }
+.rec-list__count { font-weight: 400; color: var(--text-dim); font-size: 11.5px; }
+.rec-list__chain { font-size: 11.5px; color: var(--text-dim); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.rec-list__flag { font-size: 10.5px; color: #a15c00; background: #fff1d6; border-radius: 8px; padding: 0 6px; }
+.rec-detail { min-width: 0; overflow: auto; padding: 8px 12px 24px; background: var(--n-ffffff, #fff); }
+.gen-main > .scn-recipes { display: flex; flex-direction: column; }
+.rec-head { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 14px; padding: 4px 0 8px; }
+.rec-head__name { font-size: 18px; font-weight: 700; border: 1px solid transparent; background: transparent; padding: 2px 6px; border-radius: 6px; min-width: 120px; }
+.rec-head__name:hover, .rec-head__name:focus { border-color: var(--border); background: var(--bg-soft, #f6f6f6); }
+.rec-head__for { display: inline-flex; align-items: center; gap: 6px; color: var(--text-dim); font-size: 12.5px; }
+
+/* Recipes tab: the graph runs edge to edge and its preview is pinned to the bottom of the pane, full width, no padding. */
+.rec-detail { display: flex; flex-direction: column; padding: 8px 12px 0; }
+.rec-detail > .rg__preview { position: sticky; bottom: 0; z-index: 3; margin: auto -12px 0; flex: none; background: var(--n-ffffff); }
+.rec-detail > .rg__preview .rg__dockbar { margin-top: 0; height: 26px; border-bottom: 0; }
+.rec-detail .rg__wrap { margin-left: -12px; margin-right: -12px; border-radius: 0; border-left: 0; border-right: 0; }
+.rec-detail .rg__bar { margin-bottom: 0; }
+
+/* The Generate tabs in the main header, beside the page picker. */
+.ws-pagebar .gen-tabs { display: flex; align-items: stretch; gap: 0; padding: 0 8px; border: 0; background: transparent; overflow-x: auto; white-space: nowrap; flex: none; }
+.ws-pagebar .gen-tabs button { padding: 0 14px; font-size: 13px; border-radius: 0; height: auto; }
+.ws-pagebar .gen-tabs .gen-tabs__dirty { align-self: center; margin-left: 8px; }
+
+/* Recipes: the list of recipes runs the full height from the top; the buttons start beside it, above the recipe being edited. */
+.gen-main > .scn-recipes.scn-recipes--browse { display: grid; grid-template-columns: var(--rec-list-w, 280px) minmax(0, 1fr); grid-template-rows: auto auto 1fr; align-content: stretch; }
+.scn-recipes--browse > .rec-top { grid-column: 2; grid-row: 1; }
+.scn-recipes--browse > .scn-rules__note { grid-column: 2; grid-row: 2; }
+.scn-recipes--browse .rec-browse { display: contents; }
+.scn-recipes--browse .rec-list { grid-column: 1; grid-row: 1 / span 3; min-height: 0; }
+.scn-recipes--browse .rec-detail { grid-column: 2; grid-row: 3; min-height: 0; }
+
+/* The Generate tabs in the main header: after the search box, each tab the full height of the header. */
+.ws-pagebar .gen-tabs { align-self: stretch; height: 100%; margin-left: 8px; }
+.ws-pagebar .gen-tabs button { appearance: none; height: 100%; padding: 0 14px; border: 0; border-bottom: 3px solid transparent; border-radius: 0; background: transparent; box-shadow: none; color: var(--text-dim); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.ws-pagebar .gen-tabs button:hover:not(:disabled) { color: var(--text); background: var(--bg-soft, rgba(0, 0, 0, 0.04)); }
+.ws-pagebar .gen-tabs button.is-active { color: var(--accent-strong); border-bottom-color: var(--accent); }
+.ws-pagebar .gen-tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* The Gantt along the bottom of the Generate view. */
+.gen-gantt { display: flex; flex-direction: column; flex: none; min-height: 140px; background: var(--n-ffffff, #fff); border-top: 1px solid var(--border); position: relative; }
+.gen-gantt__split { position: absolute; left: 0; right: 0; top: -3px; height: 6px; cursor: ns-resize; z-index: 5; }
+.gen-gantt__split:hover { background: var(--accent); opacity: 0.4; }
+.gen-gantt__head { display: flex; align-items: center; gap: 10px; padding: 4px 12px; flex: none; border-bottom: 1px solid var(--border); font-size: 12px; }
+.gen-gantt__close { margin-left: auto; }
+.gen-gantt__body { flex: 1; min-height: 0; display: flex; flex-direction: column; overflow: hidden; }
+.ws-pagebar .gen-tabs .gen-tabs__gantt { margin-left: auto; border-left: 1px solid var(--border); }
+.ws-pagebar .gen-tabs .gen-tabs__gantt.is-on { color: var(--accent-strong); border-bottom-color: var(--accent); }
+
+/* Excel-style tables (Parameters): thin grid lines, a grey row-number gutter, cells that are the whole input. */
+.xl { border-collapse: collapse; table-layout: fixed; width: max-content; min-width: 640px; max-width: 100%; font-size: 12.5px; background: var(--n-ffffff, #fff); border: 1px solid #b9bec6; }
+.xl th, .xl td { border: 1px solid #d4d8de; padding: 0; height: 26px; }
+.xl thead th { background: #eef0f3; color: #3c4450; font-weight: 600; text-align: left; padding: 0 8px; position: sticky; top: 0; z-index: 2; border-bottom: 1px solid #b9bec6; }
+.xl__corner { background: #e3e6ea !important; }
+.xl__row { background: #eef0f3; color: #6b7480; font-weight: 400; text-align: center; font-size: 11px; user-select: none; }
+.xl__check { text-align: center; background: var(--n-ffffff, #fff); }
+.xl__cell { position: relative; background: var(--n-ffffff, #fff); }
+.xl__cell input { width: 100%; height: 100%; box-sizing: border-box; border: 0; outline: 0; background: transparent; padding: 0 8px; font: inherit; color: inherit; }
+.xl__num input { text-align: right; font-variant-numeric: tabular-nums; }
+.xl__cell:focus-within { outline: 2px solid var(--accent, #0a7c86); outline-offset: -2px; z-index: 1; }
+.xl__cell.is-bad input { color: #c0392b; }
+.xl tr.is-off td { opacity: 0.45; }
+.xl tbody tr:hover .xl__row { background: #e3e6ea; }
+.xl__add td { padding: 0; text-align: left; }
+.xl__add button { width: 100%; height: 26px; border: 0; background: transparent; color: var(--text-dim); text-align: left; padding: 0 8px; cursor: pointer; font: inherit; }
+.xl__add button:hover { background: var(--bg-soft, #f3f3f3); color: var(--text); }
+.xl .xgrid__cell.is-sel, .xl .is-selected { background: rgba(10, 124, 134, 0.12); }
+
+/* Excel-style tables: every cell white, whatever the global table rules say. */
+.xl tbody td, .xl tbody tr:nth-child(even) td, .xl tbody tr:nth-child(odd) td { background: #fff !important; }
+.xl tbody td.is-sel, .xl tbody td.xgrid__cell.is-sel { background: rgba(10, 124, 134, 0.14) !important; }
+.xl input, .xl .xl__cell input { background: transparent !important; box-shadow: none !important; border-radius: 0 !important; }
+.xl tbody tr:hover td:not(.is-sel) { background: #fafbfc !important; }
+
+/* The Generate page's header (picker and search) is the other pages' toolbar; its step tabs are a thin bar of their own under it. */
+/* (The bar itself is the Programmes toolbar: "filterbar schedule-toolbar", so its height and buttons are the same.) */
+/* The step tabs follow the search box, as cells of the bar: a thin line between them, the open one lit with a line under it. */
+.gen-head .gen-tabs { display: flex; align-self: stretch; align-items: stretch; height: auto; margin-left: 0 !important; padding: 0; gap: 0; border: 0; border-left: 1px solid var(--border); background: transparent; overflow-x: auto; white-space: nowrap; flex: none; }
+.gen-head .gen-tabs button { appearance: none; height: auto; align-self: stretch; padding: 0 14px; border: 0; border-right: 1px solid var(--border); border-bottom: 3px solid transparent; border-radius: 0; background: transparent; box-shadow: none; color: var(--text-dim); font: inherit; font-size: 13px; font-weight: 600; cursor: pointer; }
+.gen-head .gen-tabs button:hover:not(:disabled) { color: var(--text); background: rgba(0, 0, 0, 0.07); }
+.gen-head .gen-tabs button.is-active { color: var(--accent-strong); background: var(--n-ffffff, #fff); border-bottom-color: var(--accent); }
+.gen-head .gen-tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+.gen-head .gen-tabs .gen-tabs__gantt { margin-left: 0; border-left: 0; }
+.gen-head .gen-tabs .gen-tabs__dirty { align-self: center; margin-left: 8px; }
+.gen-page { background: var(--n-ffffff, #fff); }
+
+/* The search box has the same space on both sides in every header (Home, Programmes, Models, Generate, the other pages). */
+.ws-top .gs, .home__bar .gs, .ws-pagebar .gs, .viewer-toolbar-row .gs { margin: 0 12px !important; }
+
+/* The view button is one fixed width on every page: wide enough for the longest view name ("Planner (build and edit)"). */
+.ws-top .ws-page__name { box-sizing: content-box; width: 176px; max-width: none; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The view name starts right after its icon, on every page. The Models / 4D header puts its search box outside the picker, after a 6px gap: take the gap off its margin so the box lands on the same x as in the other headers. */
+.ws-top .ws-page__name { text-align: left; }
+.viewer-toolbar-row .schedule-toolbar__left > .gs { margin-left: 6px !important; }
+
+/* The recipe list's right edge is a drag handle for its width. */
+.rec-list__grip { position: absolute; top: 0; right: -3px; bottom: 0; width: 6px; cursor: col-resize; z-index: 6; }
+.rec-list__grip:hover { background: var(--accent); opacity: 0.5; }
+
+/* The row numbers sit in the middle of the gutter (the .xgrid th rule above would left-align them). */
+.xl tbody th.xl__row { text-align: center; padding: 0; vertical-align: middle; font-size: 11px; font-weight: 400; text-transform: none; letter-spacing: 0; color: #6b7480; background: #eef0f3; }
+
+/* Recipe tasks as a sheet: the space around it, the read-only Resources cell, the note under it. */
+.xl--tasks { margin: 8px 0 0 -16px; }
+.xl .xl__ro { color: var(--text-dim); padding: 0 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.xl .rel-grip { cursor: grab; }
+.xl tr.is-selected .xl__row { background: rgb(var(--accent-rgb) / 0.18); }
+.xl tr.is-drop td, .xl tr.is-drop th { border-top: 2px solid var(--accent); }
+.xl__note { margin: 6px 0 10px -16px; font-size: 12px; }
+
+/* Generate > 1 · Scenario in two columns: the open scenario and the list on the left, a new scenario on the right. */
+.gen-scenario { display: grid; grid-template-columns: minmax(0, 3fr) minmax(0, 2fr); grid-template-rows: auto auto 1fr; column-gap: 24px; align-content: start; }
+.gen-scenario > * { grid-column: 1; min-width: 0; }
+.gen-scenario > .scn-error { grid-column: 1 / -1; }
+.gen-scenario > .scn-card--grow { display: contents; }
+.gen-scenario .scn-list__head { grid-column: 1; margin: 0; }
+.gen-scenario .scn-list { grid-column: 1; margin: 0; }
+.gen-scenario .scn-new { grid-column: 2; grid-row: 1 / span 3; align-self: start; border: 1px solid var(--border); border-radius: 6px; padding: 12px; background: var(--n-ffffff, #fff); }
+.gen-scenario .scn-new::before { content: 'New scenario'; font-size: 11px; font-weight: 700; text-transform: uppercase; color: var(--text-dim); }
+
+/* In the main status bar the Generate message takes the free space, so the database and workspace chips stay at the right. */
+.app-statusbar > .scn-statusbar__msg { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Under a recipe's name: where its group comes from, in plain words. */
+.rec-head__source { margin: 2px 0 6px; font-size: 12px; }
+
+/* A tick item in a panel's More menu. */
+.ofr__check { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; white-space: nowrap; }
+
+/* The Gantt panel's zoom group is the Gantt view's own: flat, the full height of the bar, a line after it. */
+.dockgantt__bar.ofr { padding-top: 0; padding-bottom: 0; height: var(--header-h); min-height: var(--header-h); box-sizing: border-box; }
+.dockgantt__bar .ofr__item:has(.dockgantt__view) { align-self: stretch; display: flex; }
+.dockgantt__view { align-self: stretch; }
+
+/* The Gantt panel's header: the Gantt view's zoom group inside the dock's header, flat and the full height, with a line before it. */
+.dock--bottom .dock__panel-tools .mdt__actions .dockgantt__view { align-self: stretch; height: 100%; border-left: 1px solid var(--border); border-right: 0; margin: 0; }
+.dock--bottom .dock__panel-tools .dockgantt__head > .tp, .dock--bottom .dock__panel-tools .dockgantt__head > span.tp { align-self: stretch; }
+.dockgantt__head .baseline-menu { align-self: stretch; display: inline-flex; border-left: 1px solid var(--border); border-right: 1px solid var(--border); position: relative; }
+.dockgantt__head .baseline-menu > .btn { height: 100% !important; margin: 0 !important; border: 0 !important; border-radius: 0 !important; box-shadow: none !important; background: transparent !important; color: var(--text); padding: 0 16px; font-size: 13px; font-weight: 500; }
+.dockgantt__head .baseline-menu > .btn:hover { background: rgba(0, 0, 0, 0.07) !important; }
+.dockgantt__head .baseline-menu > .btn.primary { box-shadow: inset 0 -2px 0 var(--accent) !important; }
+/* The dock's tool group already has a line on its left: the first item of the Gantt header adds none. */
+.dock--bottom .dock__panel-tools .dockgantt__head > :first-child { border-left: 0 !important; }
+
+/* Left / right docks have the bottom dock's header; the navigation bar's own fold button is not needed. */
+.dock--nav .dock-nav > .dock-nav__more:first-child { display: none; }
+/* The left and right docks' header is the bottom dock's: the same grey bar, the same tab, the same tools group. */
+.dock--nav .dock__head { background: var(--n-e6e6e6); border-bottom: 1px solid rgba(60, 64, 68, 0.18); padding: 0; gap: 0; align-items: stretch; }
+.dock--nav .dock__head .seq-righttabs { align-self: stretch; display: flex; align-items: stretch; gap: 0; padding: 0; margin: 0; background: transparent; border: 0; }
+.dock--nav .dock__head .config-tab { height: 100%; padding: 0 18px; border: 0; border-right: 1px solid var(--border); border-radius: 0; background: transparent; display: inline-flex; align-items: center; font-size: 13px; }
+.dock--nav .dock__head .config-tab.active { background: var(--bg-elevated, #fff); box-shadow: inset 0 -2px 0 var(--accent); font-weight: 600; }
+.dock--nav .dock__tools { align-self: stretch; align-items: stretch; gap: 0; border-left: 0; margin-left: 0; }
+.dock--nav .dock__tools .dock__tool { height: 100%; width: var(--header-h); min-width: var(--header-h); border: 0; border-radius: 0; background: transparent; display: inline-flex; align-items: center; justify-content: center; margin: 0; }
+.dock--nav .dock__tools .dock__tool + .dock__tool { border-left: 1px solid var(--border); }
+/* The buttons are as wide as the navigation bar. With the bar on the right edge the fold chevron is the last one, right above the bar, and the close X is beside it. */
+.dock--nav .dock__tools { flex: 1 1 0; justify-content: flex-end; gap: 0 !important; padding: 0 !important; margin: 0 !important; }
+.dock--nav .dock__head .dock__tools .dock__tool { display: inline-flex; align-items: center; justify-content: center; margin: 0 !important; }
+.dock--nav .dock__head .dock__tools .dock__tool svg { flex: none; }
+.dock--nav .dock__head .dock__tools .dock__tool { box-sizing: border-box; flex: 0 0 var(--nav-w, 38px) !important; width: var(--nav-w, 38px) !important; min-width: var(--nav-w, 38px) !important; max-width: var(--nav-w, 38px) !important; padding: 0 !important; }
+.dock--nav-right .dock__tools .dock__tool--close { order: 1; }
+.dock--nav-right .dock__tools .dock__tool--fold { order: 2; border-left: 1px solid var(--border); }
+
+/* Side docks: Fold and Close are as wide as the navigation bar (a square, --nav-w), so they line up with it. */
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool,
+.dock:not(.dock--bottom) .dock__head .dock__tools .dock__tool--fold { flex: 0 0 var(--nav-w, 38px) !important; width: var(--nav-w, 38px) !important; min-width: var(--nav-w, 38px) !important; }
+
+/* The header's buttons are one kind: the collapse button, fold and close share their width, icon size and colour. */
+:root { --head-btn-w: var(--nav-w, 38px); }
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool,
+.dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool--fold { flex: 0 0 var(--head-btn-w) !important; width: var(--head-btn-w) !important; min-width: var(--head-btn-w) !important; color: var(--text); }
+.dock .dock__head .dock__tools .dock__tool svg, .dock .dock__head .dock-head-tool svg, .dock .dock__head .props-grid__head > .btn svg { width: var(--icon-row); height: var(--icon-row); }
+.dock .dock__head .dock__tools .dock__tool:hover { color: var(--accent-strong); }

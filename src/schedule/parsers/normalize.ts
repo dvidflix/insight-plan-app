@@ -103,6 +103,7 @@ export function normalizeXer(tables: XerTables, fileName: string, projectId?: st
       targetCost: num(row.target_cost),
       actualCost: num(row.act_reg_cost) + num(row.act_ot_cost),
       unitsPerTime: num(row.target_qty_per_hr) || undefined,
+      ...(String(row.ip_primary ?? '') === '1' ? { primary: true } : {}),
     });
     rsrcByTask.set(row.task_id, list);
   }
@@ -214,6 +215,7 @@ export function normalizeXer(tables: XerTables, fileName: string, projectId?: st
     succId: row.task_id,
     type: normalizeRelType(row.pred_type),
     lagHours: num(row.lag_hr_cnt),
+    ...(String(row.ip_soft ?? '') === '1' ? { soft: true } : {}),
   }));
 
   // The weekly working-day pattern and the dated exceptions (holidays,

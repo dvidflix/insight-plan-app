@@ -10,6 +10,10 @@ import { ExpandCollapseToggle } from './ExpandCollapseToggle';
 import { withUnit } from '../viewer/units';
 import { IconChevronRight, IconExpandMore } from './icons';
 import { queryMatcher } from '../schedule/search';
+import { DockToolbar } from './Dock';
+import { ListConfig } from './ListConfig';
+import { configFocusProps } from '../state/listConfigStore';
+import { useListQuery } from '../state/tableSearchStore';
 import { COMPUTED_SET, computeQuantities, computedRows, type ComputedQuantities } from '../viewer/computedQuantities';
 
 /** Geometry is measured for a selection of at most this many objects (a whole-model selection would be slow). */
@@ -33,7 +37,8 @@ export function PropertiesGrid() {
   const setExpandMode = usePropertyVisibilityStore((s) => s.setExpandMode);
   const models = useModelsStore((s) => s.models);
   const [tick, setTick] = useState(0);
-  const [filter, setFilter] = useState('');
+  // The words come from the search box of the main header ("Search on Properties").
+  const filter = useListQuery('properties');
   // Sets opened or closed by hand, against the Collapse / Expand all default; breakdowns opened.
   const [toggled, setToggled] = useState<Set<string>>(new Set());
   const [openValues, setOpenValues] = useState<Set<string>>(new Set());
@@ -113,14 +118,14 @@ export function PropertiesGrid() {
     );
 
   return (
-    <div className="props-grid">
-      <div className="props-grid__bar">
-        <b className="props-grid__title" title={table.title}>{table.title}</b>
-      </div>
-      <div className="props-grid__tools">
-        <input type="search" value={filter} placeholder="Filter…" onChange={(e) => setFilter(e.target.value)} />
-        <ExpandCollapseToggle className="btn btn--small" collapsed={expandMode === 'collapsed'} onCollapse={() => setExpandMode('collapsed')} onExpand={() => setExpandMode('expanded')} />
-      </div>
+    <div className="props-grid" {...configFocusProps('properties')}>
+      <ListConfig id="properties" label="Properties" searchable panels={{}} />
+      <DockToolbar id="properties">
+        <div className="props-grid__head">
+          <b className="props-grid__title" title={table.title}>{table.title}</b>
+          <ExpandCollapseToggle className="btn btn--small" collapsed={expandMode === 'collapsed'} onCollapse={() => setExpandMode('collapsed')} onExpand={() => setExpandMode('expanded')} />
+        </div>
+      </DockToolbar>
       {sets.length === 0 && <div className="scn-dim" style={{ padding: 10 }}>{filtering ? 'No property matches.' : 'No properties.'}</div>}
       {sets.map(({ set, children }) => (
         <CollapsibleSection key={set.data.Property} title={`${set.data.Property} (${children.length})`} flush open={isOpen(set.data.Property)} onToggle={() => toggle(set.data.Property)}>

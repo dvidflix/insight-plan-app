@@ -10,8 +10,7 @@ import { openSatelliteWindow } from '../state/windowSync';
 import { blockedWindows } from '../state/workspaces';
 import { WindowsFooter } from './WorkspaceBar';
 import { scenes } from '../state/scenes';
-import { GlobalSearch } from './GlobalSearch';
-import { IconCellProperties, IconChecklist, IconChevronDown, IconDashboard, IconEyeOff, IconHome, IconGantt, IconLineGraph, IconList, IconPencil, IconSchema, IconShortText, IconGridTable, IconSplit, IconTagOutline, IconTimeline, IconTree, IconTwoPane } from './icons';
+import { GlobalSearch } from './GlobalSearch';import { IconCalendar, IconCellProperties, IconChecklist, IconChevronDown, IconDashboard, IconEyeOff, IconHome, IconGantt, IconLineGraph, IconList, IconPencil, IconSchema, IconShortText, IconGridTable, IconSplit, IconTagOutline, IconTree, IconTwoPane } from './icons';
 
 export interface PageItem {
   id: string;
@@ -23,8 +22,8 @@ type Icon = ComponentType<SVGProps<SVGSVGElement>>;
 
 /** The icons of the Programmes views in the picker. */
 const VIEW_ICONS: Record<TabId, Icon> = {
-  gantt: IconGantt, activities: IconGridTable, planner: IconPencil, wbs: IconTree, codes: IconTagOutline, resources: IconLineGraph,
-  calendars: IconTimeline, heatmap: IconDashboard, lookahead: IconList, compare: IconTwoPane, concrete: IconTwoPane, checks: IconChecklist,
+  gantt: IconGantt, activities: IconGridTable, planner: IconPencil, wbs: IconTree, codes: IconTagOutline, resources: IconLineGraph, distribution: IconGridTable,
+  calendars: IconCalendar, heatmap: IconDashboard, lookahead: IconList, compare: IconTwoPane, concrete: IconTwoPane, checks: IconChecklist,
   reports: IconDashboard, bulkedit: IconPencil, renumber: IconShortText, explorer: IconSchema, network: IconSchema, ppc: IconChecklist,
   montecarlo: IconLineGraph, anonymise: IconEyeOff, whatif: IconSplit,
 };
@@ -38,21 +37,21 @@ type Group = 'Inputs' | 'Planning' | 'Models' | 'Tools';
 const STREAMS: Group[] = ['Models', 'Planning', 'Tools'];
 
 const VIEW_GROUP: Record<TabId, Group> = {
-  gantt: 'Planning', activities: 'Planning', planner: 'Planning', wbs: 'Planning', codes: 'Planning', resources: 'Planning',
+  gantt: 'Planning', activities: 'Planning', planner: 'Planning', wbs: 'Planning', codes: 'Planning', resources: 'Planning', distribution: 'Planning',
   calendars: 'Planning', heatmap: 'Planning', lookahead: 'Planning',
   compare: 'Tools', concrete: 'Tools', checks: 'Tools', reports: 'Tools', explorer: 'Tools', network: 'Tools', ppc: 'Tools', montecarlo: 'Tools', whatif: 'Tools',
   bulkedit: 'Tools', renumber: 'Tools', anonymise: 'Tools',
 };
 
 const PANEL_GROUP: Partial<Record<DockPanelId, Group>> = {
-  details: 'Planning', links: 'Planning', predecessors: 'Planning', successors: 'Planning', layouts: 'Planning', planning: 'Planning', gantt: 'Planning', resources: 'Planning', scenarios: 'Planning', recipes: 'Planning', rules: 'Planning', dictionary: 'Planning', generated: 'Planning',
+  details: 'Planning', links: 'Planning', predecessors: 'Planning', successors: 'Planning', layouts: 'Planning', planning: 'Planning', gantt: 'Planning', resources: 'Planning', distribution: 'Planning', scenarios: 'Planning', dictionary: 'Planning', generated: 'Planning',
   related: 'Models', tree: 'Models', properties: 'Models', search: 'Models', views: 'Models', viewpoints: 'Models', colour: 'Models', clash: 'Models',
   datatable: 'Models', files: 'Models', topics: 'Models', fourD: 'Models', tasks: 'Models',
   checks: 'Tools', compare: 'Tools',
 };
 
 /** The Tools panels in this order (the list settings first). */
-const TOOL_ORDER: DockPanelId[] = ['checks', 'compare', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'generated', 'settings', 'scenarioSettings'];
+const TOOL_ORDER: DockPanelId[] = ['checks', 'compare', 'cfgColumns', 'cfgFilters', 'cfgGroup', 'cfgSort', 'cfgColor', 'dictionary', 'generated', 'settings'];
 
 interface Row {
   key: string;
@@ -289,10 +288,10 @@ export function ViewPicker(props: PickerProps) {
 }
 
 /** The List setup button, at the right end of a toolbar: opens and closes the N panel (the same as pressing N). */
-export function ListSetupButton() {
+export function ListSetupButton({ always = false }: { /** Shown even when no list is registered (the Generate header always has it). */ always?: boolean } = {}) {
   const open = useListConfigStore((s) => s.nOpen);
   const hasLists = useListConfigStore((s) => Object.keys(s.targets).length > 0);
-  if (!hasLists) return null;
+  if (!hasLists && !always) return null;
   return (
     <span className="listsetup-btn">
       <span className="tp">

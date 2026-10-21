@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useResizableWidth } from '../../ResizeHandle';
+import { useEffect, useMemo, useRef, useState, useContext } from 'react';
 import { createPortal } from 'react-dom';
-import { useScenarioStore } from '../../../state/scenarioStore';
+import { updateFourD, useScenarioStore } from '../../../state/scenarioStore';
+import { useScenarioView } from '../../../scenarios/useScenarioView';
 import { setRecipes, useRecipeStore } from '../../../state/recipeStore';
 import { ACTIVITY_PHASES, COMPONENT_PHASES, POOL_KINDS } from '../../../prs/rules';
 import { applyTasksPaste, edgesFromFollows, followsText, normalizeRecipes, parseTasksPaste, tasksToTsv, usesText, type Recipe, type RecipeTask } from '../../../prs/recipes';
-import { RECIPE_SETS_FOLDER, duplicateSets } from '../../../prs/groupSets';
+import { duplicateSets } from '../../../prs/groupSets';
+import { useRecipeFolderStore } from '../../../state/recipeFolderStore';
 import { recipeNeeds } from '../../../prs/recipeNeeds';
 import { usePersistedState } from '../../../utils/persistedState';
 import { useSearchSetsStore } from '../../../state/searchSetsStore';
@@ -19,17 +22,48 @@ import { useEditableGrid } from '../../useEditableGrid';
 import { RuleCard, useRuleContext } from './RuleParts';
 import { RecipeBarSlot, RecipeGraph } from './RecipeGraph';
 import { TaskResources } from './TaskResources';
-import { ResourcesScreen } from './ResourcesScreen';
+import { formulaProblem } from '../../../prs/recipesWorkbook';
+import { RecipeGrid } from './RecipeGrid';
+import { ScenarioRulesEditor } from '../ScenarioRules';
+import { RecipesFromProperty } from './RecipesFromProperty';
+import { templateFor } from '../../../prs/recipeMatch';
+import { ListConfig } from '../../ListConfig';
+import { configFocusProps } from '../../../state/listConfigStore';
+import { groupFromSet } from '../../../prs/groupSets';
+import { RecipeWorkbookButtons } from './RecipeWorkbookButtons';
+import { useListQuery } from '../../../state/tableSearchStore';
 
 /** The Recipes panel: how each kind of object is built (docs/design/recipes.md). A recipe belongs to a rule group and lists its tasks (the
     activities of the object, in order), with the days, rate, crew and calendar of each and what each task follows. The recipes are the
     library of state/recipeStore: they show without a scenario open, and an open scenario carries a copy. A recipes file (Export / Import)
     carries them to another project. Names (groups, rates, crews, calendars) are checked against the open scenario's rules only. */
 
+const AUTO_START = '__best_match__';
 const num = (v: string): number | undefined => (v.trim() === '' || !Number.isFinite(Number(v)) ? undefined : Number(v));
 
 function Cell({ value, onChange, list, width, type = 'text', placeholder, title }: { value: string | number | undefined; onChange: (v: string) => void; list?: string; width?: number; type?: 'text' | 'number'; placeholder?: string; title?: string }) {
   return <input className="rel-cell" type={type} step="any" value={value ?? ''} list={list} placeholder={placeholder} title={title} spellCheck={false} style={width ? { width } : undefined} onChange={(e) => onChange(e.target.value)} />;
+}
+
+/** The group a recipe is for: a plain select. The places a group comes from are listed apart, each under its own heading: the search sets of every
+    folder (Models > Search sets) and the rule groups of the scenario (Rules > Groups). An unknown value already there stays in the list. */
+function GroupSelect({ value, groups, setFolders, ruleGroups, hideRuleGroups, onChange, width }: { value: string; /** Only the search sets are offered (a rule group an old preset left is not): the sets are what feeds a recipe. */ hideRuleGroups?: boolean; groups?: string[]; /** The search sets by folder (any folder: a recipe is linked to a set by its name). */ setFolders?: { folder: string; names: string[] }[]; ruleGroups?: string[]; onChange: (v: string) => void; width?: number }) {
+  const has = (list: string[]) => list.some((g) => g.toUpperCase() === value.trim().toUpperCase());
+  const uniq = (list: string[]) => [...new Set(list.filter(Boolean))];
+  const flat = uniq(groups ?? []);
+  const setList = uniq((setFolders ?? []).flatMap((f) => f.names));
+  const ruleList = uniq(ruleGroups ?? []).filter((g) => !setList.some((x) => x.toUpperCase() === g.toUpperCase()));
+  const known = has(flat) || has(setList) || has(ruleList);
+  return (
+    <select className="rel-cell" value={value} style={width ? { width } : undefined} onChange={(e) => onChange(e.target.value)} aria-label="Applies to" title="The objects the recipe applies to: a search set, or a rule group of the scenario">
+      <option value="">Every object</option>
+      {value && !known && <option value={value}>{value} (not found)</option>}
+      {value && hideRuleGroups && !has(setList) && has(ruleList) && <option value={value}>{value} (an old rule group, not a search set)</option>}
+      {flat.map((g) => <option key={g} value={g}>{g}</option>)}
+      {(setFolders ?? []).filter((f) => f.names.length > 0).map((f) => <optgroup key={f.folder} label={`Search sets · folder "${f.folder}"`}>{f.names.map((g) => <option key={`${f.folder}|${g}`} value={g}>{g}</option>)}</optgroup>)}
+      {ruleList.length > 0 && !hideRuleGroups && <optgroup label="Rule groups · this scenario">{ruleList.map((g) => <option key={g} value={g}>{g}</option>)}</optgroup>}
+    </select>
+  );
 }
 
 /** A value picked from a list (an unknown value already there stays, so nothing is lost). */
@@ -57,9 +91,10 @@ function FollowsCell({ recipe, phase, onChange }: { recipe: Recipe; phase: strin
   );
 }
 
-function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy, collapsed, onCollapsed, bare }: { bare?: boolean; recipe: Recipe; recipes: Recipe[]; rules: ScenarioRules; check: boolean; onChange: (r: Recipe) => void; onDelete: () => void; onCopy: () => void; collapsed: boolean; onCollapsed: (c: boolean) => void }) {
+function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy, collapsed, onCollapsed, bare, setNames = [] }: { bare?: boolean; /** The names of the search sets of the recipes folder: they are groups too. */ setNames?: string[]; recipe: Recipe; recipes: Recipe[]; rules: ScenarioRules; check: boolean; onChange: (r: Recipe) => void; onDelete: () => void; onCopy: () => void; collapsed: boolean; onCollapsed: (c: boolean) => void }) {
   const chain = recipe.chain !== false;
-  const [view, setView] = useState<'list' | 'table' | 'graph'>('graph');
+  const barSlot = useContext(RecipeBarSlot);
+  const [view, setView] = useState<'list' | 'table' | 'graph'>('list');
   const [full, setFull] = useState(false);
   useEffect(() => {
     if (!full) return;
@@ -67,12 +102,13 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
     window.addEventListener('keydown', esc);
     return () => window.removeEventListener('keydown', esc);
   }, [full]);
-  const [filter, setFilter] = useState('');
+  // The main header's search box narrows the tasks while the Recipes list is the active one.
+  const filter = useListQuery('recipes');
   const [paste, setPaste] = useState<string | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
   const [copied, setCopied] = useState(false);
   const known = {
-    groups: new Set(rules.groups.map((g) => g.id.toUpperCase())),
+    groups: new Set([...rules.groups.map((g) => g.id), ...setNames].map((g) => g.toUpperCase())),
     rates: new Set(rules.rates.map((r) => r.id.toUpperCase())),
     crews: new Set(rules.crewTemplates.map((r) => r.id.toUpperCase())),
     calendars: new Set(rules.calendars.map((r) => r.id.toUpperCase())),
@@ -105,6 +141,7 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
   const sameGroup = recipes.filter((r) => r !== recipe && r.enabled !== false && r.chain !== false && chain && r.group.trim().toUpperCase() === recipe.group.trim().toUpperCase());
   if (sameGroup.length) problems.push(`${sameGroup.length} other recipe${sameGroup.length === 1 ? '' : 's'} of this group also define activities: the one of the highest priority is used`);
 
+  const formulaTip = (f: string | undefined) => (f ? formulaProblem(f, (rules.parameters ?? []).map((p) => p.name)) || 'Working days from quantities and parameters' : 'Working days from quantities and parameters');
   const setTask = (i: number, patch: Partial<RecipeTask>) => onChange({ ...recipe, tasks: recipe.tasks.map((t, j) => (j === i ? { ...t, ...patch } : t)) });
   /** Renaming a phase renames it in the links of the other tasks too. */
   const rename = (i: number, phase: string) => {
@@ -140,9 +177,9 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
   // The columns typed in as a spreadsheet's: range, fill down (Ctrl+D, the corner square), copy and paste. One change for all the cells.
   const FILL: Record<string, { field: keyof RecipeTask; numeric?: boolean }> = {
     name: { field: 'name' }, suffix: { field: 'suffix' }, material: { field: 'material' }, days: { field: 'days', numeric: true }, rate: { field: 'rate' },
-    density: { field: 'density' }, crew: { field: 'crew' }, calendar: { field: 'calendar' }, priority: { field: 'priority', numeric: true },
+    density: { field: 'density' }, formula: { field: 'formula' }, crew: { field: 'crew' }, calendar: { field: 'calendar' }, priority: { field: 'priority', numeric: true },
   };
-  const grid = useEditableGrid({
+  const grid = useEditableGrid({ widthsKey: 'recipe.tasks',
     rows: shown,
     get: (col, { t }) => { const f = FILL[col]; const v = f ? t[f.field] : undefined; return v === undefined || v === null ? '' : String(v); },
     write: (col, cells) => {
@@ -194,7 +231,7 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
           <details className="scn-more">
             <summary className="btn btn--small" title="Group, priority, every column of the tasks">Advanced</summary>
             <div className="scn-more__menu scn-more__menu--wide">
-              <label className="scn-dim">Group <Cell value={recipe.group} list="recipe-groups" onChange={(group) => onChange({ ...recipe, group })} width={150} placeholder="every object" title="The set (or group) whose objects the recipe applies to; empty = every object" /></label>
+              <label className="scn-dim">Group <GroupSelect value={recipe.group} groups={rules.groups.map((g) => g.id)} onChange={(group) => onChange({ ...recipe, group })} width={170} /></label>
               <label className="scn-dim">Priority <Cell type="number" value={recipe.priority} onChange={(v) => onChange({ ...recipe, priority: num(v) })} width={60} title="Where an object is in several recipes, the highest priority decides" /></label>
               <select className="rel-cell" value={chain ? 'chain' : 'values'} onChange={(e) => onChange({ ...recipe, chain: e.target.value === 'chain' ? undefined : false })} title="Activities: the tasks are the activities the objects get. Values only: it sets the days, rate, crew and calendar of tasks whose activities come from another recipe.">
                 <option value="chain">Defines the activities</option>
@@ -218,28 +255,40 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
       onCollapsed={onCollapsed}
       hideHead={bare}
     >
-      {chain && view !== 'graph' && <div className="rel-bar">{viewTabs}</div>}
+      {/* The view buttons sit in the top row of the Recipes tab (beside Make recipes) in every view; inline only where there is no such row. */}
+      {chain && view !== 'graph' && (barSlot ? createPortal(viewTabs, barSlot) : <div className="rel-bar">{viewTabs}</div>)}
       {chain && view === 'list' ? (
         <>
-          <table className="rel-table rel-table--grid rel-table--simple">
-            <thead><tr><th>#</th><th>Task</th><th>Days</th><th>Crew</th><th>Resources</th><th aria-label="Delete" /></tr></thead>
+          <table className="xl xgrid xl--tasks" {...grid.grid}>
+            <colgroup><col style={{ width: 40 }} /><col style={{ width: 180 }} /><col style={{ width: 170 }} /><col style={{ width: 70 }} /><col style={{ width: 280 }} /><col style={{ width: 130 }} /><col style={{ width: 220 }} /><col style={{ width: 32 }} /></colgroup>
+            <thead><tr>
+              <th className="xl__corner" aria-label="Row" /><th>Activity</th>
+              <th title='What it waits for: "Rebar" (finished), "Decking@80" (80 % done), "Rebar:SS+16" (starts 16 hours after Rebar starts). Empty: the activity above.'>Follows</th>
+              <th title="A fixed number of working days">Days</th>
+              <th title="Or a formula of the pour's quantities and the parameters, e.g. max(1, Concrete_m3 / Concrete_Rate). It beats the days.">Formula</th>
+              <th>Crew</th><th>Resources</th><th aria-label="Delete" />
+            </tr></thead>
             <tbody>
-              {recipe.tasks.map((t, i) => (
-                <tr key={i} className={`${t.enabled === false ? 'is-off' : ''}${selected === i ? ' is-selected' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`} onClick={() => setSelected(i)}
+              {shown.map(({ t, i }, at) => (
+                <tr key={i} data-line={at} className={`${t.enabled === false ? 'is-off' : ''}${selected === i ? ' is-selected' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`} onClick={() => setSelected(i)}
                   onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }} onDrop={(e) => { e.preventDefault(); drop(i); }}>
-                  <td className="scn-dim rel-c rel-grip" draggable title="Drag to move the task"
+                  <th scope="row" className="xl__row rel-grip" draggable title="Drag to move the task"
                     onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); const row = e.currentTarget.closest('tr'); if (row) e.dataTransfer.setDragImage(row, 0, 0); setDrag({ from: i, over: null }); }}
-                    onDragEnd={() => setDrag(null)}>{i + 1}</td>
-                  <td><Cell value={t.name ?? t.phase} list="recipe-phases" onChange={(v) => rename(i, v)} width={150} /></td>
-                  <td><Cell type="number" value={t.days} onChange={(v) => setTask(i, { days: num(v) })} width={52} /></td>
-                  <td><PickCell value={t.crew} options={rules.crewTemplates.map((c) => c.id)} none="" onChange={(v) => setTask(i, { crew: v || undefined })} width={110} /></td>
-                  <td className="scn-dim">{[usesText(t.cranes), usesText(t.equipment), usesText(t.materials)].filter(Boolean).join(' · ') || '—'}</td>
-                  <td className="rel-c"><button type="button" className="cols__icon cols__icon--remove" onClick={() => remove(i)} aria-label="Delete task"><IconRemove /></button></td>
+                    onDragEnd={() => setDrag(null)}>{i + 1}</th>
+                  <td className="xl__cell"><input list="recipe-phases" value={t.name ?? t.phase} spellCheck={false} onChange={(e) => rename(i, e.target.value)} /></td>
+                  <td className="xl__cell"><input value={followsText(recipe, t.phase)} spellCheck={false} onChange={(e) => follow(i, e.target.value)} placeholder={i === 0 ? '' : recipe.tasks[i - 1]?.phase} title='What it waits for: "Rebar", "Decking@80", "Rebar:SS+16"' /></td>
+                  <td className={`xl__cell xl__num xgrid__cell${grid.sel('days', at)}`} data-col="days" data-row={at}><input {...grid.cell('days', at)} type="text" inputMode="decimal" value={t.days ?? ''} onChange={(e) => setTask(i, { days: num(e.target.value) })} />{grid.handle('days', at)}</td>
+                  <td className={`xl__cell xgrid__cell${grid.sel('formula', at)}`} data-col="formula" data-row={at}><input {...grid.cell('formula', at)} value={t.formula ?? ''} spellCheck={false} placeholder="Rebar_kg / Rebar_Rate" title={formulaTip(t.formula)} onChange={(e) => setTask(i, { formula: e.target.value.trim() === '' ? undefined : e.target.value })} />{grid.handle('formula', at)}</td>
+                  <td className={`xl__cell xgrid__cell${grid.sel('crew', at)}`} data-col="crew" data-row={at}><input {...grid.cell('crew', at)} list="recipe-crews" value={t.crew ?? ''} onChange={(e) => setTask(i, { crew: e.target.value || undefined })} />{grid.handle('crew', at)}</td>
+                  <td className="xl__cell xl__ro">{[usesText(t.cranes), usesText(t.equipment), usesText(t.materials)].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" onClick={() => remove(i)} aria-label="Delete task"><IconRemove /></button></td>
                 </tr>
               ))}
+              <tr className="xl__add"><th className="xl__row">*</th><td colSpan={7}><button type="button" onClick={() => { onChange({ ...recipe, tasks: [...recipe.tasks, { phase: '' }] }); setSelected(recipe.tasks.length); }}>+ Add a task</button></td></tr>
             </tbody>
           </table>
-          <div className="rel-bar"><button type="button" className="btn btn--small" onClick={() => { onChange({ ...recipe, tasks: [...recipe.tasks, { phase: '' }] }); setSelected(recipe.tasks.length); }}>+ Task</button><span className="scn-dim">Each task starts when the one above is done. Click a task to give it resources.</span></div>
+          <datalist id="recipe-crews">{rules.crewTemplates.map((c) => <option key={c.id} value={c.id} />)}</datalist>
+          <div className="scn-dim xl__note">Without a Follows, an activity starts when the one above is done. Click an activity to give it cranes, equipment and materials. Drag the number to reorder.</div>
           {selected !== null && recipe.tasks[selected] && <TaskResources task={recipe.tasks[selected]} rules={rules} onPatch={(patch) => setTask(selected, patch)} />}
         </>
       ) : chain && view === 'graph' ? (
@@ -252,7 +301,6 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
       ) : (
         <>
           <div className="rel-bar">
-            <input className="rel-filter" type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter" aria-label="Filter the tasks" />
             <button type="button" className="btn btn--small" onClick={() => onChange({ ...recipe, tasks: [...recipe.tasks, { phase: '' }] })}>+ Task</button>
             <button type="button" className="btn btn--small" onClick={() => void copyTasks()} title="Copy the tasks as text to paste into Excel">{copied ? 'Copied' : 'Copy for Excel'}</button>
             <button type="button" className="btn btn--small" onClick={() => setPaste(paste === null ? '' : null)} title="Paste tasks from Excel (columns as in Copy for Excel)">Paste from Excel</button>
@@ -372,6 +420,8 @@ function NeedsLine({ recipe, rules, lead, inStatus }: { recipe: Recipe; rules: S
 const NO_PHASES: never[] = [];
 
 export function RecipesEditor() {
+  // The recipe list's width: drag its right edge; remembered.
+  const listWidth = useResizableWidth('recipes.listWidth', 280, 200, 640);
   const ctx = useRuleContext();
   const recipes = useRecipeStore((st) => st.recipes);
   const pools = useRecipeStore((st) => st.pools);
@@ -380,7 +430,9 @@ export function RecipesEditor() {
   // The scenario's rules (groups, rates, crews, calendars) with the library's recipes and pools.
   const rules = useMemo<ScenarioRules>(() => ({ ...ctx.rules, recipes, resourcePools: pools }), [ctx.rules, recipes, pools]);
   const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
-  const [resourcesOpen, setResourcesOpen] = useState(false);
+  const { modelInfo } = useScenarioView();
+  const busy = useScenarioStore((st) => st.busy);
+  const canUpdate = scenarioOpen && !!modelInfo?.hasSource && !busy;
   const fileRef = useRef<HTMLInputElement>(null);
   // The recipes folded (by their place in the list), for the "collapse all" button.
   const [folded, setFolded] = useState<Set<number>>(new Set());
@@ -388,7 +440,22 @@ export function RecipesEditor() {
   // One recipe at a time: pick a set of the "Recipes sets" folder (or a group a recipe names) and see its recipe.
   const [picked, setPicked] = usePersistedState<string>('recipes.pick', '');
   const allSets = useSearchSetsStore((st) => st.sets);
-  const folderSets = useMemo(() => allSets.filter((x) => x.group === RECIPE_SETS_FOLDER), [allSets]);
+  const recipeSetsFolder = useRecipeFolderStore((f) => f.folder);
+  const setRecipeFolder = useRecipeFolderStore((f) => f.setFolder);
+  const folderNames = useMemo(() => [...new Set([recipeSetsFolder, ...allSets.map((x) => x.group ?? '').filter(Boolean)])].sort((a, b) => a.localeCompare(b)), [allSets, recipeSetsFolder]);
+  const folderSets = useMemo(() => allSets.filter((x) => x.group === recipeSetsFolder), [allSets, recipeSetsFolder]);
+  // A recipe is linked to a search set by name, whatever folder the set is in: the sets of the recipes folder, and any set a recipe names.
+  const usableSets = useMemo(() => {
+    const named = new Set(recipes.map((r) => r.group.trim().toUpperCase()).filter(Boolean));
+    const have = new Set(folderSets.map((x) => x.name.trim().toUpperCase()));
+    return [...folderSets, ...allSets.filter((x) => x.kind !== 'selection' && x.group !== recipeSetsFolder && named.has(x.name.trim().toUpperCase()) && !have.has(x.name.trim().toUpperCase()))];
+  }, [allSets, folderSets, recipes, recipeSetsFolder]);
+  // Every search set to choose from, by folder.
+  const setFolders = useMemo(() => {
+    const by = new Map<string, string[]>();
+    for (const x of allSets) if (x.kind !== 'selection') by.set(x.group ?? '', [...(by.get(x.group ?? '') ?? []), x.name]);
+    return [...by.entries()].sort(([a], [b]) => (a === recipeSetsFolder ? -1 : b === recipeSetsFolder ? 1 : a.localeCompare(b))).map(([folder, list]) => ({ folder, names: list.sort((a, b) => a.localeCompare(b, undefined, { numeric: true })) }));
+  }, [allSets, recipeSetsFolder]);
   const names = useMemo(() => {
     const seen = new Map<string, string>();
     for (const r of recipes) if (!seen.has(r.group.trim().toUpperCase())) seen.set(r.group.trim().toUpperCase(), r.group.trim());
@@ -396,33 +463,72 @@ export function RecipesEditor() {
   }, [recipes]);
   const nameIndex = Math.max(0, names.findIndex((n) => n.toUpperCase() === picked.toUpperCase()));
   const currentName = names[nameIndex] ?? '';
-  const current = folderSets.find((x) => x.name.toUpperCase() === currentName.toUpperCase());
+  const current = usableSets.find((x) => x.name.toUpperCase() === currentName.toUpperCase()) ?? allSets.find((x) => x.name.toUpperCase() === currentName.toUpperCase());
   const step = (by: number) => { if (names.length) setPicked(names[(nameIndex + by + names.length) % names.length]); };
   const sameGroup = (r: Recipe) => r.group.trim().toUpperCase() === currentName.toUpperCase();
   // How many objects each set finds in the loaded models, and the set of the selected object (the panel follows the selection).
   const engine = useViewerEngine();
   const tick = useIndexTick();
-  const members = useMemo(() => new Map(folderSets.map((x) => [x.id, runSearchSet(engine.getIndexes(), x)])), [folderSets, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const members = useMemo(() => new Map(usableSets.map((x) => [x.id, runSearchSet(engine.getIndexes(), x)])), [usableSets, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const selection = useSelectionStore((st) => st.byModel);
   useEffect(() => {
     const chosen = Object.entries(selection).filter(([, ids]) => ids.length > 0);
     if (!chosen.length) return;
-    const hit = folderSets.find((x) => chosen.some(([model, ids]) => ids.some((id) => members.get(x.id)?.[model]?.includes(id))));
+    const hit = usableSets.find((x) => chosen.some(([model, ids]) => ids.some((id) => members.get(x.id)?.[model]?.includes(id))));
     if (hit && hit.name.toUpperCase() !== currentName.toUpperCase()) setPicked(hit.name);
   }, [selection]); // eslint-disable-line react-hooks/exhaustive-deps
   const phaseList = [...new Set([...COMPONENT_PHASES, ...ACTIVITY_PHASES, ...phases])];
 
+  // What a new recipe starts with: Rebar and Concrete, or a copy of the tasks (and links) of a recipe that is there already, so "every wall" or "every slab" starts from the one that is worked out.
+  const [startFrom, setStartFrom] = useState(AUTO_START);
+  const starter = (forName = ''): { tasks: RecipeTask[]; edges?: Recipe['edges'] } => {
+    const from = startFrom === AUTO_START ? templateFor(forName, recipes) : recipes.find((r) => r.id === startFrom);
+    if (!from) return { tasks: [{ phase: 'Rebar', suffix: '-R', name: 'Rebar', material: 'rebar' }, { phase: 'Concrete', suffix: '-C', name: 'Concrete', material: 'concrete' }] };
+    return { tasks: from.tasks.map((t) => ({ ...t })), ...(from.edges?.length ? { edges: from.edges.map((e) => ({ ...e })) } : {}) };
+  };
   /** A recipe for the objects of a set ('' = every object), picked as the one shown. */
   const add = (group: string) => {
     let n = 1;
     let id = group || 'RECIPE';
     while (recipes.some((r) => r.id.toUpperCase() === id.toUpperCase())) id = `${group || 'RECIPE'}-${++n}`;
-    set([...recipes, { id, group, tasks: [{ phase: 'Rebar', suffix: '-R', name: 'Rebar', material: 'rebar' }, { phase: 'Concrete', suffix: '-C', name: 'Concrete', material: 'concrete' }] }]);
+    set([...recipes, { id, group, ...starter(group) }]);
     setPicked(group);
   };
   // The sets that can still get a recipe: those of the folder with objects in the loaded models (all of them while no model is loaded).
   const modelLoaded = engine.getIndexes().size > 0;
   const free = folderSets.filter((x) => !recipes.some((r) => r.group.trim().toUpperCase() === x.name.toUpperCase()) && (!modelLoaded || countIds(members.get(x.id) ?? {}) > 0));
+  /** A recipe for each set that has none yet, in one go (Rebar and Concrete to start with, as + Recipe gives). */
+  const addAll = () => {
+    const made: Recipe[] = [];
+    for (const x of free) {
+      let n = 1;
+      let id = x.name || 'RECIPE';
+      while ([...recipes, ...made].some((r) => r.id.toUpperCase() === id.toUpperCase())) id = `${x.name}-${++n}`;
+      made.push({ id, group: x.name, ...starter(x.name) });
+    }
+    if (!made.length) return;
+    set([...recipes, ...made]);
+    setPicked(made[0].group);
+    setNote({ ok: true, text: `Made ${made.length} recipe${made.length === 1 ? '' : 's'}, one for each set.` });
+  };
+  /** A recipe for each of these names (the values of a property), each starting with the tasks of the recipe it looks most like. */
+  const makeRecipes = (names: string[]) => {
+    const made: Recipe[] = [];
+    for (const name of names) {
+      let n = 1;
+      let id = name || 'RECIPE';
+      while ([...recipes, ...made].some((r) => r.id.toUpperCase() === id.toUpperCase())) id = `${name}-${++n}`;
+      made.push({ id, group: name, ...starter(name) });
+    }
+    if (!made.length) return;
+    set([...recipes, ...made]);
+    setGridView(false);
+    setPicked(made[0].group);
+    setFromProperty(false);
+    setNote({ ok: true, text: `Made ${made.length} recipe${made.length === 1 ? '' : 's'}. Set the days, rate or crew of each below; Copy tasks from gives a row the tasks of another.` });
+  };
+  // A folder named almost like the recipes' one ("Recipes set"): offered to be renamed, as only the exact name is read.
+  const nearFolder = folderSets.length === 0 ? allSets.find((x) => x.group && x.group !== recipeSetsFolder && /^recipes?\s*sets?$/i.test(x.group.trim()))?.group ?? null : null;
   const everyFree = !recipes.some((r) => !r.group.trim());
   const copy = (i: number) => {
     const from = recipes[i];
@@ -435,7 +541,7 @@ export function RecipesEditor() {
   const repeated = new Set(duplicateSets(allSets).map((x) => x.id));
   const unusedSets = folderSets.filter((x) => repeated.has(x.id) || (x.kind !== 'selection' && !recipes.some((r) => r.group.trim().toUpperCase() === x.name.toUpperCase())));
   const removeUnused = () => {
-    if (!window.confirm(`Delete ${unusedSets.length} search set${unusedSets.length === 1 ? '' : 's'} of the folder "${RECIPE_SETS_FOLDER}" that no recipe is for?
+    if (!window.confirm(`Delete ${unusedSets.length} search set${unusedSets.length === 1 ? '' : 's'} of the folder "${recipeSetsFolder}" that no recipe is for?
 
 ${unusedSets.map((x) => x.name).join(', ')}`)) return;
     for (const x of unusedSets) useSearchSetsStore.getState().remove(x.id);
@@ -457,20 +563,20 @@ ${unusedSets.map((x) => x.name).join(', ')}`)) return;
     }
   };
 
+  // One table of every recipe (a row each, a column per task), or one recipe at a time with its graph.
+  const [gridView, setGridView] = usePersistedState('recipes.matrix', false);
+  const [listQuery, setListQuery] = useState('');
+  const [fromProperty, setFromProperty] = useState(false);
   const [barSlot, setBarSlot] = useState<HTMLElement | null>(null);
   const mine = recipes.map((r, i) => ({ r, i })).filter(({ r }) => sameGroup(r));
   const objects = current ? countIds(members.get(current.id) ?? {}) : null;
   const label = (n: string) => n || 'Every object';
 
   return (
-    <div className="scn-recipes">
+    <div className={`scn-recipes${!gridView && names.length > 0 ? ' scn-recipes--browse' : ''}`} style={{ ['--rec-list-w' as string]: `${listWidth.width}px` }} {...configFocusProps('recipes')}>
+      <ListConfig id="recipes" label="Recipes" searchable panels={{}} />
       <div className="rel-bar rec-top">
-        <button type="button" className="btn btn--small" onClick={() => step(-1)} disabled={names.length < 2} aria-label="Previous" title="Previous recipe">◀</button>
-        <select className="rel-cell rec-pick" value={currentName} onChange={(e) => setPicked(e.target.value)} aria-label="Recipe for" disabled={!names.length}>
-          {!names.length && <option value="">No recipes yet</option>}
-          {names.map((n) => <option key={n} value={n}>{label(n)}</option>)}
-        </select>
-        <button type="button" className="btn btn--small" onClick={() => step(1)} disabled={names.length < 2} aria-label="Next" title="Next recipe">▶</button>
+        {!gridView && <>
         {mine.length === 1 && (
           <span className="rec-actions">
             <button type="button" className="cols__icon" onClick={() => set(recipes.map((x, j) => (j === mine[0].i ? { ...x, enabled: x.enabled === false ? undefined : false } : x)))} title={mine[0].r.enabled === false ? 'Off: click to use this recipe' : 'On: click to keep the recipe but not use it'} aria-label="Recipe on or off">
@@ -480,21 +586,49 @@ ${unusedSets.map((x) => x.name).join(', ')}`)) return;
             <button type="button" className="cols__icon cols__icon--remove" onClick={() => { if (window.confirm(`Delete the recipe "${mine[0].r.id}"?`)) set(recipes.filter((_, j) => j !== mine[0].i)); }} title="Delete this recipe" aria-label="Delete the recipe"><IconDelete /></button>
           </span>
         )}
-        <details className="scn-more">
-          <summary className="btn btn--small primary" title="A recipe for the objects of a set">+ Recipe</summary>
+        </>}
+        <button type="button" className={`btn btn--small${recipes.length ? '' : ' primary'}`} aria-pressed={fromProperty} onClick={() => setFromProperty(!fromProperty)} title="Make a recipe for every value of a property of the objects (the app picks the likeliest property for you)">Make recipes</button>
+        <button type="button" className={`btn btn--small${recipes.length ? ' primary' : ''}`} disabled={!canUpdate} onClick={() => void updateFourD()} title={scenarioOpen ? 'Regenerate the programme with these recipes and play it in 4D (the scenario is not saved)' : 'Open a scenario first (Scenarios panel)'}>Update 4D</button>
+        <RecipeWorkbookButtons onNote={(n) => setNote({ ok: n.ok, text: n.lines.join(' ') })} />
+        <details className="scn-more scn-more--end">
+          <summary className="btn btn--small" title="Everything else: one recipe at a time, crews and rates, import / export, clean-up">More</summary>
           <div className="scn-more__menu scn-more__menu--list">
+        <details className="scn-more">
+          <summary className="btn btn--small" title="A recipe for the objects of a set">+ One recipe</summary>
+          <div className="scn-more__menu scn-more__menu--list">
+            <label className="scn-dim" style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 4px 6px' }} title="The Search sets folder whose sets the recipes are for">
+              From folder
+              <select className="rel-cell" value={recipeSetsFolder} onChange={(e) => setRecipeFolder(e.target.value)}>
+                {folderNames.map((f) => <option key={f} value={f}>{f}</option>)}
+              </select>
+            </label>
+            <label className="scn-dim" style={{ display: 'flex', flexDirection: 'column', gap: 2, padding: '2px 4px 6px' }} title="A new recipe starts as a copy of this one's tasks">
+              Start from
+              <select className="rel-cell" value={startFrom} onChange={(e) => setStartFrom(e.target.value)}>
+                <option value="">Rebar + Concrete</option>
+                <option value={AUTO_START}>Best match by name</option>
+                {recipes.filter((r) => r.chain !== false).map((r) => <option key={r.id} value={r.id}>Copy of {r.id}</option>)}
+              </select>
+            </label>
+            {free.length > 1 && <button type="button" className="btn btn--small primary" onClick={(e) => { addAll(); (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); }} title="Make a recipe for every set that has none">All {free.length} sets</button>}
             {free.map((x) => <button key={x.id} type="button" className="btn btn--small" onClick={(e) => { add(x.name); (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); }}>{x.name}</button>)}
             {everyFree && <button type="button" className="btn btn--small" onClick={(e) => { add(''); (e.currentTarget.closest('details') as HTMLDetailsElement | null)?.removeAttribute('open'); }}>Every object</button>}
+            {!free.length && nearFolder && <button type="button" className="btn btn--small" onClick={() => { for (const x of allSets) if (x.group === nearFolder) useSearchSetsStore.getState().save({ ...x, group: recipeSetsFolder }); }} title="The sets are in a folder with a similar name: move them into the one recipes read">Use the folder “{nearFolder}” as “{recipeSetsFolder}”</button>}
             {!free.length && !everyFree && <span className="scn-dim">Every set has a recipe. Make another set in Models &gt; Search sets.</span>}
           </div>
         </details>
-        <button type="button" className="btn btn--small" onClick={() => setResourcesOpen(true)} title="Crews, rates, equipment, cranes, materials and calendars">Resources…</button>
+        <button type="button" className="btn btn--small" aria-pressed={gridView} onClick={() => setGridView(!gridView)} title="Switch between the one table of every recipe and one recipe at a time with its graph">{gridView ? '← Back to the list' : 'Compare all recipes in one table'}</button>
         <details className="scn-more scn-more--end">
           <summary className="btn btn--small" title="Import or export the recipes as a file">⋯</summary>
           <div className="scn-more__menu">
             <button type="button" className="btn btn--small" onClick={() => fileRef.current?.click()}>Import file</button>
             <button type="button" className="btn btn--small" disabled={!recipes.length} onClick={exportFile}>Export file</button>
+            <button type="button" className="btn btn--small" disabled={!recipes.length} onClick={() => { if (window.confirm(`Delete all ${recipes.length} recipes?
+
+A backup file of them is downloaded first (Import file brings them back). The sets in "${recipeSetsFolder}" stay.`)) { exportFile(); set([]); } }} title="Start again: downloads a backup, then removes every recipe">Delete all recipes…</button>
             <button type="button" className="btn btn--small" disabled={!unusedSets.length} onClick={removeUnused} title="Delete the sets of the folder Recipes sets that have no recipe, and the ones that repeat a name">Delete unused sets ({unusedSets.length})</button>
+          </div>
+        </details>
           </div>
         </details>
         <input ref={fileRef} type="file" accept=".json,application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void importFile(f); }} />
@@ -502,24 +636,74 @@ ${unusedSets.map((x) => x.name).join(', ')}`)) return;
         <span ref={setBarSlot} className="rec-top__slot" />
       </div>
       {note && <div className={`scn-rules__note${note.ok ? '' : ' is-error'}`} role="status">{note.text}</div>}
-      {resourcesOpen && <ResourcesScreen onClose={() => setResourcesOpen(false)} />}
+      {(fromProperty || !names.length) && <RecipesFromProperty recipes={recipes} folder={recipeSetsFolder} onMake={makeRecipes} onClose={() => setFromProperty(false)} />}
       {!names.length ? (
-        <div className="scn-dim scn-editor__help" style={{ margin: 8 }}>No recipes yet. Press + Recipe and pick the set of objects it is for (sets are made in Models &gt; Search sets, in the folder "{RECIPE_SETS_FOLDER}").</div>
+        <div className="scn-dim scn-editor__help" style={{ margin: 8 }}>No recipes yet: pick a property above and every value of it becomes a recipe. For a single set use + Recipe.</div>
+      ) : gridView ? (
+        <RecipeGrid recipes={recipes} rules={rules} onChange={set} objects={new Map(usableSets.map((x) => [x.name.trim().toUpperCase(), countIds(members.get(x.id) ?? {})]))} />
       ) : (
-        <>
+        <div className="rec-browse">
+          <aside className="rec-list" aria-label="Recipes">
+            <div className="rec-list__grip" onMouseDown={listWidth.startDrag(false)} role="separator" aria-orientation="vertical" aria-label="Drag to change the width of the recipe list" title="Drag to change the width" />
+            <input className="rel-cell rec-list__search" type="search" value={listQuery} placeholder="Find a recipe…" onChange={(e) => setListQuery(e.target.value)} spellCheck={false} />
+            <div className="rec-list__items">
+              {recipes.map((r, i) => ({ r, i })).filter(({ r }) => {
+                const q = listQuery.trim().toLowerCase();
+                return !q || `${r.id} ${r.group} ${r.tasks.map((t) => t.phase).join(' ')}`.toLowerCase().includes(q);
+              }).map(({ r, i }) => {
+                const set = usableSets.find((x) => x.name.toUpperCase() === r.group.trim().toUpperCase());
+                const count = set ? countIds(members.get(set.id) ?? {}) : null;
+                const chainText = r.chain === false ? 'sets values only' : r.tasks.filter((t) => t.enabled !== false).map((t) => t.name || t.phase).join(' → ') || 'no activities yet';
+                const undecided = r.chain !== false && r.tasks.length > 0 && !r.tasks.some((t) => t.days !== undefined || t.formula || t.rate || t.crew);
+                const on = r.group.trim().toUpperCase() === currentName.toUpperCase();
+                return (
+                  <button key={i} type="button" className={`rec-list__item${on ? ' is-on' : ''}${r.enabled === false ? ' is-off' : ''}`} onClick={() => setPicked(r.group)} title={undecided ? 'No days, formula, rate or crew yet: the default days are used' : undefined}>
+                    <span className="rec-list__name">{r.id}{count !== null && <span className="rec-list__count">{count.toLocaleString()}</span>}</span>
+                    <span className="rec-list__chain">{chainText}</span>
+                    {undecided && <span className="rec-list__flag">default days</span>}
+                  </button>
+                );
+              })}
+            </div>
+          </aside>
+          <div className="rec-detail">
           <RecipeBarSlot.Provider value={mine.length === 1 ? barSlot : null}>
           {mine.map(({ r, i }, k) => (
 
             <div key={i}>
-              <NeedsLine recipe={r} rules={rules} inStatus={mine.length === 1} lead={k === 0 && objects !== null ? `${objects} object${objects === 1 ? '' : 's'} in the loaded models` : undefined} />
-              <RecipeCard bare={mine.length === 1} recipe={r} recipes={recipes} rules={rules} check={scenarioOpen} onChange={(next) => set(recipes.map((x, j) => (j === i ? next : x)))} onDelete={() => { if (window.confirm(`Delete the recipe "${r.id}"?`)) set(recipes.filter((_, j) => j !== i)); }} onCopy={() => copy(i)}
+              <div className="rec-head">
+                <input className="rec-head__name" value={r.id} spellCheck={false} aria-label="Recipe name" onChange={(e) => set(recipes.map((x, j) => (j === i ? { ...x, id: e.target.value } : x)))} />
+                <span className="rec-head__for" title="The search set (or group) whose objects get these activities">
+                  for <GroupSelect value={r.group} hideRuleGroups={setFolders.some((f) => f.names.length > 0)} setFolders={setFolders} ruleGroups={rules.groups.map((g) => g.id)} width={200} onChange={(group) => set(recipes.map((x, j) => (j === i ? { ...x, group } : x)))} />
+                  {objects !== null && <span className="scn-dim"> · {objects.toLocaleString()} object{objects === 1 ? '' : 's'} in the loaded models</span>}
+                </span>
+              </div>
+              <div className="rec-head__source scn-dim">{(() => {
+                const g = r.group.trim().toUpperCase();
+                if (!g) return 'Applies to every object that has no recipe of its own.';
+                const found = usableSets.find((x) => x.name.trim().toUpperCase() === g);
+                if (found) {
+                  // What the generator can test of the set: a condition it cannot read is left out, and a set with none is no group (its recipe is not used).
+                  const { group: made, lost } = groupFromSet(found, () => 'x');
+                  if (found.kind === 'selection') return `"${r.group}" is a selection set (fixed objects): the generator tests conditions, so this recipe is not used. Make it a search set.`;
+                  if (made.filters.length === 0) return `The generator cannot test any condition of the search set "${r.group}" (${lost.join('; ') || 'no conditions'}), so this recipe is not used. Use conditions on a pour column (Building, Level, Type …) or on a model property (a property set and its name).`;
+                  if (lost.length) return `The generator cannot test part of the search set "${r.group}" and leaves it out (${lost.join('; ')}), so the recipe may apply to more objects than the set finds.`;
+                }
+                if (found) return `The objects found by the search set "${r.group}" (folder "${found.group}", made in Models › Search sets).${objects === 0 ? ' It finds no objects in the loaded models: check its conditions there, or load the model it is for.' : ''}`;
+                if (rules.groups.some((x) => x.id.trim().toUpperCase() === g)) return `The objects of the rule group "${r.group}" of this scenario (Rules › Groups).`;
+                return `There is no search set "${r.group}" in any folder and no rule group of that name, so this recipe is not used. Choose one above, or make the set in Models › Search sets.`;
+              })()}</div>
+              <NeedsLine recipe={r} rules={rules} inStatus={mine.length === 1} />
+              <RecipeCard bare={mine.length === 1} setNames={allSets.map((x) => x.name)} recipe={r} recipes={recipes} rules={rules} check={scenarioOpen} onChange={(next) => set(recipes.map((x, j) => (j === i ? next : x)))} onDelete={() => { if (window.confirm(`Delete the recipe "${r.id}"?`)) set(recipes.filter((_, j) => j !== i)); }} onCopy={() => copy(i)}
                 collapsed={folded.has(i)} onCollapsed={(c) => setFolded((prev) => { const next = new Set(prev); if (c) next.add(i); else next.delete(i); return next; })} />
             </div>
           ))}
           </RecipeBarSlot.Provider>
-        </>
+          {!mine.length && <div className="scn-dim scn-editor__help">Pick a recipe on the left.</div>}
+          </div>
+        </div>
       )}
-      <datalist id="recipe-groups">{[...new Set([...folderSets.map((x) => x.name), ...rules.groups.map((g) => g.id)])].map((g) => <option key={g} value={g} />)}</datalist>
+      <datalist id="recipe-groups">{[...new Set([...setFolders.flatMap((f) => f.names), ...rules.groups.map((g) => g.id)])].map((g) => <option key={g} value={g} />)}</datalist>
       <datalist id="recipe-phases">{phaseList.map((p) => <option key={p} value={p} />)}</datalist>
       <datalist id="recipe-rates">{rules.rates.map((r) => <option key={r.id} value={r.id} />)}</datalist>
       <datalist id="recipe-crews">{rules.crewTemplates.map((r) => <option key={r.id} value={r.id} />)}</datalist>
@@ -529,11 +713,3 @@ ${unusedSets.map((x) => x.name).join(', ')}`)) return;
   );
 }
 
-/** The Recipes dock panel (4D Sequencing): the library, with or without a scenario open. */
-export function RecipesDock() {
-  return (
-    <div className="scn-rules scn-rules--dock">
-      <RecipesEditor />
-    </div>
-  );
-}

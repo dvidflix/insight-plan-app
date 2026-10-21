@@ -25,7 +25,8 @@ const countOf = (list?: { count?: number }[]) => (list ?? []).reduce((n, u) => n
 const rowsOf = (t: RecipeTask, crewPeople: number): [string, string][] => {
   const rows: [string, string][] = [];
   if (t.crew) rows.push(['Crew', crewPeople ? `${t.crew} · ${crewPeople}` : t.crew]);
-  if (t.days !== undefined) rows.push(['Duration', `${t.days} ${t.days === 1 ? 'day' : 'days'}`]);
+  if (t.formula) rows.push(['Formula', t.formula]);
+  else if (t.days !== undefined) rows.push(['Duration', `${t.days} ${t.days === 1 ? 'day' : 'days'}`]);
   else if (t.rate) rows.push(['Rate', t.rate]);
   if (t.calendar) rows.push(['Calendar', t.calendar]);
   const cranes = countOf(t.cranes);
@@ -86,20 +87,22 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
   const [colors, setColors] = usePersistedState<'activity' | 'single'>('recipes.graph.colors', 'activity');
   const [opts, setOpts] = useState(false);
   const [ganttOpen, setGanttOpen] = usePersistedState('recipes.graph.preview', true);
-  const gRows = useRef<HTMLDivElement>(null);
+  // The preview's rows (drawn when the preview is open, and moved to the dock): measured when they are there, so the link arrows follow their width.
+  const [gRows, setGRows] = useState<HTMLDivElement | null>(null);
   // In the Recipes dock the preview moves out to the dock's own scroller, so it can sit at the bottom edge of the panel.
   const previewAnchor = useRef<HTMLSpanElement>(null);
   const [dockHost, setDockHost] = useState<HTMLElement | null>(null);
-  useEffect(() => { setDockHost((previewAnchor.current?.closest('.scn-rules--dock') as HTMLElement | null) ?? null); }, []);
+  useEffect(() => { setDockHost((previewAnchor.current?.closest('.scn-rules--dock, .rec-detail') as HTMLElement | null) ?? null); }, []);
   const inDock = (node: ReactNode) => (dockHost && !fullscreen ? createPortal(node, dockHost) : node);
   const [gw, setGw] = useState(0); // the width of the preview's lanes, for its link arrows
   useEffect(() => {
-    const el = gRows.current;
+    const el = gRows;
     if (!el || typeof ResizeObserver === 'undefined') return;
+    setGw(Math.max(0, el.clientWidth - 110));
     const ro = new ResizeObserver(() => setGw(Math.max(0, el.clientWidth - 110)));
     ro.observe(el);
     return () => ro.disconnect();
-  }, []);
+  }, [gRows]);
   const profiles = useAppearanceStore((st) => st.profiles);
   const [resize, setResize] = useState<{ id: string; w: number } | null>(null); // a node being made wider or narrower
   const [wire, setWire] = useState<{ from: string; x: number; y: number } | null>(null); // a wire being pulled from an output socket
@@ -606,7 +609,7 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
       {(() => {
         // A rough Gantt of the recipe under the graph: a bar per task, as long as its days, placed by its links.
         if (!ganttOpen) return null;
-        const bars = previewBars(recipe, rules.rates);
+        const bars = previewBars(recipe, rules.rates, rules.parameters ?? []);
         const total = Math.max(1, ...bars.map((b) => b.start + b.days));
         const step = [1, 2, 5, 10, 20, 50, 100].find((s) => total / s <= 12) ?? 100;
         const ticks = Array.from({ length: Math.floor(total / step) + 1 }, (_, i) => i * step);
@@ -614,7 +617,7 @@ export function RecipeGraph({ recipe, recipes = [], rules, onChange, onFullscree
           <div className="rg__gantt" aria-label="Preview of the recipe as a Gantt chart">
             <div className="rg__gantt-head"><strong>Preview</strong><span className="scn-dim">about {Math.round(total * 10) / 10} working days, bars to scale; ~ means the days depend on quantities</span></div>
             <div className="rg__gantt-axis">{ticks.map((d) => <span key={d} style={{ left: `${(d / total) * 100}%` }}>{d}</span>)}</div>
-            <div className="rg__gantt-rows" ref={gRows}>
+            <div className="rg__gantt-rows" ref={setGRows}>
             {gw > 0 && (
               <svg className="rg__gantt-links" width={gw} height={bars.length * 24} aria-hidden="true">
                 {edges.filter((e) => e.from !== START && e.to !== END).map((e, i) => {

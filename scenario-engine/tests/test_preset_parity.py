@@ -58,13 +58,13 @@ def test_the_preset_generates_what_the_generator_did_with_its_own_tables():
     assert not differing, f"{len(differing)} of {len(golden)} pours differ, first: {differing[0]}"
 
 
-def test_without_rules_every_phase_takes_the_neutral_days_and_there_is_no_rebar():
+def test_without_rules_every_phase_takes_the_neutral_days_and_rebar_falls_back_to_a_quarter_tonne():
     for pour_type in ("WALL", "SLAB", "RAFT", "HEAVY_PRECAST"):
         r = rec("N", pour_type, conc_stage="PRECAST" if pour_type == "HEAVY_PRECAST" else "1")
         rules.activate(None)
         acts = gen.create_activities(r, FakeWbs())
         assert acts and all(a["duration_days"] >= 1 for a in acts if a["phase"] != "Curing" or pour_type == "HEAVY_PRECAST")
-        assert resources.rebar_tonnes(r) == 0.0
+        assert resources.rebar_tonnes(r) == pytest.approx(r["volume"] * 0.25)  # the fallback density
 
 
 def test_the_preset_makes_the_steps_overlap():

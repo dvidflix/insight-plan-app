@@ -36,6 +36,10 @@ export interface RecipeTask {
   material?: '' | 'rebar' | 'concrete';
   /** Fixed days, or a named rate (Rates), or a rebar rate (density), a named crew (Crews) and a calendar (Calendars). */
   days?: number;
+  /** The duration in working days as a formula of quantities and the scenario's parameters, such as `max(1, Concrete_m3 / Concrete_Rate)`
+      (prs/durationFormula's language; names: Concrete_m3, Rebar_t, Rebar_kg, Footprint_m2, Sides_m2, crews, and the parameters). It beats a rate; it is
+      worked out when the programme is generated. */
+  formula?: string;
   rate?: string;
   density?: string;
   crew?: string;
@@ -159,7 +163,7 @@ export function parseUses(text: string): ResourceUse[] {
     .map((m) => ({ type: m[1].trim(), ...(m[2] && Number(m[2].replace(',', '.')) !== 1 ? { count: Number(m[2].replace(',', '.')) } : {}) }));
 }
 
-const hasValues = (t: RecipeTask) => t.days !== undefined || !!t.rate || !!t.density || !!t.crew || !!t.calendar;
+const hasValues = (t: RecipeTask) => t.days !== undefined || !!t.formula || !!t.rate || !!t.density || !!t.crew || !!t.calendar;
 
 /** A recipe's values as the Assignment the generator reads. */
 function assignmentOf(r: Recipe, t: RecipeTask): Assignment {
@@ -169,6 +173,7 @@ function assignmentOf(r: Recipe, t: RecipeTask): Assignment {
     phase: t.phase,
     ...(t.rate ? { rate: t.rate } : {}),
     ...(t.days !== undefined ? { days: t.days } : {}),
+    ...(t.formula ? { formula: t.formula } : {}),
     ...(t.density ? { density: t.density } : {}),
     ...(t.crew ? { crew: t.crew } : {}),
     ...(t.calendar ? { calendar: t.calendar } : {}),
@@ -240,6 +245,7 @@ export function recipesFromRules(rules: { chains: ChainRow[]; assignments: Assig
     const task = (phase: string): RecipeTask => ({ phase });
     const addValues = (t: RecipeTask, a: Assignment, withState: boolean) => {
       if (a.days !== undefined) t.days = a.days;
+      if (a.formula) t.formula = a.formula;
       if (a.rate) t.rate = a.rate;
       if (a.density) t.density = a.density;
       if (a.crew) t.crew = a.crew;
@@ -309,7 +315,7 @@ export function recipeLosses(rules: Pick<ScenarioRules, 'chains' | 'assignments'
 
 // ---------------------------------------------------------------- the tasks of a recipe as text for a spreadsheet and back
 
-export const TASK_HEAD = ['Phase', 'Name', 'Suffix', 'Material', 'Follows', 'Days', 'Rate', 'Rebar rate', 'Crew', 'Calendar', 'Equipment', 'Cranes', 'Materials', 'Priority', 'Finish after', 'Gates'];
+export const TASK_HEAD = ['Phase', 'Name', 'Suffix', 'Material', 'Follows', 'Days', 'Rate', 'Rebar rate', 'Crew', 'Calendar', 'Equipment', 'Cranes', 'Materials', 'Priority', 'Finish after', 'Gates', 'Formula'];
 
 const out = (v: unknown) => (v === undefined || v === null ? '' : String(v));
 const yes = (v: string) => /^(y|true|1|x)/i.test(v.trim());
@@ -323,7 +329,7 @@ export function tasksToTsv(recipe: Pick<Recipe, 'tasks' | 'edges'>): string {
   return [
     TASK_HEAD.join('\t'),
     ...recipe.tasks.map((t) =>
-      [t.phase, out(t.name), out(t.suffix), out(t.material), followsText(recipe, t.phase), out(t.days), out(t.rate), out(t.density), out(t.crew), out(t.calendar), usesText(t.equipment), usesText(t.cranes), usesText(t.materials), out(t.priority), t.finishAfter ? 'yes' : '', t.gates ? 'yes' : ''].join('\t'),
+      [t.phase, out(t.name), out(t.suffix), out(t.material), followsText(recipe, t.phase), out(t.days), out(t.rate), out(t.density), out(t.crew), out(t.calendar), usesText(t.equipment), usesText(t.cranes), usesText(t.materials), out(t.priority), t.finishAfter ? 'yes' : '', t.gates ? 'yes' : '', out(t.formula)].join('\t'),
     ),
   ].join('\n');
 }
@@ -353,6 +359,7 @@ export function parseTasksPaste(text: string): { tasks: RecipeTask[]; edges: Rec
     if (number(c[13] ?? '') !== undefined) t.priority = number(c[13]!);
     if (yes(c[14] ?? '')) t.finishAfter = true;
     if (yes(c[15] ?? '')) t.gates = true;
+    if (c[16]) t.formula = c[16];
     tasks.push(t);
     edges.push(...edgesFromFollows(c[4], c[0]));
   }

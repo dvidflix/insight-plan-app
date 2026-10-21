@@ -133,7 +133,7 @@ function TimelineSettings() {
   );
 }
 
-export function SettingsPanel({ timeline = false, inputs = false }: { timeline?: boolean; inputs?: boolean }) {
+export function SettingsPanel({ timeline = false }: { timeline?: boolean; inputs?: boolean }) {
   const wrapHeaders = useTableStyleStore((s) => s.wrapHeaders);
   const setWrapHeaders = useTableStyleStore((s) => s.setWrapHeaders);
   const smoothScroll = useTableStyleStore((s) => s.smoothScroll);
@@ -150,9 +150,6 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
   const setTheme = useThemeStore((s) => s.setChoice);
   const accent = useAccentPaletteStore((s) => s.id);
   const setAccent = useAccentPaletteStore((s) => s.setId);
-  const showScenariosTab = useAppPrefsStore((s) => s.showScenariosTab);
-  const experimentalScenarios = useAppPrefsStore((s) => s.experimental.scenarios);
-  const setShowScenariosTab = useAppPrefsStore((s) => s.setShowScenariosTab);
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const setShowTimelinesTab = useAppPrefsStore((s) => s.setShowTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
@@ -173,7 +170,8 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
 
       {timeline && <TimelineSettings />}
 
-      {inputs && (
+      {/* The project folder and the file settings are always here: nothing sets `inputs` any more, so they were out of reach. */}
+      {(
         <>
           {FEATURES.seatable && experimental.seatableFiles && <Section title="File details (SeaTable)" defaultOpen tip="The details of each file (discipline, building, status…) are filled in on SeaTable's Insight Plan Files table. Push sends the files of the Inputs page (name, type, format, size…): new ones are added, the others updated, and the details you filled in are not touched. Read brings the details back, to show as columns and to group and filter by.">
             <FileDetailsSync />
@@ -215,17 +213,6 @@ export function SettingsPanel({ timeline = false, inputs = false }: { timeline?:
             <span className="switch__thumb" />
           </button>
         </div>
-        {experimentalScenarios && (
-        <div className="disp__row">
-          <span>
-            Show Scenarios tab{' '}
-            <InfoTip>The Scenarios page in the top bar. Scenarios also works inside 4D Sequencing (its Scenarios panel, beside the 3D model), so the tab is hidden by default.</InfoTip>
-          </span>
-          <button type="button" role="switch" aria-checked={showScenariosTab} className={`switch${showScenariosTab ? ' on' : ''}`} onClick={() => setShowScenariosTab(!showScenariosTab)}>
-            <span className="switch__thumb" />
-          </button>
-        </div>
-        )}
         {FEATURES.teamPages && (
         <div className="disp__row">
           <span>Show Timelines tab</span>

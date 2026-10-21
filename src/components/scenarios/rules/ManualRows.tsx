@@ -154,7 +154,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
   const bulk = (patch: Partial<ExtraTag>) => setTags(bulkIds, patch);
   const selectStyle = { minWidth: 0 } as const;
   // The columns typed in as a spreadsheet's: range, fill down (Ctrl+D, the corner square), copy and paste.
-  const grid = useEditableGrid({
+  const grid = useEditableGrid({ widthsKey: 'rules.extras',
     rows: shown,
     get: (col, { e }) => {
       const t = tags[e.TaskID] ?? {};

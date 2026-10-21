@@ -103,7 +103,7 @@ export function CalendarEditor({ model, cal, used }: { model: ScheduleModel; cal
     patch(`Edit ${name} of ${cal.name}`, { days, ...hoursPatch(days) }, `cal:${cal.id}:${name}`);
   };
   // Start and Finish typed as a spreadsheet's: range, fill down (Ctrl+D, the corner square: Monday's hours down to Friday), copy and paste.
-  const grid = useEditableGrid({
+  const grid = useEditableGrid({ widthsKey: 'calendar.editor',
     rows: WEEK as string[],
     get: (col, name) => { const spans = daySpans(week[name]); return !week[name].working || spans.length === 0 ? '' : col === 'start' ? spans[0].start : spans[spans.length - 1].finish; },
     write: (col, cells) => {

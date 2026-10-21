@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import { FieldPicker, RuleRows, type PickField } from './schedule/FieldRules';
+import { IconEye, IconEyeOff } from './icons';
 import { InfoTip } from './InfoTip';
 import { compileLogic, defaultLogic } from '../viewer/filterLogic';
 
@@ -10,11 +11,13 @@ export interface FilterRow {
   summary: string;
   /** Not complete yet (no value picked): shown dim. */
   dim?: boolean;
+  /** Switched off with the eye: kept, but not applied. */
+  off?: boolean;
 }
 
 /** The Filters tab of every list, one layout: saved filters, the filters as a Field / Condition table (click one to edit it in the editor
     under the table), how they combine, then every field to add a filter from. Each list gives the rows, the editor and what its fields are. */
-export function FilterRules({ presets, quick, rows, onRemove, onReorder, onClearAll, hint, tip, empty = 'No filter: pick a field below.', editingId, onEdit, editor, editorTitle = 'Edit condition', combine, fields, picked, onPick }: {
+export function FilterRules({ presets, quick, rows, onRemove, onReorder, onClearAll, onToggle, hint, tip, empty = 'No filter: pick a field below.', editingId, onEdit, editor, editorTitle = 'Edit condition', combine, fields, picked, onPick }: {
   presets?: ReactNode;
   /** One-click filters, above the table. */
   quick?: ReactNode;
@@ -23,6 +26,8 @@ export function FilterRules({ presets, quick, rows, onRemove, onReorder, onClear
   /** Rows dragged into a new order (their ids); lists whose filters have no order leave it out. */
   onReorder?: (ids: string[]) => void;
   onClearAll: () => void;
+  /** The eye at the end of a row: switches the filter off (kept, not applied) or on again. Without it the rows have no eye. */
+  onToggle?: (id: string) => void;
   /** The line under the heading: how many of the rows / objects pass. */
   hint?: ReactNode;
   tip?: ReactNode;
@@ -53,7 +58,7 @@ export function FilterRules({ presets, quick, rows, onRemove, onReorder, onClear
       {hint}
       {quick}
       <RuleRows
-        grid={{ key: 'filters', columns: [{ label: 'Field' }, { label: 'Condition' }] }}
+        grid={{ key: onToggle ? 'filters-eye' : 'filters', columns: [{ label: 'Field' }, { label: 'Condition' }, ...(onToggle ? [{ label: ' ', width: 34 }] : [])] }}
         rules={rows}
         onChange={(next) => {
           if (next.length < rows.length) { const gone = rows.find((r) => !next.some((n) => n.id === r.id)); if (gone) onRemove(gone.id); } else onReorder?.(next.map((r) => r.id));
@@ -62,8 +67,13 @@ export function FilterRules({ presets, quick, rows, onRemove, onReorder, onClear
       >
         {(r) => (
           <>
-            <button type="button" className={`rgrid__cell rgrid__cell--grow rgrid__cell--btn${editingId === r.id ? ' is-on' : ''}`} title={`${r.field} (click to edit this filter)`} onClick={() => open(r.id)}>{r.field}</button>
-            <button type="button" className={`rgrid__cell rgrid__cell--grow rgrid__cell--btn${r.dim ? ' is-dim' : ''}`} title="Click to edit this filter" onClick={() => open(r.id)}>{r.summary || 'pick a value'}</button>
+            <button type="button" className={`rgrid__cell rgrid__cell--grow rgrid__cell--btn${editingId === r.id ? ' is-on' : ''}${r.off ? ' is-dim' : ''}`} title={`${r.field} (click to edit this filter)`} onClick={() => open(r.id)}>{r.field}</button>
+            <button type="button" className={`rgrid__cell rgrid__cell--grow rgrid__cell--btn${r.dim || r.off ? ' is-dim' : ''}`} title="Click to edit this filter" onClick={() => open(r.id)}>{r.summary || 'pick a value'}</button>
+            {onToggle && (
+              <button type="button" className="rgrid__cell rgrid__cell--btn" aria-pressed={!r.off} onClick={() => onToggle(r.id)} aria-label={r.off ? `Switch the ${r.field} filter on` : `Switch the ${r.field} filter off`} title={r.off ? 'Off: kept but not applied. Click to apply it' : 'On. Click to switch it off without deleting it'}>
+                {r.off ? <IconEyeOff width={16} height={16} /> : <IconEye width={16} height={16} />}
+              </button>
+            )}
           </>
         )}
       </RuleRows>

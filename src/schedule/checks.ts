@@ -1,3 +1,4 @@
+import { findLoops } from './loops';
 import { hoursPerDayOf } from './hoursPerDay';
 import { buildNetwork, cloneNetwork, computeCPM } from './network';
 import type { ScheduleCalendar } from './calendar';
@@ -335,6 +336,16 @@ const DEFS: CheckDef[] = [
     run: (c, pool) => {
       const ids = new Set(c.model.calendars.map((cal) => cal.id));
       return { flagged: pool.filter((a) => !a.calendarId || !ids.has(a.calendarId)) };
+    },
+  },
+  {
+    id: 'ADD11', num: null, name: 'Logic Loops', severity: 'high', scoped: false, green: NONE_ALLOWED, amber: NONE_ALLOWED, points: [5, 4],
+    description: 'Activities in a loop of links: each leads to the others, so none of them can ever start and the dates of everything after them cannot be trusted.',
+    risk: 'A loop makes the dates and float of the activities in it, and of all that follow, wrong: the schedule cannot be calculated.',
+    action: 'Open the loop (the flagged activities are the ones in it) and remove or change one link so the work runs in one direction.',
+    run: (c) => {
+      const inLoop = new Set(findLoops(c.model.activities, c.model.relationships).flat());
+      return { flagged: c.model.activities.filter((a) => inLoop.has(a.id)), total: c.model.activities.length || 1 };
     },
   },
 ];

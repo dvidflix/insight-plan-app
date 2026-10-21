@@ -71,7 +71,8 @@ export function InputsFilters() {
   const filters = useHomeSelection((s) => s.filters) ?? ownFilters;
   const files = useInputDetailsStore((s) => s.files);
   const details = useInputDetailsStore((s) => s.values);
-  const { setFilter, clearFilters } = useInputDetailsStore.getState();
+  const paused = useInputDetailsStore((s) => s.paused) ?? {};
+  const { setFilter, clearFilters, togglePaused } = useInputDetailsStore.getState();
 
   const keys = useMemo(() => [...BUILT_IN_GROUPS.filter((g) => g.id !== 'none'), ...fields.map((f) => ({ id: f, label: f }))], [fields]);
   const matched = useMemo(() => files.filter((f) => passesFilters(f, filters, details)).length, [files, filters, details]);
@@ -101,8 +102,10 @@ export function InputsFilters() {
   const [order, setOrder] = useState<string[]>([]);
   const byKey = new Map(keys.map((k) => [k.id, k]));
   const activeIds = new Set(activeKeys.map((k) => k.id));
-  const rowIds = [...order.filter((id) => byKey.has(id) && (activeIds.has(id) || id === editing)), ...activeKeys.map((k) => k.id).filter((id) => !order.includes(id))];
-  const summaryOf = (id: string) => { const kept = filters[id] ?? []; return kept.length <= 2 ? kept.map(labelOf).join(', ') : `${kept.length} values`; };
+  const pausedIds = new Set(keys.filter((k) => (paused[k.id]?.length ?? 0) > 0).map((k) => k.id));
+  const shownIds = new Set([...activeIds, ...pausedIds]);
+  const rowIds = [...order.filter((id) => byKey.has(id) && (shownIds.has(id) || id === editing)), ...[...shownIds].filter((id) => !order.includes(id))];
+  const summaryOf = (id: string) => { const kept = filters[id]?.length ? filters[id] : paused[id] ?? []; return kept.length <= 2 ? kept.map(labelOf).join(', ') : `${kept.length} values`; };
   const edited = editing ? byKey.get(editing) : undefined;
   const editedKept = edited ? filters[edited.id] ?? [] : [];
   const list = edited ? valuesOf(edited.id) : [];
@@ -119,9 +122,10 @@ export function InputsFilters() {
           ))}
         </div>
       )}
-      rows={rowIds.map((id) => ({ id, field: byKey.get(id)!.label, summary: summaryOf(id), dim: !activeIds.has(id) }))}
+      rows={rowIds.map((id) => ({ id, field: byKey.get(id)!.label, summary: summaryOf(id), dim: !shownIds.has(id), off: pausedIds.has(id) }))}
       onRemove={(id) => { setFilter(id, []); setOrder((o) => o.filter((x) => x !== id)); if (editing === id) setEditing(null); }}
       onReorder={setOrder}
+      onToggle={(id) => togglePaused(id)}
       onClearAll={() => { clearFilters(); setOrder([]); setEditing(null); }}
       editingId={editing}
       onEdit={setEditing}
