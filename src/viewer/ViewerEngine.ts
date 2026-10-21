@@ -1828,13 +1828,37 @@ export class ViewerEngine {
       so a large model (a terrain hundreds of metres across) is not cut away close to the camera while the depth buffer
       keeps its precision. Runs as the camera moves. */
   private updateNearFar() {
-    const cam = this._world?.camera.threePersp;
+    const camera = this._world?.camera;
+    if (camera) this.applyNearFar(camera, this.nearClip);
+  }
+
+  /** The nearest distance the main view draws (metres); 0 / unset: automatic (View settings > Near clipping). */
+  private nearClip: number | undefined;
+
+  setNearClip(metres: number | undefined) {
+    this.nearClip = metres;
+    this.updateNearFar();
+  }
+
+  /** Sets a perspective camera's near / far planes from where it is (see updateNearFar); `override` fixes the near plane (metres). Both views use it. */
+  applyNearFar(camera: OBC.OrthoPerspectiveCamera, override?: number) {
     const s = this.sceneSphere;
-    if (!cam || !s) return;
+    if (!s) return;
+    // The orthographic camera sits some way from what it frames and sees a slab of space: a near plane that is too far, or a far plane that is too short, cuts the model like a section.
+    const o = camera.threeOrtho;
+    const oFar = Math.max(1000, o.position.distanceTo(s.center) + s.radius * 2, s.radius * 20);
+    // Automatic: the slab reaches as far behind the camera as in front of it (a negative near plane is valid for an orthographic camera), so nothing is cut however far the view is zoomed or dollied.
+    const oNear = override && override > 0 ? override : -oFar;
+    if (Math.abs(oNear - o.near) > Math.abs(o.near) * 0.05 || Math.abs(oFar - o.far) > o.far * 0.05) {
+      o.near = oNear;
+      o.far = oFar;
+      o.updateProjectionMatrix();
+    }
+    const cam = camera.threePersp;
     const dist = cam.position.distanceTo(s.center);
     const outside = dist - s.radius;
     // Outside the models: the near plane can come close to the nearest point; inside them: a small one.
-    const near = Math.max(Math.min(s.radius / 5000, 0.5), outside > 0 ? outside * 0.5 : 0, 0.01);
+    const near = override && override > 0 ? override : Math.max(Math.min(s.radius / 5000, 0.5), outside > 0 ? outside * 0.5 : 0, 0.01);
     const far = Math.max(1000, dist + s.radius * 2);
     if (Math.abs(near - cam.near) > cam.near * 0.05 || Math.abs(far - cam.far) > cam.far * 0.05) {
       cam.near = near;
@@ -2396,6 +2420,7 @@ export class ViewerEngine {
     this.setSectionStyle(s.sectionStyle);
     this.setBackgroundColor(s.background);
     this.setGridVisible(s.grid);
+    this.setNearClip(s.nearClip);
   }
 
   setProjection(projection: 'Perspective' | 'Orthographic') {

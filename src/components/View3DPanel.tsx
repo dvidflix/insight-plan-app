@@ -233,6 +233,10 @@ function DisplaySettings({ page, view, sections }: { page: ViewPage; view: ViewK
           <span>Background</span>
           <HexColorInput value={s.background} onChange={(hex) => set('background', hex)} />
         </label>
+        <label className="disp__row">
+          <span>Near clipping (m) <InfoTip>How close to the camera objects are still drawn: anything nearer is cut away. 0 is automatic. Lower it (e.g. 0.01) if you zoom in close and geometry is cut; very low values can flicker on big models.</InfoTip></span>
+          <input type="number" min={0} step={0.01} value={s.nearClip ?? 0} onChange={(e) => set('nearClip', Math.max(0, Number(e.target.value) || 0))} style={{ width: 70 }} />
+        </label>
       </Group>
       <Group id="quality" title="Render quality" tip="Occlusion, resolution and edges of this view. Lower values are faster on big models; Presentation is for stills and recording." sections={sections}>
         <RenderQualitySettings quality={s.quality} onChange={(quality) => set('quality', quality)} />

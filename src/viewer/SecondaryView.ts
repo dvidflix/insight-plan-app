@@ -157,6 +157,8 @@ export class SecondaryView {
       container.removeEventListener('pointerdown', activate, { capture: true });
     };
     world.camera.controls.addEventListener('update', () => core.update());
+    // This view's camera keeps its own near / far planes, as the main one does, so what is close to it is not cut away.
+    world.camera.controls.addEventListener('update', () => engine.applyNearFar(world.camera, view.nearClip));
     const onProjection = (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera) => {
       for (const model of view.copies.values()) model.useCamera(camera);
       post.updateCamera();
@@ -311,10 +313,15 @@ export class SecondaryView {
     this.bgColor = s.background;
     if (!this.skyActive) this.world.scene.three.background = new THREE.Color(s.background);
     if (this.grid) this.grid.visible = s.grid;
+    this.nearClip = s.nearClip;
+    this.engine.applyNearFar(this.world.camera, this.nearClip);
     // A projection change resizes this view's frustum once it settles; match
     // the main view's scale again afterwards.
     if (this.linked) setTimeout(() => { if (!this.disposed && this.linked) this.copyCameraFromMain(); }, 60);
   }
+
+  /** Fixed near-plane distance in metres (View settings > Near clipping); unset: automatic. */
+  private nearClip: number | undefined;
 
   private adaptive: AdaptiveResolution | null = null;
   private adaptiveWired = false;

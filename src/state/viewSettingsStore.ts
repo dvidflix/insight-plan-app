@@ -52,6 +52,8 @@ export interface ViewSettings {
   ambientOcclusion: boolean;
   edgeWidth: number;
   background: string;
+  /** Nearest distance drawn, in metres (geometry closer to the camera is cut). Unset or 0: automatic. */
+  nearClip?: number;
   /** Reference grid and floor plane. */
   grid: boolean;
   /** Storey slide per model name: metres each storey is lifted above the one below. */
