@@ -79,8 +79,12 @@ export function activeTargetId(s: View): string | null {
   return s.recent.find((id) => s.targets[id]) ?? ids.find((id) => s.targets[id].kinds.length > 0) ?? ids[0] ?? null;
 }
 
-/** Spread on a list's container: clicking or tabbing into it makes it the list the panels are for. */
+/** Spread on a list's container: clicking or tabbing into it makes it the list the panels are for.
+    The header's search box and level stepper work on the active list, so using them never changes it (a page's header sits inside its container as a portal, and its events bubble up to it). */
 export function configFocusProps(id: string) {
-  const focus = () => useListConfigStore.getState().focus(id);
+  const focus = (e: { target: EventTarget }) => {
+    if ((e.target as Element | null)?.closest?.('.gs, .ctx-stepper')) return;
+    useListConfigStore.getState().focus(id);
+  };
   return { onPointerDownCapture: focus, onFocusCapture: focus };
 }

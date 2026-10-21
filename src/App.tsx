@@ -65,6 +65,8 @@ import { pushToSeaTable, DetailValue, GroupHeaderRow, ColumnResizer, InputsColgr
 import { HomePage } from './pages/HomePage';
 import { EditableStatus } from './components/schedule/EditableStatus';
 import { InputsTools } from './components/InputsTools';
+import { useListQuery } from './state/tableSearchStore';
+import { searchTokens } from './schedule/search';
 import { configFocusProps } from './state/listConfigStore';
 import { OverflowMenu, ToolPopover } from './components/TablePopovers';
 import type { PushFile } from './seatable/filesClient';
@@ -74,6 +76,9 @@ import { ResizeHandle, useResizableWidth } from './components/ResizeHandle';
 import { usePersistedState } from './utils/persistedState';
 import { StoredModelsNotes, StoredModelsStatus, useStoredModels } from './components/StoredModelsPanel';
 import { ModelsRestoreSync } from './components/ModelsRestoreSync';
+import { SceneViewSync } from './components/SceneViewSync';
+import { ModelLoadProgress } from './components/ModelLoadProgress';
+import { useModelLoadStore } from './state/modelLoadStore';
 import { SatelliteModelsSync } from './components/SatelliteModelsSync';
 import { WindowSelectionSync } from './components/WindowSelectionSync';
 import type { StoredModel } from './db/modelsApi';
@@ -329,6 +334,7 @@ export default function App() {
       {/* A second window loads the models only once it shows a page with the 3D view (loading them is the slow part). */}
       <StoredModelsStatus />
       {(FEATURES.browserData || !IS_SATELLITE) && <ModelsRestoreSync enabled={!IS_SATELLITE || visited.has('model') || visited.has('sequence') || wantModels} />}
+      {!IS_SATELLITE && <SceneViewSync />}
       <ProgrammeChoiceSync />
       <FitOnModelsTab page={page} />
       <SettingsSync />
@@ -581,10 +587,15 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
     sceneLinks.set([row.name], on);
     if (sceneLinks.isActive && row.hidden === on) toggleRowHidden(row);
   };
+  const fileQuery = useListQuery('files');
   const visibleRows = useMemo(() => {
     const on = sceneFilters ?? filters;
-    return Object.keys(on).length === 0 ? rows : rows.filter((r) => isOpenRow(r) || passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, on, detailValues));
-  }, [rows, filters, detailValues, sceneFilters]);
+    const filtered = Object.keys(on).length === 0 ? rows : rows.filter((r) => isOpenRow(r) || passesFilters({ name: r.name, type: KIND_LABEL[r.kind], format: formatOfRow(r) }, on, detailValues));
+    // The header search box: words (alternatives split on commas / semicolons) that the file's name, type or format must contain.
+    const alts = searchTokens(fileQuery).map((a) => a.split(/\s+/).filter(Boolean)).filter((a) => a.length);
+    if (!alts.length) return filtered;
+    return filtered.filter((r) => { const t = `${r.name} ${KIND_LABEL[r.kind]} ${formatOfRow(r)}`.toLowerCase(); return alts.some((w) => w.every((x) => t.includes(x))); });
+  }, [rows, filters, detailValues, sceneFilters, fileQuery]);
   // Groups, outermost level first.
   const tree = useMemo(() => {
     const rules = groupRules;
@@ -846,7 +857,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
       const root = dbRoot();
       if (root && file.name.toLowerCase().endsWith('.ifc')) {
         void storeLoadedIfc(engine, root, file.name, buffer, info.modelId)
-          .then(() => { linkToActive(file.name); return useModelStoreState.getState().refresh(root); })
+          .then(() => { linkToActive(file.name); useModelLoadStore.getState().note(file.name, 'Kept in the project model store'); return useModelStoreState.getState().refresh(root); })
           .catch((e) => setModelError(`${file.name}: not kept in the model store: ${e instanceof Error ? e.message : String(e)}`));
       }
       clearPendingModel(file.name);
@@ -998,6 +1009,7 @@ function InputsPage({ inDock = false }: { inDock?: boolean }) {
             {modelError && <div className="inputs-panel__error">{modelError}</div>}
             {scheduleError && <div className="inputs-panel__error">{scheduleError}</div>}
             <StoredModelsNotes actions={storedActions} />
+            <ModelLoadProgress />
             {Object.entries(scheduleBusy).map(([name, { label, fraction }]) => (
               <div key={name} className="inputs-panel__busy">
                 <span>{label} {name}… {Math.round(fraction * 100)}%</span>

@@ -45,7 +45,7 @@ function useTip(text: string) {
 }
 
 /** An icon button; `active` fills it with the accent colour (a toggle that's on, or the tool in use). */
-function Btn({ icon: I, tip, active, disabled, onClick, ownGesture, size = 20 }: { icon: IconC; tip: string; active?: boolean; disabled?: boolean; onClick: () => void; ownGesture?: boolean; size?: number }) {
+export function Btn({ icon: I, tip, active, disabled, onClick, ownGesture, size = 20 }: { icon: IconC; tip: string; active?: boolean; disabled?: boolean; onClick: () => void; ownGesture?: boolean; size?: number }) {
   const t = useTip(tip);
   return (
     <>
@@ -171,7 +171,7 @@ function Menu({ anchor, items, onClose, sub }: { anchor: DOMRect; items: MenuIte
 }
 
 /** A button with a chevron beside it for its menu; `onClick` null: the button opens the menu too. */
-function Split({ icon, tip, menuTip, active, disabled, onClick, items }: { icon: IconC; tip: string; menuTip: string; active?: boolean; disabled?: boolean; onClick: (() => void) | null; items: MenuItem[] }) {
+export function Split({ icon, tip, menuTip, active, disabled, onClick, items }: { icon: IconC; tip: string; menuTip: string; active?: boolean; disabled?: boolean; onClick: (() => void) | null; items: MenuItem[] }) {
   const [open, setOpen] = useState<DOMRect | null>(null);
   const root = useRef<HTMLSpanElement>(null);
   const caret = useTip(menuTip);
@@ -188,7 +188,7 @@ function Split({ icon, tip, menuTip, active, disabled, onClick, items }: { icon:
   );
 }
 
-const Sep = () => <span className="vtb-sep" aria-hidden="true" />;
+export const Sep = () => <span className="vtb-sep" aria-hidden="true" />;
 
 // ---- the toolbar -------------------------------------------------------------
 
@@ -339,6 +339,28 @@ export function ViewerToolbar() {
     engine.onInteractionModeChange.add(onMode);
     return () => { engine.onInteractionModeChange.remove(onMode); };
   }, [engine]);
+  // In a split, which view the buttons work on (the one last clicked in), shown beside them.
+  const [activeView, setActiveView] = useState(() => engine.getActiveView());
+  const [hasSecond, setHasSecond] = useState(() => !!engine.secondary);
+  const sideBySide = useViewSettingsStore((st) => (st.pages[page].compare ?? 'side') === 'side');
+  useEffect(() => {
+    const sync = () => { setActiveView(engine.getActiveView()); setHasSecond(!!engine.secondary); };
+    engine.onActiveViewChange.add(sync);
+    engine.onSecondaryChange.add(sync);
+    sync();
+    return () => { engine.onActiveViewChange.remove(sync); engine.onSecondaryChange.remove(sync); };
+  }, [engine]);
+  // In a split the buttons show the view last clicked in: when that changes they take on its mode and pin.
+  useEffect(() => {
+    const onView = () => {
+      const mode = engine.getInteractionMode();
+      setGhost(mode === 'reveal');
+      if (mode !== 'reveal') setBaseMode(mode);
+      setPinned(engine.isRevealPinned());
+    };
+    engine.onActiveViewChange.add(onView);
+    return () => { engine.onActiveViewChange.remove(onView); };
+  }, [engine]);
   useEffect(() => {
     const onPin = (p: boolean) => setPinned(p);
     engine.onRevealPinChange.add(onPin);
@@ -350,10 +372,17 @@ export function ViewerToolbar() {
     engine.onXrayChange.add(onXray);
     return () => { engine.onXrayChange.remove(onXray); };
   }, [engine]);
-  const applyMode = (base: 'select' | 'isolate', g: boolean) => {
+  const applyMode = (base: 'select' | 'isolate', wantGhost: boolean) => {
+    // Ghost fades what Isolate would hide: it belongs to Isolate, so Select never has it.
+    const g = base === 'isolate' && wantGhost;
     setBaseMode(base);
     setGhost(g);
-    void engine.setInteractionMode(g ? 'reveal' : base);
+    // The buttons then show what the view really is in, whatever finished first.
+    void engine.setInteractionMode(g ? 'reveal' : base).then(() => {
+      const mode = engine.getInteractionMode();
+      setGhost(mode === 'reveal');
+      if (mode !== 'reveal') setBaseMode(mode);
+    });
   };
 
   // Ignoring the timeliner (Scenarios toolbar) isolates + ghosts; following it again goes back to select and shows all objects.
@@ -488,11 +517,19 @@ export function ViewerToolbar() {
     if (second && !linked) await second.fitTo(map, dir?.clone());
   };
 
+  /** The fit keys: the view that is active (the one last clicked) is framed; when the views are linked the other follows it. */
+  const fitActive = async (map?: OBC.ModelIdMap) => {
+    const second = engine.secondary;
+    if (!second || linked) return fitViews(map);
+    if (engine.getActiveView() === 'second') return second.fitTo(map);
+    await engine.fit(map);
+  };
+
   // Blender's numpad views, on the numpad or the digit row: 1 front, 3 right, 7 top (Ctrl: back, left, bottom), 9 the
   // opposite view, 5 perspective / orthographic, 4 6 8 2 turn the view by 15° (Ctrl: slide it), + / - zoom,
-  // . fit the selection, Home fit everything.
-  const keysRef = useRef({ fitViews, patchView, page, ortho, hasSelection, selection, linked, walking });
-  keysRef.current = { fitViews, patchView, page, ortho, hasSelection, selection, linked, walking };
+  // numpad . fit the selection, Home or . (main keyboard) fit everything (zoom extents).
+  const keysRef = useRef({ fitViews, fitActive, patchView, page, ortho, hasSelection, selection, linked, walking });
+  keysRef.current = { fitViews, fitActive, patchView, page, ortho, hasSelection, selection, linked, walking };
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       const k = keysRef.current;
@@ -525,8 +562,9 @@ export function ViewerToolbar() {
         case '2': e.ctrlKey ? slide(0, -1) : turn(0, -15); break;
         case 'NumpadAdd': void engine.zoomBy(1.25).then(follow); break;
         case 'NumpadSubtract': void engine.zoomBy(0.8).then(follow); break;
-        case 'NumpadDecimal': void k.fitViews(k.hasSelection ? k.selection() : undefined); break;
-        case 'Home': void k.fitViews(undefined); break;
+        case 'NumpadDecimal': void k.fitActive(k.hasSelection ? k.selection() : undefined); break;
+        case 'Home':
+        case 'Period': void k.fitActive(undefined); break;
         default: handled = false;
       }
       if (handled) e.preventDefault();
@@ -608,11 +646,15 @@ export function ViewerToolbar() {
       <Sep />
       </div>
       <div className="vtb-group">
+      {/* Side by side, each view has these in its own header (components/ViewHeaders.tsx). */}
+      {!(hasSecond && sideBySide) && (
+      <>
+      {hasSecond && <span className="vtb-view" title="Select / Isolate / Ghost / Pin work on the view you last clicked in" style={{ fontSize: 11, fontWeight: 600, padding: '0 6px', color: 'var(--accent)' }}>{activeView === 'main' ? 'Left' : 'Right'}</span>}
       <div className="vtb-seg" role="radiogroup" aria-label="What selecting does">
         <button type="button" role="radio" aria-checked={baseMode === 'select'} className={baseMode === 'select' ? 'is-on' : ''} onClick={() => applyMode('select', baseMode === 'select' ? ghost : false)} title="Selecting only highlights">Select</button>
         <button type="button" role="radio" aria-checked={baseMode === 'isolate'} className={baseMode === 'isolate' ? 'is-on' : ''} onClick={() => applyMode('isolate', baseMode === 'isolate' ? ghost : true)} title="Only the selection stays visible">Isolate</button>
       </div>
-      <Btn icon={IconGhost} tip="Toggle ghost mode: everything outside the selection faded" active={ghost} onClick={() => applyMode(baseMode, !ghost)} />
+      <Btn icon={IconGhost} tip="Ghost (with Isolate): fade everything outside the selection instead of hiding it" active={ghost} disabled={baseMode === 'select'} onClick={() => applyMode(baseMode, !ghost)} />
       <Btn
         icon={IconPin}
         tip="Pin: keep the isolated / un-ghosted objects while the selection changes"
@@ -621,6 +663,8 @@ export function ViewerToolbar() {
         onClick={() => void engine.setRevealPinned(!pinned)}
       />
       <Sep />
+      </>
+      )}
       <Btn
         icon={ortho ? IconPerspective : IconModelOrtho}
         tip={ortho ? 'Orthogonal view (click for perspective)' : 'Perspective view (click for orthogonal)'}

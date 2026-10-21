@@ -22,12 +22,13 @@ export interface Tag extends TagStyle {
 }
 
 /** What a tag is attached to. 'task': the active tasks of a Link Group in 4D. 'set': the objects of a search / selection set, always.
-    'selection': the objects selected in the 3D view now. Their text comes from {Obj:...} tokens of each object. */
-export type TagSource = { kind: 'task' } | { kind: 'set'; setId?: string; setIds?: string[] } | { kind: 'selection' };
+    'selection': the objects selected in the 3D view now. 'visible': the objects shown in the 3D view now (what Hide / Isolate / the 4D date leave on screen).
+    Their text comes from {Obj:...} tokens of each object. */
+export type TagSource = { kind: 'task' } | { kind: 'set'; setId?: string; setIds?: string[] } | { kind: 'selection' } | { kind: 'visible' };
 /** The sets a set-tag labels (older tags have the one `setId`). */
 export const setIdsOf = (t: Pick<Tag, 'source'>): string[] => (t.source?.kind === 'set' ? t.source.setIds ?? (t.source.setId ? [t.source.setId] : []) : []);
 export const DEFAULT_SOURCE_MAX = 50;
-export const isObjectSourced = (t: Pick<Tag, 'source'>) => t.source?.kind === 'set' || t.source?.kind === 'selection';
+export const isObjectSourced = (t: Pick<Tag, 'source'>) => t.source?.kind === 'set' || t.source?.kind === 'selection' || t.source?.kind === 'visible';
 
 /** How a tag's text looks on the viewer; every field is optional (the default look). */
 export interface TagStyle {

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { useSelectionStore } from '../state/selectionStore';
 import { clashRows, useClashStore } from '../state/clashStore';
@@ -40,8 +40,13 @@ export function RelatedPanel() {
   const results = useClashStore((s) => s.results);
   const running = useClashStore((s) => !!s.running || s.pending > 0);
   const sections = useOpenSections<'touching'>('related.sections', ['touching']);
-  const [keep, setKeep] = usePersistedState('related.keepSelection', false);
+  // Which of Below / Above / Beside / All are lit: toggles, so several can be on at once. They light the objects, they do not select them.
+  const [on, setOn] = usePersistedState<(Side | 'all')[]>('related.shown', []);
   const [acrossModels, setAcrossModels] = usePersistedState('related.touchAcrossModels', false);
+  const [withSelected, setWithSelected] = usePersistedState('related.withSelected', true);
+  useEffect(() => {
+    void engine.setRelatedWithSelection(withSelected);
+  }, [engine, withSelected]);
 
   // The elements touching the selection, by where they sit relative to it.
   const neighbours = useMemo(() => {
@@ -66,11 +71,26 @@ export function RelatedPanel() {
 
   const count = (ids: IdsByModel) => Object.values(ids).reduce((n, l) => n + l.length, 0);
   const selectedCount = count(selection);
-  const pick = (side: Side | 'all') => void engine.selectElements(keep ? merge(selection, neighbours[side]) : neighbours[side], false);
+  const toggle = (side: Side | 'all') => setOn(on.includes(side) ? on.filter((x) => x !== side) : [...on, side]);
   const ready = Object.keys(results).length > 0;
 
+  // What is lit: the objects of the toggles that are on, except the selected ones (they keep the selection colour). The selection itself never changes.
+  const lit = useMemo(() => {
+    let out: IdsByModel = {};
+    for (const side of on) out = merge(out, neighbours[side]);
+    for (const [m, ids] of Object.entries(out)) {
+      const chosen = new Set(selection[m] ?? []);
+      out[m] = ids.filter((id) => !chosen.has(id));
+    }
+    return out;
+  }, [on, neighbours, selection]);
+  useEffect(() => {
+    void engine.showRelated(lit);
+  }, [engine, lit]);
+  useEffect(() => () => { void engine.showRelated({}); }, [engine]);
+
   const button = (side: Side | 'all', label: string, title: string) => (
-    <button type="button" className="clash__kind" disabled={!count(neighbours[side])} onClick={() => pick(side)} title={title}>
+    <button type="button" className={`clash__kind${on.includes(side) ? ' active' : ''}`} aria-pressed={on.includes(side)} disabled={!count(neighbours[side])} onClick={() => toggle(side)} title={title}>
       <span>{label}</span>
       <b>{count(neighbours[side])}</b>
     </button>
@@ -84,22 +104,22 @@ export function RelatedPanel() {
         onToggle={() => sections.toggle('touching')}
         tip={
           <>
-            <p>Selects the elements that touch or clash with the selection, by where they sit: <b>Below</b>, <b>Above</b> (including mostly below / above) or <b>Beside</b>, or <b>All</b> of them. Click again after selecting to go one more step, e.g. the pours below the pours below.</p>
-            <p>It reads the Clashes &amp; contacts results below, so it is instant once they are ready. <b>Include other models</b> also takes linked elements in other models; <b>Keep the selection</b> adds to it instead of replacing it.</p>
+            <p>Lights the elements that touch or clash with the selection, by where they sit: <b>Below</b>, <b>Above</b> (including mostly below / above) or <b>Beside</b>, or <b>All</b> of them. Each button is a toggle, so Below and Beside can be on together. The selection itself stays as it is: these elements are only lit (orange), not selected.</p>
+            <p>It reads the Clashes &amp; contacts results below, so it is instant once they are ready. <b>Include other models</b> also takes linked elements in other models.</p>
           </>
         }
       >
         <div className="clash">
           <div className="clash__kinds clash__kinds--four">
-            {button('below', 'Below', 'Elements under the selection')}
-            {button('above', 'Above', 'Elements on top of the selection')}
-            {button('beside', 'Beside', 'Elements next to the selection, at the same height')}
-            {button('all', 'All', 'Everything touching the selection')}
+            {button('below', 'Below', 'Light the elements under the selection (click again to turn off)')}
+            {button('above', 'Above', 'Light the elements on top of the selection')}
+            {button('beside', 'Beside', 'Light the elements next to the selection, at the same height')}
+            {button('all', 'All', 'Light everything touching the selection')}
           </div>
           {!selectedCount && <div className="flt__hint">Select elements in the 3D view first.</div>}
           {selectedCount > 0 && !ready && <div className="flt__hint">{running ? 'Clashes & contacts are still being checked…' : 'No Clashes & contacts results yet (see below).'}</div>}
           <div className="disp">
-            <Switch label="Keep the selection" on={keep} onChange={setKeep} />
+            <Switch label="Show the selected object in the right view" on={withSelected} onChange={setWithSelected} />
             <Switch label="Include other models" on={acrossModels} onChange={setAcrossModels} />
           </div>
         </div>

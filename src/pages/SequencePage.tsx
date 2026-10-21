@@ -673,8 +673,8 @@ export function SequencePanel() {
         const toHide: number[] = [];
         const toShow: number[] = [];
         // What the user hid (Hide / Isolate in the toolbar) stays hidden whatever the timeline says.
-        // (Hide / Isolate reach the split's second view too, so one list serves both.)
-        const userHid = (id: number) => mainEngine.isUserHidden(modelId, id);
+        // (Hide and Show all reach both views of a split; Isolate belongs to the view it was used in, so each view has its own list.)
+        const userHid = (id: number) => mainEngine.isUserHidden(modelId, id, view.id === 'b' ? 'second' : 'main');
         const noteVisible = (ids: Iterable<number>, wanted: boolean) => {
           for (const id of ids) {
             const target = wanted && !userHid(id);

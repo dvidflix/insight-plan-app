@@ -24,7 +24,7 @@ export const UI_SETTINGS_EVENT = 'ip-ui-settings';
 
 const PREFIXES = [...PERSISTED_CONFIG_PREFIXES, 'models.', 'views.', 'tables.', 'programmes.'];
 // programmes.choice belongs to the scene (a scene's own programme choice): one shared copy in the database would bring another scene's back.
-const SKIP = new Set(['sequence.linkGroups', 'app.browserDataImported', 'app.sidePane', 'programmes.choice', 'models.loaded']);
+const SKIP = new Set(['sequence.linkGroups', 'app.browserDataImported', 'app.sidePane', 'programmes.choice', 'models.loaded', 'viewer.sceneState']);
 const DB_PREFIX = 'ui:';
 const FLUSH_MS = 900;
 

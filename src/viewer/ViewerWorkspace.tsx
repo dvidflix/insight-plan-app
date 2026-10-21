@@ -124,7 +124,8 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, background
           <div style={{ position: 'relative', flex: 1, minWidth: 0, minHeight: 0, display: 'flex' }}>
             <ViewerCanvas layout={effectiveLayout} />
             {overlay}
-            {!centerShown && tagsShown && <ObjectSourceTags />}
+            {/* The Tags switch (4D Sequencing's eye menu) only exists on that page: on the Models page the tags chosen in a view's Tags menu are always drawn. */}
+            {!centerShown && (tagsShown || !inSequence) && <ObjectSourceTags />}
             {!centerShown && <SectionsPanel />}
             {/* The 3D view keeps its size underneath (a hidden canvas would lose its aspect ratio). */}
             {center !== undefined && (

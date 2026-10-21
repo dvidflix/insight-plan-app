@@ -23,6 +23,8 @@ import { useModelPlacementStore, ZERO_OFFSET } from '../state/modelPlacementStor
 import { useSequenceUiStore } from '../state/sequenceUiStore';
 import { useFlythroughStore } from '../state/flythroughStore';
 import { tagCss, useTagsStore } from '../state/tagsStore';
+import { useViewTagsStore } from '../state/viewTagsStore';
+import { ViewHeaders } from '../components/ViewHeaders';
 import { renderTag } from '../schedule/tagTemplate';
 
 /** Hosts the That Open UI shell (bim-grid > bim-viewport / bim-toolbar /
@@ -203,6 +205,8 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   // split's choice ("Models in this view"): one view shows every model, or
   // a model left out there would stay hidden with no picker to bring it back.
   const twoViews = isTwoViewLayout(layout);
+  /** Side by side, each view has a header of its own (its title, Select / Isolate / Ghost / Pin and Tags). */
+  const headed = ready && twoViews && !slider;
   const mainHidden = twoViews ? mainSettings.hiddenModels : undefined;
   const secondHidden = secondSettings.hiddenModels;
   useEffect(() => {
@@ -315,7 +319,8 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
   }, [linked, layout, ready, engine]);
 
   return (
-    <div className="viewer-canvas">
+    <div className={`viewer-canvas${headed ? ' viewer-canvas--headed' : ''}`}>
+      {headed && <ViewHeaders page={page} />}
       <div ref={hostRef} className="viewer-canvas__container viewer-shell" />
       {ready && slider && shellRef.current && (
         <CompareSlider
@@ -329,6 +334,7 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
         <ViewCaptions page={page} />
       )}
       {ready && page === 'model' && <HoverTag />}
+      {ready && page === 'model' && twoViews && <HoverTag view="second" tick={secondaryTick} />}
       {!ready && <div className="viewer-canvas__loading">Starting viewer…</div>}
       {contextLost && (
         <div className="viewer-canvas__loading viewer-canvas__lost" role="alert">
@@ -343,15 +349,17 @@ export function ViewerCanvas({ layout }: { layout: ViewerLayout }) {
 /** Models page, "Tag on hover" (toolbar eye menu): once the pointer rests
     on an object in the main view, the chosen tag next to it, its {Obj:…}
     tokens filled from that object (task tokens stay empty: no timeline here). */
-function HoverTag() {
+function HoverTag({ view = 'main', tick = 0 }: { view?: 'main' | 'second'; /** Changes when the second view is created or closed. */ tick?: number }) {
   const engine = useViewerEngine();
-  const tag = useTagsStore((s) => s.tags.find((t) => t.id === s.hoverTagId));
+  // The main view's tag is the toolbar's "Tag on hover"; the second view's is its own header's Tags menu.
+  const secondHover = useViewTagsStore((s) => s.views.second.hover);
+  const tag = useTagsStore((s) => s.tags.find((t) => t.id === (view === 'main' ? s.hoverTagId : secondHover)));
   const models = useModelsStore((s) => s.models);
   const [label, setLabel] = useState<{ x: number; y: number; text: string } | null>(null);
 
   useEffect(() => {
     setLabel(null);
-    const dom = engine.world.renderer?.three.domElement;
+    const dom = view === 'main' ? engine.world.renderer?.three.domElement : engine.secondary?.overlayWorld.renderer?.three.domElement;
     if (!tag || !dom) return;
     let timer = 0;
     let seq = 0;
@@ -366,7 +374,7 @@ function HoverTag() {
       const { clientX: x, clientY: y } = e;
       const mine = seq;
       timer = window.setTimeout(async () => {
-        const hit = await engine.elementAt(x, y);
+        const hit = view === 'main' ? await engine.elementAt(x, y) : (await engine.secondary?.elementAt(x, y)) ?? null;
         if (mine !== seq || !hit) return;
         const el = models.find((m) => m.modelId === hit.modelId)?.elements.find((e) => e.localId === hit.localId);
         const text = el ? renderTag(tag.template, { activeCount: 1, elements: [el], basis: 'planned' }).trim() : '';
@@ -384,7 +392,7 @@ function HoverTag() {
       dom.removeEventListener('pointerdown', hide);
       dom.removeEventListener('wheel', hide);
     };
-  }, [engine, tag, models]);
+  }, [engine, tag, models, view, tick]);
 
   return label ? <div className="hover-tag" style={{ ...tagCss(tag), left: label.x + 14, top: label.y + 14 }}>{label.text}</div> : null;
 }

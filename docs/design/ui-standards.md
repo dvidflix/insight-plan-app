@@ -51,7 +51,7 @@ Hover on a flat control: `rgba(0, 0, 0, 0.07)`. Active/selected tint: `rgb(var(-
 - **Left to right:** Home · page/view picker (`ViewPicker`) · search box · the page's own controls (tabs, steppers, group-by…). Right side: the page's tools, then the List setup button.
 - **Everything in it is full height.** Buttons, tabs and cells stretch (`align-self: stretch`, `height: 100%`), with a 1px `--border` line between cells. Only the search box and text inputs are inset and centred.
 - **Icon buttons are true squares**: `--header-h` wide. The Home button is 72px.
-- Same font weight and size for the view name on every page (the picker sets it; do not restyle it). **The view button (the second one) is a fixed width on every page**, sized for the longest view name ("Planner (build and edit)"), so the search box and everything after it never shifts when you change view. Longer names are cut with an ellipsis. (**Owner**)
+- Same font weight and size for the view name on every page (the picker sets it; do not restyle it). **The view button (the second one) is a fixed width on every page**, sized for the longest view name ("Quality Checks", "4D Sequencing"; keep view names short), so the search box and everything after it never shifts when you change view. Longer names are cut with an ellipsis. (**Owner**)
 
 ### 3.2 Search box in a header
 

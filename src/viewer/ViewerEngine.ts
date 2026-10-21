@@ -18,6 +18,7 @@ import { extractGrids, extractStoreys, type IfcGridData, type IfcStoreyData } fr
 import { gridDimensions, spacingText } from './gridDimensions';
 import { gridCutPlane, levelCutPlane, planeToScene, sectionFromPlane, sectionPlane, type Section, type SectionCuts } from './sectionPlanes';
 import { useSectionCutsStore } from '../state/sectionCutsStore';
+import { loadLogFor, useModelLoadStore, type LoadLog } from '../state/modelLoadStore';
 import { useSectionsStore } from '../state/sectionsStore';
 import { MarkerLayer } from './markerLayer';
 import { ConstructionPlaneLayer } from './constructionPlaneLayer';
@@ -44,6 +45,18 @@ export type ViewerTool = 'select' | 'box' | MeasureKind | 'point' | 'section';
 export type ViewerStyle = 'COLOR' | 'PEN' | 'PEN_SHADOWS' | 'COLOR_PEN' | 'COLOR_SHADOWS' | 'COLOR_PEN_SHADOWS';
 
 export type InteractionMode = 'select' | 'isolate' | 'reveal';
+/** The main 3D view, or the split's second one. */
+export type ViewId = 'main' | 'second';
+interface ViewMode {
+  mode: InteractionMode;
+  /** What selecting does under Ghost (Ghost is Isolate faded instead of hidden): the toolbar's Select / Isolate choice. */
+  base: 'select' | 'isolate';
+  /** The pinned focus set, while Pin is on. */
+  pinned: OBC.ModelIdMap | null;
+  /** Bumped by every apply / clear of the mode, so a slow Ghost pass can tell it is stale. */
+  run: number;
+}
+const newViewMode = (): ViewMode => ({ mode: 'select', base: 'select', pinned: null, run: 0 });
 
 /** Per-model lookup built once at load, so the tree and property tables can
     be rebuilt instantly without going back to the worker. */
@@ -80,6 +93,13 @@ function readSavedCamera() {
   }
 }
 
+/** The colour the objects touching the selection are lit in. */
+export const RELATED_COLOR = '#f59e0b';
+
+/** `work`, or an error when it has not finished after `ms` (the work itself keeps running). */
+const within = <T>(work: Promise<T>, ms: number, what: string): Promise<T> =>
+  Promise.race([work, new Promise<never>((_, no) => window.setTimeout(() => no(new Error(`${what} did not answer within ${ms / 1000} s`)), ms))]);
+
 export class ViewerEngine {
   private _components: OBC.Components | null = null;
   private _world: World | null = null;
@@ -94,7 +114,11 @@ export class ViewerEngine {
   private loadingIfc = false;
   private loadingFrag = false;
   private indexes = new Map<string, ModelIndex>();
-  private interactionMode: InteractionMode = 'select';
+  /** Select / Isolate / Ghost and Pin are each view's own: the toolbar's buttons work on the view last clicked in (the main view when there is no split). */
+  private viewModes: Record<ViewId, ViewMode> = { main: newViewMode(), second: newViewMode() };
+  private activeView: ViewId = 'main';
+  /** Which views a Hider change reaches; read when the change is made (see isolateIn). */
+  private hiderScope: 'both' | ViewId = 'both';
   private onDblClick: (() => void) | null = null;
   private onKeyDown: ((e: KeyboardEvent) => void) | null = null;
   private container: HTMLElement | null = null;
@@ -178,6 +202,10 @@ export class ViewerEngine {
     const view = this._secondary;
     if (!view) return;
     this._secondary = null;
+    // Its mode, pin and isolation go with it; the toolbar is for the main view again.
+    this.viewModes.second = newViewMode();
+    this.userVis.second = { hidden: new Map(), only: null };
+    this.setActiveView('main');
     await view.dispose();
     this.onSecondaryChange.trigger();
   }
@@ -300,7 +328,7 @@ export class ViewerEngine {
       if (path) path.visible = false;
       // In Reveal (and X-ray), the faded tiles are hidden from the edge
       // capture too, so only the solid elements get (normal, dark) edge lines.
-      const restoreGhosts = this.interactionMode === 'reveal' || this.xray ? this.hideRevealGhostTiles() : null;
+      const restoreGhosts = this.viewModes.main.mode === 'reveal' || this.xray ? this.hideRevealGhostTiles() : null;
       const swapped: [THREE.Mesh, THREE.Material | THREE.Material[]][] = [];
       for (const [group, flat] of this.edgeFreeObjects) {
         group.traverse((o) => {
@@ -406,6 +434,13 @@ export class ViewerEngine {
         renderedFaces: 0,
       },
     });
+    // The objects touching the selection (Related panel: Below / Above / Beside): lit without being selected.
+    highlighter.styles.set('related', {
+      color: new THREE.Color(RELATED_COLOR),
+      opacity: 1,
+      transparent: false,
+      renderedFaces: 0,
+    });
     highlighter.styles.set('ghost', {
       color: new THREE.Color('#64748b'),
       opacity: 0.12,
@@ -451,11 +486,26 @@ export class ViewerEngine {
     const hiderSet = hider.set.bind(hider);
     let hiderQueue: Promise<void> = Promise.resolve();
     hider.set = (visible: boolean, modelIdMap?: OBC.ModelIdMap) => {
+      const scope = this.hiderScope;
       const job = async () => {
-        this.noteUserVisibility(visible, modelIdMap);
-        await hiderSet(visible, modelIdMap);
-        await this._secondary?.mirrorVisibility(visible, modelIdMap);
-        this.onVisibilityChange.trigger();
+        if (scope !== 'second') this.noteUserVisibility('main', visible, modelIdMap);
+        if (scope !== 'main') this.noteUserVisibility('second', visible, modelIdMap);
+        // Each part is timed: one that never answers must not hold the queue (and every Hide / Isolate after it) for ever.
+        try {
+          if (scope !== 'second') {
+            this.hiderStage = 'the Hider (main view)';
+            await within(hiderSet(visible, modelIdMap), 30_000, this.hiderStage);
+            this.hiderStage = 'the models the Hider does not know';
+            await within(this.setVisibleOutsideManager(visible, modelIdMap), 30_000, this.hiderStage);
+          }
+          if (scope !== 'main') {
+            this.hiderStage = 'the second view';
+            await within(this._secondary?.mirrorVisibility(visible, modelIdMap) ?? Promise.resolve(), 30_000, this.hiderStage);
+          }
+        } finally {
+          this.hiderStage = '';
+          this.onVisibilityChange.trigger();
+        }
       };
       hiderQueue = hiderQueue.then(job, job);
       return hiderQueue;
@@ -465,11 +515,11 @@ export class ViewerEngine {
     };
     highlighter.events.select.onHighlight.add((map) => {
       this.onSelectionChange?.(map);
-      void this.applyInteraction(map);
+      for (const view of this.openViews()) void this.applyInteraction(view, map);
     });
     highlighter.events.select.onClear.add(() => {
       this.onSelectionChange?.({});
-      void this.clearInteraction();
+      for (const view of this.openViews()) void this.clearInteraction(view);
     });
 
     OBC.Views.defaultRange = 15;
@@ -495,6 +545,8 @@ export class ViewerEngine {
     fly.onPlayingChange.add((playing: boolean) => { if (playing) walk.disable(); });
     this._walkthrough = walk;
     for (const type of ['pointerdown', 'wheel']) container.addEventListener(type, () => fly.pause(), { capture: true, passive: true });
+    // A click in the main view makes it the one the toolbar's Select / Isolate / Ghost / Pin work on (the split's second view does the same).
+    container.addEventListener('pointerdown', () => this.setActiveView('main'), { capture: true, passive: true });
 
     this.markReady();
   }
@@ -542,6 +594,41 @@ export class ViewerEngine {
     return this.models.get(modelId) ?? null;
   }
 
+  /** What is lit as "touching the selection" now (both views draw it). */
+  private related: OBC.ModelIdMap = {};
+
+  getRelated(): OBC.ModelIdMap {
+    return this.related;
+  }
+
+  private relatedWithSelection = true;
+
+  /** Whether the right view (on Isolate / Ghost) keeps the selected object along with what touches it. */
+  async setRelatedWithSelection(on: boolean) {
+    if (this.relatedWithSelection === on) return;
+    this.relatedWithSelection = on;
+    const selection = this.highlighter.selection.select;
+    if (this.viewModes.second.mode === 'select' || this.viewModes.second.pinned || OBC.ModelIdMapUtils.isEmpty(selection) || !this.openViews().includes('second')) return;
+    await this.applyInteraction('second', selection);
+  }
+
+  /** Lights `ids` (per model id) without selecting them, replacing what was lit before; an empty map takes it off. */
+  async showRelated(ids: Record<string, number[]>) {
+    const map: OBC.ModelIdMap = {};
+    for (const [modelId, list] of Object.entries(ids)) if (list.length) map[modelId] = new Set(list);
+    this.related = map;
+    await this.withHighlighter((h) => (OBC.ModelIdMapUtils.isEmpty(map) ? h.clear('related') : h.highlightByID('related', map, true, false)));
+    await this._secondary?.showRelated(map);
+    // A view on Isolate / Ghost keeps what is lit along with the selection, so it follows the toggles (Below, Beside…).
+    const selection = this.highlighter.selection.select;
+    if (!OBC.ModelIdMapUtils.isEmpty(selection)) {
+      for (const view of this.openViews()) {
+        if (this.viewModes[view].mode !== 'select' && !this.viewModes[view].pinned) await this.applyInteraction(view, selection);
+      }
+    }
+    await this.forceUpdate();
+  }
+
   /** Replaces the selection with `ids` (per model id), optionally framing it; `add` keeps the current selection too. */
   async selectElements(ids: Record<string, number[]>, zoom = true, add = false) {
     const map: OBC.ModelIdMap = {};
@@ -572,119 +659,218 @@ export class ViewerEngine {
     return this.indexes;
   }
 
-  /** Select (just highlight), Isolate (Hider.isolate the selection) or
+  /** The views that exist now: the main one, and the split's second one while it is open. */
+  private openViews(): ViewId[] {
+    return this._secondary ? ['main', 'second'] : ['main'];
+  }
+
+  /** Fired when the view the toolbar works on changes (a click in the other view of a split, or the split closing). */
+  readonly onActiveViewChange = new OBC.Event<ViewId>();
+
+  /** The view the toolbar's Select / Isolate / Ghost / Pin work on: the one last clicked in (the main view when there is no split). */
+  getActiveView(): ViewId {
+    return this._secondary ? this.activeView : 'main';
+  }
+
+  setActiveView(view: ViewId) {
+    const next: ViewId = view === 'second' && !this._secondary ? 'main' : view;
+    if (next === this.activeView) return;
+    this.activeView = next;
+    console.debug('[view active]', next);
+    this.onActiveViewChange.trigger(next);
+  }
+
+  /** Which part of a Hider change is running (for the load log when one does not answer). */
+  private hiderStage = '';
+
+  /** The Hider only knows the models in the Fragments manager's list. A model that is drawn but not in it (restored with a scene) would ignore Hide and Isolate: they are applied to it here. */
+  private async setVisibleOutsideManager(visible: boolean, modelIdMap?: OBC.ModelIdMap) {
+    if (!this.fragments) return;
+    const listed = new Set(this.fragments.list.keys());
+    let touched = false;
+    for (const [modelId, model] of this.models) {
+      // (Not one that is still loading: it is registered in the indexes once it is ready.)
+      if (listed.has(modelId) || !this.indexes.has(modelId)) continue;
+      const ids = modelIdMap ? modelIdMap[modelId] : undefined;
+      if (modelIdMap && !ids?.size) continue;
+      try {
+        for (const m of this.renderTargets(model)) await m.setVisible(ids ? [...ids] : undefined, visible);
+        touched = true;
+      } catch (e) {
+        console.warn('Hide / Isolate could not reach a model', modelId, e);
+      }
+    }
+    if (touched) await this.fragments.core.update(true).catch(() => undefined);
+  }
+
+  /** Runs `change` with the Hider reaching `view` only (it reads the scope when called, before the first await). */
+  private scoped<T>(view: ViewId, change: () => Promise<T>): Promise<T> {
+    this.hiderScope = view;
+    try {
+      return change();
+    } finally {
+      this.hiderScope = 'both';
+    }
+  }
+
+  private isolateIn(view: ViewId, modelIdMap: OBC.ModelIdMap) {
+    return this.scoped(view, async () => { await Promise.all([this.hider.set(false), this.hider.set(true, modelIdMap)]); });
+  }
+
+  private showAllIn(view: ViewId) {
+    return this.scoped(view, () => this.hider.set(true));
+  }
+
+  /** Select (just highlight), Isolate (hide all but the selection) or
       Reveal (selection normal, everything else ghosted via a custom
-      Highlighter style — Simplebim's "Reveal"). */
-  async setInteractionMode(mode: InteractionMode) {
+      Highlighter style — Simplebim's "Reveal"), in one view: the active one
+      unless `view` says otherwise. */
+  setInteractionMode(mode: InteractionMode, view: ViewId = this.getActiveView(), base?: 'select' | 'isolate'): Promise<void> {
+    // One change at a time: on a big model each takes a while, and two overlapping ones could finish in the wrong order and leave the old mode in force.
+    const job = () => { this.viewModes[view].base = base ?? (mode === 'reveal' ? this.viewModes[view].base : mode); return this.setInteractionModeNow(mode, view); };
+    this.modeQueue = this.modeQueue.then(job, job);
+    return this.modeQueue;
+  }
+
+  private modeQueue: Promise<void> = Promise.resolve();
+
+  private async setInteractionModeNow(mode: InteractionMode, view: ViewId) {
+    const st = this.viewModes[view];
+    console.debug('[view mode]', { view, mode, was: st.mode, active: this.getActiveView(), split: !!this._secondary });
     // Leaving a pinned Isolate for Select: the isolation stays (only the
     // pinned elements remain visible) and those visible elements become the
     // selection — to query and step through them one by one; picks then only
     // select, never isolate. Show all brings the rest back as usual.
-    if (mode === 'select' && this.interactionMode === 'isolate' && this.revealPinned) {
-      const visible = this.revealPinned;
-      this.setPinnedState(null);
-      this.interactionMode = 'select';
+    if (mode === 'select' && st.mode === 'isolate' && st.pinned) {
+      const visible = st.pinned;
+      this.setPinnedState(view, null);
+      st.mode = 'select';
       await this.highlighter.highlightByID('select', visible, true, false);
       this.syncGhostEdgeExclusion();
-      this.onInteractionModeChange.trigger('select');
+      this.announceMode(view);
       return;
     }
-    this.setPinnedState(null);
-    await this.clearInteraction();
-    this.interactionMode = mode;
+    this.setPinnedState(view, null);
+    await this.clearInteraction(view);
+    st.mode = mode;
     const selection = this.highlighter.selection.select;
-    if (!OBC.ModelIdMapUtils.isEmpty(selection)) await this.applyInteraction(selection);
+    if (!OBC.ModelIdMapUtils.isEmpty(selection)) await this.applyInteraction(view, selection);
     this.syncGhostEdgeExclusion();
-    this.onInteractionModeChange.trigger(mode);
+    this.announceMode(view);
   }
 
-  getInteractionMode() {
-    return this.interactionMode;
+  private announceMode(view: ViewId) {
+    if (view === this.getActiveView()) this.onInteractionModeChange.trigger(this.viewModes[view].mode);
+    this.onViewModeChange.trigger(view);
+  }
+
+  /** Fired when any view's mode or pin changes (the headers of a split each show their own view's). */
+  readonly onViewModeChange = new OBC.Event<ViewId>();
+
+  /** The Select / Isolate choice a view is on (under Ghost too). */
+  getBaseMode(view: ViewId = this.getActiveView()): 'select' | 'isolate' {
+    return this.viewModes[view].base;
+  }
+
+  getInteractionMode(view: ViewId = this.getActiveView()) {
+    return this.viewModes[view].mode;
+  }
+
+  isRevealPinned(view: ViewId = this.getActiveView()) {
+    return this.viewModes[view].pinned !== null;
   }
 
   /** The pinned focus set (Isolate or Reveal): while set, the isolation /
       ghosting stays on these elements whatever is selected, so they can be
       unselected (Reveal: real colours) or picked one by one to query them. */
-  private revealPinned: OBC.ModelIdMap | null = null;
-
-  isRevealPinned() {
-    return this.revealPinned !== null;
-  }
-
-  private setPinnedState(pinned: OBC.ModelIdMap | null) {
-    const was = this.revealPinned !== null;
-    this.revealPinned = pinned;
-    if (was !== (pinned !== null)) this.onRevealPinChange.trigger(pinned !== null);
+  private setPinnedState(view: ViewId, pinned: OBC.ModelIdMap | null) {
+    const st = this.viewModes[view];
+    const was = st.pinned !== null;
+    st.pinned = pinned;
+    if (was !== (pinned !== null) && view === this.getActiveView()) this.onRevealPinChange.trigger(pinned !== null);
+    if (was !== (pinned !== null)) this.onViewModeChange.trigger(view);
   }
 
   /** Pins the current focus set (the selection) in Isolate or Reveal, or
       releases it — the isolation / ghosting then follows the selection
       again. Pinning needs a selection. */
-  async setRevealPinned(pin: boolean) {
+  async setRevealPinned(pin: boolean, view: ViewId = this.getActiveView()) {
+    const st = this.viewModes[view];
     // Isolate pins the same way: the isolated set stays while the selection changes.
-    if (this.interactionMode !== 'reveal' && this.interactionMode !== 'isolate') return;
+    if (st.mode !== 'reveal' && st.mode !== 'isolate') return;
     const selection = this.highlighter.selection.select;
     if (pin) {
-      if (this.revealPinned || OBC.ModelIdMapUtils.isEmpty(selection)) return;
-      this.setPinnedState(OBC.ModelIdMapUtils.clone(selection));
+      if (st.pinned || OBC.ModelIdMapUtils.isEmpty(selection)) return;
+      this.setPinnedState(view, OBC.ModelIdMapUtils.clone(selection));
       return;
     }
-    if (!this.revealPinned) return;
-    this.setPinnedState(null);
-    await this.clearInteraction();
-    if (!OBC.ModelIdMapUtils.isEmpty(selection)) await this.applyInteraction(selection);
+    if (!st.pinned) return;
+    this.setPinnedState(view, null);
+    await this.clearInteraction(view);
+    if (!OBC.ModelIdMapUtils.isEmpty(selection)) await this.applyInteraction(view, selection);
   }
 
-  /** Bumped by every apply / clear, so a Ghost pass still running when the mode or selection changes can tell it is stale. */
-  private interactionRun = 0;
-
-  private async applyInteraction(selection: OBC.ModelIdMap) {
-    if (this.revealPinned) return;
-    const run = ++this.interactionRun;
-    if (this.interactionMode === 'isolate') {
-      await this.hider.isolate(selection);
+  private async applyInteraction(view: ViewId, selection: OBC.ModelIdMap) {
+    const st = this.viewModes[view];
+    if (st.pinned) return;
+    // Bumped by every apply / clear, so a Ghost pass still running when the mode or selection changes can tell it is stale.
+    const run = ++st.run;
+    // What is lit as touching the selection stays with it: shown in Isolate, not faded in Ghost.
+    // The right view can leave the selected object out and show only what touches it (Touching the selection › Show the selected object).
+    const left = view === 'second' && !this.relatedWithSelection && !OBC.ModelIdMapUtils.isEmpty(this.related);
+    const focus = left ? {} : OBC.ModelIdMapUtils.clone(selection);
+    for (const [modelId, ids] of Object.entries(this.related)) focus[modelId] = new Set([...(focus[modelId] ?? []), ...ids]);
+    if (st.mode === 'isolate') {
+      await this.isolateIn(view, focus);
       this.onExternalVisibilityChange.trigger();
-    } else if (this.interactionMode === 'reveal') {
+    } else if (st.mode === 'reveal') {
       // Selection keeps its highlight; every other element gets the "ghost"
-      // Highlighter style. The edge pass skips ghost tiles (see
-      // hideRevealGhostTiles), so only the focused elements are outlined.
+      // look. The edge pass skips ghost tiles (see hideRevealGhostTiles),
+      // so only the focused elements are outlined.
       const rest: OBC.ModelIdMap = {};
       for (const [modelId, model] of this.models) {
-        const chosen = selection[modelId];
+        const chosen = focus[modelId];
         const others = (await getGeometryLocalIds(model)).filter((id) => !chosen?.has(id));
         if (others.length) rest[modelId] = new Set(others);
       }
       // Switched to Isolate / Select (or picked again) while that ran: no ghost.
-      if (run !== this.interactionRun || this.interactionMode !== 'reveal') return;
+      if (run !== st.run || st.mode !== 'reveal') return;
+      if (view === 'second') {
+        await this._secondary?.showGhost(rest);
+        return;
+      }
       // (Through withHighlighter: with Box select on, the Highlighter is paused.)
       await this.withHighlighter((h) => h.highlightByID('ghost', rest, true, false));
-      if (run !== this.interactionRun || this.interactionMode !== 'reveal') {
+      if (run !== st.run || st.mode !== 'reveal') {
         await this.withHighlighter((h) => h.clear('ghost'));
         return;
       }
       this.ghosted = rest;
-      await this._secondary?.showGhost(rest);
       await this.forceUpdate();
     }
   }
 
-  /** What Ghost mode fades now (the second view shows the same). */
+  /** What Ghost mode fades now in the main view. */
   private ghosted: OBC.ModelIdMap = {};
 
   getGhosted(): OBC.ModelIdMap {
     return this.ghosted;
   }
 
-  private async clearInteraction() {
-    if (this.revealPinned) return;
-    this.interactionRun++;
-    if (this.interactionMode === 'isolate') {
-      await this.hider.set(true);
+  private async clearInteraction(view: ViewId) {
+    const st = this.viewModes[view];
+    if (st.pinned) return;
+    st.run++;
+    if (st.mode === 'isolate') {
+      await this.showAllIn(view);
       this.onExternalVisibilityChange.trigger();
-    } else if (this.interactionMode === 'reveal') {
+    } else if (st.mode === 'reveal') {
+      if (view === 'second') {
+        await this._secondary?.showGhost({});
+        return;
+      }
       await this.withHighlighter((h) => h.clear('ghost'));
       this.ghosted = {};
-      await this._secondary?.showGhost({});
       await this.forceUpdate();
     }
   }
@@ -1023,7 +1209,7 @@ export class ViewerEngine {
       Each step is independent and time-boxed: one failing (or hanging) on a
       difficult file must not take the others with it, and each falls back to
       building the same thing from the loaded tree/elements. */
-  private async postLoad(model: FRAGS.FragmentsModel) {
+  private async postLoad(model: FRAGS.FragmentsModel, log?: LoadLog) {
     const modelId = model.modelId;
     // Everything in the material list now is the model's own (4D colours
     // come later) — the realistic look greys only these.
@@ -1037,6 +1223,8 @@ export class ViewerEngine {
     const index = this.indexes.get(modelId);
 
     const step = async (label: string, run: () => Promise<void>) => {
+      const t0 = Date.now();
+      log?.note(`${label}…`);
       try {
         await Promise.race([
           run(),
@@ -1045,7 +1233,10 @@ export class ViewerEngine {
       } catch (e) {
         console.warn(`ViewerEngine: ${label} failed`, e);
         this.setupErrors.push(`${label}: ${e instanceof Error ? e.message : String(e)}`);
+        log?.note(`${label} failed after ${((Date.now() - t0) / 1000).toFixed(1)} s: ${e instanceof Error ? e.message : String(e)}`);
+        return;
       }
+      log?.note(`${label} done in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
     };
 
     const storeyItems = () => this.getStoreys(modelId);
@@ -1087,18 +1278,91 @@ export class ViewerEngine {
     this.onSetsReady.trigger(modelId);
   }
 
-  async loadIfc(buffer: ArrayBuffer, name: string): Promise<LoadedModelInfo> {
+  /** A model of the same name already in the viewer (one a load left behind that never reached the list, or one being loaded again) is taken out first: the new one replaces it. */
+  private async dropSameName(name: string) {
+    if (!this.models.has(name)) return;
+    await this.removeModel(name);
+    this.onModelDisposed?.(name);
+  }
+
+  /** Runs a load with its progress and log kept (state/modelLoadStore.ts: shown under the Files list). */
+  private async tracked<T>(name: string, kind: string, size: number, run: (log: LoadLog) => Promise<T>): Promise<T> {
+    useModelLoadStore.getState().begin(name, kind, size);
+    try {
+      const result = await run(loadLogFor(name));
+      useModelLoadStore.getState().finish(name);
+      return result;
+    } catch (e) {
+      useModelLoadStore.getState().fail(name, e);
+      throw e;
+    }
+  }
+
+  /** What follows a load but is not needed to use the model: the camera, the storey and category sets, show-all. Each step is timed
+      and logged; one that fails does not undo the load. */
+  private async finishLoad(model: FRAGS.FragmentsModel, log: LoadLog) {
+    const t0 = Date.now();
+    try {
+      log.note('Framing the model…');
+      try { await within(this.fit(undefined, false, new THREE.Vector3(1, 0.7, 1)), 30_000, 'framing the model'); }
+      catch (e) { log.note(`Framing did not finish: ${e instanceof Error ? e.message : String(e)}; carrying on`); }
+      await this.postLoad(model, log);
+      log.note('Showing all objects…');
+      try { await this.hider.set(true); }
+      catch (e) { log.note(`Showing all objects did not finish: ${e instanceof Error ? e.message : String(e)}; carrying on`); }
+      this.onExternalVisibilityChange.trigger();
+      this.fitShadowCatcherToScene();
+      log.note(`Storeys, sets and framing ready (${((Date.now() - t0) / 1000).toFixed(1)} s after the model appeared)`);
+    } catch (e) {
+      console.warn('ViewerEngine: finishing the load failed', e);
+      log.note(`Background steps failed: ${e instanceof Error ? e.message : String(e)}`);
+    }
+  }
+
+  /** Loads in progress, by model name: a second request for the same model (the scene restoring it and a tick in Files at once) joins the first instead of starting another, which would tear the first down. */
+  private loading = new Map<string, Promise<LoadedModelInfo>>();
+
+  private once(name: string, start: () => Promise<LoadedModelInfo>): Promise<LoadedModelInfo> {
+    const running = this.loading.get(name);
+    if (running) {
+      useModelLoadStore.getState().note(name, 'Already being loaded: waiting for that one instead of starting another');
+      return running;
+    }
+    const job = start().finally(() => { if (this.loading.get(name) === job) this.loading.delete(name); });
+    this.loading.set(name, job);
+    return job;
+  }
+
+  loadIfc(buffer: ArrayBuffer, name: string): Promise<LoadedModelInfo> {
+    return this.once(name, () => this.tracked(name, 'IFC', buffer.byteLength, (log) => this.loadIfcNow(buffer, name, log)));
+  }
+
+  private async loadIfcNow(buffer: ArrayBuffer, name: string, log: LoadLog): Promise<LoadedModelInfo> {
+    log.step('Waiting for the 3D viewer');
     await this.ready;
     const fragments = this.fragments;
     if (!this.ifcLoader || !fragments || !this._world) throw new Error('ViewerEngine.init() must be called first');
+    await this.dropSameName(name);
     const bytes = new Uint8Array(buffer);
     this.loadingIfc = true;
     let model: FRAGS.FragmentsModel;
     try {
-      model = await this.ifcLoader.load(bytes, true, name);
+      log.step('Converting the IFC (geometry, properties, relations)');
+      let last = '';
+      model = await this.ifcLoader.load(bytes, true, name, {
+        processData: {
+          progressCallback: (progress, data) => {
+            log.progress(Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : null);
+            const key = `${data.process} ${data.state}`;
+            if (key !== last) { last = key; log.note(`Converting: ${data.process} ${data.state}${data.class ? ` (${data.class})` : ''}`); }
+          },
+        },
+      });
+      log.note('Converted');
     } finally {
       this.loadingIfc = false;
     }
+    log.step('Adding the model to the 3D view');
     this.models.set(model.modelId, model);
     this.wireShadows(model);
 
@@ -1111,9 +1375,12 @@ export class ViewerEngine {
     await fragments.core.update(true);
     this.fitShadowCatcherToScene();
 
+    log.step('Reading the objects and their properties');
     const info = await this.summarize(model, name);
-    await this.postLoad(model);
-    await this.restoreAssembled();
+    log.note(`${info.elementCount ?? '?'} objects read`);
+    // The model is usable now: the camera, the storey / category sets and "show all" finish in the background.
+    log.step('Ready: framing the model and building its sets in the background');
+    void this.finishLoad(model, log);
     // Layers come from the IFC text and can take a while on a big file, so
     // they load in the background after the model, sets and floor plans are
     // already usable.
@@ -1125,18 +1392,26 @@ export class ViewerEngine {
   /** Loads an already-converted .frag (Fragments binary) file — same result
       as loadIfc, minus the IFC-to-fragments conversion step and the layers
       pass (layers come from the raw IFC text, which a .frag doesn't carry). */
-  async loadFrag(buffer: ArrayBuffer, name: string): Promise<LoadedModelInfo> {
+  loadFrag(buffer: ArrayBuffer, name: string): Promise<LoadedModelInfo> {
+    return this.once(name, () => this.tracked(name, 'converted copy', buffer.byteLength, (log) => this.loadFragNow(buffer, name, log)));
+  }
+
+  private async loadFragNow(buffer: ArrayBuffer, name: string, log: LoadLog): Promise<LoadedModelInfo> {
+    log.step('Waiting for the 3D viewer');
     await this.ready;
     const fragments = this.fragments;
     if (!fragments || !this._world) throw new Error('ViewerEngine.init() must be called first');
+    await this.dropSameName(name);
     const bytes = new Uint8Array(buffer);
     this.loadingFrag = true;
     let model: FRAGS.FragmentsModel;
     try {
+      log.step('Opening the converted copy');
       model = await fragments.core.load(bytes, { modelId: name });
     } finally {
       this.loadingFrag = false;
     }
+    log.step('Adding the model to the 3D view');
     this.models.set(model.modelId, model);
     this.wireShadows(model);
 
@@ -1149,9 +1424,12 @@ export class ViewerEngine {
     await fragments.core.update(true);
     this.fitShadowCatcherToScene();
 
+    log.step('Reading the objects and their properties');
     const info = await this.summarize(model, name);
-    await this.postLoad(model);
-    await this.restoreAssembled();
+    log.note(`${info.elementCount ?? '?'} objects read`);
+    // The model is usable now: the camera, the storey / category sets and "show all" finish in the background.
+    log.step('Ready: framing the model and building its sets in the background');
+    void this.finishLoad(model, log);
     return info;
   }
 
@@ -1290,7 +1568,7 @@ export class ViewerEngine {
     // hideRevealGhostTiles). The excluded pass would paint the ghosts back
     // over the final image, covering the focused elements' edges behind them.
     // X-ray does the same (its faded materials would be caught here too).
-    if (this.interactionMode !== 'reveal' && !this.xray) for (const model of this.models.values()) {
+    if (this.viewModes.main.mode !== 'reveal' && !this.xray) for (const model of this.models.values()) {
       model.object.traverse((obj) => {
         const mesh = obj as THREE.Mesh;
         if (!mesh.isMesh || !mesh.material) return;
@@ -1899,12 +2177,28 @@ export class ViewerEngine {
 
   /** Puts the whole building back together: everything visible (Hider) and
       the camera fitted to the full model (BoundingBoxer). */
-  async restoreAssembled() {
-    await this.hider.set(true);
+  async restoreAssembled(log?: LoadLog) {
+    const t0 = Date.now();
+    log?.note('Showing all objects…');
+    try {
+      await this.hider.set(true);
+      log?.note(`Showing all objects done in ${((Date.now() - t0) / 1000).toFixed(1)} s`);
+    } catch (e) {
+      // Not worth failing the load for: a new model shows everything already.
+      console.warn('ViewerEngine: showing all objects failed', e);
+      log?.note(`Showing all objects did not finish: ${e instanceof Error ? e.message : String(e)}; carrying on`);
+    }
     this.onExternalVisibilityChange.trigger();
     // No animation: this can run while the viewer is off-screen (models are
     // imported from the Inputs tab), where a transition never converges.
-    await this.fit(undefined, false, new THREE.Vector3(1, 0.7, 1));
+    log?.note('Framing the model…');
+    try {
+      await within(this.fit(undefined, false, new THREE.Vector3(1, 0.7, 1)), 30_000, 'framing the model');
+      log?.note(`Framing done (${((Date.now() - t0) / 1000).toFixed(1)} s in all)`);
+    } catch (e) {
+      console.warn('ViewerEngine: framing the model failed', e);
+      log?.note(`Framing did not finish: ${e instanceof Error ? e.message : String(e)}; carrying on`);
+    }
     this.fitShadowCatcherToScene();
   }
 
@@ -2329,19 +2623,22 @@ export class ViewerEngine {
   // ---- What the user hid (Hide / Isolate / IFC types; Show all clears it) ----
   // The 4D timeline drives visibility too: it keeps these hidden rather than
   // showing them again on its next step (see isUserHidden).
-  private userHidden = new Map<string, Set<number>>();
-  /** After a "hide everything" (Isolate's first step): only these are shown. */
-  private userOnly: Map<string, Set<number>> | null = null;
+  // Kept per view: Isolate in one view of a split leaves the other as it was.
+  private userVis: Record<ViewId, { hidden: Map<string, Set<number>>; /** After a "hide everything" (Isolate's first step): only these are shown. */ only: Map<string, Set<number>> | null }> = {
+    main: { hidden: new Map(), only: null },
+    second: { hidden: new Map(), only: null },
+  };
 
-  private noteUserVisibility(visible: boolean, modelIdMap?: OBC.ModelIdMap) {
+  private noteUserVisibility(view: ViewId, visible: boolean, modelIdMap?: OBC.ModelIdMap) {
+    const state = this.userVis[view];
     if (!modelIdMap) {
-      this.userHidden.clear();
-      this.userOnly = visible ? null : new Map();
+      state.hidden.clear();
+      state.only = visible ? null : new Map();
       return;
     }
     for (const [modelId, ids] of Object.entries(modelIdMap)) {
-      const hidden = this.userHidden.get(modelId) ?? this.userHidden.set(modelId, new Set()).get(modelId)!;
-      const only = this.userOnly ? this.userOnly.get(modelId) ?? this.userOnly.set(modelId, new Set()).get(modelId)! : null;
+      const hidden = state.hidden.get(modelId) ?? state.hidden.set(modelId, new Set()).get(modelId)!;
+      const only = state.only ? state.only.get(modelId) ?? state.only.set(modelId, new Set()).get(modelId)! : null;
       for (const id of ids) {
         if (visible) {
           hidden.delete(id);
@@ -2354,10 +2651,35 @@ export class ViewerEngine {
     }
   }
 
+  /** What each view has hidden by Hide / Isolate, as lists of local ids per model: the objects hidden, or (after a hide-everything) the only ones shown. For a scene to keep. */
+  getVisibilityState(): Record<ViewId, { hidden: Record<string, number[]>; only: Record<string, number[]> | null }> {
+    const list = (m: Map<string, Set<number>>) => Object.fromEntries([...m].filter(([, ids]) => ids.size).map(([id, ids]) => [id, [...ids]]));
+    const of = (v: ViewId) => ({ hidden: list(this.userVis[v].hidden), only: this.userVis[v].only ? Object.fromEntries([...this.userVis[v].only!].map(([id, ids]) => [id, [...ids]])) : null });
+    return { main: of('main'), second: of('second') };
+  }
+
+  /** Puts a view's Hide / Isolate state back (see getVisibilityState); models that are not loaded are left out. */
+  async restoreVisibility(view: ViewId, state: { hidden: Record<string, number[]>; only: Record<string, number[]> | null }) {
+    if (view === 'second' && !this._secondary) return;
+    const toMap = (r: Record<string, number[]>) => {
+      const map: OBC.ModelIdMap = {};
+      for (const [id, ids] of Object.entries(r)) if (ids.length && this.models.has(id)) map[id] = new Set(ids);
+      return map;
+    };
+    if (state.only) {
+      const only = toMap(state.only);
+      await this.scoped(view, async () => { await Promise.all([this.hider.set(false), OBC.ModelIdMapUtils.isEmpty(only) ? Promise.resolve() : this.hider.set(true, only)]); });
+    }
+    const hidden = toMap(state.hidden);
+    if (!OBC.ModelIdMapUtils.isEmpty(hidden)) await this.scoped(view, () => this.hider.set(false, hidden));
+    this.onExternalVisibilityChange.trigger();
+  }
+
   /** Hidden by the user (Hide, Isolate, IFC element types) until Show all. */
-  isUserHidden(modelId: string, localId: number): boolean {
-    if (this.userHidden.get(modelId)?.has(localId)) return true;
-    return !!this.userOnly && !this.userOnly.get(modelId)?.has(localId);
+  isUserHidden(modelId: string, localId: number, view: ViewId = 'main'): boolean {
+    const { hidden, only } = this.userVis[view];
+    if (hidden.get(modelId)?.has(localId)) return true;
+    return !!only && !only.get(modelId)?.has(localId);
   }
 
   /** Of `localIds`, those shown in the main view now (not hidden by Hide / Isolate / the 4D timeline). */

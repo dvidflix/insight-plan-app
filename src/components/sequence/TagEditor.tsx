@@ -9,6 +9,7 @@ import { HexColorInput } from '../HexColorInput';
 import { taskFieldOptions } from '../../schedule/linkGroups';
 import { TASK_TOKENS, renderTag } from '../../schedule/tagTemplate';
 import { samplePropKeys } from '../../viewer/query';
+import { useTagLabelStats } from '../../state/tagLabelStats';
 
 const SEPARATORS = [' – ', ': ', ' · ', ', ', ' / '];
 const OBJECT_BUILTINS: { key: string; label: string }[] = [
@@ -30,6 +31,7 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
   const objectSourced = isObjectSourced(tag);
   const setIds = setIdsOf(tag);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const stat = useTagLabelStats((s) => s.stats[`${tag.id}:main`]);
   const [propQuery, setPropQuery] = useState('');
 
   const taskFields = useMemo(
@@ -78,6 +80,7 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
         <button type="button" className={kind === 'task' ? 'active' : ''} onClick={() => onChange({ source: { kind: 'task' } })} title="The active tasks of the Link Groups that use this tag (4D)">4D tasks</button>
         <button type="button" className={kind === 'set' ? 'active' : ''} disabled={kind !== 'set'} title="The objects of a search or selection set: made with the tag button on the set's row in Search sets">A set</button>
         <button type="button" className={kind === 'selection' ? 'active' : ''} onClick={() => onChange({ source: { kind: 'selection' }, placement: 'objects' })} title="The objects selected in the 3D view now">Selection</button>
+        <button type="button" className={kind === 'visible' ? 'active' : ''} onClick={() => onChange({ source: { kind: 'visible' }, placement: 'objects' })} title="The objects shown in the 3D view now: what Hide, Isolate, Ghost and the 4D date leave on screen">Visible</button>
       </div>
       {kind === 'set' && (
         <div className="scn-dim" style={{ fontSize: 12 }} title="Turn a set on and off with the tag button on its row in Search sets (Shift+Space)">
@@ -88,6 +91,16 @@ export function TagEditor({ tag, onChange, onDelete }: { tag: Tag; onChange: (pa
               <button type="button" aria-label="Take this set out" title="Take this set out" onClick={() => onChange({ source: { kind: 'set', setIds: setIds.filter((x) => x !== id) } })} style={{ border: 0, background: 'none', cursor: 'pointer', padding: 0 }}>×</button>
             </span>
           ))}
+        </div>
+      )}
+      {kind === 'visible' && !tag.hidden && (
+        <div className="scn-dim" style={{ fontSize: 12 }}>
+          {models.length === 0 ? 'No model is loaded: there is nothing to label.'
+            : !stat ? 'Looking at the objects…'
+            : stat.error ? `Could not read the objects: ${stat.error}`
+            : stat.withLabel === 0 ? 'None of the objects has any text for this label: check the {Obj:…} property names below.'
+            : stat.shown === 0 ? `${stat.withLabel} objects have a label but none is shown in the view now (hidden, isolated away or its model switched off).`
+            : `Labelling ${stat.shown} of the ${stat.withLabel} objects that have a label and are shown (up to Most labels).`}
         </div>
       )}
       {objectSourced && (

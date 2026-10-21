@@ -29,6 +29,7 @@ export function InputsTools({ onCollapseAll, onExpandAll }: { onCollapseAll: () 
     <ListConfig
       id="files"
       label="Files"
+      searchable
       badges={{ filters: filterCount, group: groupRules.length }}
       panels={{
         filters: <InputsFilters />,

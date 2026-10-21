@@ -148,9 +148,13 @@ export class SecondaryView {
       (a, b, fullyIncluded, additive) => void view.selectInRectangle(a, b, fullyIncluded, additive),
       (additive) => { if (!additive) void engine.applySelection({}, false); },
     );
+    // A click in this view makes it the one the toolbar's Select / Isolate / Ghost / Pin work on.
+    const activate = () => engine.setActiveView('second');
+    container.addEventListener('pointerdown', activate, { capture: true, passive: true });
     view.removeExtras = () => {
       mainRenderer.onClippingPlanesUpdated.remove(syncPlanes);
       removeBox();
+      container.removeEventListener('pointerdown', activate, { capture: true });
     };
     world.camera.controls.addEventListener('update', () => core.update());
     const onProjection = (camera: THREE.PerspectiveCamera | THREE.OrthographicCamera) => {
@@ -170,7 +174,7 @@ export class SecondaryView {
     view.setBoxTool(engine.getActiveTool() === 'box');
     await view.syncModels();
     await view.showSelection(engine.highlighter.selection.select);
-    await view.showGhost(engine.getGhosted());
+    await view.showRelated(engine.getRelated());
     if (engine.isXray()) view.setXray(true);
     return view;
   }
@@ -581,6 +585,10 @@ export class SecondaryView {
     }
     // Selected elements keep their highlight; they get the colour on deselect.
     const ids = this.unselected(modelId, localIds);
+    // A colour wins over the orange "touching" light here, so a colouring (Colour tab) stays readable in this view.
+    const lit = color === null ? [] : ids.filter((id) => this.relatedShown[modelId]?.has(id));
+    for (const id of lit) this.relatedShown[modelId].delete(id);
+    if (lit.length) for (const m of renderTargets(this.core, model)) await m.resetHighlight(lit);
     if (ids.length) for (const m of renderTargets(this.core, model)) {
       if (color === null) await m.resetColor(ids);
       else await m.setColor(ids, new THREE.Color(color));
@@ -626,9 +634,17 @@ export class SecondaryView {
     await this.core.update(true);
   }
 
+  /** Of `localIds`, those shown in this view now (its model not left out, the object not hidden here). */
+  async visibleOf(modelId: string, localIds: number[]): Promise<number[]> {
+    const copy = this.copies.get(modelId);
+    if (!copy || this.disposed || this.hidden.has(modelId) || !localIds.length) return [];
+    const shown = await copy.getVisible(localIds);
+    return localIds.filter((_, i) => shown[i]);
+  }
+
   // ---- ghost mode -------------------------------------------------------------
 
-  /** What Ghost mode fades here (the main view's, see ViewerEngine.getGhosted). */
+  /** What Ghost mode fades here (this view's own mode, see ViewerEngine.setInteractionMode). */
   private ghosted: OBC.ModelIdMap = {};
 
   private ghostMaterial() {
@@ -756,6 +772,25 @@ export class SecondaryView {
     };
   }
 
+  /** The visible object under a client-pixel point in this view, or null (the hover tag). */
+  async elementAt(clientX: number, clientY: number): Promise<{ modelId: string; localId: number } | null> {
+    const dom = this.world.renderer?.three.domElement;
+    if (!dom || this.disposed) return null;
+    const data = { camera: this.world.camera.three, mouse: new THREE.Vector2(clientX, clientY), dom };
+    let best: { modelId: string; localId: number; distance: number } | null = null;
+    for (const [modelId, copy] of this.copies) {
+      if (this.hidden.has(modelId)) continue;
+      for (const m of renderTargets(this.core, copy)) {
+        if (!m.object.visible) continue;
+        const hit = await m.raycast(data);
+        if (hit && (!best || hit.distance < best.distance)) best = { modelId, localId: hit.localId, distance: hit.distance };
+      }
+    }
+    if (!best) return null;
+    const [shown] = await this.copies.get(best.modelId)!.getVisible([best.localId]);
+    return shown ? { modelId: best.modelId, localId: best.localId } : null;
+  }
+
   private async pick(e: PointerEvent) {
     if (this.disposed) return;
     const dom = this.world.renderer!.three.domElement;
@@ -815,7 +850,52 @@ export class SecondaryView {
         if (now.length) await m.highlight(now, { customId: 'select', color, opacity: 1, transparent: false, renderedFaces: FRAGS.RenderedFaces.ONE });
       }
     }
+    await this.paintRelated();
     await this.core.update(true);
+  }
+
+  // ---- objects touching the selection (lit, not selected) ----
+
+  private related: OBC.ModelIdMap = {};
+  private relatedShown: OBC.ModelIdMap = {};
+
+  /** Lights `map` as "touching the selection" (what the main view lights too), taking off what was lit before. */
+  showRelated(map: OBC.ModelIdMap): Promise<void> {
+    return this.enqueue(async () => {
+      if (this.disposed) return;
+      this.related = OBC.ModelIdMapUtils.clone(map);
+      await this.paintRelated();
+      await this.core.update(true);
+    });
+  }
+
+  /** Draws the related objects that are not selected, and puts the ones that are no longer in the set back as they were. */
+  private async paintRelated() {
+    const previous = this.relatedShown;
+    const next: OBC.ModelIdMap = {};
+    for (const [modelId, ids] of Object.entries(this.related)) {
+      const list = [...ids].filter((id) => !this.selected[modelId]?.has(id) && !this.colors.get(modelId)?.has(id));
+      if (list.length) next[modelId] = new Set(list);
+    }
+    this.relatedShown = next;
+    const color = this.engine.highlighter.styles.get('related')?.color ?? new THREE.Color('#f59e0b');
+    for (const [modelId, copy] of this.copies) {
+      const was = [...(previous[modelId] ?? [])].filter((id) => !next[modelId]?.has(id) && !this.selected[modelId]?.has(id));
+      const now = [...(next[modelId] ?? [])];
+      for (const m of renderTargets(this.core, copy)) {
+        if (was.length) {
+          await m.resetHighlight(was);
+          const ghosted = this.ghosted[modelId];
+          const fade = ghosted?.size ? was.filter((id) => ghosted.has(id)) : [];
+          await this.restore(m, modelId, fade.length ? was.filter((id) => !ghosted!.has(id)) : was);
+          if (fade.length) await m.highlight(fade, this.ghostMaterial());
+        }
+        if (now.length) {
+          await m.resetHighlight(now);
+          await m.highlight(now, { customId: 'related', color, opacity: 1, transparent: false, renderedFaces: FRAGS.RenderedFaces.ONE });
+        }
+      }
+    }
   }
 
   /** Puts back the colour / opacity kept for `ids`. */

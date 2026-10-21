@@ -39,7 +39,7 @@ const SCENE_DATA = new Set([
 
 /** Layout keys a scene written before they were part of scenes does not have, or has empty (saved before a folder was open): opening it keeps what the browser has
     (the project folder, so an older scene does not open with none). */
-const KEEP_WHEN_ABSENT = ['scenarios.root'];
+const KEEP_WHEN_ABSENT = ['scenarios.root', 'sequence.tags', 'sequence.modelPlacement'];
 
 /** Browser keys that are neither layout nor a scene's lists: the user's other data, caches, or the scenes themselves. */
 const NOT_LAYOUT = new Set([
@@ -53,9 +53,7 @@ const NOT_LAYOUT = new Set([
   'scenarios.startDate',
   'resources.capacity',
   'sequence.linkGroups',
-  'sequence.tags',
   'sequence.appearanceProfiles',
-  'sequence.modelPlacement',
   'viewer.activityNotes',
   'viewer.ppcReasons',
   'models.customFields',
@@ -212,6 +210,8 @@ async function sync(): Promise<void> {
   if (suspended) return;
   window.clearTimeout(timer);
   await ready;
+  // The 3D view writes its own state (cameras, what is hidden, the selection ...) into the browser's keys first.
+  window.dispatchEvent(new Event('ip-scene-flush'));
   const store = read();
   const id = store.activeId;
   if (!id) return;
@@ -259,7 +259,7 @@ async function reloadSaved() {
 }
 
 /** Keys that belong to the scene, not the workspace: which models and programme are loaded, and the Files view. A workspace never saves or restores them. */
-const SCENE_OWNED = [FILE_VIEW_KEY, 'models.loaded', 'programmes.choice'];
+const SCENE_OWNED = [FILE_VIEW_KEY, 'models.loaded', 'programmes.choice', 'viewer.sceneState'];
 
 /** For workspaces (state/workspaces.ts): everything a scene holds, the layout keys and the viewer's lists, in one record (ALL_MARK says
     the lists are in it: a workspace saved before that has only layout, and opening it leaves the lists alone). */

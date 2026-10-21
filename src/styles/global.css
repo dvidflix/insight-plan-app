@@ -13427,7 +13427,7 @@ body.viewer-fullscreen .ws-float { display: none; }
 .ws-top .ws-page > .ws-page__btn { height: 100% !important; min-height: 0 !important; border: 0 !important; border-right: 1px solid var(--border) !important; border-radius: 0 !important; background: transparent !important; box-shadow: none !important; }
 .ws-top .ws-page > .ws-page__btn:hover, .ws-top .ws-page > .ws-page__btn.is-open { background: rgba(0, 0, 0, 0.07) !important; }
 .ws-top { gap: 0 !important; }
-.ws-top .ws-page > .ws-page__btn { padding: 0 28px 0 16px !important; }
+.ws-top .ws-page > .ws-page__btn { padding: 0 12px 0 12px !important; }
 .tp__glyph { display: inline-flex; align-items: center; justify-content: center; width: 16px; font-size: 16px; line-height: 1; }
 
 /* The view menu: the stream names as labels, every view in one column, rows tall enough to hit easily. */
@@ -14432,8 +14432,8 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 /* The search box has the same space on both sides in every header (Home, Programmes, Models, Generate, the other pages). */
 .ws-top .gs, .home__bar .gs, .ws-pagebar .gs, .viewer-toolbar-row .gs { margin: 0 12px !important; }
 
-/* The view button is one fixed width on every page: wide enough for the longest view name ("Planner (build and edit)"). */
-.ws-top .ws-page__name { box-sizing: content-box; width: 176px; max-width: none; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* The view button is one fixed width on every page: wide enough for the longest view name ("Quality Checks", "Activity Codes", "4D Sequencing"). */
+.ws-top .ws-page__name { box-sizing: content-box; width: 98px; max-width: none; flex: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* The view name starts right after its icon, on every page. The Models / 4D header puts its search box outside the picker, after a 6px gap: take the gap off its margin so the box lands on the same x as in the other headers. */
 .ws-top .ws-page__name { text-align: left; }
 .viewer-toolbar-row .schedule-toolbar__left > .gs { margin-left: 6px !important; }
@@ -14515,3 +14515,11 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .dock:not(.dock--bottom) .dock__head:not(.is-stacked) .dock__tools .dock__tool--fold { flex: 0 0 var(--head-btn-w) !important; width: var(--head-btn-w) !important; min-width: var(--head-btn-w) !important; color: var(--text); }
 .dock .dock__head .dock__tools .dock__tool svg, .dock .dock__head .dock-head-tool svg, .dock .dock__head .props-grid__head > .btn svg { width: var(--icon-row); height: var(--icon-row); }
 .dock .dock__head .dock__tools .dock__tool:hover { color: var(--accent-strong); }
+
+/* A split's views each have a header over them (components/ViewHeaders.tsx): the view's title, its own Select / Isolate / Ghost / Pin and its Tags menu. Header height, flat, a line between. */
+.viewer-canvas--headed { flex-direction: column; }
+.view-heads { display: flex; flex: none; height: var(--header-h); border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.view-head { flex: 1 1 50%; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 0 8px; border-left: 1px solid var(--border); box-sizing: border-box; cursor: default; }
+.view-head:first-child { border-left: 0; }
+.view-head.is-active { box-shadow: inset 0 -3px 0 var(--accent); background: rgb(var(--accent-rgb) / 0.06); }
+.view-head__title { flex: 1; min-width: 0; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

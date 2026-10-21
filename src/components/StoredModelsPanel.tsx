@@ -48,9 +48,16 @@ export function useStoredModels() {
     setBusy(m.name);
     setMessage(`Opening ${m.name}…`);
     try {
-      // The 3D viewer starts in the background; if it never does, say so rather than wait for ever.
-      const stuck = new Promise<never>((_, no) => window.setTimeout(() => no(new Error(`${m.name} did not open: the 3D viewer did not answer. Reload the page and try again.`)), 90000));
-      const { info, fast } = await Promise.race([loadStoredModel(engine, root, m.name, m.ifcHash), stuck]);
+      // The 3D viewer starts in the background; if it never does, say so rather than wait for ever. (Only the start is timed: converting a big IFC can take minutes,
+      // and giving up on it meant the model still appeared in the viewer later but was never added to the list.)
+      let startTimer = 0;
+      const stuck = new Promise<never>((_, no) => { startTimer = window.setTimeout(() => no(new Error(`${m.name} did not open: the 3D viewer did not answer. Reload the page and try again.`)), 90000); });
+      await Promise.race([engine.ready, stuck]);
+      window.clearTimeout(startTimer);
+      const slow = window.setTimeout(() => setMessage(`Opening ${m.name}… a large IFC takes a few minutes to convert the first time; it stays in the list once it has finished.`), 20000);
+      let loaded: Awaited<ReturnType<typeof loadStoredModel>>;
+      try { loaded = await loadStoredModel(engine, root, m.name, m.ifcHash); } finally { window.clearTimeout(slow); }
+      const { info, fast } = loaded;
       addModel(info);
       linkToActive(m.name);
       setMessage(`${m.name} opened${fast ? ' from its converted copy' : ' (converted from the IFC; the copy is kept for next time)'}.`);
