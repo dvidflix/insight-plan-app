@@ -8,6 +8,8 @@ import { useRuleContext } from './RuleParts';
 import { useEditableGrid } from '../../useEditableGrid';
 import { GroupPicker } from './GroupPicker';
 import { ResourceCheck, StepRecipe } from './StepRecipes';
+import { useGenerateTab } from '../GenerateTabs';
+import { levelDefinition } from '../../../prs/levelDefinition';
 import { useStepFocus } from '../../../state/resourceFocusStore';
 import { useSearchSetsStore } from '../../../state/searchSetsStore';
 import { useViewerEngine } from '../../../viewer/ViewerEngineContext';
@@ -274,6 +276,8 @@ function LevelTasksGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
 /** The Order: one table, the steps in the order they are built. */
 export function OrderPanel() {
   const ctx = useRuleContext();
+  const setGenerateTab = useGenerateTab((s) => s.setTab);
+  const setAdvancedPart = useGenerateTab((s) => s.setAdvanced);
   const stepFocus = useStepFocus((s) => s.group);
   const clearFocus = useStepFocus((s) => s.focus);
   const recipes = useRecipeStore((s) => s.recipes);
@@ -334,6 +338,12 @@ export function OrderPanel() {
         <button type="button" className="btn primary" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
       </div>
       <ResourceCheck />
+      {steps.some((x) => x.perLevel) && (
+        <div className="scn-dim xl__note">
+          “Per level” steps repeat for each level of the property “{levelDefinition(ctx.rules.settings).property}”{levelDefinition(ctx.rules.settings).order.length ? ', in the order you set' : ', in the order of the number in each value'}.{' '}
+          <button type="button" className="link-btn" onClick={() => { setAdvancedPart('levels'); setGenerateTab('advanced'); }} title="Choose the property and put the levels in order">Change</button>
+        </div>
+      )}
       {steps.length === 0 ? <div className="scn-dim scn-editor__help">No steps yet. Add the search sets you want built, in the order you want them. Make search sets in Models › Search sets.</div> : (
         <table className="xl xgrid" {...grid.grid}>
           <colgroup><col style={{ width: 48 }} /><col style={{ width: 280 }} /><col style={{ width: 100 }} /><col style={{ width: 340 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>

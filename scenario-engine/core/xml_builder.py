@@ -1131,6 +1131,9 @@ def _phase_sort_rank(phase):
 
 
 def _xml_level_label(rec):
+    label = rec.get("level_label")  # a level definition in the rules: the level's own name, not "Level <number>"
+    if label:
+        return str(label)
     level_int_raw = rec.get("level_int")
     if level_int_raw is None:
         level_int_raw = _parse_level_int(rec.get("level_display", rec.get("level_code", "")))

@@ -324,7 +324,7 @@ export interface LevelLink extends Row {
   pours?: string;
 }
 
-export type SettingValue = number | boolean | string[] | undefined;
+export type SettingValue = number | boolean | string | string[] | undefined;
 
 /** wbs: empty = the Extra activities folder; "level" = on the building's level (beside the External / Internal Walls and Slabs groups);
     "slabs" = in the level's Slabs group; "path:A / B" = a folder of its own under the building's Construction node. task: the id of the one

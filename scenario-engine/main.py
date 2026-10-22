@@ -28,6 +28,7 @@ from config import (
 from core.quantities import collect_props
 from core.resources import rebar_tonnes, crew_table_with_overrides
 from core import rules as _rules
+from core import levels as _levels
 from core.helpers import extract_value, title_case, get_element_world_coordinates, get_original_building_name, get_bbox_height
 from core.wbs_manager import WBSManager
 from core.activity_generator import create_activities
@@ -362,6 +363,9 @@ def _phase_sort_rank(phase):
 
 
 def _xml_level_label(rec):
+    label = rec.get("level_label")  # a level definition in the rules: the level's own name, not "Level <number>"
+    if label:
+        return str(label)
     level_int_raw = rec.get("level_int")
     if level_int_raw is None:
         level_int_raw = _parse_level_int(rec.get("level_display", rec.get("level_code", "")))
@@ -530,6 +534,7 @@ def _refresh_records(records):
     """What the rules can change on a record read from the model: whether the pour is in, and its rebar tonnes. (A long-running
     generator keeps its records between requests, so this runs for every generation.)"""
     active = _rules.active()
+    _levels.apply(records, active.settings, LEVEL_CODE_FALLBACK, USE_PADDED_LEVEL_CODES)  # which property is the level, and the order of the levels
     active.reset_joins(records)
     for rec in records:
         rec["include"] = _include_pour(rec)
@@ -720,6 +725,8 @@ def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heig
                 "max_elevation": max_elevation,
                 "general_level_3": general_level_3,
                 "bbox_height": bbox_height,
+                # The pour's properties as read, so the rules can say which one is its level (core/levels.py) without reading the model again.
+                "pour_pset": dict(p),
             }
             rec["props"] = collect_props(guid, property_cache)  # the model's numbers a rule can take a quantity from
             rec["include"] = _include_pour(rec)

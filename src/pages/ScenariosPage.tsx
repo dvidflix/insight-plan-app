@@ -7,6 +7,7 @@ import { RecipesEditor } from '../components/scenarios/rules/RecipesEditor';
 import { ResourcesPanel } from '../components/scenarios/rules/ResourcesScreen';
 import { ExtraActivitiesTab, LevelTasksTab, OrderPanel } from '../components/scenarios/rules/SequencePanel';
 import { ResourceLimits } from '../components/scenarios/rules/ResourceLimits';
+import { LevelsPanel } from '../components/scenarios/rules/LevelsPanel';
 import { PlanTablesPanel } from '../components/scenarios/rules/PlanTablesScreen';
 import { BareGrid, CrewsTableCard, RatesTableCard, TradesTableCard } from '../components/scenarios/rules/RelationalTables';
 import { useRuleContext } from '../components/scenarios/rules/RuleParts';
@@ -94,6 +95,7 @@ function AdvancedTab() {
         {part === 'trades' && <TradesTableCard ctx={ctx} />}
         {part === 'limits' && <ResourceLimits />}
       </BareGrid.Provider>
+      {part === 'levels' && <LevelsPanel />}
       {part === 'extras' && <ExtraActivitiesTab />}
       {part === 'levelTasks' && <LevelTasksTab />}
       {part === 'pours' && <PoursTab />}
