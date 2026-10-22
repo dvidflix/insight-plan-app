@@ -1,5 +1,5 @@
 import { useRecipeStore } from '../../../state/recipeStore';
-import { useResourceFocus } from '../../../state/resourceFocusStore';
+import { useResourceFocus, useStepFocus } from '../../../state/resourceFocusStore';
 import { useGenerateTab } from '../GenerateTabs';
 import { previewDays } from '../../../prs/recipesWorkbook';
 import type { Recipe, RecipeTask, ResourceUse } from '../../../prs/recipes';
@@ -43,6 +43,24 @@ function limitsOf(t: RecipeTask, group: string, pools: PoolRow[], rules: Scenari
     const num = typeof m === 'number' ? m : Number.isFinite(Number(m)) && m !== '' ? Number(m) : pools.find((p) => same(p.id, m) || (p.name.trim() !== '' && same(p.name, m)))?.quantity ?? rules.parameters?.find((p) => same(p.name, m))?.value ?? null;
     return { text: num && num > 0 ? `max ${num} at once` : 'no limit', max: num };
   });
+}
+
+/** Opens the Recipes tab on the recipe of a group (the Recipes tab picks recipes by their group name). */
+export function openRecipe(group: string, setTab: (tab: 'recipes') => void) {
+  try { localStorage.setItem('recipes.pick', JSON.stringify(group)); } catch { /* the tab just opens where it was */ }
+  setTab('recipes');
+}
+
+/** Under a recipe: the Sequence steps that build it (steps of its group; a recipe of no group is for every step), each a link that opens the step. */
+export function StepsUsing({ recipe, rules }: { recipe: Recipe; rules: Pick<ScenarioRules, 'sequences'> }) {
+  const focus = useStepFocus((s) => s.focus);
+  const setTab = useGenerateTab((s) => s.setTab);
+  const steps = (rules.sequences.find((s) => s.id.toUpperCase() === 'STEPS')?.steps ?? []).map((s, i) => ({ s, n: i + 1 })).filter(({ s }) => s.group.trim() !== '' && (recipe.group.trim() === '' || same(s.group, recipe.group)));
+  return (
+    <div className="scn-dim xl__note">
+      Built in steps: {steps.length === 0 ? 'none yet: add a step for this group on the Sequence tab' : steps.map(({ s, n }, k) => <span key={n}>{k > 0 && ', '}<button type="button" className="link-btn" title="Open this step on the Sequence tab" onClick={() => { focus(s.group); setTab('order'); }}>{n} · {s.group}</button></span>)}
+    </div>
+  );
 }
 
 export function ResourceLink({ type }: { type: string }) {

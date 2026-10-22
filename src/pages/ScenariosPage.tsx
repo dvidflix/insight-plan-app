@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from 'react';
-import { isTableCfgTab } from '../state/scenarioStore';
+import { isTableCfgTab, useScenarioStore } from '../state/scenarioStore';
 import { useScenarioView } from '../scenarios/useScenarioView';
 import { ScenarioNotice, ScenarioPanelBody, ScenarioSync, ScenarioTable, ScenarioToolbar } from '../components/scenarios/ScenarioParts';
 import { ScenarioRulesEditor } from '../components/scenarios/ScenarioRules';
@@ -28,10 +28,27 @@ function OrderTab() {
   const { ready } = useScenarioView();
   const [cfg, setCfg] = usePersistedState<(typeof CONFIG_TABS)[number][0]>('generate.orderConfig', 'columns');
   const [cfgOpen, setCfgOpen] = usePersistedState<boolean>('generate.orderConfigOpen', false);
+  const [poursOpen, setPoursOpen] = usePersistedState<boolean>('generate.poursOpen', false);
+  const pours = useScenarioStore((s) => s.rows.length);
+  const manual = useScenarioStore((s) => s.relations.length);
+  const setTab = useGenerateTab((s) => s.setTab);
+  const setAdvanced = useGenerateTab((s) => s.setAdvanced);
   if (!ready) return null;
   return (
     <div className="gen-order">
       <ScenarioNotice />
+      <details className="gen-steps" open>
+        <summary className="gen-h" title="The locations, and the steps in the order they are built">Sequence: what is built, in what order</summary>
+        <SequencePanel />
+        {manual > 0 && (
+          <div className="scn-dim xl__note">
+            Also in this programme: {manual} manual link{manual === 1 ? '' : 's'}, which tie two activities together and are not steps.{' '}
+            <button type="button" className="link-btn" onClick={() => { setAdvanced('rules'); setTab('advanced'); }} title="Manual links are kept under Advanced › Rules">Open them</button>
+          </div>
+        )}
+      </details>
+      <details className="gen-steps" open={poursOpen} onToggle={(e) => setPoursOpen((e.currentTarget as HTMLDetailsElement).open)}>
+        <summary className="gen-h" title="The individual pours, in the order they are built: open to move, filter or colour them">Pours ({pours.toLocaleString()}): the individual pours, in order</summary>
       <div className="gen-tools scn-toolbar"><div className="schedule-toolbar__left"><ScenarioToolbar /><button type="button" className="btn" aria-expanded={cfgOpen} onClick={() => setCfgOpen(!cfgOpen)} title="Which columns the table shows, its filters, grouping and colours">Table settings {cfgOpen ? '▲' : '▼'}</button></div></div>
       {cfgOpen && (
       <div className="gen-order__cfg">
@@ -43,11 +60,8 @@ function OrderTab() {
       </div>
       )}
       {cfgOpen && isTableCfgTab(cfg) && <div className="gen-order__cfgbody scn-panel"><ScenarioPanelBody tab={cfg} /></div>}
-      <details className="gen-steps" open>
-        <summary className="gen-h" title="Which group of objects is built first, then next">Sequence: what is built, in what order</summary>
-        <SequencePanel />
-      </details>
       <div className="gen-order__table"><ScenarioTable /></div>
+      </details>
     </div>
   );
 }

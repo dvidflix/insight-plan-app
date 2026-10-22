@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useResourceFocus } from '../../../state/resourceFocusStore';
 import { useGenerateTab } from '../GenerateTabs';
+import { openRecipe } from './StepRecipes';
 import { useScenarioStore } from '../../../state/scenarioStore';
 import { setPools, useRecipeStore } from '../../../state/recipeStore';
 import { freshId, type PoolKind, type PoolRow } from '../../../prs/rules';
@@ -27,19 +28,35 @@ const num = (v: string): number => (v.trim() === '' || !Number.isFinite(Number(v
 function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
   const pools = useRecipeStore((s) => s.pools);
   const recipes = useRecipeStore((s) => s.recipes);
-  const { limits } = useRuleContext().rules;
+  const ruleCtx = useRuleContext();
+  const { limits } = ruleCtx.rules;
   const focused = useResourceFocus((s) => s.id);
   const setTab = useGenerateTab((s) => s.setTab);
   useEffect(() => { if (focused) document.querySelector('tr.is-focus')?.scrollIntoView({ block: 'center' }); }, [focused]);
   /** Where a pool is used: the recipe tasks that name it, and the limits whose "how many at once" is its quantity. */
   const usage = (p: PoolRow) => {
     const tasks = recipes.filter((r) => r.chain !== false && r.enabled !== false).flatMap((r) => r.tasks.filter((t) => (t[KEY[p.kind]] ?? []).some((u) => same(u.type, p.id))).map((t) => `${r.id} · ${t.name || t.phase}`));
+    const from = recipes.filter((r) => r.chain !== false && r.enabled !== false).flatMap((r) => r.tasks.filter((t) => (t[KEY[p.kind]] ?? []).some((u) => same(u.type, p.id))).map((t) => ({ label: t.name || t.phase, group: r.group })));
     const lims = limits.filter((l) => l.enabled !== false && typeof l.max === 'string' && (same(l.max, p.id) || (p.name.trim() !== '' && same(l.max, p.name))))
       .map((l) => `${l.phase}${l.group ? ` (${l.group})` : ''}`);
-    return { tasks, lims };
+    return { tasks, lims, from };
   };
   const rows = pools.map((p, i) => ({ p, i })).filter(({ p }) => p.kind === kind);
   const set = (i: number, patch: Partial<PoolRow>) => setPools(pools.map((r, j) => (j === i ? { ...r, ...patch } : r)));
+  /** "Max at once" of a resource: a limit that names the resource takes its number from the quantity, so typing a number here sets the quantity and
+      limits every activity that uses the resource to it (the limits are made when there are none); empty takes those limits off. */
+  const setMax = (i: number, p: PoolRow, raw: string) => {
+    const n = raw.trim() === '' ? 0 : num(raw);
+    const mine = (l: (typeof limits)[number]) => typeof l.max === 'string' && (same(l.max, p.id) || (p.name.trim() !== '' && same(l.max, p.name)));
+    const phases = [...new Set(recipes.filter((r) => r.chain !== false && r.enabled !== false).flatMap((r) => r.tasks.filter((t) => (t[KEY[p.kind]] ?? []).some((u) => same(u.type, p.id))).map((t) => t.phase)).filter(Boolean))];
+    if (n > 0) set(i, { quantity: n });
+    ruleCtx.change((r) => {
+      // Only the limits this cell made (named after the resource and the activity, no group, no note) go: one set by hand in the blocks below stays.
+      if (n <= 0) return { ...r, limits: r.limits.filter((l) => !(mine(l) && l.id === `${p.id}-${l.phase}` && !l.group && !l.note)) };
+      if (r.limits.some(mine)) return r;
+      return { ...r, limits: [...r.limits, ...phases.map((phase) => ({ id: `${p.id}-${phase}`, phase, max: p.id }))] };
+    });
+  };
   // Range, fill down (Ctrl+D, the corner square), copy and paste of the ID, Name and Quantity columns.
   const grid = useEditableGrid({ widthsKey: 'resources.pools',
     rows,
@@ -58,12 +75,11 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
       </div>
       {rows.length === 0 ? <div className="scn-dim scn-editor__help">None yet.</div> : (
         <table className="xl xgrid" {...grid.grid}>
-          <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 160 }} /><col style={{ width: 300 }} /><col style={{ width: 110 }} /><col style={{ width: 260 }} /><col style={{ width: 240 }} /><col style={{ width: 32 }} /></colgroup>
-          <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this one" /><th>ID</th><th>Name</th><th title="How many exist, and so how many can be in use at the same time">Quantity</th><th title="The recipe tasks that use it, and the limits that take their number from it">Used by</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
+          <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 160 }} /><col style={{ width: 300 }} /><col style={{ width: 110 }} /><col style={{ width: 300 }} /><col style={{ width: 160 }} /><col style={{ width: 240 }} /><col style={{ width: 32 }} /></colgroup>
+          <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this one" /><th>ID</th><th>Name</th><th title="How many exist, and so how many can be in use at the same time">Quantity</th><th title="The recipe activities that use it: click one to open its recipe">Used by</th><th title="How many activities that use it can run at the same time (the limits that take their number from it)">Max at once</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
           <tbody>
             {rows.map(({ p, i }, at) => {
               const u = usage(p);
-              const used = [u.tasks.length ? `${u.tasks.length} task${u.tasks.length === 1 ? '' : 's'}` : '', u.lims.length ? `limits ${u.lims.join(', ')}` : ''].filter(Boolean).join(' · ');
               return (
               <tr key={i} data-line={at} className={`${p.enabled === false ? 'is-off' : ''}${focused && same(focused, p.id) ? ' is-focus is-selected' : ''}`}>
                 <th className="xl__row" scope="row">{at + 1}</th>
@@ -71,13 +87,19 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
                 <td className={`xl__cell xgrid__cell${grid.sel('id', at)}`} data-col="id" data-row={at}><input {...grid.cell('id', at)} value={p.id} spellCheck={false} onChange={(e) => set(i, { id: e.target.value })} />{grid.handle('id', at)}</td>
                 <td className={`xl__cell xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><input {...grid.cell('name', at)} value={p.name} spellCheck={false} placeholder={kind === 'crane' ? 'Tower crane 1' : kind === 'material' ? 'Slab formwork set' : 'Concrete pump'} onChange={(e) => set(i, { name: e.target.value })} />{grid.handle('name', at)}</td>
                 <td className={`xl__cell xl__num xgrid__cell${grid.sel('quantity', at)}`} data-col="quantity" data-row={at}><input {...grid.cell('quantity', at)} type="text" inputMode="decimal" value={p.quantity} onChange={(e) => set(i, { quantity: num(e.target.value) })} />{grid.handle('quantity', at)}</td>
-                <td className="scn-dim" onClick={() => u.tasks.length && setTab('recipes')} title={[...u.tasks.map((t) => `Task ${t}`), ...u.lims.map((l) => `Limit ${l}`)].join(String.fromCharCode(10)) || 'Nothing uses it yet'}>{used || 'not used yet'}</td>
+                <td className="xl__cell xl__ro" title={u.tasks.join(String.fromCharCode(10)) || 'No recipe activity uses it yet: open an activity on the Recipes tab and give it this resource'}>
+                  {u.from.length === 0 ? <span className="scn-dim">no activity yet</span> : u.from.slice(0, 3).map((f, k) => <span key={`${f.group}|${f.label}|${k}`}>{k > 0 && ', '}<button type="button" className="link-btn" title={`Open the recipe of ${f.group || 'every object'}`} onClick={() => openRecipe(f.group, setTab)}>{f.label}</button></span>)}
+                  {u.from.length > 3 && <span className="scn-dim"> +{u.from.length - 3} more</span>}
+                </td>
+                <td className="xl__cell xl__num"><input type="text" inputMode="decimal" value={u.lims.length ? p.quantity : ''} placeholder="no limit" aria-label={`${p.id} max at once`}
+                  title={u.lims.length ? `Limits ${u.lims.join(', ')} to ${p.quantity} at once. Type a number to change it (it is the quantity), empty to take the limits off` : u.from.length ? 'Type a number to limit the activities that use it to that many at once' : 'No activity uses it yet, so there is nothing to limit'}
+                  disabled={u.from.length === 0 && u.lims.length === 0} onChange={(e) => setMax(i, p, e.target.value)} /></td>
                 <td className={`xl__cell xgrid__cell${grid.sel('note', at)}`} data-col="note" data-row={at}><input {...grid.cell('note', at)} value={p.note ?? ''} spellCheck={false} placeholder="e.g. limited by storage space" onChange={(e) => set(i, { note: e.target.value || undefined })} />{grid.handle('note', at)}</td>
                 <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" onClick={() => setPools(pools.filter((_, j) => j !== i))} aria-label="Delete"><IconRemove /></button></td>
               </tr>
               );
             })}
-            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={7}><button type="button" onClick={add}>+ Add {one}</button></td></tr>
+            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={8}><button type="button" onClick={add}>+ Add {one}</button></td></tr>
           </tbody>
         </table>
       )}

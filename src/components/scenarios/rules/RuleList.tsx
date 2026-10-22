@@ -208,7 +208,8 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
       )}
 
       {(retire.groups.length > 0 || retire.rows > 0) && (
-        <div className="rule-legacy" role="status">
+        <details className="rule-legacy" role="status">
+          <summary>Old rules left over from a preset: {retire.rows} row{retire.rows === 1 ? '' : 's'}, {retire.groups.length} group{retire.groups.length === 1 ? '' : 's'} (nothing uses them)</summary>
           <span>{retire.groups.length} rule group{retire.groups.length === 1 ? ' is' : 's are'} not a search set and nothing names {retire.groups.length === 1 ? 'it' : 'them'}, and {retire.rows} old chain / assignment row{retire.rows === 1 ? '' : 's'} {retire.rows === 1 ? 'is' : 'are'} replaced by the recipes. They are left over from a preset.</span>
             <button
               type="button" className="btn btn--small"
@@ -225,7 +226,7 @@ The search sets stay. Switching the recipes off later would not bring these back
                 setConverted(`Retired ${retire.rows} old rows and ${retire.groups.length} unused group${retire.groups.length === 1 ? '' : 's'}. Save the scenario.`);
               }}
             >Retire old rules ({retire.rows} rows, {retire.groups.length} groups)</button>
-        </div>
+        </details>
       )}
       {converted && <div className="rule-legacy rule-legacy--done" role="status">{converted}</div>}
 

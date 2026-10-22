@@ -18,9 +18,9 @@ export const ADVANCED_TABS: { id: AdvancedTab; label: string; tip: string }[] = 
 
 export const GENERATE_TABS: { id: GenerateTab; label: string; tip: string; needsScenario: boolean }[] = [
   { id: 'scenario', label: '1 · Scenario', tip: 'Project folder, building, start date, Update 4D, Save, and the list of scenarios', needsScenario: false },
-  { id: 'resources', label: '2 · Resources', tip: 'Equipment, cranes and materials, how many there are, and how many activities may run at once: the one place the counts are typed', needsScenario: true },
-  { id: 'recipes', label: '3 · Recipes', tip: 'How each kind of object is built: its activities, links, days or formula', needsScenario: false },
-  { id: 'order', label: '4 · Order', tip: 'What is built first (the steps), and the pours in the order they are built', needsScenario: true },
+  { id: 'order', label: '2 · Sequence', tip: 'The main screen: the locations, the steps in the order they are built, what each step generates and the resources it uses. Generate from here', needsScenario: true },
+  { id: 'resources', label: 'Resources', tip: 'Optional: equipment, cranes and materials, how many there are, what uses them and how many activities may run at once', needsScenario: true },
+  { id: 'recipes', label: 'Recipes', tip: 'Optional: the library of how each kind of object is built (its activities, links, days or formula). Open it to change a default', needsScenario: false },
   { id: 'advanced', label: 'Advanced', tip: 'Parameters, rates and crews, and rules: set once, or not needed', needsScenario: true },
 ];
 

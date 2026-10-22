@@ -22,7 +22,7 @@ import { useEditableGrid } from '../../useEditableGrid';
 import { RuleCard, useRuleContext } from './RuleParts';
 import { RecipeBarSlot, RecipeGraph } from './RecipeGraph';
 import { TaskResources } from './TaskResources';
-import { ResourceLink } from './StepRecipes';
+import { ResourceLink, StepsUsing } from './StepRecipes';
 import { formulaProblem } from '../../../prs/recipesWorkbook';
 import { RecipeGrid } from './RecipeGrid';
 import { ScenarioRulesEditor } from '../ScenarioRules';
@@ -289,6 +289,7 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
           </table>
           <datalist id="recipe-crews">{rules.crewTemplates.map((c) => <option key={c.id} value={c.id} />)}</datalist>
           <div className="scn-dim xl__note">Without a Follows, an activity starts when the one above is done. Click an activity to give it cranes, equipment and materials. Drag the number to reorder.</div>
+          <StepsUsing recipe={recipe} rules={rules} />
           {selected !== null && recipe.tasks[selected] && <TaskResources task={recipe.tasks[selected]} rules={rules} onPatch={(patch) => setTask(selected, patch)} />}
         </>
       ) : chain && view === 'graph' ? (
