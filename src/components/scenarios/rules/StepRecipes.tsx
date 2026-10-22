@@ -70,6 +70,7 @@ export function ResourceLink({ type }: { type: string }) {
 }
 
 export function StepRecipe({ group, recipes, pools, rules }: { group: string; recipes: Recipe[]; pools: PoolRow[]; rules: ScenarioRules }) {
+  const setTab = useGenerateTab((s) => s.setTab);
   const mine = recipesOfGroup(recipes, group);
   if (!group.trim()) return <div className="scn-dim scn-editor__help">Choose the search set or group for this step to see what it will generate.</div>;
   if (mine.length === 0) return <div className="scn-dim scn-editor__help">No recipe for “{group}”: its objects get the default activities. Add a recipe on the Recipes tab to change them.</div>;
@@ -82,6 +83,7 @@ export function StepRecipe({ group, recipes, pools, rules }: { group: string; re
             <div className="rel-bar">
               <strong>Recipe {r.id}</strong>
               <span className="scn-dim">{tasks.length} activit{tasks.length === 1 ? 'y' : 'ies'} for each object{r.group.trim() === '' ? ' (a recipe for every object)' : ''}</span>
+              <button type="button" className="link-btn" onClick={() => openRecipe(r.group, setTab)} title="Open this recipe on the Recipes tab to change its activities, days or resources">Edit recipe</button>
             </div>
             <table className="xl">
               <thead><tr><th>Activity</th><th>Duration</th><th>Crew</th><th>Resources (how many exist)</th><th title="At most this many of the activity run at the same time (Resources tab › Limits)">Limit</th></tr></thead>

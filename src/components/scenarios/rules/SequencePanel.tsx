@@ -21,6 +21,7 @@ import { applyExtraRow, applyLevelTaskRow, extraRows, levelTaskRows, mergeExtras
     resources it uses. The same steps (rules.sequences, "Steps") as the Steps table of the workbook: nothing is kept twice. */
 
 const TYPES: RelType[] = ['FS', 'SS', 'FF', 'SF'];
+const LINK_WORDS: Record<RelType, string> = { FS: 'starts when it has finished', SS: 'starts when it starts', FF: 'finishes when it finishes', SF: 'finishes when it starts' };
 
 const SCOPES: { value: ExtraScope; label: string; tip: string }[] = [
   { value: 'once', label: 'Once', tip: 'In the Extra activities folder of the WBS' },
@@ -44,28 +45,48 @@ function useGroupRows(group: string) {
 /** Which steps had their Pours section open, by group name, for the session (the section is rebuilt each time its step is opened). */
 const poursOpen = new Map<string, boolean>();
 
+/** The steps that are open, for the session: by group name (a step with no group yet, by its place). */
+const openSteps = new Set<string>();
+const stepKey = (group: string, i: number) => (group.trim() ? group.trim().toUpperCase() : `#${i}`);
+
 /** The pours of a step (the pour table is the model's own: nothing is assumed of its columns). */
-function PoursOf({ group, rows: mine }: { group: string; rows: { key: string; cells: string[] }[] }) {
+function PoursOf({ group }: { group: string }) {
   const loaded = useScenarioStore((s) => s.loaded);
+  const ctx = useRuleContext();
+  const mine = useGroupRows(group);
   const [show, setShow] = useState(() => poursOpen.get(group.trim().toUpperCase()) === true);
   // What the search set of that name finds in the loaded models, apart from the order table: an empty list can then say why.
   const sets = useSearchSetsStore((st) => st.sets);
   const engine = useViewerEngine();
   const tick = useIndexTick();
-  const found = useMemo(() => sets.filter((x) => x.name.trim().toUpperCase() === group.trim().toUpperCase()).reduce((n, x) => n + guidsOfSet(engine.getIndexes(), x).size, 0), [sets, group, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const named = useMemo(() => sets.filter((x) => x.name.trim().toUpperCase() === group.trim().toUpperCase()), [sets, group]);
+  const found = useMemo(() => named.reduce((n, x) => n + guidsOfSet(engine.getIndexes(), x).size, 0), [named, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  // More than one type of object in the set: they all get this step's recipe (a recipe belongs to the group), so say so, and do not stop anything.
+  const types = useMemo(() => {
+    const keys = new Set(mine.map((r) => r.key));
+    return [...new Set(ctx.facts.filter((f) => keys.has(f.key)).map((f) => f.type.replace(/_/g, ' ').trim()).filter(Boolean))];
+  }, [mine, ctx.facts]);
   // The pour's own name: the column the rest of the app names it by, else the first column that has a name.
   const idCol = loaded ? ['PlanningProposedPourID', 'Pour ID'].map((h) => loaded.headers.indexOf(h)).find((i) => i >= 0) ?? loaded.headers.findIndex((h) => h.trim() !== '') : -1;
+  const why = named.length === 0
+    ? `There is no search set called “${group}”: it may have been renamed or deleted. Choose another in the step above.`
+    : found > 0
+      ? `“${group}” finds ${found.toLocaleString()} object${found === 1 ? '' : 's'} in the model, but none of them is in the order table. The order table holds the objects the generator builds activities for: other kinds of object are not generated.`
+      : `No objects match the search set “${group}” in the loaded model: check its conditions in Models › Search sets, or load the model it is for.`;
   return (
-    <details className="seq__pours" open={show} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; setShow(open); poursOpen.set(group.trim().toUpperCase(), open); }}>
-      <summary title="The objects of this step that the generator builds activities for">Objects in this step ({mine.length.toLocaleString()})</summary>
-      {mine.length === 0 ? <div className="scn-dim scn-editor__help">{found > 0 ? `“${group}” finds ${found.toLocaleString()} object${found === 1 ? '' : 's'} in the model, but none of them is in the order table. The order table holds the objects the generator builds activities for: other kinds of object are not generated.` : `“${group}” finds no objects in the loaded model: check its conditions in Models › Search sets, or load the model it is for.`}</div> : (
-        <table className="xl">
-          <thead><tr><th>Object</th></tr></thead>
-          <tbody>{mine.slice(0, 50).map((r) => <tr key={r.key}><td className="xl__cell xl__ro">{idCol >= 0 ? r.cells[idCol] : r.key}</td></tr>)}</tbody>
-        </table>
-      )}
-      {mine.length > 50 && <div className="scn-dim xl__note">and {mine.length - 50} more: the Objects tab under Advanced lists them all</div>}
-    </details>
+    <>
+      {types.length > 1 && <div className="scn-status scn-status--warn seq__warn" role="status">This set holds more than one type of object ({types.join(', ')}). They all get this step’s recipe: split the set if they should be built differently.</div>}
+      <details className="seq__pours" open={show} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; setShow(open); poursOpen.set(group.trim().toUpperCase(), open); }}>
+        <summary title="The objects of this step that the generator builds activities for">Objects in this step ({mine.length.toLocaleString()})</summary>
+        {mine.length === 0 ? <div className="scn-dim scn-editor__help">{why}</div> : (
+          <table className="xl">
+            <thead><tr><th>Object</th></tr></thead>
+            <tbody>{mine.slice(0, 50).map((r) => <tr key={r.key}><td className="xl__cell xl__ro">{idCol >= 0 ? r.cells[idCol] : r.key}</td></tr>)}</tbody>
+          </table>
+        )}
+        {mine.length > 50 && <div className="scn-dim xl__note">and {mine.length - 50} more: the Objects tab under Advanced lists them all</div>}
+      </details>
+    </>
   );
 }
 
@@ -257,7 +278,9 @@ export function OrderPanel() {
   const clearFocus = useStepFocus((s) => s.focus);
   const recipes = useRecipeStore((s) => s.recipes);
   const pools = useRecipeStore((s) => s.pools);
-  const [open, setOpen] = useState<number | null>(null);
+  const [, redraw] = useState(0);
+  const isOpen = (i: number) => openSteps.has(stepKey(steps[i]?.group ?? '', i));
+  const setOpen = (i: number, on: boolean) => { const k = stepKey(steps[i]?.group ?? '', i); if (on) openSteps.add(k); else openSteps.delete(k); redraw((n) => n + 1); };
   const [drag, setDrag] = useState<{ from: number; over: number | null } | null>(null);
 
   const steps = ctx.rules.sequences.find((s) => s.id.toUpperCase() === STEPS_ID)?.steps ?? [];
@@ -265,7 +288,7 @@ export function OrderPanel() {
   useEffect(() => {
     if (!stepFocus) return;
     const at = steps.findIndex((s) => s.group.trim().toUpperCase() === stepFocus.trim().toUpperCase());
-    if (at >= 0) setOpen(at);
+    if (at >= 0) setOpen(at, true);
     clearFocus(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepFocus]);
@@ -280,7 +303,6 @@ export function OrderPanel() {
     const [moved] = next.splice(drag.from, 1);
     next.splice(to > drag.from ? to - 1 : to, 0, moved);
     setSteps(next);
-    setOpen(null);
     setDrag(null);
   };
   // The steps typed in as a spreadsheet's: range, fill down, copy and paste.
@@ -296,59 +318,64 @@ export function OrderPanel() {
       }));
     },
   });
-  const openGroup = open !== null ? steps[open]?.group ?? '' : '';
-  const openRows = useGroupRows(openGroup);
   const busy = useScenarioStore((s) => !!s.busy);
-  const addStep = () => { setSteps([...steps, { group: '' }]); setOpen(steps.length); };
+  const addStep = (group: string) => { setSteps([...steps, { group }]); openSteps.add(stepKey(group, steps.length)); };
+  // Only the search sets that are not a step yet are offered.
+  const used = new Set(steps.map((x) => x.group.trim().toUpperCase()));
+  const free = ctx.groupFolders.map((f) => ({ folder: f.folder, names: f.names.filter((n) => !used.has(n.trim().toUpperCase())) })).filter((f) => f.names.length > 0);
 
   return (
     <div className="order">
-            <div>
-              <div className="rel-bar">
-                <button type="button" className="btn btn--small primary" onClick={addStep}>+ Step</button>
-                <span className="scn-dim">A step is a group of objects built together: one of your search sets (made in Models › Search sets). Steps run top to bottom; drag a row number to move one. Open a step to see what it generates and the resources it uses.</span>
-                <button type="button" className="btn btn--small" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
-              </div>
-              <ResourceCheck />
-              {steps.length === 0 ? <div className="scn-dim scn-editor__help">No steps: the objects follow the order of the scenario. Add a step for each search set, then drag them into the build order.</div> : (
-                <table className="xl xgrid" {...grid.grid}>
-                  <colgroup><col style={{ width: 48 }} /><col style={{ width: 250 }} /><col style={{ width: 80 }} /><col style={{ width: 70 }} /><col style={{ width: 80 }} /><col style={{ width: 300 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>
-                  <thead><tr><th className="xl__corner" aria-label="Step" /><th title="The search set or group built in this step">Search set / group</th><th title="Built level by level, or once for the whole building">Per level</th><th title="How it follows the step above">Link</th><th title="Hours after (or before, negative) the link">Lag (h)</th><th>Description</th><th aria-label="Show what it generates" /><th aria-label="Delete" /></tr></thead>
-                  <tbody>
-                    {steps.map((s, i) => {
-                      const unknown = s.group.trim() !== '' && ctx.groupIds.length > 0 && !ctx.groupIds.some((g) => g.toUpperCase() === s.group.trim().toUpperCase());
-                      return (
-                        <Fragment key={i}>
-                          <tr data-line={i} className={`${open === i ? 'is-selected' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`}
-                            onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }} onDrop={(e) => { e.preventDefault(); drop(i); }}>
-                            <th scope="row" className="xl__row rel-grip" draggable title="Drag to move the step"
-                              onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); const row = e.currentTarget.closest('tr'); if (row) e.dataTransfer.setDragImage(row, 0, 0); setDrag({ from: i, over: null }); }}
-                              onDragEnd={() => setDrag(null)}>{i + 1}</th>
-                            <td className={`xl__cell xgrid__cell${grid.sel('group', i)}${unknown ? ' is-bad' : ''}`} data-col="group" data-row={i}>
-                              <GroupPicker value={s.group} none="Choose a group…" folders={ctx.groupFolders} invalid={unknown} onChange={(group) => set(i, { group })} />{grid.handle('group', i)}
-                            </td>
-                            <td className="xl__check"><input type="checkbox" checked={!!s.perLevel} aria-label="Per level" title={s.perLevel ? 'Built level by level' : 'Built once'} onChange={(e) => set(i, { perLevel: e.target.checked || undefined })} /></td>
-                            <td className="xl__cell"><select value={s.type ?? 'FS'} disabled={i === 0} aria-label="Link" onChange={(e) => set(i, { type: e.target.value === 'FS' ? undefined : (e.target.value as RelType) })}>{TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></td>
-                            <td className={`xl__cell xl__num xgrid__cell${grid.sel('lag', i)}`} data-col="lag" data-row={i}><input {...grid.cell('lag', i)} type="text" inputMode="decimal" disabled={i === 0} value={s.lagHours ?? ''} onChange={(e) => set(i, { lagHours: e.target.value.trim() === '' ? undefined : num(e.target.value) })} />{grid.handle('lag', i)}</td>
-                            <td className={`xl__cell xgrid__cell${grid.sel('note', i)}`} data-col="note" data-row={i}><input {...grid.cell('note', i)} value={s.note ?? ''} spellCheck={false} onChange={(e) => set(i, { note: e.target.value || undefined })} />{grid.handle('note', i)}</td>
-                            <td className="xl__check"><button type="button" className="cols__icon" aria-expanded={open === i} aria-label="Show what this step generates" title={open === i ? 'Hide what this step generates' : 'Show the activities this step generates, their days and resources'} onClick={() => setOpen(open === i ? null : i)}>{open === i ? <IconChevronDown /> : <IconChevronRight />}</button></td>
-                            <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete step" title="Delete the step" onClick={() => { setSteps(steps.filter((_, j) => j !== i)); setOpen(null); }}><IconRemove /></button></td>
-                          </tr>
-                          {open === i && (
-                            <tr><th className="xl__row" /><td colSpan={7} className="seq__more">
-                              <StepRecipe group={s.group} recipes={recipes} pools={pools} rules={ctx.rules} />
-                              {s.group.trim() !== '' && <PoursOf group={s.group} rows={openRows} />}
-                            </td></tr>
-                          )}
-                        </Fragment>
-                      );
-                    })}
-                    <tr className="xl__add"><th className="xl__row">*</th><td colSpan={7}><button type="button" onClick={addStep}>+ Add a step</button></td></tr>
-                  </tbody>
-                </table>
-              )}
-            </div>
-          
+      <div className="rel-bar">
+        <span className="seq__add">
+          <GroupPicker value="" none="+ Add a step…" folders={free} title={free.length ? 'Add a step: pick one of your search sets (made in Models › Search sets)' : 'Every search set is a step already. Make more in Models › Search sets'} onChange={(g) => { if (g) addStep(g); }} />
+        </span>
+        <span className="scn-dim">Your search sets, in the order they are built, top first. Drag a row number to move one. Open a step to see what it generates.</span>
+        <button type="button" className="btn primary" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
+      </div>
+      <ResourceCheck />
+      {steps.length === 0 ? <div className="scn-dim scn-editor__help">No steps yet. Add the search sets you want built, in the order you want them. Make search sets in Models › Search sets.</div> : (
+        <table className="xl xgrid" {...grid.grid}>
+          <colgroup><col style={{ width: 48 }} /><col style={{ width: 280 }} /><col style={{ width: 100 }} /><col style={{ width: 340 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>
+          <thead><tr><th className="xl__corner" aria-label="Step" /><th title="The search set built in this step">Search set</th><th title="Built level by level, or once for the whole building">Built</th><th>Description</th><th aria-label="Show what it generates" /><th aria-label="Delete" /></tr></thead>
+          <tbody>
+            {steps.map((s, i) => {
+              const unknown = s.group.trim() !== '' && ctx.groupIds.length > 0 && !ctx.groupIds.some((g) => g.toUpperCase() === s.group.trim().toUpperCase());
+              return (
+                <Fragment key={i}>
+                  <tr data-line={i} className={`${isOpen(i) ? 'is-selected' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`}
+                    onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }} onDrop={(e) => { e.preventDefault(); drop(i); }}>
+                    <th scope="row" className="xl__row rel-grip" draggable title="Drag to move the step"
+                      onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); const row = e.currentTarget.closest('tr'); if (row) e.dataTransfer.setDragImage(row, 0, 0); setDrag({ from: i, over: null }); }}
+                      onDragEnd={() => setDrag(null)}>{i + 1}</th>
+                    <td className={`xl__cell${unknown ? ' is-bad' : ''}`}>
+                      <GroupPicker value={s.group} none="Choose a search set…" folders={ctx.groupFolders} invalid={unknown} onChange={(group) => set(i, { group })} />
+                    </td>
+                    <td className="xl__check"><button type="button" className={`btn btn--small${s.perLevel ? ' primary' : ''}`} aria-pressed={!!s.perLevel} onClick={() => set(i, { perLevel: s.perLevel ? undefined : true })}
+                      title={s.perLevel ? 'Built level by level. Click to build it once, for the whole building' : 'Built once. Click to build it level by level'}>{s.perLevel ? 'per level' : 'once'}</button></td>
+                    <td className={`xl__cell xgrid__cell${grid.sel('note', i)}`} data-col="note" data-row={i}><input {...grid.cell('note', i)} value={s.note ?? ''} spellCheck={false} onChange={(e) => set(i, { note: e.target.value || undefined })} />{grid.handle('note', i)}</td>
+                    <td className="xl__check"><button type="button" className="cols__icon" aria-expanded={isOpen(i)} aria-label="Show what this step generates" title={isOpen(i) ? 'Hide what this step generates' : 'Show the activities this step generates, their days and resources'} onClick={() => setOpen(i, !isOpen(i))}>{isOpen(i) ? <IconChevronDown /> : <IconChevronRight />}</button></td>
+                    <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete step" title="Delete the step" onClick={() => { setOpen(i, false); setSteps(steps.filter((_, j) => j !== i)); }}><IconRemove /></button></td>
+                  </tr>
+                  {isOpen(i) && (
+                    <tr><th className="xl__row" /><td colSpan={5} className="seq__more">
+                      <StepRecipe group={s.group} recipes={recipes} pools={pools} rules={ctx.rules} />
+                      {s.group.trim() !== '' && <PoursOf group={s.group} />}
+                      {i > 0 && (
+                        <div className="rel-bar seq__timing">
+                          <span className="scn-dim" title="By default a step starts when the one above it has finished">How it follows the step above</span>
+                          <select className="rel-cell" value={s.type ?? 'FS'} aria-label="Link" onChange={(e) => set(i, { type: e.target.value === 'FS' ? undefined : (e.target.value as RelType) })}>{TYPES.map((t) => <option key={t} value={t}>{LINK_WORDS[t]}</option>)}</select>
+                          <label className="scn-dim">lag (hours) <input className="rel-cell" type="text" inputMode="decimal" style={{ width: 70 }} value={s.lagHours ?? ''} onChange={(e) => set(i, { lagHours: e.target.value.trim() === '' ? undefined : num(e.target.value) })} /></label>
+                        </div>
+                      )}
+                    </td></tr>
+                  )}
+                </Fragment>
+              );
+            })}
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }

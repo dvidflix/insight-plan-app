@@ -42,7 +42,8 @@ import { useRecipeStore } from './recipeStore';
 import { stepSetNames, withFolderSteps } from '../prs/folderSteps';
 import { forGenerator } from '../prs/recipeRules';
 import { useSearchSetsStore } from './searchSetsStore';
-import { duplicateSets, groupsWithSets, setsForGroups, shadowCopies, staleSets, uniqueGroups } from '../prs/groupSets';
+import { groupsWithSets, uniqueGroups } from '../prs/groupSets';
+import { recipeFolder } from './recipeFolderStore';
 import { calendarsFromProgrammes, syncCalendars } from '../prs/calendarsFromProgramme';
 
 /** The Scenarios work in progress — project, scenario, pour order, unsaved
@@ -359,7 +360,7 @@ async function loadOrderNow(stem: string | null) {
       savedCrews: own.crews ?? NO_CREWS,
       extras: own.extras ?? NO_EXTRAS,
       savedExtras: own.extras ?? NO_EXTRAS,
-      rules: withLibrary(groupsIntoSets(migrateOldRules(normalizeRules(own.rules)))),
+      rules: withLibrary(dropMirroredSets(migrateOldRules(normalizeRules(own.rules)))),
       savedRules: normalizeRules(own.rules),
       engineDefaults: own.defaults ?? get().engineDefaults,
       flags: flagsOf(own.flags),
@@ -779,11 +780,13 @@ function migrateOldRules(rules: ScenarioRules): ScenarioRules {
 
 /** The scenario's rules with the recipe library's recipes and pools. A library with nothing in it takes the scenario's own first (a scenario
     saved before the library existed keeps its recipes). */
-/** The groups of a scenario that a search set can say exactly become sets of the "Recipes sets" folder, when it opens: the sets are the groups. */
-function groupsIntoSets(rules: ScenarioRules): ScenarioRules {
+/** The folder of search sets the app used to fill with a copy of every rule group is gone, and nothing makes it again: whenever a scenario opens, any
+    set still in it is taken out (the search sets are the user's own, in their own folders). The rule groups those sets copied stay in the rules, so the
+    recipes and steps that name them keep working. */
+function dropMirroredSets(rules: ScenarioRules): ScenarioRules {
   const store = useSearchSetsStore.getState();
-  for (const set of [...staleSets(rules.groups, store.sets), ...shadowCopies(rules.groups, store.sets), ...duplicateSets(store.sets)]) store.remove(set.id);
-  for (const set of setsForGroups(rules.groups, useSearchSetsStore.getState().sets)) store.save(set);
+  const folder = recipeFolder();
+  for (const set of store.sets.filter((x) => x.group === folder)) store.remove(set.id);
   return rules;
 }
 

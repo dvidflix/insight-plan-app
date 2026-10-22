@@ -14589,3 +14589,10 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .seq__by label { display: flex; flex-direction: column; gap: 2px; }
 .seq__by select { height: 26px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; padding: 0 4px; }
 .seq__mine { color: var(--accent-strong); font-weight: 600; font-size: 11px; margin-left: auto; }
+
+/* The Order's "+ Add a step" list looks like the main button; its options stay readable. */
+.seq__add select { height: 28px; border: 1px solid var(--accent); background: var(--accent); color: #fff; font: inherit; font-weight: 600; padding: 0 8px; border-radius: 6px; cursor: pointer; }
+.seq__add select option, .seq__add select optgroup { color: var(--text); background: var(--bg-elevated); }
+.seq__timing { margin-top: 8px; }
+
+.seq__warn { margin: 6px 0; }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { groupToSearchSet, isExact, recipeGroupSets, RECIPE_SETS_FOLDER } from '../../src/prs/groupSets';
+import { groupToSearchSet, isExact, RECIPE_SETS_FOLDER } from '../../src/prs/groupSets';
 import { recipeNeeds } from '../../src/prs/recipeNeeds';
 import { normalizeRules, type RuleGroup } from '../../src/prs/rules';
 
@@ -25,13 +25,6 @@ describe('rule groups as search sets', () => {
     expect(groupToSearchSet(group({ forEach: ['level'], filters: [f('type', 'equals', 'WALL')] })).approx.join('|')).toMatch(/per level/);
     expect(groupToSearchSet(group({ filters: [f('external', 'equals', 'true')] })).notes.join('|')).toMatch(/external/);
     expect(set.conditions.length).toBeGreaterThan(0);
-  });
-
-  it('keeps the id of a set already in the folder and reports a missing group', () => {
-    const first = recipeGroupSets([group({})], ['WALLS'], []).sets;
-    const again = recipeGroupSets([group({})], ['walls', 'NOPE'], first);
-    expect(again.sets[0].id).toBe(first[0].id);
-    expect(again.missing).toEqual(['NOPE']);
   });
 });
 

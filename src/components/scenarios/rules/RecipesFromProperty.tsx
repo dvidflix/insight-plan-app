@@ -11,7 +11,7 @@ import { FieldPicker } from '../../schedule/FieldRules';
 
 /** The easy way to make recipes: pick a property of the objects (Logical Group 1, Pour Type, anything), and every value of it becomes a recipe,
     with the tasks of the recipe it looks most like (or Rebar and Concrete). Behind each recipe is a search set of the objects that have that
-    value, made in the Recipes folder, so the recipe finds its objects by itself and new values are one click away. Recipes that exist are kept. */
+    value, made in a folder named after the property, so the recipe finds its objects by itself and new values are one click away. Recipes that exist are kept. */
 
 const MAX_ROWS = 200;
 
@@ -61,9 +61,10 @@ export function RecipesFromProperty({ recipes, folder, onMake, onClose }: {
 
   const make = () => {
     if (!field || !fresh.length) return;
-    // The sets: one per value, in the recipes' folder, that find the objects with that value. A set of that name that is there is left as it is.
-    const made = buildSpoolSets(engine.getIndexes(), { fields: [field], folder, output: 'search' });
-    const named = new Set(useSearchSetsStore.getState().sets.filter((s) => s.group === folder).map((s) => key(s.name)));
+    // The sets: one per value, in a folder named after the property, that find the objects with that value. A set of that name that is there is left as it is.
+    const target = label || folder;
+    const made = buildSpoolSets(engine.getIndexes(), { fields: [field], folder: target, output: 'search' });
+    const named = new Set(useSearchSetsStore.getState().sets.filter((s) => s.group === target).map((s) => key(s.name)));
     const add = made.sets.filter((s) => !named.has(key(s.name)));
     if (add.length) useSearchSetsStore.setState((st) => ({ sets: [...st.sets, ...add] }));
     onMake(fresh.map((r) => r.value));
