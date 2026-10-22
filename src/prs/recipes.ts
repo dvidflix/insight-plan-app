@@ -85,6 +85,8 @@ export interface RecipeEdge {
 export interface Recipe {
   id: string;
   name?: string;
+  /** The folder of the recipe list it is in (only the list uses it; empty: not in one). */
+  folder?: string;
   /** The rule group whose objects the recipe applies to (empty: every object). */
   group: string;
   /** Of the recipe's activities, when several groups fit an object: the highest wins, a tie goes to the earlier recipe. */

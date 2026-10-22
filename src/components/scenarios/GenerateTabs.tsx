@@ -8,27 +8,35 @@ import { useScenarioView } from '../../scenarios/useScenarioView';
 
 export type GenerateTab = 'scenario' | 'resources' | 'recipes' | 'order' | 'advanced';
 
-/** What Advanced holds: the parts most projects set once, or never. */
-export type AdvancedTab = 'productivity' | 'rules';
+/** What Advanced holds: the optional detail, in one row of tabs (most projects set it once, or never). */
+export type AdvancedTab = 'parameters' | 'durations' | 'rates' | 'crews' | 'trades' | 'extras' | 'levelTasks' | 'limits' | 'pours' | 'rules';
 
 export const ADVANCED_TABS: { id: AdvancedTab; label: string; tip: string }[] = [
-  { id: 'productivity', label: 'Parameters, rates & crews', tip: 'Parameters (named rates), rates and crews: what sets the durations' },
-  { id: 'rules', label: 'Rules', tip: 'Extra activities, manual links, crew overrides, settings and the logic between objects' },
+  { id: 'parameters', label: 'Parameters', tip: 'Named values the duration formulas read' },
+  { id: 'durations', label: 'Durations', tip: 'The days each formula gives, worked out live' },
+  { id: 'rates', label: 'Rates', tip: 'Named durations or productivities, used by recipe activities' },
+  { id: 'crews', label: 'Crews', tip: 'Named crews: the trades and how many people' },
+  { id: 'trades', label: 'Trades', tip: 'The labour trades the crews are made of, and how many people the site has' },
+  { id: 'limits', label: 'Limits', tip: 'How many of one activity may run at the same time' },
+  { id: 'extras', label: 'Extra activities', tip: 'Activities added to the programme that are not built from the model' },
+  { id: 'levelTasks', label: 'Level tasks', tip: 'One summary task per building and level, spanning the objects of a group' },
+  { id: 'pours', label: 'Objects', tip: 'The model’s objects one by one, in the order they are built: move, filter, group or colour them' },
+  { id: 'rules', label: 'Rules', tip: 'Manual links, crew overrides, settings and the logic between objects' },
 ];
 
 export const GENERATE_TABS: { id: GenerateTab; label: string; tip: string; needsScenario: boolean }[] = [
   { id: 'scenario', label: '1 · Scenario', tip: 'Project folder, building, start date, Update 4D, Save, and the list of scenarios', needsScenario: false },
-  { id: 'order', label: '2 · Sequence', tip: 'The main screen: the locations, the steps in the order they are built, what each step generates and the resources it uses. Generate from here', needsScenario: true },
-  { id: 'resources', label: 'Resources', tip: 'Optional: equipment, cranes and materials, how many there are, what uses them and how many activities may run at once', needsScenario: true },
-  { id: 'recipes', label: 'Recipes', tip: 'Optional: the library of how each kind of object is built (its activities, links, days or formula). Open it to change a default', needsScenario: false },
-  { id: 'advanced', label: 'Advanced', tip: 'Parameters, rates and crews, and rules: set once, or not needed', needsScenario: true },
+  { id: 'order', label: '2 · Order', tip: 'The groups of objects in the order they are built, what each one generates, and Generate', needsScenario: true },
+  { id: 'resources', label: 'Resources', tip: 'Optional: what there is of each resource, what uses it and how many can be used at once', needsScenario: true },
+  { id: 'recipes', label: 'Recipes', tip: 'Optional: how each group is built (its activities, links, days or formula). Open it to change a default', needsScenario: false },
+  { id: 'advanced', label: 'Advanced', tip: 'Optional detail: parameters, rates, crews, extra activities, the objects and rules', needsScenario: true },
 ];
 
 /** Tabs of the earlier layout, which a remembered choice may still name: two are now a part of Advanced (the others open the first tab). */
-const LEGACY: Record<string, AdvancedTab> = { productivity: 'productivity', rules: 'rules' };
+const LEGACY: Record<string, AdvancedTab> = { productivity: 'parameters', rules: 'rules' };
 
 export const useGenerateTab = create<{ tab: GenerateTab; setTab: (tab: GenerateTab) => void; advanced: AdvancedTab; setAdvanced: (tab: AdvancedTab) => void; gantt: boolean; setGantt: (on: boolean) => void }>()(
-  persist((set) => ({ tab: 'scenario', setTab: (tab) => set({ tab }), advanced: 'productivity', setAdvanced: (advanced) => set({ advanced }), gantt: false, setGantt: (gantt) => set({ gantt }) }), { name: 'generate.tab', partialize: (s) => ({ tab: s.tab, advanced: s.advanced, gantt: s.gantt }) }),
+  persist((set) => ({ tab: 'scenario', setTab: (tab) => set({ tab }), advanced: 'parameters', setAdvanced: (advanced) => set({ advanced }), gantt: false, setGantt: (gantt) => set({ gantt }) }), { name: 'generate.tab', partialize: (s) => ({ tab: s.tab, advanced: s.advanced, gantt: s.gantt }) }),
 );
 
 /** The tab to show: the chosen one, or the first while no scenario is open (the others need one). */
@@ -42,8 +50,8 @@ export function useShownGenerateTab(): GenerateTab {
 /** The part of Advanced to show (a remembered tab of the earlier layout opens its own part). */
 export function useShownAdvancedTab(): AdvancedTab {
   const picked: string = useGenerateTab((s) => s.tab);
-  const advanced = useGenerateTab((s) => s.advanced);
-  return LEGACY[picked] ?? advanced;
+  const advanced = useGenerateTab((s) => s.advanced) as string;
+  return LEGACY[picked] ?? (ADVANCED_TABS.some((t) => t.id === advanced) ? (advanced as AdvancedTab) : LEGACY[advanced] ?? 'parameters');
 }
 
 export function GenerateTabs() {

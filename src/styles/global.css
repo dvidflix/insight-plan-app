@@ -14562,3 +14562,30 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .seq__name[aria-invalid="true"] { border-color: var(--danger); }
 .seq__more { padding: 6px 8px 8px 38px; border-top: 1px solid var(--border); background: var(--bg-panel); overflow-x: auto; }
 @media (max-width: 800px) { .seq { flex-direction: column; } .seq__loc { flex-basis: auto; width: 100%; } }
+.seq__bar { display: flex; align-items: stretch; border-bottom: 1px solid var(--border); margin-bottom: 8px; }
+.seq__bar .scn-rules__tabs { flex: 1 1 auto; border: 0; padding: 0; }
+.seq__generate { align-self: center; margin-left: 8px; }
+.seq__body { min-width: 0; overflow-x: auto; }
+.seq__more { padding: 6px 8px 8px; background: var(--bg-panel); }
+.seq .xl tr.is-drop th.xl__row { box-shadow: inset 0 2px 0 var(--accent); }
+
+/* Recipe list folders (RecipeFolderList). */
+.rec-list__bar { display: flex; align-items: center; gap: 8px; padding: 4px 2px 6px; font-size: 11px; }
+.rec-list__group { display: flex; flex-direction: column; gap: 2px; }
+.rec-list__folder { display: flex; align-items: center; background: var(--bg-soft); border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); margin: 4px -6px 0; padding: 0 6px; }
+.rec-list__folder.is-drop, .rec-list__item.is-drop { outline: 2px solid var(--accent); outline-offset: -2px; }
+.rec-list__fold { flex: 1 1 auto; display: flex; align-items: center; gap: 6px; padding: 5px 0; border: 0; background: none; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.rec-list__folder--plain .rec-list__fold { cursor: default; }
+.rec-list__hint { padding: 6px 10px; font-size: 11px; }
+
+/* Lists in a grid cell: a plain select (the group, the WBS place, the link), and no browser arrow on the typed-with-suggestions cells. */
+.xl .xl__cell select { width: 100%; height: 100%; border: 0; border-radius: 0; background: transparent; padding: 0 4px; color: var(--text); font: inherit; }
+.xl .xl__cell select[aria-invalid="true"] { color: var(--danger); }
+.xl input::-webkit-calendar-picker-indicator { display: none !important; }
+.seq__explain { margin: 0 0 8px; font-size: 12px; max-width: 760px; }
+.seq__explain p { margin: 0 0 4px; }
+
+.seq__by { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); font-size: 11px; }
+.seq__by label { display: flex; flex-direction: column; gap: 2px; }
+.seq__by select { height: 26px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font: inherit; padding: 0 4px; }
+.seq__mine { color: var(--accent-strong); font-weight: 600; font-size: 11px; margin-left: auto; }

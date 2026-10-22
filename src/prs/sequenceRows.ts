@@ -88,3 +88,12 @@ export function newExtra(extras: ScenarioExtra[], startDate: string, today: Date
   const given = /^\d{4}-\d{2}-\d{2}$/.test(startDate.trim()) ? startDate.trim() : isoDate(today);
   return { TaskID: `X-${n}`, Name: 'New extra activity', DurationDays: 1, BaselineStart: given, BaselineFinish: given };
 }
+
+/** Uploaded or pasted extras joined to the table: a row whose ID is already there replaces it, the others are added; the tags of the incoming rows
+    are applied as the Extra activities table does (a row with no tag leaves an existing tag as it was). */
+export function mergeExtras(extras: ScenarioExtra[], tags: Record<string, ExtraTag>, incoming: { extras: ScenarioExtra[]; tags: Record<string, ExtraTag> }): { extras: ScenarioExtra[]; tags: Record<string, ExtraTag> } {
+  const ids = new Set(incoming.extras.map((e) => e.TaskID.toUpperCase()));
+  let nextTags = tags;
+  for (const [id, tag] of Object.entries(incoming.tags)) nextTags = patchTags(nextTags, [id], tag);
+  return { extras: [...extras.filter((e) => !ids.has(e.TaskID.toUpperCase())), ...incoming.extras], tags: nextTags };
+}

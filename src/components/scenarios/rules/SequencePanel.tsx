@@ -1,17 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
+import { Fragment, useEffect, useMemo, useRef, useState, type InputHTMLAttributes } from 'react';
 import { setExtras, updateFourD, useScenarioStore } from '../../../state/scenarioStore';
 import { useRecipeStore } from '../../../state/recipeStore';
 import { STEPS_ID } from '../../../prs/recipesWorkbook';
 import type { RelType, SequenceStep } from '../../../prs/rules';
 import { IconChevronDown, IconChevronRight, IconRemove } from '../../icons';
 import { useRuleContext } from './RuleParts';
+import { useEditableGrid } from '../../useEditableGrid';
+import { GroupPicker } from './GroupPicker';
 import { ResourceCheck, StepRecipe } from './StepRecipes';
 import { useStepFocus } from '../../../state/resourceFocusStore';
 import { useSearchSetsStore } from '../../../state/searchSetsStore';
 import { useViewerEngine } from '../../../viewer/ViewerEngineContext';
 import { useIndexTick } from '../../modelFields';
 import { guidsOfSet, pourRowsOfGroup } from '../../../scenarios/stepPours';
-import { applyExtraRow, applyLevelTaskRow, extraRows, levelTaskRows, newExtra, type ExtraRow, type ExtraScope, type LevelTaskRow } from '../../../prs/sequenceRows';
+import { readExtrasWorkbook, writeExtrasWorkbook } from '../../../prs/extrasWorkbookFile';
+import { applyExtraRow, applyLevelTaskRow, extraRows, levelTaskRows, mergeExtras, newExtra, type ExtraRow, type ExtraScope, type LevelTaskRow } from '../../../prs/sequenceRows';
 
 /** The Order tab's sequence, as one list: on the left the locations the model has (building, then level, with the number of pours), on the right the
     steps in the order they are built. Drag a step to move it, flip "per level" / "once", and open a step to see the recipe it will generate and the
@@ -19,75 +22,69 @@ import { applyExtraRow, applyLevelTaskRow, extraRows, levelTaskRows, newExtra, t
 
 const TYPES: RelType[] = ['FS', 'SS', 'FF', 'SF'];
 
-type Place = { levels: Map<string, number>; zones: Map<string, number> };
-
-/** Building → levels and zones → pours, from the order table, in the order they are first met. */
-function useLocations() {
-  const loaded = useScenarioStore((s) => s.loaded);
-  const rows = useScenarioStore((s) => s.rows);
-  return useMemo(() => {
-    const b = loaded ? loaded.headers.indexOf('Building') : -1;
-    const l = loaded ? loaded.headers.indexOf('Level') : -1;
-    const z = loaded ? ['Building Zone', 'Zone'].map((h) => loaded.headers.indexOf(h)).find((i) => i >= 0) ?? -1 : -1;
-    const tree = new Map<string, Place>();
-    if (b < 0 && l < 0) return tree;
-    for (const r of rows) {
-      const building = (b >= 0 ? r.cells[b] : '')?.trim() || 'No building';
-      const level = (l >= 0 ? r.cells[l] : '')?.trim() || 'No level';
-      const place = tree.get(building) ?? tree.set(building, { levels: new Map(), zones: new Map() }).get(building)!;
-      place.levels.set(level, (place.levels.get(level) ?? 0) + 1);
-      const zone = z >= 0 ? r.cells[z]?.trim() : '';
-      if (zone) place.zones.set(zone, (place.zones.get(zone) ?? 0) + 1);
-    }
-    return tree;
-  }, [loaded, rows]);
-}
-
 const SCOPES: { value: ExtraScope; label: string; tip: string }[] = [
   { value: 'once', label: 'Once', tip: 'In the Extra activities folder of the WBS' },
-  { value: 'level', label: 'On its level', tip: "On the building's level, beside the Walls and Slabs groups" },
+  { value: 'level', label: 'On its level', tip: "On its building's level, beside that level's other groups" },
   { value: 'slabs', label: 'In Slabs', tip: "In the level's Slabs group" },
   { value: 'folder', label: 'Own folder', tip: "A folder of its own under the building's Construction node" },
 ];
 
-/** Which steps had their Pours section open, by group name, for the session (the section is rebuilt each time its step is opened). */
-const poursOpen = new Map<string, boolean>();
+const num = (v: string): number => (v.trim() === '' || !Number.isFinite(Number(v.replace(',', '.'))) ? 0 : Number(v.replace(',', '.')));
 
-/** The pours of a step: those of the pour table that are in the group of its name, whether that is a rule group or a search set of the model. */
-function PoursOf({ group }: { group: string }) {
+/** The pours of a group: those of the pour table in the rule group or search set of that name. */
+function useGroupRows(group: string) {
   const rows = useScenarioStore((s) => s.rows);
-  const loaded = useScenarioStore((s) => s.loaded);
   const ctx = useRuleContext();
-  const [show, setShow] = useState(() => poursOpen.get(group.trim().toUpperCase()) === true);
-  const idCol = loaded ? ['PlanningProposedPourID', 'Pour ID'].map((h) => loaded.headers.indexOf(h)).find((i) => i >= 0) ?? -1 : -1;
-  const levelCol = loaded ? loaded.headers.indexOf('Level') : -1;
   const engine = useViewerEngine();
   const tick = useIndexTick();
   const sets = useSearchSetsStore((s) => s.sets);
-  const mine = useMemo(() => {
-    const indexes = engine.getIndexes();
-    return pourRowsOfGroup(group, rows, ctx.membership, sets, (set) => guidsOfSet(indexes, set));
-  }, [rows, ctx.membership, sets, group, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  return useMemo(() => (group.trim() ? pourRowsOfGroup(group, rows, ctx.membership, sets, (set) => guidsOfSet(engine.getIndexes(), set)) : []), [rows, ctx.membership, sets, group, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/** Which steps had their Pours section open, by group name, for the session (the section is rebuilt each time its step is opened). */
+const poursOpen = new Map<string, boolean>();
+
+/** The pours of a step (the pour table is the model's own: nothing is assumed of its columns). */
+function PoursOf({ group, rows: mine }: { group: string; rows: { key: string; cells: string[] }[] }) {
+  const loaded = useScenarioStore((s) => s.loaded);
+  const [show, setShow] = useState(() => poursOpen.get(group.trim().toUpperCase()) === true);
+  // What the search set of that name finds in the loaded models, apart from the order table: an empty list can then say why.
+  const sets = useSearchSetsStore((st) => st.sets);
+  const engine = useViewerEngine();
+  const tick = useIndexTick();
+  const found = useMemo(() => sets.filter((x) => x.name.trim().toUpperCase() === group.trim().toUpperCase()).reduce((n, x) => n + guidsOfSet(engine.getIndexes(), x).size, 0), [sets, group, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  // The pour's own name: the column the rest of the app names it by, else the first column that has a name.
+  const idCol = loaded ? ['PlanningProposedPourID', 'Pour ID'].map((h) => loaded.headers.indexOf(h)).find((i) => i >= 0) ?? loaded.headers.findIndex((h) => h.trim() !== '') : -1;
   return (
     <details className="seq__pours" open={show} onToggle={(e) => { const open = (e.currentTarget as HTMLDetailsElement).open; setShow(open); poursOpen.set(group.trim().toUpperCase(), open); }}>
-      <summary title="The individual pours of this step">Pours ({mine.length.toLocaleString()})</summary>
-      {mine.length === 0 ? <div className="scn-dim scn-editor__help">No model pours: nothing in the pour table is in “{group}” (a rule group or a search set of that name). For an extra activity this is as it should be.</div> : (
+      <summary title="The objects of this step that the generator builds activities for">Objects in this step ({mine.length.toLocaleString()})</summary>
+      {mine.length === 0 ? <div className="scn-dim scn-editor__help">{found > 0 ? `“${group}” finds ${found.toLocaleString()} object${found === 1 ? '' : 's'} in the model, but none of them is in the order table. The order table holds the objects the generator builds activities for: other kinds of object are not generated.` : `“${group}” finds no objects in the loaded model: check its conditions in Models › Search sets, or load the model it is for.`}</div> : (
         <table className="xl">
-          <thead><tr><th>Pour</th><th>Level</th></tr></thead>
-          <tbody>{mine.slice(0, 50).map((r) => <tr key={r.key}><td className="xl__cell xl__ro">{idCol >= 0 ? r.cells[idCol] : r.key}</td><td className="xl__cell xl__ro">{levelCol >= 0 ? r.cells[levelCol] : ''}</td></tr>)}</tbody>
+          <thead><tr><th>Object</th></tr></thead>
+          <tbody>{mine.slice(0, 50).map((r) => <tr key={r.key}><td className="xl__cell xl__ro">{idCol >= 0 ? r.cells[idCol] : r.key}</td></tr>)}</tbody>
         </table>
       )}
-      {mine.length > 50 && <div className="scn-dim xl__note">and {mine.length - 50} more: the Pours table below lists them all</div>}
+      {mine.length > 50 && <div className="scn-dim xl__note">and {mine.length - 50} more: the Objects tab under Advanced lists them all</div>}
     </details>
   );
 }
 
-/** Extra activities and level tasks, as labelled rows after the steps. They have no pours; where they sit in the programme is set by their dates and
-    links (extras) or their group (level tasks), not by their place in the list, so they carry no drag handle. */
-function OtherRows({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
+/** Extra activities, as a spreadsheet (like Parameters): ID, name, days, where in the WBS, building, level, folder and the baseline dates. They have
+    no pours; where they sit in the programme is set by their dates and links, not by their place in a list, so there is nothing to drag. */
+function ExtrasGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
   const extras = useScenarioStore((s) => s.extras);
   const startDate = useScenarioStore((s) => s.startDate);
-  const [open, setOpen] = useState<string | null>(null);
+  const tags = ctx.rules.extraTags;
+  const rows = extraRows(extras, tags);
+  const showFolder = rows.some((x) => x.scope === 'folder');
+  const [freshPath, setFreshPath] = useState<string | null>(null);
+  useEffect(() => {
+    if (!freshPath) return;
+    const el = document.querySelector<HTMLInputElement>(`input[data-extra-path="${CSS.escape(freshPath)}"]`);
+    if (!el) return;
+    el.focus();
+    setFreshPath(null);
+  }, [freshPath, extras]);
   const [fresh, setFresh] = useState<string | null>(null);
   useEffect(() => {
     if (!fresh) return;
@@ -98,71 +95,170 @@ function OtherRows({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
     el.select();
     setFresh(null);
   }, [fresh, extras]);
-  const tags = ctx.rules.extraTags;
-  const xs = extraRows(extras, tags);
-  const lts = levelTaskRows(ctx.rules.levelTasks);
-  const saveExtra = (was: string, row: ExtraRow) => { const out = applyExtraRow(extras, tags, was, row); setExtras(out.extras); ctx.change((r) => ({ ...r, extraTags: out.tags })); };
-  const saveTask = (row: LevelTaskRow) => ctx.change((r) => ({ ...r, levelTasks: applyLevelTaskRow(r.levelTasks, row) }));
-  const addExtra = () => { const x = newExtra(extras, startDate); setExtras([...extras, x]); setOpen(x.TaskID); setFresh(x.TaskID); };
-  const input = (value: string | number, on: (v: string) => void, label: string, width?: number, type = 'text') => (
-    <label className="scn-dim">{label} <input className="rel-cell" type={type} style={width ? { width } : undefined} value={value} spellCheck={false} onChange={(e) => on(e.target.value)} /></label>
+
+  /** Edited rows written back, all at once (one change for a fill or a paste). */
+  const saveRows = (list: { was: string; row: ExtraRow }[]) => {
+    let nextExtras = extras;
+    let nextTags = tags;
+    for (const { was, row } of list) ({ extras: nextExtras, tags: nextTags } = applyExtraRow(nextExtras, nextTags, was, row));
+    setExtras(nextExtras);
+    ctx.change((r) => ({ ...r, extraTags: nextTags }));
+  };
+  const patch = (x: ExtraRow, p: Partial<ExtraRow>) => saveRows([{ was: x.id, row: { ...x, ...p } }]);
+  const FIELD: Record<string, (x: ExtraRow, t: string) => ExtraRow> = {
+    id: (x, t) => ({ ...x, id: t.trim() }), name: (x, t) => ({ ...x, name: t }), days: (x, t) => ({ ...x, days: num(t) }),
+    building: (x, t) => ({ ...x, building: t }), level: (x, t) => ({ ...x, level: t }), path: (x, t) => ({ ...x, path: t }), start: (x, t) => ({ ...x, start: t.trim() }), finish: (x, t) => ({ ...x, finish: t.trim() }),
+  };
+  const grid = useEditableGrid({ widthsKey: 'sequence.extras',
+    rows,
+    get: (col, x) => (col === 'days' ? String(x.days) : String((x as unknown as Record<string, string>)[col] ?? '')),
+    write: (col, cells) => { const f = FIELD[col]; if (f) saveRows(cells.map(([at, text]) => ({ was: rows[at].id, row: f(rows[at], text) }))); },
+  });
+  const add = () => { const x = newExtra(extras, startDate); setExtras([...extras, x]); setFresh(x.TaskID); };
+  // Excel: the table as a workbook, and a workbook back (a row with an ID that is there replaces it).
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+  const upload = async (file: File) => {
+    try {
+      const incoming = await readExtrasWorkbook(file);
+      const out = mergeExtras(extras, tags, incoming);
+      setExtras(out.extras);
+      ctx.change((r) => ({ ...r, extraTags: out.tags }));
+      const replaced = incoming.extras.filter((e) => extras.some((x) => x.TaskID.toUpperCase() === e.TaskID.toUpperCase())).length;
+      setNote({ ok: true, text: `Read ${incoming.extras.length} extra activit${incoming.extras.length === 1 ? 'y' : 'ies'} from ${file.name}: ${incoming.extras.length - replaced} added, ${replaced} replaced. Save the scenario, then Update 4D.` });
+    } catch (e) {
+      setNote({ ok: false, text: e instanceof Error ? e.message : String(e) });
+    }
+  };
+  const remove = (x: ExtraRow) => {
+    setExtras(extras.filter((e) => e.TaskID !== x.id));
+    ctx.change((r) => { const next = { ...r.extraTags }; delete next[x.id]; return { ...r, extraTags: next }; });
+  };
+  const text = (x: ExtraRow, col: keyof typeof FIELD, at: number, cls = '', props: InputHTMLAttributes<HTMLInputElement> = {}) => (
+    <td className={`xl__cell${cls} xgrid__cell${grid.sel(col, at)}`} data-col={col} data-row={at}>
+      <input {...grid.cell(col, at)} {...(col === 'name' ? { 'data-extra-name': x.id } : col === 'path' ? { 'data-extra-path': x.id } : {})} value={col === 'days' ? x.days : String((x as unknown as Record<string, string>)[col] ?? '')} spellCheck={false} {...props}
+        onChange={(e) => patch(x, FIELD[col](x, e.target.value) as Partial<ExtraRow>)} />{grid.handle(col, at)}
+    </td>
   );
   return (
-    <div className="seq__others">
-      <div className="rel-bar seq__sep">
-        <button type="button" className="btn btn--small" onClick={addExtra} title="Add an activity that is not built from the model (site setup, temporary works, a milestone). It starts on the scenario's start date: change its dates and WBS place in the row">+ Extra</button>
-        <span className="scn-dim" title="They have no pours of their own, and no place in the order: their dates, links and group put them in the programme">Extra activities and level tasks (no pours; placed by their dates, links and group)</span>
+    <div>
+      <div className="rel-bar">
+        <button type="button" className="btn btn--small primary" onClick={add} title="Add an activity that is not built from the model (it is not built from model objects). It starts on the scenario's start date: change its dates and WBS place in the row">+ Extra</button>
+        <button type="button" className="btn btn--small" disabled={rows.length === 0} onClick={() => writeExtrasWorkbook(extras, tags, 'extra-activities.xlsx')} title="Download the extra activities as an Excel file: edit it there and upload it again">Download Excel</button>
+        <button type="button" className="btn btn--small" onClick={() => fileRef.current?.click()} title="Upload an Excel file made with Download Excel: a row with an ID that is here replaces it, the others are added">Upload Excel</button>
+        <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f); }} />
+        <span className="scn-dim">Activities added to the generated programme. They are not built from model objects: their dates, links and WBS place put them in it.</span>
       </div>
-      {lts.map((t) => (
-        <div key={`lt|${t.id}`} className={`seq__step${t.enabled ? '' : ' is-off'}`}>
-          <div className="seq__row">
-            <span className="seq__tag" title="One task per building and level, from the first to the last pour of its group">Level task</span>
-            <input className="seq__name" value={t.name} spellCheck={false} aria-label="Name" onChange={(e) => saveTask({ ...t, name: e.target.value })} />
-            <input className="seq__desc" list="seq-groups" value={t.group} spellCheck={false} aria-label="Group" title="The group whose pours it spans" onChange={(e) => saveTask({ ...t, group: e.target.value })} />
-            <label className="scn-dim" title="Use this level task"><input type="checkbox" checked={t.enabled} onChange={(e) => saveTask({ ...t, enabled: e.target.checked })} /> on</label>
-          </div>
-        </div>
-      ))}
-      {xs.map((x) => (
-        <div key={`x|${x.id}`} className="seq__step">
-          <div className="seq__row">
-            <span className="seq__tag seq__tag--extra" title="An activity added to the generated programme">Extra</span>
-            <input className="seq__name" data-extra-name={x.id} value={x.name} spellCheck={false} aria-label="Name" onChange={(e) => saveExtra(x.id, { ...x, name: e.target.value })} />
-            <input className="seq__days" type="number" min={0} step="any" value={x.days} aria-label="Days" title="Working days" onChange={(e) => saveExtra(x.id, { ...x, days: Number(e.target.value) || 0 })} />
-            <span className="scn-dim">d</span>
-            <select className="rel-cell" value={x.scope} aria-label="Where in the WBS" title="Where it goes in the WBS" onChange={(e) => saveExtra(x.id, { ...x, scope: e.target.value as ExtraScope })}>
-              {SCOPES.map((o) => <option key={o.value} value={o.value} title={o.tip}>{o.label}</option>)}
-            </select>
-            <button type="button" className="cols__icon" aria-expanded={open === x.id} aria-label="More" title="ID, building, level, dates" onClick={() => setOpen(open === x.id ? null : x.id)}>{open === x.id ? <IconChevronDown /> : <IconChevronRight />}</button>
-          </div>
-          {open === x.id && (
-            <div className="seq__more">
-              <div className="rel-bar">
-                {input(x.id, (v) => saveExtra(x.id, { ...x, id: v }), 'ID', 110)}
-                {input(x.building, (v) => saveExtra(x.id, { ...x, building: v }), 'Building', 110)}
-                {input(x.level, (v) => saveExtra(x.id, { ...x, level: v }), 'Level', 80)}
-                {x.scope === 'folder' && input(x.path, (v) => saveExtra(x.id, { ...x, path: v }), 'Folder', 200)}
-                {input(x.start, (v) => saveExtra(x.id, { ...x, start: v }), 'Baseline start', 120)}
-                {input(x.finish, (v) => saveExtra(x.id, { ...x, finish: v }), 'Baseline finish', 120)}
-              </div>
-            </div>
-          )}
-        </div>
-      ))}
+      {note && <div className={`scn-rules__note${note.ok ? '' : ' is-error'}`} role="status">{note.text}</div>}
+      {rows.length === 0 ? <div className="scn-dim scn-editor__help">None yet. An extra activity is not built from the model: add one with + Extra.</div> : (
+        <table className="xl xgrid" {...grid.grid}>
+          <colgroup><col style={{ width: 40 }} /><col style={{ width: 190 }} /><col style={{ width: 280 }} /><col style={{ width: 70 }} /><col style={{ width: 130 }} /><col style={{ width: 90 }} /><col style={{ width: 70 }} />{showFolder && <col style={{ width: 200 }} />}<col style={{ width: 100 }} /><col style={{ width: 100 }} /><col style={{ width: 32 }} /></colgroup>
+          <thead><tr><th className="xl__corner" aria-label="Row" /><th>ID</th><th>Name</th><th title="Working days">Days</th><th title="Where it goes in the WBS">WBS place</th><th>Building</th><th>Level</th>{showFolder && <th title="The WBS folder of the activities whose WBS place is Own folder, under the building's Construction node, e.g. Temporary / Hoarding">WBS folder</th>}<th>Start</th><th>Finish</th><th aria-label="Delete" /></tr></thead>
+          <tbody>
+            {rows.map((x, at) => (
+              <tr key={x.id} data-line={at}>
+                <th className="xl__row" scope="row">{at + 1}</th>
+                {text(x, 'id', at)}
+                {text(x, 'name', at)}
+                {text(x, 'days', at, ' xl__num', { type: 'text', inputMode: 'decimal' })}
+                <td className="xl__cell">
+                  <select value={x.scope} aria-label="WBS place" title="Where it goes in the WBS" onChange={(e) => { patch(x, { scope: e.target.value as ExtraScope }); if (e.target.value === 'folder') setFreshPath(x.id); }}>
+                    {SCOPES.map((o) => <option key={o.value} value={o.value} title={o.tip}>{o.label}</option>)}
+                  </select>
+                </td>
+                {text(x, 'building', at)}
+                {text(x, 'level', at)}
+                {showFolder && text(x, 'path', at, '', { disabled: x.scope !== 'folder', placeholder: x.scope === 'folder' ? 'A / B' : '', title: x.scope === 'folder' ? 'The WBS folder of this activity' : 'Only for the WBS place Own folder' })}
+                {text(x, 'start', at, '', { placeholder: 'yyyy-mm-dd' })}
+                {text(x, 'finish', at, '', { placeholder: 'yyyy-mm-dd' })}
+                <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete" title="Delete the extra activity" onClick={() => remove(x)}><IconRemove /></button></td>
+              </tr>
+            ))}
+            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={showFolder ? 10 : 9}><button type="button" onClick={add}>+ Add an extra activity</button></td></tr>
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
 
-export function SequencePanel() {
+/** Level tasks, as a spreadsheet: one task per building and level, from the first to the last object of its group. */
+function LevelTasksGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
+  const rows = levelTaskRows(ctx.rules.levelTasks);
+  const save = (list: LevelTaskRow[]) => ctx.change((r) => ({ ...r, levelTasks: list.reduce((tasks, row) => applyLevelTaskRow(tasks, row), r.levelTasks) }));
+  const grid = useEditableGrid({ widthsKey: 'sequence.levelTasks',
+    rows,
+    get: (col, t) => (col === 'group' ? t.group : t.name),
+    write: (col, cells) => save(cells.map(([at, text]) => (col === 'group' ? { ...rows[at], group: text } : { ...rows[at], name: text }))),
+  });
+  const add = () => ctx.change((r) => {
+    let n = r.levelTasks.length + 1;
+    while (r.levelTasks.some((t) => t.id.toUpperCase() === `LT-${n}`)) n++;
+    return { ...r, levelTasks: [...r.levelTasks, { id: `LT-${n}`, name: 'New level task', group: '' }] };
+  });
+  const remove = (id: string) => ctx.change((r) => ({ ...r, levelTasks: r.levelTasks.filter((t) => t.id !== id) }));
+
+  // What each level task will make: one task for every building and level that has objects of its group.
+  const pourRows = useScenarioStore((s) => s.rows);
+  const loaded = useScenarioStore((s) => s.loaded);
+  const engine = useViewerEngine();
+  const tick = useIndexTick();
+  const sets = useSearchSetsStore((s) => s.sets);
+  const made = useMemo(() => {
+    const b = loaded ? loaded.headers.indexOf('Building') : -1;
+    const l = loaded ? loaded.headers.indexOf('Level') : -1;
+    const indexes = engine.getIndexes();
+    return new Map(rows.map((t) => {
+      const mine = pourRowsOfGroup(t.group, pourRows, ctx.membership, sets, (set) => guidsOfSet(indexes, set));
+      const places = new Set(mine.map((r) => `${b >= 0 ? r.cells[b] : ''}|${l >= 0 ? r.cells[l] : ''}`));
+      return [t.id, { pours: mine.length, tasks: b >= 0 || l >= 0 ? places.size : 0 }];
+    }));
+  }, [rows.map((t) => t.group).join('|'), pourRows, ctx.membership, sets, loaded, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  return (
+    <div>
+      <div className="rel-bar">
+        <button type="button" className="btn btn--small primary" onClick={add} title="Add a level task: pick the group of objects it spans">+ Level task</button>
+      </div>
+      <div className="scn-dim seq__explain">
+        <p><strong>What is a level task?</strong> A summary bar for each building and level. It starts with the first object of its group on that level and finishes with the last one. Other activities (an extra activity, a link) can then be tied to that whole level of the group at once.</p>
+        <p><strong>Group:</strong> the objects it spans: one of your search sets (made in Models › Search sets).</p>
+      </div>
+      {rows.length === 0 ? <div className="scn-dim scn-editor__help">No level tasks yet. You only need them to tie something to a whole level; most programmes need none.</div> : (
+        <table className="xl xgrid" {...grid.grid}>
+          <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 220 }} /><col style={{ width: 280 }} /><col style={{ width: 300 }} /><col style={{ width: 32 }} /></colgroup>
+          <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this level task" /><th title="The name of the task on each level">Name</th><th title="The pours it spans: a search set or a rule group">Group of pours</th><th title="What it will make from the loaded model">It makes</th><th aria-label="Delete" /></tr></thead>
+          <tbody>
+            {rows.map((t, at) => {
+              const m = made.get(t.id) ?? { pours: 0, tasks: 0 };
+              return (
+                <tr key={t.id} data-line={at} className={t.enabled ? '' : 'is-off'}>
+                  <th className="xl__row" scope="row">{at + 1}</th>
+                  <td className="xl__check"><input type="checkbox" checked={t.enabled} aria-label="On" onChange={(e) => save([{ ...t, enabled: e.target.checked }])} /></td>
+                  <td className={`xl__cell xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><input {...grid.cell('name', at)} value={t.name} spellCheck={false} onChange={(e) => save([{ ...t, name: e.target.value }])} />{grid.handle('name', at)}</td>
+                  <td className="xl__cell"><GroupPicker value={t.group} none="Choose a group…" folders={ctx.groupFolders} onChange={(group) => save([{ ...t, group }])} /></td>
+                  <td className="xl__cell xl__ro" title="One task for every building and level that has objects of this group">{!t.group.trim() ? 'pick a group' : m.pours === 0 ? `no objects of “${t.group}” in the loaded model` : m.tasks > 0 ? `${m.tasks} task${m.tasks === 1 ? '' : 's'} (one per building and level), from ${m.pours.toLocaleString()} objects` : `from ${m.pours.toLocaleString()} objects`}</td>
+                  <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete" title="Delete the level task" onClick={() => remove(t.id)}><IconRemove /></button></td>
+                </tr>
+              );
+            })}
+            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={5}><button type="button" onClick={add}>+ Add a level task</button></td></tr>
+          </tbody>
+        </table>
+      )}
+    </div>
+  );
+}
+
+/** The Order: one table, the steps in the order they are built. */
+export function OrderPanel() {
   const ctx = useRuleContext();
   const stepFocus = useStepFocus((s) => s.group);
   const clearFocus = useStepFocus((s) => s.focus);
   const recipes = useRecipeStore((s) => s.recipes);
   const pools = useRecipeStore((s) => s.pools);
-  const tree = useLocations();
   const [open, setOpen] = useState<number | null>(null);
   const [drag, setDrag] = useState<{ from: number; over: number | null } | null>(null);
-  const [closed, setClosed] = useState<Set<string>>(new Set());
 
   const steps = ctx.rules.sequences.find((s) => s.id.toUpperCase() === STEPS_ID)?.steps ?? [];
   // A recipe's "Built in steps" link opens the step of its group.
@@ -187,75 +283,76 @@ export function SequencePanel() {
     setOpen(null);
     setDrag(null);
   };
-  const total = [...tree.values()].reduce((n, p) => n + [...p.levels.values()].reduce((a, b) => a + b, 0), 0);
-  const levelCount = new Set([...tree.values()].flatMap((p) => [...p.levels.keys()])).size;
-  const zoneCount = new Set([...tree.values()].flatMap((p) => [...p.zones.keys()])).size;
+  // The steps typed in as a spreadsheet's: range, fill down, copy and paste.
+  const grid = useEditableGrid({ widthsKey: 'sequence.steps',
+    rows: steps,
+    get: (col, s) => (col === 'group' ? s.group : col === 'lag' ? String(s.lagHours ?? '') : s.note ?? ''),
+    write: (col, cells) => {
+      const to = new Map(cells);
+      setSteps(steps.map((x, j) => {
+        const t = to.get(j);
+        if (t === undefined) return x;
+        return col === 'group' ? { ...x, group: t } : col === 'lag' ? { ...x, lagHours: t.trim() === '' ? undefined : num(t) } : { ...x, note: t || undefined };
+      }));
+    },
+  });
+  const openGroup = open !== null ? steps[open]?.group ?? '' : '';
+  const openRows = useGroupRows(openGroup);
   const busy = useScenarioStore((s) => !!s.busy);
+  const addStep = () => { setSteps([...steps, { group: '' }]); setOpen(steps.length); };
 
   return (
-    <div className="seq">
-      <aside className="seq__loc" aria-label="Locations">
-        <div className="seq__head">Locations <span className="scn-dim">{total ? `${total} pours` : ''}</span></div>
-        {tree.size === 0 ? <div className="scn-dim scn-editor__help">The model has no Building or Level column: its pours are not grouped by location.</div> : [...tree].map(([building, { levels, zones }]) => {
-          const shut = closed.has(building);
-          return (
-            <div key={building}>
-              <button type="button" className="seq__bld" aria-expanded={!shut} onClick={() => setClosed((c) => { const n = new Set(c); if (n.has(building)) n.delete(building); else n.add(building); return n; })}>
-                {shut ? <IconChevronRight width={14} height={14} /> : <IconChevronDown width={14} height={14} />}<strong>{building}</strong><span className="scn-dim">{[...levels.values()].reduce((a, b) => a + b, 0)}</span>
-              </button>
-              {!shut && [...levels].map(([level, n]) => <div key={level} className="seq__lvl" title={`${n} pours on ${level}`}><span>{level}</span><span className="scn-dim">{n}</span></div>)}
-              {!shut && [...zones].map(([zone, n]) => <div key={`z|${zone}`} className="seq__lvl seq__zone" title={`${n} pours in ${zone}`}><span>{zone}</span><span className="scn-dim">{n}</span></div>)}
-            </div>
-          );
-        })}
-        {tree.size > 0 && <div className="seq__foot scn-dim">{levelCount} level{levelCount === 1 ? '' : 's'}{zoneCount > 0 ? ` · ${zoneCount} zone${zoneCount === 1 ? '' : 's'}` : ''}</div>}
-      </aside>
-      <section className="seq__steps" aria-label="Steps">
-        <div className="rel-bar">
-          <button type="button" className="btn btn--small primary" onClick={() => { setSteps([...steps, { group: '', perLevel: true }]); setOpen(steps.length); }}>+ Step</button>
-          <span className="scn-dim">The order they are built, top first. Drag a step to move it. Open one to see what it generates and the resources it uses.</span>
-          <button type="button" className="btn btn--small" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
-        </div>
-        <ResourceCheck />
-        {steps.length === 0 && <div className="scn-dim scn-editor__help">No steps: the pours follow the order of the scenario. Add a step for each search set (Raft, Walls, Slabs ...), then drag them into the build order.</div>}
-        {steps.map((s, i) => {
-          const unknown = s.group.trim() !== '' && ctx.groupIds.length > 0 && !ctx.groupIds.some((g) => g.toUpperCase() === s.group.trim().toUpperCase());
-          const move = (by: number) => { const to = i + by; if (to < 0 || to >= steps.length) return; const next = [...steps]; [next[i], next[to]] = [next[to], next[i]]; setSteps(next); setOpen(null); };
-          return (
-            <div key={i} className={`seq__step${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`}
-              onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }} onDrop={(e) => { e.preventDefault(); drop(i); }}>
-              <div className="seq__row">
-                <span className="seq__grip" draggable title="Drag to move the step (or Alt+↑ / Alt+↓ in the box)" aria-hidden="true"
-                  onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); const row = e.currentTarget.closest('.seq__step'); if (row) e.dataTransfer.setDragImage(row, 0, 0); setDrag({ from: i, over: null }); }}
-                  onDragEnd={() => setDrag(null)}>⋮⋮</span>
-                <span className="seq__no">{i + 1}</span>
-                <input className="seq__name" list="seq-groups" value={s.group} placeholder="Search set / group" spellCheck={false} aria-invalid={unknown}
-                  title={unknown ? 'No search set or group has this name' : 'The search set or group built in this step'}
-                  onKeyDown={(e) => { if (e.altKey && e.key === 'ArrowUp') { e.preventDefault(); move(-1); } else if (e.altKey && e.key === 'ArrowDown') { e.preventDefault(); move(1); } }}
-                  onChange={(e) => set(i, { group: e.target.value })} />
-                <input className="seq__desc" value={s.note ?? ''} placeholder="Description" spellCheck={false} title="A note on the step (saved with it, and in the workbook's Notes)" onChange={(e) => set(i, { note: e.target.value || undefined })} />
-                <button type="button" className={`btn btn--small${s.perLevel ? ' primary' : ''}`} aria-pressed={!!s.perLevel} onClick={() => set(i, { perLevel: s.perLevel ? undefined : true })}
-                  title={s.perLevel ? 'Built level by level. Click to build it once, for the whole building' : 'Built once. Click to build it level by level'}>{s.perLevel ? 'per level' : 'once'}</button>
-                <button type="button" className="cols__icon" aria-expanded={open === i} aria-label="Show what this step generates" title={open === i ? 'Hide what this step generates' : 'Show the activities this step generates, their days and resources'} onClick={() => setOpen(open === i ? null : i)}>{open === i ? <IconChevronDown /> : <IconChevronRight />}</button>
-                <button type="button" className="cols__icon cols__icon--remove" aria-label="Delete step" title="Delete the step" onClick={() => { setSteps(steps.filter((_, j) => j !== i)); setOpen(null); }}><IconRemove /></button>
+    <div className="order">
+            <div>
+              <div className="rel-bar">
+                <button type="button" className="btn btn--small primary" onClick={addStep}>+ Step</button>
+                <span className="scn-dim">A step is a group of objects built together: one of your search sets (made in Models › Search sets). Steps run top to bottom; drag a row number to move one. Open a step to see what it generates and the resources it uses.</span>
+                <button type="button" className="btn btn--small" style={{ marginLeft: 'auto' }} disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
               </div>
-              {open === i && (
-                <div className="seq__more">
-                  <div className="rel-bar">
-                    <label className="scn-dim">Link into it <select className="rel-cell" value={s.type ?? 'FS'} disabled={i === 0} onChange={(e) => set(i, { type: e.target.value === 'FS' ? undefined : (e.target.value as RelType) })}>{TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></label>
-                    <label className="scn-dim">Lag (h) <input className="rel-cell" type="number" step="any" style={{ width: 70 }} disabled={i === 0} value={s.lagHours ?? ''} onChange={(e) => set(i, { lagHours: e.target.value === '' ? undefined : Number(e.target.value) })} /></label>
-                    <label className="scn-dim">Notes <input className="rel-cell" style={{ width: 240 }} value={s.note ?? ''} onChange={(e) => set(i, { note: e.target.value || undefined })} /></label>
-                  </div>
-                  <StepRecipe group={s.group} recipes={recipes} pools={pools} rules={ctx.rules} />
-                  {s.group.trim() !== '' && <PoursOf group={s.group} />}
-                </div>
+              <ResourceCheck />
+              {steps.length === 0 ? <div className="scn-dim scn-editor__help">No steps: the objects follow the order of the scenario. Add a step for each search set, then drag them into the build order.</div> : (
+                <table className="xl xgrid" {...grid.grid}>
+                  <colgroup><col style={{ width: 48 }} /><col style={{ width: 250 }} /><col style={{ width: 80 }} /><col style={{ width: 70 }} /><col style={{ width: 80 }} /><col style={{ width: 300 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>
+                  <thead><tr><th className="xl__corner" aria-label="Step" /><th title="The search set or group built in this step">Search set / group</th><th title="Built level by level, or once for the whole building">Per level</th><th title="How it follows the step above">Link</th><th title="Hours after (or before, negative) the link">Lag (h)</th><th>Description</th><th aria-label="Show what it generates" /><th aria-label="Delete" /></tr></thead>
+                  <tbody>
+                    {steps.map((s, i) => {
+                      const unknown = s.group.trim() !== '' && ctx.groupIds.length > 0 && !ctx.groupIds.some((g) => g.toUpperCase() === s.group.trim().toUpperCase());
+                      return (
+                        <Fragment key={i}>
+                          <tr data-line={i} className={`${open === i ? 'is-selected' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`}
+                            onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }} onDrop={(e) => { e.preventDefault(); drop(i); }}>
+                            <th scope="row" className="xl__row rel-grip" draggable title="Drag to move the step"
+                              onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); const row = e.currentTarget.closest('tr'); if (row) e.dataTransfer.setDragImage(row, 0, 0); setDrag({ from: i, over: null }); }}
+                              onDragEnd={() => setDrag(null)}>{i + 1}</th>
+                            <td className={`xl__cell xgrid__cell${grid.sel('group', i)}${unknown ? ' is-bad' : ''}`} data-col="group" data-row={i}>
+                              <GroupPicker value={s.group} none="Choose a group…" folders={ctx.groupFolders} invalid={unknown} onChange={(group) => set(i, { group })} />{grid.handle('group', i)}
+                            </td>
+                            <td className="xl__check"><input type="checkbox" checked={!!s.perLevel} aria-label="Per level" title={s.perLevel ? 'Built level by level' : 'Built once'} onChange={(e) => set(i, { perLevel: e.target.checked || undefined })} /></td>
+                            <td className="xl__cell"><select value={s.type ?? 'FS'} disabled={i === 0} aria-label="Link" onChange={(e) => set(i, { type: e.target.value === 'FS' ? undefined : (e.target.value as RelType) })}>{TYPES.map((t) => <option key={t} value={t}>{t}</option>)}</select></td>
+                            <td className={`xl__cell xl__num xgrid__cell${grid.sel('lag', i)}`} data-col="lag" data-row={i}><input {...grid.cell('lag', i)} type="text" inputMode="decimal" disabled={i === 0} value={s.lagHours ?? ''} onChange={(e) => set(i, { lagHours: e.target.value.trim() === '' ? undefined : num(e.target.value) })} />{grid.handle('lag', i)}</td>
+                            <td className={`xl__cell xgrid__cell${grid.sel('note', i)}`} data-col="note" data-row={i}><input {...grid.cell('note', i)} value={s.note ?? ''} spellCheck={false} onChange={(e) => set(i, { note: e.target.value || undefined })} />{grid.handle('note', i)}</td>
+                            <td className="xl__check"><button type="button" className="cols__icon" aria-expanded={open === i} aria-label="Show what this step generates" title={open === i ? 'Hide what this step generates' : 'Show the activities this step generates, their days and resources'} onClick={() => setOpen(open === i ? null : i)}>{open === i ? <IconChevronDown /> : <IconChevronRight />}</button></td>
+                            <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete step" title="Delete the step" onClick={() => { setSteps(steps.filter((_, j) => j !== i)); setOpen(null); }}><IconRemove /></button></td>
+                          </tr>
+                          {open === i && (
+                            <tr><th className="xl__row" /><td colSpan={7} className="seq__more">
+                              <StepRecipe group={s.group} recipes={recipes} pools={pools} rules={ctx.rules} />
+                              {s.group.trim() !== '' && <PoursOf group={s.group} rows={openRows} />}
+                            </td></tr>
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                    <tr className="xl__add"><th className="xl__row">*</th><td colSpan={7}><button type="button" onClick={addStep}>+ Add a step</button></td></tr>
+                  </tbody>
+                </table>
               )}
             </div>
-          );
-        })}
-        <OtherRows ctx={ctx} />
-        <datalist id="seq-groups">{ctx.groupIds.map((g) => <option key={g} value={g} />)}</datalist>
-      </section>
+          
     </div>
   );
 }
+
+/** Extra activities and level tasks: two tables of the Advanced tab. */
+export function ExtraActivitiesTab() { return <ExtrasGrid ctx={useRuleContext()} />; }
+export function LevelTasksTab() { return <LevelTasksGrid ctx={useRuleContext()} />; }

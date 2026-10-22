@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react';
+import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useScenarioStore } from '../../../state/scenarioStore';
 import { ACTIVITY_PHASES, COMPONENT_PHASES, assignmentKey, chainKey, type Assignment, type ChainRow, type CrewTemplate, type RateRow, type TradeRow } from '../../../prs/rules';
 import {
@@ -31,6 +31,9 @@ interface Column<T> {
   render: (row: T, update: (patch: Partial<T>) => void) => ReactNode;
 }
 
+/** True where a table is the whole page (the Parameters, rates and crews tabs): the card is just its table, with no collapsible header. */
+export const BareGrid = createContext(false);
+
 function GridCard<T extends { id: string; enabled?: boolean }>({
   kind, rows, columns, onRows, toTsv, parse, keyOf, blank, problems, help,
 }: {
@@ -45,6 +48,7 @@ function GridCard<T extends { id: string; enabled?: boolean }>({
   problems: (row: T) => string[];
   help: ReactNode;
 }) {
+  const bare = useContext(BareGrid);
   const [filter, setFilter] = useState('');
   const [paste, setPaste] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -96,6 +100,7 @@ function GridCard<T extends { id: string; enabled?: boolean }>({
       kind={kind}
       id=""
       enabled
+      {...(bare ? { defaultOpen: true, hideHead: true } : {})}
       onDelete={() => { if (rows.length === 0 || window.confirm(`Remove all ${rows.length} rows of this table?`)) onRows([]); }}
       summary={`${rows.length} row${rows.length === 1 ? '' : 's'}`}
     >

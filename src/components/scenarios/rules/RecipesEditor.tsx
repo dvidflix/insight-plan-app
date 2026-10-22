@@ -23,6 +23,7 @@ import { RuleCard, useRuleContext } from './RuleParts';
 import { RecipeBarSlot, RecipeGraph } from './RecipeGraph';
 import { TaskResources } from './TaskResources';
 import { ResourceLink, StepsUsing } from './StepRecipes';
+import { RecipeFolderList } from './RecipeFolderList';
 import { formulaProblem } from '../../../prs/recipesWorkbook';
 import { RecipeGrid } from './RecipeGrid';
 import { ScenarioRulesEditor } from '../ScenarioRules';
@@ -651,23 +652,24 @@ A backup file of them is downloaded first (Import file brings them back). The se
             <div className="rec-list__grip" onMouseDown={listWidth.startDrag(false)} role="separator" aria-orientation="vertical" aria-label="Drag to change the width of the recipe list" title="Drag to change the width" />
             <input className="rel-cell rec-list__search" type="search" value={listQuery} placeholder="Find a recipe…" onChange={(e) => setListQuery(e.target.value)} spellCheck={false} />
             <div className="rec-list__items">
-              {recipes.map((r, i) => ({ r, i })).filter(({ r }) => {
-                const q = listQuery.trim().toLowerCase();
-                return !q || `${r.id} ${r.group} ${r.tasks.map((t) => t.phase).join(' ')}`.toLowerCase().includes(q);
-              }).map(({ r, i }) => {
-                const set = usableSets.find((x) => x.name.toUpperCase() === r.group.trim().toUpperCase());
-                const count = set ? countIds(members.get(set.id) ?? {}) : null;
-                const chainText = r.chain === false ? 'sets values only' : r.tasks.filter((t) => t.enabled !== false).map((t) => t.name || t.phase).join(' → ') || 'no activities yet';
-                const undecided = r.chain !== false && r.tasks.length > 0 && !r.tasks.some((t) => t.days !== undefined || t.formula || t.rate || t.crew);
-                const on = r.group.trim().toUpperCase() === currentName.toUpperCase();
-                return (
-                  <button key={i} type="button" className={`rec-list__item${on ? ' is-on' : ''}${r.enabled === false ? ' is-off' : ''}`} onClick={() => setPicked(r.group)} title={undecided ? 'No days, formula, rate or crew yet: the default days are used' : undefined}>
-                    <span className="rec-list__name">{r.id}{count !== null && <span className="rec-list__count">{count.toLocaleString()}</span>}</span>
-                    <span className="rec-list__chain">{chainText}</span>
-                    {undecided && <span className="rec-list__flag">default days</span>}
-                  </button>
-                );
-              })}
+              <RecipeFolderList
+                recipes={recipes}
+                onChange={set}
+                onPick={setPicked}
+                entries={recipes.map((r, i) => ({ r, i })).filter(({ r }) => {
+                  const q = listQuery.trim().toLowerCase();
+                  return !q || `${r.id} ${r.group} ${r.folder ?? ''} ${r.tasks.map((t) => t.phase).join(' ')}`.toLowerCase().includes(q);
+                }).map(({ r, i }) => {
+                  const found = usableSets.find((x) => x.name.toUpperCase() === r.group.trim().toUpperCase());
+                  return {
+                    r, i,
+                    count: found ? countIds(members.get(found.id) ?? {}) : null,
+                    chainText: r.chain === false ? 'sets values only' : r.tasks.filter((t) => t.enabled !== false).map((t) => t.name || t.phase).join(' → ') || 'no activities yet',
+                    undecided: r.chain !== false && r.tasks.length > 0 && !r.tasks.some((t) => t.days !== undefined || t.formula || t.rate || t.crew),
+                    on: r.group.trim().toUpperCase() === currentName.toUpperCase(),
+                  };
+                })}
+              />
             </div>
           </aside>
           <div className="rec-detail">

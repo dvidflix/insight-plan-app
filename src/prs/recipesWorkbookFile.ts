@@ -4,7 +4,7 @@ import { CREW_SHEET_HEAD, RATE_SHEET_HEAD, TRADE_SHEET_HEAD, RECIPE_README, RECI
 /** The recipes workbook as an .xlsx file: written for the recipes and the scenario's tables, and read back into sheets of rows (recipesWorkbook.ts says what a row means). */
 
 const HEADS: Record<keyof RecipeSheets, string[]> = {
-  recipes: ['Recipe*', 'Logical Group', 'Order', 'Activity*', 'Name', 'Suffix', 'Material', 'Follows', 'Days', 'Duration Formula', 'Quantity driver (read only)', 'Rate', 'Rebar rate', 'Crew', 'Calendar', 'Equipment', 'Cranes', 'Materials', 'Priority', 'Finish after', 'Gates'],
+  recipes: ['Recipe*', 'Logical Group', 'Folder', 'Order', 'Activity*', 'Name', 'Suffix', 'Material', 'Follows', 'Days', 'Duration Formula', 'Quantity driver (read only)', 'Rate', 'Rebar rate', 'Crew', 'Calendar', 'Equipment', 'Cranes', 'Materials', 'Priority', 'Finish after', 'Gates'],
   parameters: ['Name*', 'Value*', 'Unit', 'Notes'],
   limits: ['Activity*', 'Logical Group', 'Max at once', 'Notes'],
   steps: ['Step', 'Search set / group*', 'Per level', 'Link into it', 'Lag (h)', 'Notes'],

@@ -146,3 +146,20 @@ describe('the Rates, Crews and Trades sheets', () => {
     expect(back.trades).toEqual(trades);
   });
 });
+
+describe('recipe folders in the workbook', () => {
+  const inFolder = { ...WALL, folder: 'Walls' };
+  const apply = (sheets: ReturnType<typeof toRecipeSheets>, recipes: Recipe[]) => fromRecipeSheets(sheets, { recipes, pools: SOURCE.pools, parameters: PARAMS, groupIds: [] }).recipes!.find((r) => r.id === 'EXT-WALL')!;
+  it('writes the folder and reads it back', () => {
+    const sheets = toRecipeSheets({ ...SOURCE, recipes: [inFolder] });
+    expect(sheets.recipes!.every((r) => r.Folder === 'Walls')).toBe(true);
+    expect(apply(sheets, [WALL]).folder).toBe('Walls');
+  });
+  it('an empty Folder cell takes the recipe out of its folder, and a sheet without the column leaves it', () => {
+    const emptied = toRecipeSheets({ ...SOURCE, recipes: [WALL] });
+    expect('folder' in apply(emptied, [inFolder])).toBe(false);
+    const old = toRecipeSheets({ ...SOURCE, recipes: [WALL] });
+    old.recipes = old.recipes!.map(({ Folder: _f, ...rest }) => rest);
+    expect(apply(old, [inFolder]).folder).toBe('Walls');
+  });
+});

@@ -89,6 +89,7 @@ export function toRecipeSheets(src: BookSource): Required<RecipeSheets> {
       recipes.push({
         'Recipe*': r.id,
         'Logical Group': r.group,
+        Folder: r.folder ?? '',
         Order: i + 1,
         'Activity*': t.phase,
         Name: t.name ?? '',
@@ -198,7 +199,7 @@ export function fromRecipeSheets(sheets: RecipeSheets, current: { recipes: Recip
   if (sheets.recipes) {
     const rows = cells(sheets.recipes);
     if (!missing('Recipes', rows, ['recipe', 'activity'])) {
-      const byId = new Map<string, { id: string; group: string; rows: { c: Cells; at: number; order: number }[] }>();
+      const byId = new Map<string, { id: string; group: string; folder?: string; rows: { c: Cells; at: number; order: number }[] }>();
       rows.forEach((c, at) => {
         const id = text(c, 'recipe');
         const phase = text(c, 'activity');
@@ -206,6 +207,8 @@ export function fromRecipeSheets(sheets: RecipeSheets, current: { recipes: Recip
         if (!id || !phase) return void out.warnings.push(`Recipes row ${at + 2}: a recipe and an activity are both needed.`);
         const entry = byId.get(upper(id)) ?? { id, group: text(c, 'logical group'), rows: [] };
         if (!entry.group) entry.group = text(c, 'logical group');
+        // The Folder column is the list's folder: when the sheet has the column, an empty cell takes the recipe out of its folder.
+        if (c.has('folder') && entry.folder === undefined) entry.folder = text(c, 'folder');
         entry.rows.push({ c, at, order: numberOf(c, 'order') ?? Number.MAX_SAFE_INTEGER });
         byId.set(upper(id), entry);
       });
@@ -259,6 +262,7 @@ export function fromRecipeSheets(sheets: RecipeSheets, current: { recipes: Recip
         const phases = new Set(tasks.map((t) => upper(t.phase)));
         for (const e of edges) if (!phases.has(upper(e.from))) out.warnings.push(`Recipe ${entry.id}: “${e.to}” follows “${e.from}”, which is not one of its activities.`);
         const recipe: Recipe = { ...(old ?? { id: entry.id }), group: entry.group || old?.group || '', tasks, ...(edges.length ? { edges } : { edges: undefined }) };
+        if (entry.folder !== undefined) { if (entry.folder) recipe.folder = entry.folder; else delete recipe.folder; }
         if (old) {
           // Say what the sheet changed in it, so a file that is the same as what the app has is seen to be.
           const differs = tasks.filter((t) => {

@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { useResourceFocus } from '../../../state/resourceFocusStore';
 import { useGenerateTab } from '../GenerateTabs';
 import { openRecipe } from './StepRecipes';
+import { ResourceLimits } from './ResourceLimits';
 import { useScenarioStore } from '../../../state/scenarioStore';
 import { setPools, useRecipeStore } from '../../../state/recipeStore';
-import { freshId, type PoolKind, type PoolRow } from '../../../prs/rules';
+import { freshId, POOL_KINDS, type PoolKind, type PoolRow } from '../../../prs/rules';
 import { IconRemove } from '../../icons';
 import { useRuleContext } from './RuleParts';
 import { useEditableGrid } from '../../useEditableGrid';
@@ -13,7 +14,7 @@ import { CrewsTableCard, RatesTableCard, TradesTableCard } from './RelationalTab
 /** Resources: what the recipes pick from, defined once, in tabs like ALICE's scenario screen: Crews (and their trades), Equipment, Cranes,
     Materials (how many of each the scenario has). A recipe task only names them. The calendars are the programmes' own (Programmes > Calendars). */
 
-export type ResourcesTab = 'crews' | 'rates' | 'equipment' | 'cranes' | 'materials';
+export type ResourcesTab = 'crews' | 'rates' | 'equipment' | 'cranes' | 'materials' | 'limits';
 type Tab = ResourcesTab;
 const POOL_TABS: { id: Tab; kind: PoolKind; label: string; one: string }[] = [
   { id: 'equipment', kind: 'equipment', label: 'Equipment', one: 'equipment' },
@@ -25,7 +26,7 @@ const KEY: Record<PoolKind, 'equipment' | 'cranes' | 'materials'> = { equipment:
 const same = (a: string, b: string) => a.trim().toUpperCase() === b.trim().toUpperCase();
 const num = (v: string): number => (v.trim() === '' || !Number.isFinite(Number(v)) ? 0 : Number(v));
 
-function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
+function PoolTable({ kind, one }: { kind?: PoolKind; one: string }) {
   const pools = useRecipeStore((s) => s.pools);
   const recipes = useRecipeStore((s) => s.recipes);
   const ruleCtx = useRuleContext();
@@ -41,7 +42,7 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
       .map((l) => `${l.phase}${l.group ? ` (${l.group})` : ''}`);
     return { tasks, lims, from };
   };
-  const rows = pools.map((p, i) => ({ p, i })).filter(({ p }) => p.kind === kind);
+  const rows = pools.map((p, i) => ({ p, i })).filter(({ p }) => !kind || p.kind === kind);
   const set = (i: number, patch: Partial<PoolRow>) => setPools(pools.map((r, j) => (j === i ? { ...r, ...patch } : r)));
   /** "Max at once" of a resource: a limit that names the resource takes its number from the quantity, so typing a number here sets the quantity and
       limits every activity that uses the resource to it (the limits are made when there are none); empty takes those limits off. */
@@ -66,7 +67,7 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
       setPools(pools.map((r, j) => (to.has(j) ? { ...r, ...(col === 'quantity' ? { quantity: num(to.get(j)!) } : col === 'note' ? { note: to.get(j)! || undefined } : { [col]: to.get(j)! }) } : r)));
     },
   });
-  const add = () => setPools([...pools, { id: freshId(kind.toUpperCase().slice(0, 3), pools.map((p) => p.id)), kind, name: '', quantity: 1 }]);
+  const add = () => setPools([...pools, { id: freshId((kind ?? 'resource').toUpperCase().slice(0, 3), pools.map((p) => p.id)), kind: kind ?? 'equipment', name: '', quantity: 1 }]);
   return (
     <div>
       <div className="rel-bar">
@@ -75,8 +76,8 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
       </div>
       {rows.length === 0 ? <div className="scn-dim scn-editor__help">None yet.</div> : (
         <table className="xl xgrid" {...grid.grid}>
-          <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 160 }} /><col style={{ width: 300 }} /><col style={{ width: 110 }} /><col style={{ width: 300 }} /><col style={{ width: 160 }} /><col style={{ width: 240 }} /><col style={{ width: 32 }} /></colgroup>
-          <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this one" /><th>ID</th><th>Name</th><th title="How many exist, and so how many can be in use at the same time">Quantity</th><th title="The recipe activities that use it: click one to open its recipe">Used by</th><th title="How many activities that use it can run at the same time (the limits that take their number from it)">Max at once</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
+          <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 160 }} /><col style={{ width: 300 }} />{!kind && <col style={{ width: 120 }} />}<col style={{ width: 110 }} /><col style={{ width: 300 }} /><col style={{ width: 160 }} /><col style={{ width: 240 }} /><col style={{ width: 32 }} /></colgroup>
+          <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this one" /><th>ID</th><th>Name</th>{!kind && <th title="What kind of resource it is">Kind</th>}<th title="How many exist, and so how many can be in use at the same time">Quantity</th><th title="The recipe activities that use it: click one to open its recipe">Used by</th><th title="How many activities that use it can run at the same time (the limits that take their number from it)">Max at once</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
           <tbody>
             {rows.map(({ p, i }, at) => {
               const u = usage(p);
@@ -85,7 +86,8 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
                 <th className="xl__row" scope="row">{at + 1}</th>
                 <td className="xl__check"><input type="checkbox" checked={p.enabled !== false} onChange={(e) => set(i, { enabled: e.target.checked ? undefined : false })} aria-label="On" /></td>
                 <td className={`xl__cell xgrid__cell${grid.sel('id', at)}`} data-col="id" data-row={at}><input {...grid.cell('id', at)} value={p.id} spellCheck={false} onChange={(e) => set(i, { id: e.target.value })} />{grid.handle('id', at)}</td>
-                <td className={`xl__cell xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><input {...grid.cell('name', at)} value={p.name} spellCheck={false} placeholder={kind === 'crane' ? 'Tower crane 1' : kind === 'material' ? 'Slab formwork set' : 'Concrete pump'} onChange={(e) => set(i, { name: e.target.value })} />{grid.handle('name', at)}</td>
+                <td className={`xl__cell xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><input {...grid.cell('name', at)} value={p.name} spellCheck={false} onChange={(e) => set(i, { name: e.target.value })} />{grid.handle('name', at)}</td>
+                {!kind && <td className="xl__cell"><select value={p.kind} aria-label="Kind" onChange={(e) => set(i, { kind: e.target.value as PoolKind })}>{POOL_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}</select></td>}
                 <td className={`xl__cell xl__num xgrid__cell${grid.sel('quantity', at)}`} data-col="quantity" data-row={at}><input {...grid.cell('quantity', at)} type="text" inputMode="decimal" value={p.quantity} onChange={(e) => set(i, { quantity: num(e.target.value) })} />{grid.handle('quantity', at)}</td>
                 <td className="xl__cell xl__ro" title={u.tasks.join(String.fromCharCode(10)) || 'No recipe activity uses it yet: open an activity on the Recipes tab and give it this resource'}>
                   {u.from.length === 0 ? <span className="scn-dim">no activity yet</span> : u.from.slice(0, 3).map((f, k) => <span key={`${f.group}|${f.label}|${k}`}>{k > 0 && ', '}<button type="button" className="link-btn" title={`Open the recipe of ${f.group || 'every object'}`} onClick={() => openRecipe(f.group, setTab)}>{f.label}</button></span>)}
@@ -94,12 +96,12 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
                 <td className="xl__cell xl__num"><input type="text" inputMode="decimal" value={u.lims.length ? p.quantity : ''} placeholder="no limit" aria-label={`${p.id} max at once`}
                   title={u.lims.length ? `Limits ${u.lims.join(', ')} to ${p.quantity} at once. Type a number to change it (it is the quantity), empty to take the limits off` : u.from.length ? 'Type a number to limit the activities that use it to that many at once' : 'No activity uses it yet, so there is nothing to limit'}
                   disabled={u.from.length === 0 && u.lims.length === 0} onChange={(e) => setMax(i, p, e.target.value)} /></td>
-                <td className={`xl__cell xgrid__cell${grid.sel('note', at)}`} data-col="note" data-row={at}><input {...grid.cell('note', at)} value={p.note ?? ''} spellCheck={false} placeholder="e.g. limited by storage space" onChange={(e) => set(i, { note: e.target.value || undefined })} />{grid.handle('note', at)}</td>
+                <td className={`xl__cell xgrid__cell${grid.sel('note', at)}`} data-col="note" data-row={at}><input {...grid.cell('note', at)} value={p.note ?? ''} spellCheck={false} onChange={(e) => set(i, { note: e.target.value || undefined })} />{grid.handle('note', at)}</td>
                 <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" onClick={() => setPools(pools.filter((_, j) => j !== i))} aria-label="Delete"><IconRemove /></button></td>
               </tr>
               );
             })}
-            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={8}><button type="button" onClick={add}>+ Add {one}</button></td></tr>
+            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={kind ? 8 : 9}><button type="button" onClick={add}>+ Add {one}</button></td></tr>
           </tbody>
         </table>
       )}
@@ -108,10 +110,10 @@ function PoolTable({ kind, one }: { kind: PoolKind; one: string }) {
 }
 
 /** The resources as a panel of its own (the Generate view): `only` limits it to some tabs (one tab: no tab bar). */
-export function ResourcesPanel({ only, onClose, bare }: { only?: Tab[]; onClose?: () => void; /** No bar (the Maximize button): the panel is one section of a longer page. */ bare?: boolean }) {
+export function ResourcesPanel({ only, onClose, bare, oneTable }: { only?: Tab[]; onClose?: () => void; /** Every kind of resource in one table (a Kind column), no tabs. */ oneTable?: boolean; /** No bar (the Maximize button): the panel is one section of a longer page. */ bare?: boolean }) {
   const ctx = useRuleContext();
   const scenarioOpen = useScenarioStore((s) => !!s.loaded);
-  const shown = (['crews', 'rates', 'equipment', 'cranes', 'materials'] as Tab[]).filter((t) => !only || only.includes(t));
+  const shown = (['crews', 'rates', 'equipment', 'cranes', 'materials', 'limits'] as Tab[]).filter((t) => !only || only.includes(t));
   const [tab, setTab] = useState<Tab>(shown[0]);
   const maximized = ctx.rules.settings.maximizeResources === true;
   const needsScenario = (tab === 'crews' || tab === 'rates') && !scenarioOpen;
@@ -128,15 +130,17 @@ export function ResourcesPanel({ only, onClose, bare }: { only?: Tab[]; onClose?
         </button>
         {onClose && <button type="button" className="btn btn--small primary" onClick={onClose}>Close (Esc)</button>}
       </div>}
-      {shown.length > 1 && (
+      {shown.length > 1 && !oneTable && (
         <div className="scn-rules__tabs" role="tablist">
-          {([['crews', 'Crews'], ['rates', 'Rates'], ...POOL_TABS.map((t) => [t.id, t.label]), ] as [Tab, string][]).filter(([id]) => shown.includes(id)).map(([id, label]) => (
+          {([['crews', 'Crews'], ['rates', 'Rates'], ...POOL_TABS.map((t) => [t.id, t.label]), ['limits', 'Limits']] as [Tab, string][]).filter(([id]) => shown.includes(id)).map(([id, label]) => (
             <button key={id} type="button" role="tab" aria-selected={tab === id} className={tab === id ? 'is-active' : ''} onClick={() => setTab(id)}>{label}</button>
           ))}
         </div>
       )}
       <div className="rg-full__body gen-body">
         {needsScenario ? <div className="scn-dim scn-editor__help">Open a scenario to edit its {tab}: they are part of the scenario's rules.</div>
+          : oneTable ? <PoolTable one="resource" />
+          : tab === 'limits' ? <ResourceLimits />
           : pool ? <PoolTable kind={pool.kind} one={pool.one} />
           : tab === 'rates' ? <RatesTableCard ctx={ctx} />
           : <><CrewsTableCard ctx={ctx} /><TradesTableCard ctx={ctx} /></>}

@@ -55,3 +55,30 @@ describe('extra activities and level tasks as Sequence rows', () => {
     expect(applyLevelTaskRow(levelTasks, { ...rows[0], enabled: false })[0].enabled).toBe(false);
   });
 });
+
+import { mergeExtras } from '../../src/prs/sequenceRows';
+import { cellText, sheetToText } from '../../src/prs/extrasWorkbookFile';
+import { extrasToTsv, parseExtrasPaste } from '../../src/prs/extrasTable';
+
+describe('extra activities to and from a workbook', () => {
+  it('turns an Excel date (a serial number) in a baseline column into its own day, in any time zone', () => {
+    const serial = (y: number, m: number, d: number) => Date.UTC(y, m - 1, d) / 86400000 + 25569;
+    expect(sheetToText([['X1', 'Site', 5, serial(2029, 4, 6), serial(2029, 12, 31)]])).toBe('X1	Site	5	2029-04-06	2029-12-31');
+    expect(sheetToText([['X1', 'Site', 25000, '2029-04-06', '6 Apr 2029']])).toBe('X1	Site	25000	2029-04-06	6 Apr 2029');
+    expect(cellText(null)).toBe('');
+  });
+  it('reads back what the table copies out, with the same data', () => {
+    const text = extrasToTsv(extras, tags);
+    const back = parseExtrasPaste(sheetToText(text.split('\n').map((l) => l.split('\t'))));
+    expect(back.extras).toEqual(extras);
+    expect(back.tags.X2).toMatchObject({ building: 'A', level: 'L01', wbs: 'level' });
+    expect(back.tags.X3).toMatchObject({ wbs: 'path:Temporary / Hoarding' });
+  });
+  it('replaces a row with the same ID, adds the new ones and keeps the others', () => {
+    const incoming = { extras: [{ TaskID: 'x1', Name: 'Site setup 2', DurationDays: 9, BaselineStart: '2029-04-06', BaselineFinish: '2029-04-20' }, { TaskID: 'X9', Name: 'New', DurationDays: 1, BaselineStart: '2029-07-01', BaselineFinish: '2029-07-01' }], tags: { X9: { level: 'L02' } } };
+    const out = mergeExtras(extras, tags, incoming);
+    expect(out.extras.map((e) => e.TaskID)).toEqual(['X2', 'X3', 'x1', 'X9']);
+    expect(out.tags.X9).toEqual({ level: 'L02' });
+    expect(out.tags.X2).toEqual(tags.X2);
+  });
+});

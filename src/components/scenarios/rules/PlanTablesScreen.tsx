@@ -8,14 +8,18 @@ import { IconChevronDown, IconChevronRight, IconRemove } from '../../icons';
 import { ResourceCheck, StepRecipe } from './StepRecipes';
 import { useRuleContext } from './RuleParts';
 import { useEditableGrid } from '../../useEditableGrid';
+import { usePersistedState } from '../../../utils/persistedState';
+import { formulaNames } from '../../../schedule/durationFormula';
 
 /** The tables that drive the recipes, as plain tables (spreadsheet-first): Parameters (the named rates, curing days and set counts the duration
     formulas read), Limits (how many activities of a kind run at once: formwork sets, a specialist crew) and Steps (the search sets in the order they
     are built, with the link into each). All of it can be downloaded as one Excel workbook, edited there and uploaded again. */
 
-export type PlanTab = 'parameters' | 'limits' | 'steps';
+export type PlanTab = 'parameters' | 'durations' | 'limits' | 'steps';
 type Tab = PlanTab;
-const TABS: { id: Tab; label: string }[] = [{ id: 'parameters', label: 'Parameters' }, { id: 'limits', label: 'Limits' }, { id: 'steps', label: 'Steps' }];
+const TABS: { id: Tab; label: string }[] = [{ id: 'parameters', label: 'Parameters' }, { id: 'durations', label: 'Durations' }, { id: 'limits', label: 'Limits' }, { id: 'steps', label: 'Steps' }];
+/** The quantity a sample is made with until one is typed. */
+const DEFAULT_SAMPLE = 100;
 const TYPES: RelType[] = ['FS', 'SS', 'FF', 'SF'];
 const num = (v: string): number => (v.trim() === '' || !Number.isFinite(Number(v.replace(',', '.'))) ? 0 : Number(v.replace(',', '.')));
 
@@ -87,9 +91,10 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
     if (!t) return '';
     return sizeNames.some((n) => n.toLowerCase() === t) || limitedBy.some((p) => p.name.trim().toLowerCase() === t) ? '' : `“${l.max}” is not an equipment ID or a parameter`;
   };
-  // A sample pour for the preview: 150 m³ of concrete and 3.5 t of rebar.
-  const sample = { Concrete_m3: 150, Rebar_t: 3.5, Rebar_kg: 3500, Footprint_m2: 200, Sides_m2: 120 };
+  const [sampleQty, setSampleQty] = usePersistedState<Record<string, number>>('plan.sampleQuantities', {});
   const withFormula = recipes.filter((r) => r.chain !== false).flatMap((r) => r.tasks.filter((t) => t.formula).map((t) => ({ r, t })));
+  const quantityNames = [...new Set(withFormula.flatMap(({ t }) => formulaNames(t.formula!)))].filter((n) => !names.some((p) => p.toLowerCase() === n.toLowerCase()));
+  const sample = Object.fromEntries(quantityNames.map((n) => [n, sampleQty[n] ?? DEFAULT_SAMPLE]));
 
   return (
     <div className="gen-panel">
@@ -110,9 +115,9 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
             <div>
               <div className="rel-bar">
                 <button type="button" className="btn btn--small primary" onClick={() => setParameters([...parameters, { id: `Parameter_${parameters.length + 1}`, name: `Parameter_${parameters.length + 1}`, value: 0 }])}>+ Parameter</button>
-                <span className="scn-dim">A named value the duration formulas read, e.g. <code>Rebar_Rate</code> = 500 (kg per day). Write the name in a recipe task’s Duration formula: <code>Rebar_kg / Rebar_Rate</code>. Change a value and Update 4D.</span>
+                <span className="scn-dim">A named value that duration formulas read: write its name in a recipe activity’s formula. Change a value, then Update 4D.</span>
               </div>
-              {parameters.length === 0 ? <div className="scn-dim scn-editor__help">None yet. Typical: Rebar_Rate, Concrete_Rate, Curing_Days, Formwork_Sets_Available.</div> : (
+              {parameters.length === 0 ? <div className="scn-dim scn-editor__help">None yet.</div> : (
                 <table className="xl xgrid" {...pGrid.grid}>
                   <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 260 }} /><col style={{ width: 110 }} /><col style={{ width: 150 }} /><col style={{ width: 240 }} /><col /><col style={{ width: 32 }} /></colgroup>
                   <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this parameter" /><th>Name</th><th>Value</th><th>Unit</th><th title="The duration formulas and limits that read it">Used in</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
@@ -138,21 +143,41 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                   </tbody>
                 </table>
               )}
-              {withFormula.length > 0 && (
-                <div style={{ marginTop: 10 }}>
-                  <div className="scn-dim">Durations the formulas give for a sample pour (150 m³ of concrete, 3.5 t of rebar):</div>
-                  <table className="rel-table">
-                    <thead><tr><th>Recipe</th><th>Activity</th><th>Formula</th><th>Days</th></tr></thead>
+            </div>
+          ) : tab === 'durations' ? (
+            <div>
+              <div className="rel-bar"><span className="scn-dim">The days each duration formula gives, worked out live from the parameters. Type a typical quantity for each name the formulas read.</span></div>
+              {withFormula.length === 0 ? <div className="scn-dim scn-editor__help">No recipe activity has a duration formula yet.</div> : (
+                <>
+                  {quantityNames.length > 0 && (
+                    <table className="xl">
+                      <thead><tr><th className="xl__corner" aria-label="Quantity" />{quantityNames.map((n) => <th key={n}>{n}</th>)}</tr></thead>
+                      <tbody><tr>
+                        <th className="xl__row" scope="row" title="A sample quantity for each name">1</th>
+                        {quantityNames.map((n) => <td key={n} className="xl__cell xl__num"><input type="text" inputMode="decimal" value={sampleQty[n] ?? DEFAULT_SAMPLE} onChange={(e) => setSampleQty({ ...sampleQty, [n]: num(e.target.value) })} aria-label={`Sample ${n}`} /></td>)}
+                      </tr></tbody>
+                    </table>
+                  )}
+                  <table className="xl" style={{ marginTop: 10 }}>
+                    <colgroup><col style={{ width: 40 }} /><col style={{ width: 200 }} /><col style={{ width: 180 }} /><col style={{ width: 420 }} /><col style={{ width: 90 }} /></colgroup>
+                    <thead><tr><th className="xl__corner" aria-label="Row" /><th>Recipe</th><th>Activity</th><th>Formula</th><th>Days</th></tr></thead>
                     <tbody>
-                      {withFormula.map(({ r, t }) => {
+                      {withFormula.map(({ r, t }, at) => {
                         const res = previewDays(t.formula!, parameters, sample);
-                        const problem = formulaProblem(t.formula!, names);
-                        return <tr key={`${r.id}|${t.phase}`}><td>{r.id}</td><td>{t.phase}</td><td><code>{t.formula}</code></td><td>{'days' in res ? Math.round(res.days * 100) / 100 : <span className="scn-dim" title={res.error}>{problem || res.error}</span>}</td></tr>;
+                        const problem = formulaProblem(t.formula!, [...names, ...quantityNames]);
+                        return (
+                          <tr key={`${r.id}|${t.phase}`}>
+                            <th className="xl__row" scope="row">{at + 1}</th>
+                            <td className="xl__cell xl__ro">{r.id}</td>
+                            <td className="xl__cell xl__ro">{t.name || t.phase}</td>
+                            <td className="xl__cell xl__ro" title={t.formula}>{t.formula}</td>
+                            <td className={`xl__cell xl__num xl__ro${'days' in res ? '' : ' is-bad'}`} title={'days' in res ? undefined : problem || res.error}>{'days' in res ? Math.round(res.days * 100) / 100 : 'check'}</td>
+                          </tr>
+                        );
                       })}
                     </tbody>
                   </table>
-                  <div className="scn-dim xl__note">A preview only, worked out as you change the parameters: the real durations depend on each pour’s own quantities.</div>
-                </div>
+                </>
               )}
             </div>
           ) : tab === 'limits' ? (

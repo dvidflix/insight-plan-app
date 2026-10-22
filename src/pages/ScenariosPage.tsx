@@ -5,9 +5,11 @@ import { ScenarioNotice, ScenarioPanelBody, ScenarioSync, ScenarioTable, Scenari
 import { ScenarioRulesEditor } from '../components/scenarios/ScenarioRules';
 import { RecipesEditor } from '../components/scenarios/rules/RecipesEditor';
 import { ResourcesPanel } from '../components/scenarios/rules/ResourcesScreen';
+import { ExtraActivitiesTab, LevelTasksTab, OrderPanel } from '../components/scenarios/rules/SequencePanel';
 import { ResourceLimits } from '../components/scenarios/rules/ResourceLimits';
-import { SequencePanel } from '../components/scenarios/rules/SequencePanel';
 import { PlanTablesPanel } from '../components/scenarios/rules/PlanTablesScreen';
+import { BareGrid, CrewsTableCard, RatesTableCard, TradesTableCard } from '../components/scenarios/rules/RelationalTables';
+import { useRuleContext } from '../components/scenarios/rules/RuleParts';
 import { usePersistedState } from '../utils/persistedState';
 import { ModelsGanttPanel } from '../components/ModelConfigPanel';
 import { ListSetupButton } from '../components/ViewPicker';
@@ -24,12 +26,9 @@ import { ADVANCED_TABS, useGenerateTab, useShownAdvancedTab, useShownGenerateTab
 
 const CONFIG_TABS = [['columns', 'Columns'], ['filters', 'Filters'], ['group', 'Group'], ['color', 'Color']] as const;
 
+/** The Order: one table of steps, and Generate. */
 function OrderTab() {
   const { ready } = useScenarioView();
-  const [cfg, setCfg] = usePersistedState<(typeof CONFIG_TABS)[number][0]>('generate.orderConfig', 'columns');
-  const [cfgOpen, setCfgOpen] = usePersistedState<boolean>('generate.orderConfigOpen', false);
-  const [poursOpen, setPoursOpen] = usePersistedState<boolean>('generate.poursOpen', false);
-  const pours = useScenarioStore((s) => s.rows.length);
   const manual = useScenarioStore((s) => s.relations.length);
   const setTab = useGenerateTab((s) => s.setTab);
   const setAdvanced = useGenerateTab((s) => s.setAdvanced);
@@ -37,65 +36,72 @@ function OrderTab() {
   return (
     <div className="gen-order">
       <ScenarioNotice />
-      <details className="gen-steps" open>
-        <summary className="gen-h" title="The locations, and the steps in the order they are built">Sequence: what is built, in what order</summary>
-        <SequencePanel />
-        {manual > 0 && (
-          <div className="scn-dim xl__note">
-            Also in this programme: {manual} manual link{manual === 1 ? '' : 's'}, which tie two activities together and are not steps.{' '}
-            <button type="button" className="link-btn" onClick={() => { setAdvanced('rules'); setTab('advanced'); }} title="Manual links are kept under Advanced › Rules">Open them</button>
-          </div>
-        )}
-      </details>
-      <details className="gen-steps" open={poursOpen} onToggle={(e) => setPoursOpen((e.currentTarget as HTMLDetailsElement).open)}>
-        <summary className="gen-h" title="The individual pours, in the order they are built: open to move, filter or colour them">Pours ({pours.toLocaleString()}): the individual pours, in order</summary>
+      <OrderPanel />
+      {manual > 0 && (
+        <div className="scn-dim xl__note">
+          Also in this programme: {manual} manual link{manual === 1 ? '' : 's'}, which tie two activities together and are not steps.{' '}
+          <button type="button" className="link-btn" onClick={() => { setAdvanced('rules'); setTab('advanced'); }} title="Manual links are kept under Advanced › Rules">Open them</button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** The objects one by one, in the order they are built (Advanced › Objects): the table with its columns, filters, grouping and colours. */
+function PoursTab() {
+  const { ready } = useScenarioView();
+  const [cfg, setCfg] = usePersistedState<(typeof CONFIG_TABS)[number][0]>('generate.orderConfig', 'columns');
+  const [cfgOpen, setCfgOpen] = usePersistedState<boolean>('generate.orderConfigOpen', false);
+  if (!ready) return null;
+  return (
+    <div className="gen-order">
+      <ScenarioNotice />
       <div className="gen-tools scn-toolbar"><div className="schedule-toolbar__left"><ScenarioToolbar /><button type="button" className="btn" aria-expanded={cfgOpen} onClick={() => setCfgOpen(!cfgOpen)} title="Which columns the table shows, its filters, grouping and colours">Table settings {cfgOpen ? '▲' : '▼'}</button></div></div>
       {cfgOpen && (
-      <div className="gen-order__cfg">
-        {(
+        <div className="gen-order__cfg">
           <div className="scn-rules__tabs" role="tablist" style={{ padding: 0, border: 0 }}>
             {CONFIG_TABS.map(([id, label]) => <button key={id} type="button" role="tab" aria-selected={cfg === id} className={cfg === id ? 'is-active' : ''} onClick={() => setCfg(id)}>{label}</button>)}
           </div>
-        )}
-      </div>
+        </div>
       )}
       {cfgOpen && isTableCfgTab(cfg) && <div className="gen-order__cfgbody scn-panel"><ScenarioPanelBody tab={cfg} /></div>}
       <div className="gen-order__table"><ScenarioTable /></div>
-      </details>
     </div>
   );
 }
 
-/** What sets the durations, on one page: the named parameters the formulas read, the rates, and the crews with their trades. */
-function ProductivityTab() {
-  return (
-    <div className="gen-stack">
-      <section><h3 className="gen-h">Parameters</h3><PlanTablesPanel only={['parameters']} /></section>
-      <section><h3 className="gen-h">Rates</h3><ResourcesPanel only={['rates']} bare /></section>
-      <section><h3 className="gen-h">Crews and trades</h3><ResourcesPanel only={['crews']} bare /></section>
-    </div>
-  );
-}
-
-/** The parts most projects set once or never: parameters, rates and crews; the rules; the steps and limits. */
+/** The optional detail, in one row of tabs, one table under each. */
 function AdvancedTab() {
   const part = useShownAdvancedTab();
   const setAdvanced = useGenerateTab((s) => s.setAdvanced);
   const setTab = useGenerateTab((s) => s.setTab);
+  const pours = useScenarioStore((s) => s.rows.length);
+  const extras = useScenarioStore((s) => s.extras.length);
+  const ctx = useRuleContext();
+  const count = (id: string) => (id === 'pours' ? ` (${pours.toLocaleString()})` : id === 'extras' ? ` (${extras})` : id === 'levelTasks' ? ` (${ctx.rules.levelTasks.length})` : '');
   return (
     <div className="gen-advanced">
       <div className="scn-rules__tabs" role="tablist" aria-label="Advanced">
         {ADVANCED_TABS.map((t) => (
-          <button key={t.id} type="button" role="tab" aria-selected={part === t.id} className={part === t.id ? 'is-active' : ''} title={t.tip} onClick={() => { setTab('advanced'); setAdvanced(t.id); }}>{t.label}</button>
+          <button key={t.id} type="button" role="tab" aria-selected={part === t.id} className={part === t.id ? 'is-active' : ''} title={t.tip} onClick={() => { setTab('advanced'); setAdvanced(t.id); }}>{t.label}{count(t.id)}</button>
         ))}
       </div>
-      {part === 'productivity' && <ProductivityTab />}
+      <BareGrid.Provider value>
+        {part === 'parameters' && <PlanTablesPanel only={['parameters']} />}
+        {part === 'durations' && <PlanTablesPanel only={['durations']} book={false} />}
+        {part === 'rates' && <RatesTableCard ctx={ctx} />}
+        {part === 'crews' && <CrewsTableCard ctx={ctx} />}
+        {part === 'trades' && <TradesTableCard ctx={ctx} />}
+        {part === 'limits' && <ResourceLimits />}
+      </BareGrid.Provider>
+      {part === 'extras' && <ExtraActivitiesTab />}
+      {part === 'levelTasks' && <LevelTasksTab />}
+      {part === 'pours' && <PoursTab />}
       {part === 'rules' && <ScenarioRulesEditor />}
     </div>
   );
 }
 
-/** The Generate view. Its tabs are in the main header (components/scenarios/GenerateTabs.tsx), so the page is only the content of the tab. */
 export function ScenariosPage({ picker }: { /** The page picker with the search box and the tabs: the page's own header, like Home's. */ picker?: ReactNode }) {
   const tab = useShownGenerateTab();
   // The header (page picker, search, step tabs) runs the full width in the viewer's header slot: the docks start below it.
@@ -112,10 +118,7 @@ export function ScenariosPage({ picker }: { /** The page picker with the search 
         {tab === 'order' && <OrderTab />}
         {tab === 'recipes' && <RecipesEditor />}
         {tab === 'resources' && (
-          <div className="gen-stack">
-            <section><ResourcesPanel only={['equipment', 'cranes', 'materials']} /></section>
-            <section><h3 className="gen-h" title="Under each resource: which activities it limits and how many can run at the same time">Limits: what each resource holds back</h3><ResourceLimits /></section>
-          </div>
+          <ResourcesPanel only={['equipment', 'cranes', 'materials']} oneTable />
         )}
         {tab === 'advanced' && <AdvancedTab />}
       </main>
