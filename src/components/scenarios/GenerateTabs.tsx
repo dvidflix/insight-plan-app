@@ -9,9 +9,10 @@ import { useScenarioView } from '../../scenarios/useScenarioView';
 export type GenerateTab = 'scenario' | 'resources' | 'recipes' | 'order' | 'advanced';
 
 /** What Advanced holds: the optional detail, in one row of tabs (most projects set it once, or never). */
-export type AdvancedTab = 'levels' | 'parameters' | 'durations' | 'rates' | 'crews' | 'trades' | 'extras' | 'levelTasks' | 'limits' | 'pours' | 'rules';
+export type AdvancedTab = 'levels' | 'labour' | 'parameters' | 'durations' | 'rates' | 'crews' | 'trades' | 'extras' | 'levelTasks' | 'limits' | 'pours' | 'rules';
 
 export const ADVANCED_TABS: { id: AdvancedTab; label: string; tip: string }[] = [
+  { id: 'labour', label: 'Labour', tip: 'People, gangs and productivity: the numbers, in one table' },
   { id: 'levels', label: 'Levels', tip: 'Which property of your objects is the level, and the order the levels are built in' },
   { id: 'parameters', label: 'Parameters', tip: 'Named values the duration formulas read' },
   { id: 'durations', label: 'Durations', tip: 'The days each formula gives, worked out live' },

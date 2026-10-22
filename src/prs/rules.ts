@@ -54,6 +54,14 @@ export interface DurationRow extends Row {
 /** Where a productivity row takes its quantity from: tonnes of rebar (the object's concrete volume x the rebar rate), m3 of concrete, or a
     number the model carries (a property or quantity set and a name, times a factor). */
 export type QuantityBasis = 'rebar' | 'concrete' | 'footprint' | 'sides' | 'property';
+/** The quantities a productivity can be per, as the generator offers them (each with its unit). */
+export const QUANTITY_BASES: { value: QuantityBasis; label: string }[] = [
+  { value: 'rebar', label: 'rebar t' },
+  { value: 'concrete', label: 'concrete m³' },
+  { value: 'footprint', label: 'footprint m²' },
+  { value: 'sides', label: 'side faces m²' },
+  { value: 'property', label: 'model property' },
+];
 /** What to use for a object that lacks the model property: the rebar tonnes, the concrete volume, or nothing (the row then does not apply). */
 export type QuantityFallback = 'rebar' | 'concrete' | 'none';
 

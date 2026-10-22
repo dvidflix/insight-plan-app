@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react';
 import { useScenarioStore } from '../../../state/scenarioStore';
-import { ACTIVITY_PHASES, COMPONENT_PHASES, assignmentKey, chainKey, type Assignment, type ChainRow, type CrewTemplate, type RateRow, type TradeRow } from '../../../prs/rules';
+import { ACTIVITY_PHASES, COMPONENT_PHASES, QUANTITY_BASES, assignmentKey, chainKey, type Assignment, type ChainRow, type CrewTemplate, type RateRow, type TradeRow } from '../../../prs/rules';
 import {
   assignmentProblems, assignmentsToTsv, chainsToTsv, crewText, parseChainsPaste, crewsToTsv, parseAssignmentsPaste, parseCrewText, parseCrewsPaste, parseRatesPaste, ratesToTsv, parseTradesPaste, tradesToTsv,
 } from '../../../prs/relational';
@@ -187,11 +187,7 @@ export function RatesTableCard({ ctx }: { ctx: RuleContext }) {
     { label: 'Tonnes per m³', field: 'tonnesPerM3', numeric: true, render: (r, u) => (r.type === 'rebar' ? <Cell type="number" value={r.tonnesPerM3} onChange={(v) => u({ tonnesPerM3: num(v) })} width={72} /> : null) },
     { label: 'Quantity', field: 'basis', tip: 'Productivity: tonnes of rebar, m³ of concrete, the footprint area (m², a slab\'s deck), the side faces area (m², a wall\'s formwork), or a number the model carries. Areas are measured from the model\'s geometry.', render: (r, u) => P(r) ? (
       <select className="rel-cell" value={r.basis ?? 'rebar'} onChange={(e) => u({ basis: e.target.value as RateRow['basis'] })}>
-        <option value="rebar">rebar t</option>
-        <option value="concrete">concrete m³</option>
-        <option value="footprint">footprint m²</option>
-        <option value="sides">side faces m²</option>
-        <option value="property">model property</option>
+        {QUANTITY_BASES.map((b) => <option key={b.value} value={b.value}>{b.label}</option>)}
       </select>
     ) : null },
     { label: 'Property set', field: 'pset', optional: true, render: (r, u) => (P(r) && r.basis === 'property' ? <Cell value={r.pset} onChange={(pset) => u({ pset: pset || undefined })} width={110} /> : null) },
