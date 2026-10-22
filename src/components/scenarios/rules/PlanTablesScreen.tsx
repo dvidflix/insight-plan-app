@@ -1,10 +1,11 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { useScenarioStore } from '../../../state/scenarioStore';
 import { useRecipeStore } from '../../../state/recipeStore';
 import { RecipeWorkbookButtons } from './RecipeWorkbookButtons';
 import { STEPS_ID, previewDays, formulaProblem } from '../../../prs/recipesWorkbook';
 import type { LimitRow, ParameterRow, RelType, RuleSequence, SequenceStep } from '../../../prs/rules';
-import { IconRemove } from '../../icons';
+import { IconChevronDown, IconChevronRight, IconRemove } from '../../icons';
+import { ResourceCheck, StepRecipe } from './StepRecipes';
 import { useRuleContext } from './RuleParts';
 import { useEditableGrid } from '../../useEditableGrid';
 
@@ -28,6 +29,8 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
   const shownTabs = TABS.filter((t) => !only || only.includes(t.id));
   const [tab, setTab] = useState<Tab>(shownTabs[0].id);
   const [note, setNote] = useState<{ ok: boolean; lines: string[] } | null>(null);
+  const [openStep, setOpenStep] = useState<number | null>(null);
+  const poolRows = useRecipeStore((s) => s.pools);
 
   const { parameters, limits, sequences } = ctx.rules;
   const setParameters = (next: ParameterRow[]) => ctx.change((r) => ({ ...r, parameters: next }));
@@ -39,6 +42,13 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
   const steps = stepsOf(sequences);
 
   const names = parameters.map((p) => p.name);
+  /** Where a parameter is read: the duration formulas that name it, and the limits whose "max at once" is it. */
+  const usedIn = (name: string) => {
+    const key = name.trim().toLowerCase();
+    const formulas = key ? recipes.filter((r) => r.enabled !== false).flatMap((r) => r.tasks.filter((t) => t.formula && t.formula.toLowerCase().split(/[^a-z0-9_.]+/).includes(key)).map((t) => `${r.id} · ${t.name || t.phase}`)) : [];
+    const lims = key ? limits.filter((l) => l.enabled !== false && typeof l.max === 'string' && l.max.trim().toLowerCase() === key).map((l) => l.phase) : [];
+    return { formulas, lims };
+  };
   // The Parameters table is typed in like a spreadsheet: click a cell, arrows and Tab move, Ctrl+D / the corner square fill down, copy and paste ranges.
   const pRows = parameters.map((p, i) => ({ p, i }));
   const pGrid = useEditableGrid({ widthsKey: 'plan.parameters',
@@ -104,11 +114,12 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
               </div>
               {parameters.length === 0 ? <div className="scn-dim scn-editor__help">None yet. Typical: Rebar_Rate, Concrete_Rate, Curing_Days, Formwork_Sets_Available.</div> : (
                 <table className="xl xgrid" {...pGrid.grid}>
-                  <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 260 }} /><col style={{ width: 110 }} /><col style={{ width: 150 }} /><col /><col style={{ width: 32 }} /></colgroup>
-                  <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this parameter" /><th>Name</th><th>Value</th><th>Unit</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
+                  <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 260 }} /><col style={{ width: 110 }} /><col style={{ width: 150 }} /><col style={{ width: 240 }} /><col /><col style={{ width: 32 }} /></colgroup>
+                  <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this parameter" /><th>Name</th><th>Value</th><th>Unit</th><th title="The duration formulas and limits that read it">Used in</th><th>Notes</th><th aria-label="Delete" /></tr></thead>
                   <tbody>
                     {pRows.map(({ p, i }, at) => {
                       const set = (patch: Partial<ParameterRow>) => setParameters(parameters.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+                      const u = usedIn(p.name);
                       const bad = !/^[A-Za-z_][A-Za-z0-9_.]*$/.test(p.name) ? 'Letters, digits and _, starting with a letter' : '';
                       return (
                         <tr key={i} data-line={at} className={p.enabled === false ? 'is-off' : ''}>
@@ -117,12 +128,13 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                           <td className={`xl__cell xgrid__cell${pGrid.sel('name', at)}${bad ? ' is-bad' : ''}`} data-col="name" data-row={at}><input {...pGrid.cell('name', at)} value={p.name} spellCheck={false} title={bad} aria-invalid={!!bad} onChange={(e) => set({ name: e.target.value, id: e.target.value })} />{pGrid.handle('name', at)}</td>
                           <td className={`xl__cell xl__num xgrid__cell${pGrid.sel('value', at)}`} data-col="value" data-row={at}><input {...pGrid.cell('value', at)} type="text" inputMode="decimal" value={p.value} onChange={(e) => set({ value: num(e.target.value) })} />{pGrid.handle('value', at)}</td>
                           <td className={`xl__cell xgrid__cell${pGrid.sel('unit', at)}`} data-col="unit" data-row={at}><input {...pGrid.cell('unit', at)} value={p.unit ?? ''} onChange={(e) => set({ unit: e.target.value || undefined })} />{pGrid.handle('unit', at)}</td>
+                          <td className="scn-dim" title={[...u.formulas.map((f) => `Formula ${f}`), ...u.lims.map((l) => `Limit ${l}`)].join(String.fromCharCode(10)) || 'Nothing reads it yet'}>{[u.formulas.length ? `${u.formulas.length} formula${u.formulas.length === 1 ? '' : 's'}` : '', u.lims.length ? `${u.lims.length} limit${u.lims.length === 1 ? '' : 's'}` : ''].filter(Boolean).join(' · ') || 'not used yet'}</td>
                           <td className={`xl__cell xgrid__cell${pGrid.sel('note', at)}`} data-col="note" data-row={at}><input {...pGrid.cell('note', at)} value={p.note ?? ''} onChange={(e) => set({ note: e.target.value || undefined })} />{pGrid.handle('note', at)}</td>
                           <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" onClick={() => setParameters(parameters.filter((_, j) => j !== i))} aria-label="Delete"><IconRemove /></button></td>
                         </tr>
                       );
                     })}
-                    <tr className="xl__add"><th className="xl__row">*</th><td colSpan={6}><button type="button" onClick={() => setParameters([...parameters, { id: `Parameter_${parameters.length + 1}`, name: `Parameter_${parameters.length + 1}`, value: 0 }])}>+ Add a parameter</button></td></tr>
+                    <tr className="xl__add"><th className="xl__row">*</th><td colSpan={7}><button type="button" onClick={() => setParameters([...parameters, { id: `Parameter_${parameters.length + 1}`, name: `Parameter_${parameters.length + 1}`, value: 0 }])}>+ Add a parameter</button></td></tr>
                   </tbody>
                 </table>
               )}
@@ -139,6 +151,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                       })}
                     </tbody>
                   </table>
+                  <div className="scn-dim xl__note">A preview only, worked out as you change the parameters: the real durations depend on each pour’s own quantities.</div>
                 </div>
               )}
             </div>
@@ -179,16 +192,19 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                 <button type="button" className="btn btn--small primary" onClick={() => setSteps([...steps, { group: '' }])}>+ Step</button>
                 <span className="scn-dim">One line per group of objects, in the order they are built: for example rafts, then walls, then slabs. Each line starts when the one above it has finished, unless you change its link. Tick Per level to build that group level by level.</span>
               </div>
+              <ResourceCheck />
               {steps.length === 0 ? <div className="scn-dim scn-editor__help">No steps: the pours follow the order of the scenario. Add a step for each search set (Raft, Double height walls, L01 internal walls ...).</div> : (
                 <table className="rel-table">
-                  <thead><tr><th>#</th><th>Search set / group</th><th>Per level</th><th>Link into it</th><th>Lag (h)</th><th>Notes</th><th aria-label="Move" /><th aria-label="Delete" /></tr></thead>
+                  <thead><tr><th aria-label="Show the activities" /><th>#</th><th>Search set / group</th><th>Per level</th><th>Link into it</th><th>Lag (h)</th><th>Notes</th><th aria-label="Move" /><th aria-label="Delete" /></tr></thead>
                   <tbody>
                     {steps.map((s, i) => {
                       const set = (patch: Partial<SequenceStep>) => setSteps(steps.map((x, j) => (j === i ? { ...x, ...patch } : x)));
                       const move = (by: number) => { const to = i + by; if (to < 0 || to >= steps.length) return; const next = [...steps]; [next[i], next[to]] = [next[to], next[i]]; setSteps(next); };
                       const unknown = s.group.trim() !== '' && ctx.groupIds.length > 0 && !ctx.groupIds.some((g) => g.toUpperCase() === s.group.trim().toUpperCase());
                       return (
-                        <tr key={i}>
+                        <Fragment key={i}>
+                        <tr>
+                          <td><button type="button" className="cols__icon" aria-expanded={openStep === i} onClick={() => setOpenStep(openStep === i ? null : i)} title={openStep === i ? 'Hide the activities this step generates' : 'Show the activities this step generates, their days and resources'} aria-label="Show the activities">{openStep === i ? <IconChevronDown /> : <IconChevronRight />}</button></td>
                           <td>{i + 1}</td>
                           <td><input className="rel-cell" style={{ width: 280 }} list="recipe-groups" value={s.group} aria-invalid={unknown} title={unknown ? 'No search set or group has this name' : ''} onChange={(e) => set({ group: e.target.value })} /></td>
                           <td><input type="checkbox" checked={!!s.perLevel} onChange={(e) => set({ perLevel: e.target.checked || undefined })} aria-label="Per level" /></td>
@@ -205,6 +221,8 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                           </td>
                           <td><button type="button" className="cols__icon cols__icon--remove" onClick={() => setSteps(steps.filter((_, j) => j !== i))} aria-label="Delete"><IconRemove /></button></td>
                         </tr>
+                        {openStep === i && <tr><td /><td colSpan={8}><StepRecipe group={s.group} recipes={recipes} pools={poolRows} rules={ctx.rules} /></td></tr>}
+                        </Fragment>
                       );
                     })}
                   </tbody>

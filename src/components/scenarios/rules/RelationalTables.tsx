@@ -155,6 +155,20 @@ export function RatesTableCard({ ctx }: { ctx: RuleContext }) {
   const rows = ctx.rules.rates;
   const set = (next: RateRow[]) => ctx.change((r) => ({ ...r, rates: next }));
   const P = (r: RateRow) => r.type === 'productivity';
+  // Where each rate (or rebar rate) is used: the tasks of the recipes and the rows of Assignments.
+  const usedBy = useMemo(() => {
+    const m = new Map<string, string[]>();
+    const add = (rate: string | undefined, label: string) => {
+      const k = (rate ?? '').trim().toUpperCase();
+      if (!k) return;
+      const l = m.get(k) ?? [];
+      if (!l.includes(label)) l.push(label);
+      m.set(k, l);
+    };
+    for (const rec of ctx.rules.recipes ?? []) for (const t of rec.tasks) { const label = `${rec.name || rec.id} › ${t.name || t.phase || 'task'}`; add(t.rate, label); add(t.density, label); }
+    for (const a of ctx.rules.assignments) { const label = `${a.group || 'all'} › ${a.phase || 'any'}`; add(a.rate, label); add(a.density, label); }
+    return m;
+  }, [ctx.rules.recipes, ctx.rules.assignments]);
   const columns: Column<RateRow>[] = [
     { label: 'ID', field: 'id', render: (r, u) => <Cell value={r.id} onChange={(id) => u({ id })} width={110} /> },
     { label: 'Type', field: 'type', tip: 'Days: a fixed number of days. Productivity: days worked out from a quantity. Rebar: tonnes of rebar per m³ of concrete.', render: (r, u) => (
@@ -197,6 +211,11 @@ export function RatesTableCard({ ctx }: { ctx: RuleContext }) {
       </select>
     ) : null },
     { label: 'At least (days)', field: 'minDays', numeric: true, render: (r, u) => (P(r) ? <Cell type="number" value={r.minDays} onChange={(v) => u({ minDays: num(v) })} width={64} /> : null) },
+    { label: 'Used by', tip: 'The recipes (recipe › activity) and assignments (group › phase) that use this rate', render: (r) => {
+      const list = usedBy.get(r.id.trim().toUpperCase()) ?? [];
+      const text = list.join(', ');
+      return <span className="scn-dim" title={text || 'Not used by any recipe or assignment'} style={{ display: 'inline-block', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', verticalAlign: 'middle' }}>{list.length ? `${list.length}: ${text}` : 'not used'}</span>;
+    } },
   ];
   return (
     <GridCard

@@ -129,20 +129,26 @@ export function withOverrides(m: ScheduleModel, edits: Record<string, Stored> | 
   let relationships = m.relationships;
   if (hasLinks) {
     const idOf = new Map(m.activities.map((a) => [norm(a.code), a.id]));
-    const byKey = new Map<string, Relationship>(m.relationships.map((r) => [`${r.predId}>${r.succId}`, r]));
+    // Two activities may be joined by more than one link (a start-to-start and a finish-to-finish, as an overlap is written): the links are
+    // kept as a list, and an edit touches the links of its own pair only, never collapses them to one.
+    let list = [...m.relationships];
     for (const o of linkOps!) {
       const pred = idOf.get(o.pred);
       const succ = idOf.get(o.succ);
       if (!pred || !succ || pred === succ) continue;
-      const k = `${pred}>${succ}`;
-      if (o.op === 'remove') byKey.delete(k);
-      else if (o.op === 'add') byKey.set(k, { predId: pred, succId: succ, type: o.type ?? 'FS', lagHours: o.lagHours ?? 0 });
-      else {
-        const cur = byKey.get(k);
-        if (cur) byKey.set(k, { ...cur, type: o.type ?? cur.type, lagHours: o.lagHours ?? cur.lagHours });
+      const pair = (r: Relationship) => r.predId === pred && r.succId === succ;
+      if (o.op === 'remove') list = list.filter((r) => !pair(r));
+      else if (o.op === 'add') {
+        const type = o.type ?? 'FS';
+        list = [...list.filter((r) => !(pair(r) && r.type === type)), { predId: pred, succId: succ, type, lagHours: o.lagHours ?? 0 }];
+      } else {
+        // An edit of the link: the one of the pair that has the type it names, else the pair's first.
+        const at = list.findIndex((r) => pair(r) && r.type === o.type);
+        const first = at >= 0 ? at : list.findIndex(pair);
+        if (first >= 0) list[first] = { ...list[first], type: o.type ?? list[first].type, lagHours: o.lagHours ?? list[first].lagHours };
       }
     }
-    relationships = [...byKey.values()];
+    relationships = list;
     touched++;
     drives = true;
   }

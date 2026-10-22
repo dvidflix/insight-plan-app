@@ -122,3 +122,22 @@ describe('Gantt link shortcuts', () => {
     expect(applyLinkShortcut('FS', m, new Set(['A', 'B'])).added).toBe(0);
   });
 });
+
+describe('Link edits and an overlap written as two links', () => {
+  it('keep both the SS and the FF of a pair when another link is edited', () => {
+    const acts = [activity('A', { code: 'A' }), activity('B', { code: 'B' }), activity('C', { code: 'C' })];
+    const base = model(acts, [rel('A', 'B', 'SS', 128), rel('A', 'B', 'FF', 0), rel('B', 'C', 'FS', 0)]);
+    const out = withOverrides(base, undefined, [{ op: 'set', pred: 'B', succ: 'C', lagHours: 8 }]);
+    const pairs = out.relationships.map((r) => `${r.predId}>${r.succId}:${r.type}:${r.lagHours}`).sort();
+    expect(pairs).toEqual(['A>B:FF:0', 'A>B:SS:128', 'B>C:FS:8']);
+  });
+
+  it('edits the lag of the link of the pair that has the type named, and removes a pair whole', () => {
+    const acts = [activity('A', { code: 'A' }), activity('B', { code: 'B' })];
+    const base = model(acts, [rel('A', 'B', 'SS', 128), rel('A', 'B', 'FF', 0)]);
+    const set = withOverrides(base, undefined, [{ op: 'set', pred: 'A', succ: 'B', type: 'FF', lagHours: 16 }]);
+    expect(set.relationships.map((r) => `${r.type}:${r.lagHours}`).sort()).toEqual(['FF:16', 'SS:128']);
+    const gone = withOverrides(base, undefined, [{ op: 'remove', pred: 'A', succ: 'B' }]);
+    expect(gone.relationships).toHaveLength(0);
+  });
+});

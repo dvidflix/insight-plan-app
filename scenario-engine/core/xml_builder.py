@@ -2307,6 +2307,16 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         _emit_relationship(pred_id, succ_id, rel_type, lag[0] if lag else 0, source="sequence")
 
     # 2. Intra-pour relationships (a pour's own phase chain)
+    intra_written = defaultdict(int)  # by link type, for the log
+    intra_before = dict(not_written)
+    _emit_plain = _emit_relationship
+
+    def _emit_relationship(pred_task_id, succ_task_id, rel_type, lag_days=0, source="generated", track=True):  # noqa: F811
+        ok = _emit_plain(pred_task_id, succ_task_id, rel_type, lag_days, source=source, track=track)
+        if ok and source == "intra":
+            intra_written[rel_type] += 1
+        return ok
+
     for succ_id, pred_list in intra_predecessors.items():
         if succ_id in override_successors:
             continue
@@ -2338,6 +2348,11 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
                     _emit_relationship(p_id, succ_id, "FinishToFinish", 0, source="intra")
             else:
                 _emit_relationship(p_id, succ_id, "FinishToStart", source="intra")
+
+    _emit_relationship = _emit_plain  # noqa: F811
+    if intra_written or intra_predecessors:
+        refused = ", ".join(f"{n} {reason}" for reason, n in not_written.items() if n - intra_before.get(reason, 0) > 0)
+        print("  Pour chains: " + ", ".join(f"{n} {t}" for t, n in sorted(intra_written.items())) + (f" written; not written: {refused}" if refused else " written"))
 
     # 2b. The scenario's programme rules (sequences, contacts, level tasks and links: core/rule_logic.py). Ahead of the
     # automatic sources, so a cycle drops the automatic link; after SequenceOrder and the pours' own chains, which win.

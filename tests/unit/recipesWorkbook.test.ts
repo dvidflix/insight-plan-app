@@ -129,3 +129,20 @@ describe('parameters and limits in the scenario rules', () => {
     expect(merged.parameters.map((p) => [p.name, p.value])).toEqual([['A', 1], ['B', 9]]);
   });
 });
+
+describe('the Rates, Crews and Trades sheets', () => {
+  it('read back what they wrote', () => {
+    const rates = [
+      { id: 'REBAR-0.25', type: 'rebar' as const, tonnesPerM3: 0.25 },
+      { id: 'REBAR-SF-60', type: 'productivity' as const, basis: 'rebar' as const, manhoursPerUnit: 60, people: 12, shifts: 2, hoursPerShift: 9.17, rounding: 'ceil' as const, minDays: 1 },
+      { id: 'CURE', type: 'days' as const, days: 3 },
+    ];
+    const crews = [{ id: 'CREW-A', trades: [{ trade: 'SF', size: 6 }, { trade: 'CP', size: 4 }], subcontractor: 'Concrete Sub', available: 2 }];
+    const trades = [{ id: 'SF', name: 'Steel fixers', capacity: 20 }];
+    const sheets = toRecipeSheets({ recipes: [], pools: [], parameters: [], limits: [], sequences: [], rates, crews, trades });
+    const back = fromRecipeSheets(sheets, { recipes: [], pools: [], parameters: [] });
+    expect(back.rates).toEqual(rates);
+    expect(back.crews).toEqual(crews);
+    expect(back.trades).toEqual(trades);
+  });
+});

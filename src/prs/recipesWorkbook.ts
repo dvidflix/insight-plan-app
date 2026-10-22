@@ -1,6 +1,7 @@
 import { evaluateFormula, formulaNames } from '../schedule/durationFormula';
 import { edgesFromFollows, followsText, parseUses, usesText, type Recipe, type RecipeEdge, type RecipeTask } from './recipes';
-import type { LimitRow, ParameterRow, PoolKind, PoolRow, RelType, RuleSequence, SequenceStep } from './rules';
+import type { CrewTemplate, LimitRow, ParameterRow, PoolKind, PoolRow, RateRow, RelType, RuleSequence, SequenceStep, TradeRow } from './rules';
+import { RATE_HEAD, crewText, parseCrewText, parseRatesPaste, parseTradesPaste, ratesToTsv } from './relational';
 
 /** The recipes as one Excel workbook, for people who would rather read a table than a graph: Recipes (a row per activity of each logical group),
     Parameters (the named rates and limits the formulas read), Limits (how many activities of a kind run at once), Steps (the search sets in the
@@ -15,9 +16,12 @@ export interface RecipeSheets {
   limits?: Row[];
   steps?: Row[];
   resources?: Row[];
+  rates?: Row[];
+  crews?: Row[];
+  trades?: Row[];
 }
 
-export const RECIPE_SHEET_NAMES = { recipes: 'Recipes', parameters: 'Parameters', limits: 'Limits', steps: 'Steps', resources: 'Resources', readme: 'Read me' } as const;
+export const RECIPE_SHEET_NAMES = { recipes: 'Recipes', parameters: 'Parameters', limits: 'Limits', steps: 'Steps', resources: 'Resources', rates: 'Rates', crews: 'Crews', trades: 'Trades', readme: 'Read me' } as const;
 
 /** The quantities of each pour a formula can use, besides the parameters (worked out when the programme is generated). */
 export const QUANTITY_NAMES = ['Concrete_m3', 'Rebar_t', 'Rebar_kg', 'Footprint_m2', 'Sides_m2', 'crews'] as const;
@@ -32,6 +36,7 @@ export const RECIPE_README: string[] = [
   'Limits: at most "Max at once" activities of the Activity kind run together (Formwork, with Max at once = Formwork_Sets_Available or a number). The programme is linked in lanes, in the order of the Steps.',
   'Steps: the search sets in the order they are built. Each step waits for the one before it (finish to start) unless Link into it says otherwise (FS, SS, FF, SF, with Lag in hours). Per level repeats the step for every level in turn.',
   'Resources: equipment, cranes and materials (Kind = equipment, crane or material) and how many there are. A row not in the sheet is kept.',
+  'Rates, Crews and Trades: each sheet is the whole list for the scenario (a rate, crew or trade not in the sheet is removed). Rates: Type is days, productivity or rebar, and only the columns of that type are read. Crews: Crew is the trades and people per day ("SF 6, CP 4"). Trades: Code, Name and People per day.',
   'A recipe not in the Recipes sheet is kept. Recipes: edit Recipe and Logical Group to make a new recipe; the activities of a recipe in the sheet are exactly the rows given.',
 ];
 
@@ -59,7 +64,22 @@ export interface BookSource {
   parameters: ParameterRow[];
   limits: LimitRow[];
   sequences: RuleSequence[];
+  rates?: RateRow[];
+  crews?: CrewTemplate[];
+  trades?: TradeRow[];
 }
+
+export const RATE_SHEET_HEAD = RATE_HEAD.map((h, i) => (i === 0 ? 'ID*' : h));
+export const CREW_SHEET_HEAD = ['ID*', 'Crew', 'Subcontractor', 'Crews available'];
+export const TRADE_SHEET_HEAD = ['Code*', 'Name', 'People per day'];
+
+const TEXT_RATE_COLUMNS = new Set(['ID', 'Type', 'Basis', 'Property set', 'Property', 'If none', 'Round']);
+/** The Rates table as rows keyed by heading (numbers stay numbers, so Excel can add them up). */
+const rateRows = (rows: RateRow[]): Row[] => {
+  const [head, ...body] = ratesToTsv(rows).split('\n');
+  const heads = head.split('\t');
+  return body.filter((l) => l !== '').map((l) => Object.fromEntries(l.split('\t').map((v, i) => [RATE_SHEET_HEAD[i], v !== '' && !TEXT_RATE_COLUMNS.has(heads[i]) && Number.isFinite(Number(v)) ? Number(v) : v])));
+};
 
 export function toRecipeSheets(src: BookSource): Required<RecipeSheets> {
   const recipes: Row[] = [];
@@ -97,7 +117,10 @@ export function toRecipeSheets(src: BookSource): Required<RecipeSheets> {
     parameters: src.parameters.map((p) => ({ 'Name*': p.name, 'Value*': p.value, Unit: p.unit ?? '', Notes: p.note ?? '' })),
     limits: src.limits.map((l) => ({ 'Activity*': l.phase, 'Logical Group': l.group ?? '', 'Max at once': l.max, Notes: l.note ?? '' })),
     steps: steps.map((s, i) => ({ Step: i + 1, 'Search set / group*': s.group, 'Per level': s.perLevel ? 'yes' : '', 'Link into it': s.type && s.type !== 'FS' ? s.type : '', 'Lag (h)': s.lagHours ?? '', Notes: s.note ?? '' })),
-    resources: src.pools.map((p) => ({ Kind: p.kind, 'ID*': p.id, Name: p.name, Quantity: p.quantity })),
+    resources: src.pools.map((p) => ({ Kind: p.kind, 'ID*': p.id, Name: p.name, Quantity: p.quantity, Notes: p.note ?? '' })),
+    rates: rateRows(src.rates ?? []),
+    crews: (src.crews ?? []).map((c) => ({ 'ID*': c.id, Crew: crewText(c), Subcontractor: c.subcontractor ?? '', 'Crews available': c.available ?? '' })),
+    trades: (src.trades ?? []).map((t) => ({ 'Code*': t.id, Name: t.name, 'People per day': t.capacity })),
   };
 }
 
@@ -111,6 +134,10 @@ export interface BookApplied {
   limits?: LimitRow[];
   /** The steps of the Steps sequence (none: the steps are removed). Undefined: the workbook has no Steps sheet. */
   steps?: SequenceStep[];
+  /** The whole lists of the Rates, Crews and Trades sheets (undefined: no such sheet, or it could not be read). */
+  rates?: RateRow[];
+  crews?: CrewTemplate[];
+  trades?: TradeRow[];
   /** What was done, a line each. */
   summary: string[];
   /** What was wrong or left out. */
@@ -306,13 +333,46 @@ export function fromRecipeSheets(sheets: RecipeSheets, current: { recipes: Recip
         if (!id) return;
         const kind = text(c, 'kind').toLowerCase() as PoolKind;
         if (kind !== 'equipment' && kind !== 'crane' && kind !== 'material') return void out.warnings.push(`Resources row ${i + 2}: Kind must be equipment, crane or material.`);
-        const row: PoolRow = { id, kind, name: text(c, 'name'), quantity: numberOf(c, 'quantity') ?? 0 };
+        const row: PoolRow = { id, kind, name: text(c, 'name'), quantity: numberOf(c, 'quantity') ?? 0, ...(text(c, 'notes') ? { note: text(c, 'notes') } : {}) };
         const at = next.findIndex((p) => p.kind === kind && upper(p.id) === upper(id));
         if (at >= 0) next[at] = { ...next[at], ...row }; else next.push(row);
         n++;
       });
       out.pools = next;
       out.summary.push(`Resources: ${n}`);
+    }
+  }
+
+  // ---- Rates, Crews, Trades (each sheet is the whole list)
+  const asTsv = (rows: Cells[], heads: string[]) => rows.map((c) => heads.map((h) => text(c, norm(h))).join('\t')).join('\n');
+  if (sheets.rates) {
+    const rows = cells(sheets.rates);
+    if (!missing('Rates', rows, ['id', 'type'])) {
+      const list = parseRatesPaste(asTsv(rows, RATE_SHEET_HEAD)).filter((r) => r.id.trim());
+      out.rates = list;
+      out.summary.push(`Rates: ${list.length}`);
+    }
+  }
+  if (sheets.trades) {
+    const rows = cells(sheets.trades);
+    if (!missing('Trades', rows, ['code'])) {
+      const list = parseTradesPaste(asTsv(rows, TRADE_SHEET_HEAD));
+      out.trades = list;
+      out.summary.push(`Trades: ${list.length}`);
+    }
+  }
+  if (sheets.crews) {
+    const rows = cells(sheets.crews);
+    if (!missing('Crews', rows, ['id', 'crew'])) {
+      const list: CrewTemplate[] = [];
+      for (const c of rows) {
+        const id = text(c, 'id');
+        if (!id) continue;
+        const available = numberOf(c, 'crews available');
+        list.push({ id, trades: parseCrewText(text(c, 'crew')), ...(text(c, 'subcontractor') ? { subcontractor: text(c, 'subcontractor') } : {}), ...(available !== undefined ? { available } : {}) });
+      }
+      out.crews = list;
+      out.summary.push(`Crews: ${list.length}`);
     }
   }
   return out;

@@ -5,6 +5,8 @@ import { ScenarioNotice, ScenarioPanelBody, ScenarioSync, ScenarioTable, Scenari
 import { ScenarioRulesEditor } from '../components/scenarios/ScenarioRules';
 import { RecipesEditor } from '../components/scenarios/rules/RecipesEditor';
 import { ResourcesPanel } from '../components/scenarios/rules/ResourcesScreen';
+import { ResourceLimits } from '../components/scenarios/rules/ResourceLimits';
+import { SequencePanel } from '../components/scenarios/rules/SequencePanel';
 import { PlanTablesPanel } from '../components/scenarios/rules/PlanTablesScreen';
 import { usePersistedState } from '../utils/persistedState';
 import { ModelsGanttPanel } from '../components/ModelConfigPanel';
@@ -42,8 +44,8 @@ function OrderTab() {
       )}
       {cfgOpen && isTableCfgTab(cfg) && <div className="gen-order__cfgbody scn-panel"><ScenarioPanelBody tab={cfg} /></div>}
       <details className="gen-steps" open>
-        <summary className="gen-h" title="Which group of objects is built first, then next">What is built first (steps)</summary>
-        <PlanTablesPanel only={['steps']} />
+        <summary className="gen-h" title="Which group of objects is built first, then next">Sequence: what is built, in what order</summary>
+        <SequencePanel />
       </details>
       <div className="gen-order__table"><ScenarioTable /></div>
     </div>
@@ -98,7 +100,7 @@ export function ScenariosPage({ picker }: { /** The page picker with the search 
         {tab === 'resources' && (
           <div className="gen-stack">
             <section><ResourcesPanel only={['equipment', 'cranes', 'materials']} /></section>
-            <section><h3 className="gen-h">Limits: how many at once</h3><PlanTablesPanel only={['limits']} /></section>
+            <section><h3 className="gen-h" title="Under each resource: which activities it limits and how many can run at the same time">Limits: what each resource holds back</h3><ResourceLimits /></section>
           </div>
         )}
         {tab === 'advanced' && <AdvancedTab />}

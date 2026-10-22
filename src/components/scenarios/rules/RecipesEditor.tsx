@@ -5,7 +5,7 @@ import { updateFourD, useScenarioStore } from '../../../state/scenarioStore';
 import { useScenarioView } from '../../../scenarios/useScenarioView';
 import { setRecipes, useRecipeStore } from '../../../state/recipeStore';
 import { ACTIVITY_PHASES, COMPONENT_PHASES, POOL_KINDS } from '../../../prs/rules';
-import { applyTasksPaste, edgesFromFollows, followsText, normalizeRecipes, parseTasksPaste, tasksToTsv, usesText, type Recipe, type RecipeTask } from '../../../prs/recipes';
+import { applyTasksPaste, edgesFromFollows, followsText, normalizeRecipes, parseTasksPaste, tasksToTsv, type Recipe, type RecipeTask } from '../../../prs/recipes';
 import { duplicateSets } from '../../../prs/groupSets';
 import { useRecipeFolderStore } from '../../../state/recipeFolderStore';
 import { recipeNeeds } from '../../../prs/recipeNeeds';
@@ -22,6 +22,7 @@ import { useEditableGrid } from '../../useEditableGrid';
 import { RuleCard, useRuleContext } from './RuleParts';
 import { RecipeBarSlot, RecipeGraph } from './RecipeGraph';
 import { TaskResources } from './TaskResources';
+import { ResourceLink } from './StepRecipes';
 import { formulaProblem } from '../../../prs/recipesWorkbook';
 import { RecipeGrid } from './RecipeGrid';
 import { ScenarioRulesEditor } from '../ScenarioRules';
@@ -279,7 +280,7 @@ function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy,
                   <td className={`xl__cell xl__num xgrid__cell${grid.sel('days', at)}`} data-col="days" data-row={at}><input {...grid.cell('days', at)} type="text" inputMode="decimal" value={t.days ?? ''} onChange={(e) => setTask(i, { days: num(e.target.value) })} />{grid.handle('days', at)}</td>
                   <td className={`xl__cell xgrid__cell${grid.sel('formula', at)}`} data-col="formula" data-row={at}><input {...grid.cell('formula', at)} value={t.formula ?? ''} spellCheck={false} placeholder="Rebar_kg / Rebar_Rate" title={formulaTip(t.formula)} onChange={(e) => setTask(i, { formula: e.target.value.trim() === '' ? undefined : e.target.value })} />{grid.handle('formula', at)}</td>
                   <td className={`xl__cell xgrid__cell${grid.sel('crew', at)}`} data-col="crew" data-row={at}><input {...grid.cell('crew', at)} list="recipe-crews" value={t.crew ?? ''} onChange={(e) => setTask(i, { crew: e.target.value || undefined })} />{grid.handle('crew', at)}</td>
-                  <td className="xl__cell xl__ro">{[usesText(t.cranes), usesText(t.equipment), usesText(t.materials)].filter(Boolean).join(' · ') || '—'}</td>
+                  <td className="xl__cell xl__ro">{[...(t.cranes ?? []), ...(t.equipment ?? []), ...(t.materials ?? [])].map((u, k) => <span key={`${u.type}|${k}`}>{k > 0 && ' · '}<ResourceLink type={u.type} />{(u.count ?? 1) > 1 ? ` ×${u.count}` : ''}</span>)}{!(t.cranes?.length || t.equipment?.length || t.materials?.length) && '—'}</td>
                   <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" onClick={() => remove(i)} aria-label="Delete task"><IconRemove /></button></td>
                 </tr>
               ))}
