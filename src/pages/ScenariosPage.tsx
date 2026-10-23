@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useModelsStore } from '../state/modelsStore';
 import { useOrderPreview } from '../state/orderPreviewStore';
 import { OrderPreviewEffects } from '../components/scenarios/OrderPreview';
-import { ResultSummary, SameNameWarning, SequencingPresets } from '../components/scenarios/GenerateSummary';
+import { SequencingPresets } from '../components/scenarios/GenerateSummary';
 import { isTableCfgTab, useScenarioStore } from '../state/scenarioStore';
 import { useScenarioView } from '../scenarios/useScenarioView';
 import { ScenarioNotice, ScenarioPanelBody, ScenarioSync, ScenarioTable, ScenarioToolbar } from '../components/scenarios/ScenarioParts';
@@ -40,9 +40,21 @@ function OrderViewBar() {
   const current = useOrderPreview((s) => s.current);
   const setCurrent = useOrderPreview((s) => s.setCurrent);
   const models = useModelsStore((s) => s.models.length);
+  if (models === 0) {
+    return (
+      <div className="gen-order__empty">
+        <b>No model is loaded</b>
+        <span>Load the model in Models: each work item then shows here in its colour, and clicking a row picks its objects.</span>
+        <span className="gen-order__emptybtns">
+          <button type="button" className="btn primary" onClick={() => window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'model' }))} title="Go to Models to load the model">Go to Models</button>
+          <button type="button" className="btn" onClick={() => setShow(false)} title="Hide the 3D half so the list takes the full width. Show 3D brings it back">Hide 3D</button>
+        </span>
+      </div>
+    );
+  }
   return (
     <div className="gen-order__viewbar">
-      <span className="scn-dim">{models === 0 ? 'No model is loaded: load one in Models to see the work breakdown here.' : current ? 'Only the chosen work item is coloured.' : 'Each work item has its colour. Click one, or an object, to pick it.'}</span>
+      <span className="scn-dim">{current ? 'Only the chosen work item is coloured.' : 'Each work item has its colour. Click one, or an object, to pick it.'}</span>
       {current && <button type="button" className="btn btn--small" onClick={() => setCurrent(null)} title="Colour every work item again">Show all</button>}
       <button type="button" className="btn btn--small" onClick={() => setShow(false)} title="Hide the 3D view so the list takes the full width. Show 3D brings it back">Hide 3D</button>
     </div>
@@ -67,10 +79,9 @@ function OrderTab() {
     <div className={`gen-order gen-order--split${show ? ' has-view' : ''}`}>
       <div className="gen-order__list">
         <ScenarioNotice />
-        <SameNameWarning />
-        <ResultSummary />
-        <SequencingPresets />
+        {/* The list and its bar (add, the status line, Generate) first; the rest is folded, each fold's title saying what it holds. */}
         <OrderPanel />
+        <SequencingPresets />
         <GroupingLevels />
         <BuildOrdersSection />
         <details className="gen-order__levels" ref={levelsRef} open={levelsOpen} onToggle={(e) => setLevelsOpen((e.currentTarget as HTMLDetailsElement).open)}>

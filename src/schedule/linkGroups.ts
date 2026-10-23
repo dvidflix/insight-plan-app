@@ -166,14 +166,55 @@ export function evalChain<T extends { conj: Conjunction }>(rules: T[], test: (ru
   return result;
 }
 
+/** "Equals A, or B, or C…" on one field (the long lists "Link selection" writes): the values to look up, so the list costs one
+    lookup per task or object instead of one comparison per rule. Null for any other list, which goes through evalChain. */
+function equalsAnyOf<T extends { conj: Conjunction; op: CompareOp; value: string }>(active: T[], fieldOf: (r: T) => string, caseSensitive: boolean): Set<string> | null {
+  if (active.length < 8) return null;
+  const field = fieldOf(active[0]);
+  if (!active.every((r, i) => r.op === 'equals' && (i === 0 || r.conj === 'or') && fieldOf(r) === field)) return null;
+  return new Set(active.map((r) => (caseSensitive ? r.value : r.value.toLowerCase())));
+}
+
+// One test per filter list (the lists are replaced, never changed in place, when a group is edited).
+const taskTests = new WeakMap<TaskFilterRule[], (a: Activity) => boolean>();
+const objectTests = new WeakMap<ObjectFilterRule[], (el: ElementSummary) => boolean>();
+
 function matchesTaskFilters(a: Activity, rules: TaskFilterRule[]): boolean {
-  const active = rules.filter((r) => r.value !== '');
-  return evalChain(active, (r) => evalOp(taskFieldValue(a, r.attribute), r.value, r.op));
+  let test = taskTests.get(rules);
+  if (!test) {
+    const active = rules.filter((r) => r.value !== '');
+    const values = equalsAnyOf(active, (r) => r.attribute, false);
+    test = values ? (t) => values.has(taskFieldValue(t, active[0].attribute).toLowerCase()) : (t) => evalChain(active, (r) => evalOp(taskFieldValue(t, r.attribute), r.value, r.op));
+    taskTests.set(rules, test);
+  }
+  return test(a);
 }
 
 export function matchesObjectFilters(el: ElementSummary, rules: ObjectFilterRule[]): boolean {
-  const active = rules.filter((r) => !r.ignore && r.value !== '');
-  return evalChain(active, (r) => evalOp(objectFieldValue(el, r.propertySet, r.attribute), r.value, r.op, r.caseSensitive));
+  let test = objectTests.get(rules);
+  if (!test) {
+    const active = rules.filter((r) => !r.ignore && r.value !== '');
+    const cs = active[0]?.caseSensitive ?? false;
+    const values = equalsAnyOf(active, (r) => `${objectFieldKey(r.propertySet, r.attribute)}\u0001${r.caseSensitive}`, cs);
+    const { propertySet, attribute } = active[0] ?? { propertySet: '', attribute: '' };
+    test = values
+      ? (o) => { const v = objectFieldValue(o, propertySet, attribute); return values.has(cs ? v : v.toLowerCase()); }
+      : (o) => evalChain(active, (r) => evalOp(objectFieldValue(o, r.propertySet, r.attribute), r.value, r.op, r.caseSensitive));
+    objectTests.set(rules, test);
+  }
+  return test(el);
+}
+
+/** A Link Group for what is picked now: these activities (by Activity ID) and these objects (by GlobalId, case-sensitive as
+    IFC GlobalIds are), with no matching rule, so every picked activity stands for every picked object. */
+export function groupFromSelection(activities: Activity[], objects: ElementSummary[]): LinkGroup {
+  const first = activities[0];
+  const name = activities.length === 1 ? `${first.code} ${first.name}` : `${first.code} + ${activities.length - 1} more`;
+  return {
+    ...emptyGroup(name),
+    taskFilters: activities.map((a) => ({ id: newId(), attribute: '_code', op: 'equals', value: a.code, conj: 'or' })),
+    objectFilters: objects.map((el) => ({ id: newId(), propertySet: '_guid', attribute: '', op: 'equals', value: el.guid, conj: 'or', caseSensitive: true, ignore: false })),
+  };
 }
 
 /** The values a field holds: the text split on any of `separators`, each trimmed and lower-cased, empty ones

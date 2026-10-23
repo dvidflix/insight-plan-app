@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import type { ScheduleModel } from '../../schedule/types';
 import { useModelsStore } from '../../state/modelsStore';
 import { useLinkGroupsStore } from '../../state/linkGroupsStore';
@@ -13,7 +13,8 @@ import { CONFIDENCE_LABEL, groupNameOf, suggestMatches, unlinked, type Confidenc
 
 const SHOWN: Confidence[] = ['high', 'medium'];
 
-export function SuggestMatches({ model }: { model: ScheduleModel }) {
+/** `actions`: more buttons for the bar, before "Suggest matches" (the Link Groups panel's "Link selection"). */
+export function SuggestMatches({ model, actions }: { model: ScheduleModel; actions?: ReactNode }) {
   const engine = useViewerEngine();
   const loadedModels = useModelsStore((s) => s.models);
   const groups = useLinkGroupsStore((s) => s.groups);
@@ -50,6 +51,7 @@ export function SuggestMatches({ model }: { model: ScheduleModel }) {
       <div className="sm__bar">
         <span className="sm__count" title="Tasks that no Link Group gives an object to">{gaps.tasks.length === 0 ? 'All tasks linked' : `${gaps.tasks.length.toLocaleString()} of ${gaps.totalTasks.toLocaleString()} tasks unlinked`}</span>
         <span className="sm__count" title="Objects that no Link Group links to a task">{gaps.objects.size === 0 ? 'all objects linked' : `${gaps.objects.size.toLocaleString()} of ${gaps.totalObjects.toLocaleString()} objects unlinked`}</span>
+        {actions}
         <button type="button" className="btn btn--small" disabled={nothing} aria-expanded={open} onClick={() => setOpen(!open)} title={nothing ? 'Needs unlinked tasks and unlinked objects' : 'Find the fields that would link the most unlinked tasks to unlinked objects'}>Suggest matches {open ? '▲' : '▼'}</button>
       </div>
       {open && (

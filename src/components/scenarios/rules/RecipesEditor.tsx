@@ -100,7 +100,8 @@ function FollowsCell({ recipe, phase, onChange }: { recipe: Recipe; phase: strin
 function RecipeCard({ recipe, recipes, rules, check, onChange, onDelete, onCopy, collapsed, onCollapsed, bare, setNames = [] }: { bare?: boolean; /** The names of the search sets of the recipes folder: they are groups too. */ setNames?: string[]; recipe: Recipe; recipes: Recipe[]; rules: ScenarioRules; check: boolean; onChange: (r: Recipe) => void; onDelete: () => void; onCopy: () => void; collapsed: boolean; onCollapsed: (c: boolean) => void }) {
   const chain = recipe.chain !== false;
   const barSlot = useContext(RecipeBarSlot);
-  const [view, setView] = useState<'list' | 'table' | 'graph'>('list');
+  // Opens on the graph (boxes and arrows read without knowing the Follows notation); the last choice is kept.
+  const [view, setView] = usePersistedState<'list' | 'table' | 'graph'>('recipes.view', 'graph');
   const [full, setFull] = useState(false);
   useEffect(() => {
     if (!full) return;

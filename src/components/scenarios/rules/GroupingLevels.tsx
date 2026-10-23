@@ -1,4 +1,5 @@
 import { useMemo } from 'react';
+import { usePersistedState } from '../../../utils/persistedState';
 import { useSearchSetsStore } from '../../../state/searchSetsStore';
 import { useWorkItems } from '../useWorkItems';
 import { InfoTip } from '../../InfoTip';
@@ -42,9 +43,16 @@ export function GroupingLevels() {
   const built = useWorkItems();
   const shownLevels = built?.levels ?? [];
 
+  // Folded until opened (remembered); its title says whether the levels make the programme, so the fold never hides what is in charge.
+  const [open, setOpen] = usePersistedState<boolean>('generate.groupingOpen', false);
+  const state = active
+    ? `in charge: ${(built?.leaves.length ?? 0).toLocaleString()} work item${built?.leaves.length === 1 ? '' : 's'}`
+    : def.levels.length ? 'not in charge: no level has the role Work item' : 'none: the list above is in charge';
+
   return (
-    <section className="rules-sec gen-order__levelsdef" id="rules-grouping">
-      <div className="rules-sec__head"><h3 className="gen-sec">Grouping levels <InfoTip label="How grouping levels work">Group the objects into work items by one or more levels, like the Group panel: each level is a property of the objects or a folder of your search sets. Give one level the role Work item: its value is the group a recipe is found by. The other levels order and place the work items (building, level, zone) or only structure them. With a Work item level, Update 4D makes the programme from these work items instead of the list above. An object in several sets of a folder is in the first of them.</InfoTip></h3><div className="rules-sec__add"><button type="button" className="btn btn--small primary" onClick={add}>+ Level</button></div></div>
+    <details className="gen-order__levels gen-order__levelsdef" id="rules-grouping" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary title="Another way to make the work items: group the objects by properties or folders of search sets">Grouping levels <span className={`gen-presets__now${active ? ' is-on' : ''}`}>{state}</span></summary>
+      <div className="rel-bar"><button type="button" className="btn btn--small primary" onClick={add}>+ Level</button><InfoTip label="How grouping levels work">Group the objects into work items by one or more levels, like the Group panel: each level is a property of the objects or a folder of your search sets. Give one level the role Work item: its value is the group a recipe is found by. The other levels order and place the work items (building, level, zone) or only structure them. With a Work item level, Update 4D makes the programme from these work items instead of the list above. An object in several sets of a folder is in the first of them.</InfoTip></div>
       {def.levels.length === 0 ? <div className="scn-dim scn-editor__help">No levels: the programme is made from the list of search sets above.</div> : (
         <table className="xl">
           <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 150 }} /><col style={{ width: 120 }} /><col style={{ width: 230 }} /><col style={{ width: 130 }} /><col style={{ width: 190 }} /><col style={{ width: 200 }} /><col style={{ width: 90 }} /></colgroup>
@@ -113,6 +121,6 @@ export function GroupingLevels() {
           {built.leaves.length > PREVIEW_ROWS && <div className="scn-dim xl__note">and {(built.leaves.length - PREVIEW_ROWS).toLocaleString()} more work items.</div>}
         </div>
       )}
-    </section>
+    </details>
   );
 }

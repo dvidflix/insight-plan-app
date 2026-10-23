@@ -5,6 +5,8 @@ import { STEPS_ID } from '../../../prs/recipesWorkbook';
 import { IconRemove } from '../../icons';
 import { useEditableGrid } from '../../useEditableGrid';
 import { useRuleContext } from './RuleParts';
+import { InfoTip } from '../../InfoTip';
+import { usePersistedState } from '../../../utils/persistedState';
 
 /** Other build orders as one spreadsheet: a line for each work item of each order, so no order needs a card of its own. The work breakdown (the STEPS order) is
     the Work breakdown tab and is not here. It is the scenario's own sequences (rules.sequences), changed in place: nothing new is saved. An order whose work
@@ -105,15 +107,20 @@ export function BuildOrders() {
   );
 }
 
-/** The section of the Work breakdown tab: its heading, what it is for, Add, and the table. */
+/** The section of the Work breakdown tab: folded until opened (remembered), its title saying how many there are; then Add and the table. */
 export function BuildOrdersSection() {
   const ctx = useRuleContext();
+  const [open, setOpen] = usePersistedState<boolean>('generate.buildOrdersOpen', false);
+  const count = ctx.rules.sequences.filter((s) => s.id.toUpperCase() !== STEPS_ID).length;
   return (
-    <section className="rules-sec gen-order__orders" id="rules-order">
-      <div className="rules-sec__head"><h3 className="gen-sec">Other build orders</h3><div className="rules-sec__add"><button type="button" className="btn btn--small" onClick={() => addBuildOrder(ctx.change)}>+ Build order</button></div></div>
-      <div className="scn-dim seq__explain"><p>Groups put in a set order, level by level. The list above is your main order: use this only for another order that has to hold as well.</p></div>
+    <details className="gen-order__levels gen-order__orders" id="rules-order" open={open} onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+      <summary title="Groups put in a set order, level by level, that has to hold as well as the list above">Other build orders <span className="gen-presets__now">{count ? `${count} also hold` : 'none'}</span></summary>
+      <div className="rel-bar">
+        <button type="button" className="btn btn--small" onClick={() => addBuildOrder(ctx.change)}>+ Build order</button>
+        <InfoTip label="What other build orders are for">Groups put in a set order, level by level. The list above is your main order: use this only for another order that has to hold as well.</InfoTip>
+      </div>
       <BuildOrders />
-    </section>
+    </details>
   );
 }
 

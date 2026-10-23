@@ -7,6 +7,7 @@ import {
   buildMatchExportRows,
   computeGroupLinks,
   emptyGroup,
+  groupFromSelection,
   newId,
   objectFieldKey,
   objectFieldLabel,
@@ -21,6 +22,9 @@ import {
 } from '../../schedule/linkGroups';
 import { samplePropKeys } from '../../viewer/query';
 import { useLinkGroupsStore } from '../../state/linkGroupsStore';
+import { useActivitySelectionStore } from '../../state/activitySelectionStore';
+import { useSelectionStore } from '../../state/selectionStore';
+import { useModelsStore } from '../../state/modelsStore';
 import { useAppearanceStore } from '../../state/appearanceStore';
 import { useTagsStore } from '../../state/tagsStore';
 import { HexColorInput } from '../HexColorInput';
@@ -98,6 +102,36 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
     setEditing(emptyGroup());
   }, [newRequested]);
 
+  // What is picked now: activities in the Gantt or a table (Ctrl/Shift+click for more), objects in the 3D view.
+  const pickedIds = useActivitySelectionStore((st) => st.ids);
+  const selectedByModel = useSelectionStore((st) => st.byModel);
+  const loadedModels = useModelsStore((st) => st.models);
+  const picked = useMemo(() => {
+    const activities = model.activities.filter((a) => pickedIds.has(a.id));
+    const objects: ElementSummary[] = [];
+    for (const m of loadedModels) {
+      const ids = new Set(selectedByModel[m.modelId] ?? []);
+      if (ids.size) for (const el of m.elements) if (ids.has(el.localId)) objects.push(el);
+    }
+    return { activities, objects };
+  }, [model, pickedIds, selectedByModel, loadedModels]);
+  const pickedNote = `${picked.activities.length.toLocaleString()} activit${picked.activities.length === 1 ? 'y' : 'ies'} and ${picked.objects.length.toLocaleString()} object${picked.objects.length === 1 ? '' : 's'} picked`;
+  const linkSelection = (
+    <button
+      type="button"
+      className="btn btn--small"
+      disabled={!picked.activities.length || !picked.objects.length}
+      onClick={() => setEditing(groupFromSelection(picked.activities, picked.objects))}
+      title={
+        picked.activities.length && picked.objects.length
+          ? `New Link Group for what is picked (${pickedNote}): every picked activity stands for every picked object. It opens in the editor to name and save.`
+          : `Pick activities in the Gantt (Ctrl+click for more) and objects in the 3D view first (${pickedNote})`
+      }
+    >
+      Link selection
+    </button>
+  );
+
   const taskOptions = useMemo(() => taskFieldOptions(model), [model]);
   // The object properties to pick from: all but those hidden on the Properties tab (Show / hide properties),
   // plus any a group already uses, so its rules still show.
@@ -164,7 +198,7 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
 
   return (
     <div>
-      <SuggestMatches model={model} />
+      <SuggestMatches model={model} actions={linkSelection} />
       {groups.length === 0 && <div style={{ padding: '8px', color: 'var(--text-dim)' }}>No groups yet. A group filters tasks and objects, then pairs them by matching field values.</div>}
       {groups.length > 0 && (
         <table className="seq-grid">

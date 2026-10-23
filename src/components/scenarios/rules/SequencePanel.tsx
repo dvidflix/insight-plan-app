@@ -13,6 +13,7 @@ import { useOrderPreview } from '../../../state/orderPreviewStore';
 import { stepColors } from '../OrderPreview';
 import { TreeTargetPicker } from './TreeTargetPicker';
 import { InfoTip } from '../../InfoTip';
+import { GenerateStatus } from '../GenerateSummary';
 import { ATTACH_LINKS, ATTACH_PICKS, attachSummary, setsOfTarget } from '../../../prs/extraAttach';
 import type { ExtraAttach } from '../../../prs/rules';
 import { groupsOfItems, itemsOfGroup, useWorkItems } from '../useWorkItems';
@@ -339,6 +340,8 @@ export function OrderPanel() {
   const [drag, setDrag] = useState<{ from: number; over: number | null } | null>(null);
   const preview = useOrderPreview();
   const built = useWorkItems();
+  const itemGroups = useMemo(() => (built ? groupsOfItems(built) : []), [built]);
+  const itemGroupKeys = useMemo(() => (built ? new Set(itemGroups.map((g) => g.trim().toUpperCase())) : null), [built, itemGroups]);
 
   const steps = ctx.rules.sequences.find((s) => s.id.toUpperCase() === STEPS_ID)?.steps ?? [];
   // A recipe's "Built in steps" link opens the step of its group.
@@ -389,17 +392,23 @@ export function OrderPanel() {
           <GroupPicker value="" none="+ Add a work item…" folders={free} title={free.length ? 'Add a work item: pick one of your search sets (made in Models › Search sets)' : 'Every search set is a work item already. Make more in Models › Search sets'} onChange={(g) => { if (g) addStep(g); }} />
         </span>
         <InfoTip label="How the work breakdown works">Your search sets are the work items, in the order they are built, top first. Drag a row number to move one. Open a work item (the arrow) to see the activities it generates, its recipe and its resources.</InfoTip>
-        {!preview.show && <button type="button" className="btn btn--small" style={{ marginLeft: 'auto' }} onClick={() => preview.setShow(true)} title="Show the model in 3D beside the list, each work item in its colour">Show 3D</button>}
-        <button type="button" className="btn primary" style={preview.show ? { marginLeft: 'auto' } : undefined} disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
+        {steps.some((x) => x.perLevel) && (
+          <button type="button" className="link-btn" onClick={() => setAdvancedPart('levels')} title={`“Per level” work items repeat for each level of the property “${levelDefinition(ctx.rules.settings).property}”, ${levelDefinition(ctx.rules.settings).order.length ? 'in the order you set' : 'in the order of the number in each value'}. Click to choose the property and put the levels in order`}>
+            Levels: {levelDefinition(ctx.rules.settings).property}
+          </button>
+        )}
+        {!preview.show && <button type="button" className="btn btn--small" onClick={() => preview.setShow(true)} title="Show the model in 3D beside the list, each work item in its colour">Show 3D</button>}
+        <GenerateStatus />
+        <button type="button" className="btn primary" disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
       </div>
-      <ResourceCheck />
+      <ResourceCheck quiet />
       {built && (
         <div className="order__items">
-          <div className="scn-dim xl__note">The programme is made from the work items of the grouping levels below, in this order: {built.leaves.length.toLocaleString()} work item{built.leaves.length === 1 ? '' : 's'} of {groupsOfItems(built).length.toLocaleString()} group{groupsOfItems(built).length === 1 ? '' : 's'}. The rows here give each group its recipe and how it follows the one above.</div>
+          <div className="scn-dim xl__note">The programme is made from the work items of the grouping levels (below), not from this list: {built.leaves.length.toLocaleString()} work item{built.leaves.length === 1 ? '' : 's'} in {itemGroups.length.toLocaleString()} group{itemGroups.length === 1 ? '' : 's'}. A row of the list still gives its group the link to the row above; rows that are not one of these groups do nothing and are greyed.</div>
           <table className="xl">
             <thead><tr><th className="xl__corner" aria-label="Group" /><th title="The group of the work items: a recipe is found by it">Group</th><th title="Work items of the group">Items</th><th title="Objects in them">Objects</th><th title="Quantity added up over them">Quantity</th></tr></thead>
             <tbody>
-              {groupsOfItems(built).map((g, i, all) => {
+              {itemGroups.map((g, i, all) => {
                 const items = itemsOfGroup(built, g);
                 const key = g.trim().toUpperCase();
                 return (
@@ -416,12 +425,6 @@ export function OrderPanel() {
           </table>
         </div>
       )}
-      {steps.some((x) => x.perLevel) && (
-        <div className="scn-dim xl__note">
-          “Per level” steps repeat for each level of the property “{levelDefinition(ctx.rules.settings).property}”{levelDefinition(ctx.rules.settings).order.length ? ', in the order you set' : ', in the order of the number in each value'}.{' '}
-          <button type="button" className="link-btn" onClick={() => setAdvancedPart('levels')} title="Choose the property and put the levels in order">Change</button>
-        </div>
-      )}
       {steps.length === 0 ? <div className="scn-editor__help order__first"><b>Add your search sets as work items, top first. Then press Generate.</b> Use “+ Add a work item…” above. The search sets are made in Models › Search sets.</div> : (
         <table className="xl xgrid" {...grid.grid}>
           <colgroup><col style={{ width: 48 }} /><col style={{ width: 280 }} /><col style={{ width: 100 }} /><col style={{ width: 340 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>
@@ -429,10 +432,13 @@ export function OrderPanel() {
           <tbody>
             {steps.map((s, i) => {
               const unknown = s.group.trim() !== '' && ctx.groupIds.length > 0 && !ctx.groupIds.some((g) => g.toUpperCase() === s.group.trim().toUpperCase());
+              // With work items, a row whose search set is not one of their groups has nothing to link.
+              const idle = itemGroupKeys !== null && !itemGroupKeys.has(s.group.trim().toUpperCase());
               return (
                 <Fragment key={i}>
                   <tr data-line={i} ref={(el) => { rowRefs.current.set(i, el); }} onClick={() => preview.setCurrent(preview.current === stepKey(s.group, i) ? null : stepKey(s.group, i))}
-                    className={`${isOpen(i) ? 'is-selected' : ''}${preview.show && preview.current === stepKey(s.group, i) ? ' is-current' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`}
+                    title={idle ? 'Not used: the programme is made from the work items of the grouping levels, and this search set is not one of their groups' : undefined}
+                    className={`${idle ? 'is-off ' : ''}${isOpen(i) ? 'is-selected' : ''}${preview.show && preview.current === stepKey(s.group, i) ? ' is-current' : ''}${drag && drag.over === i && drag.from !== i && drag.from + 1 !== i ? ' is-drop' : ''}`}
                     onDragOver={(e) => { if (!drag) return; e.preventDefault(); if (drag.over !== i) setDrag({ ...drag, over: i }); }} onDrop={(e) => { e.preventDefault(); drop(i); }}>
                     <th scope="row" className="xl__row rel-grip" draggable title="Drag to move the work item" style={preview.show ? { boxShadow: `inset 4px 0 0 ${stepColors(steps.length)[i]}` } : undefined}
                       onDragStart={(e) => { e.dataTransfer.effectAllowed = 'move'; e.dataTransfer.setData('text/plain', String(i)); const row = e.currentTarget.closest('tr'); if (row) e.dataTransfer.setDragImage(row, 0, 0); setDrag({ from: i, over: null }); }}

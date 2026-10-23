@@ -119,11 +119,13 @@ export function StepRecipe({ group, recipes, pools, rules }: { group: string; re
 }
 
 /** The recipes against the resources, in one line above the steps. */
-export function ResourceCheck() {
+/** `quiet`: say nothing when all is well (the Work breakdown tab, where only a problem earns a line). */
+export function ResourceCheck({ quiet }: { quiet?: boolean } = {}) {
   const recipes = useRecipeStore((s) => s.recipes);
   const pools = useRecipeStore((s) => s.pools);
   const warnings = resourceWarnings(recipes, pools);
   if (pools.length === 0 && recipes.length === 0) return null;
+  if (quiet && warnings.length === 0) return null;
   return warnings.length === 0
     ? <div className="scn-dim scn-editor__help" role="status">Resources: no task asks for more than the scenario has.</div>
     : <div className="scn-rules__note is-error" role="status">{warnings.map((w) => <div key={w}>{w}. Raise the quantity on the Resources tab, or use fewer in the recipe.</div>)}</div>;

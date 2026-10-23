@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeGroupLinks, joinKeys, splitValues, buildMatchExportRows, emptyGroup, type LinkGroup, type MatchRule } from '../../src/schedule/linkGroups';
+import { computeGroupLinks, groupFromSelection, joinKeys, splitValues, buildMatchExportRows, emptyGroup, type LinkGroup, type MatchRule } from '../../src/schedule/linkGroups';
 import type { ElementSummary } from '../../src/viewer/types';
 import { activity, model } from './helpers';
 
@@ -81,5 +81,40 @@ describe('matching rules with separators', () => {
     const rows = buildMatchExportRows(m, objects, [group([rule({ taskSeparators: ['||'], objectSeparators: ['||'] })])]);
     const pairs = rows.map((r) => `${r.activityId}-${r.elementName}`).sort();
     expect(pairs).toEqual(['T1-W1', 'T1-W2', 'T2-W3', 'T3-W1', 'T3-W2']);
+  });
+});
+
+describe('groupFromSelection', () => {
+  const ids = Array.from({ length: 12 }, (_, i) => i + 1);
+  const els = ids.map((i) => element(i, 'x'));
+  const tasks = model(ids.map((i) => activity(`T${i}`)));
+
+  it('links every picked activity to every picked object, and nothing else', () => {
+    const g = groupFromSelection([tasks.activities[0], tasks.activities[1]], [els[2], els[4]]);
+    expect(g.name).toBe('T1 + 1 more');
+    const out = computeGroupLinks(tasks, els, g);
+    expect([...out.taskIds].sort()).toEqual(['T1', 'T2']);
+    expect([...out.elementIds].sort()).toEqual([3, 5]);
+  });
+
+  it('gives the same result on a long list (the set lookup) as on a short one', () => {
+    const picked = els.slice(0, 10);
+    const g = groupFromSelection(tasks.activities.slice(0, 9), picked);
+    const out = computeGroupLinks(tasks, els, g);
+    expect(out.taskIds.size).toBe(9);
+    expect([...out.elementIds].sort((a, b) => a - b)).toEqual(ids.slice(0, 10));
+  });
+
+  it('matches GlobalIds case-sensitively, as IFC GlobalIds are', () => {
+    const upper = { ...element(99, 'x'), guid: 'G1' } as ElementSummary;
+    const g = groupFromSelection([tasks.activities[0]], els.slice(0, 9));
+    expect(computeGroupLinks(tasks, [...els, upper], g).elementIds.has(99)).toBe(false);
+  });
+
+  it('keeps the rule-by-rule test for mixed lists', () => {
+    const g = groupFromSelection([tasks.activities[0]], els.slice(0, 9));
+    g.objectFilters = g.objectFilters.map((r, i) => (i === 1 ? { ...r, conj: 'and' as const } : r));
+    // (g1 AND g2) OR g3 ... OR g9: g1 and g2 cannot both hold, so g1 and g2 drop out.
+    expect([...computeGroupLinks(tasks, els, g).elementIds].sort((a, b) => a - b)).toEqual([3, 4, 5, 6, 7, 8, 9]);
   });
 });

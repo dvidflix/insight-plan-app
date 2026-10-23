@@ -14675,8 +14675,18 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .rules-table .rules-table__rule.is-changed > td.rules-table__name { box-shadow: inset 3px 0 0 var(--accent); }
 
 /* Generate › Work breakdown: sequencing presets and the result of the last programme. */
-.gen-presets { padding: 0 12px 6px; }
 .gen-presets .rel-bar { padding-left: 0; padding-right: 0; }
+/* A fold's title carries what it holds now (the presets set, whether the grouping levels are in charge), so it can stay closed. */
+.gen-presets__now { margin-left: 8px; font-size: 13px; font-weight: 500; color: var(--text-dim); }
+.gen-presets__now.is-on { color: var(--accent-strong); font-weight: 600; }
+/* The list's bar stays at the top while the list scrolls: add a work item, the status line, Generate. */
+.gen-order__list .order > .rel-bar:first-child { position: sticky; top: 0; z-index: 2; background: var(--n-ffffff, #fff); border-bottom: 1px solid var(--border); }
+.gen-status { margin-left: auto; display: inline-flex; align-items: center; gap: var(--hit-gap, 6px); min-width: 0; font-size: 13px; white-space: nowrap; overflow: hidden; }
+.gen-status__text { overflow: hidden; text-overflow: ellipsis; }
+.gen-status button.scn-chip { cursor: pointer; }
+/* The 3D half with no model: what is missing and the one thing to do, in the middle of the half. */
+.gen-order__empty { margin: auto; max-width: 380px; padding: 24px; display: flex; flex-direction: column; align-items: center; gap: 8px; text-align: center; font-size: 15px; color: var(--text); background: var(--bg-panel); border: 1px solid var(--border); pointer-events: auto; }
+.gen-order__emptybtns { display: flex; gap: var(--hit-gap, 6px); }
 .gen-presets select { max-width: 280px; }
 .gen-result { margin: 12px 12px 6px; border: 1px solid var(--border); background: var(--bg-panel); }
 .gen-result__cells { display: flex; flex-wrap: wrap; }
@@ -14712,8 +14722,29 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .sm__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 8px; }
 .sm__count { font-size: 12px; font-weight: 600; color: var(--text-dim); }
 .sm__bar .btn { margin-left: auto; }
+.sm__bar .btn + .btn { margin-left: 0; }
 .sm__panel { padding: 0 8px 8px; }
 .sm__chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--border); text-transform: uppercase; }
 .sm__chip--high { color: var(--ok); border-color: var(--ok); }
 .sm__chip--medium { color: var(--warn); border-color: var(--warn); }
 .sm__chip--low { color: var(--text-dim); }
+
+/* ===== Home › Getting started: the five steps in one row (ticked from the app's state), and under it what to do for the next one, with its button ===== */
+.home-start { margin: 12px 24px 0; border: 1px solid var(--border); background: var(--bg-panel); font-size: 13px; }
+.home-start__head { display: flex; align-items: stretch; min-height: var(--hit); border-bottom: 1px solid var(--border); }
+.home-start__head > b { align-self: center; padding: 0 8px 0 12px; white-space: nowrap; }
+.home-start__count { align-self: center; padding-right: 12px; font-size: 12px; color: var(--text-dim); white-space: nowrap; }
+.home-start__steps { list-style: none; margin: 0; padding: 0; display: flex; flex: 1 1 auto; min-width: 0; }
+.home-start__steps > li { flex: 1 1 0; min-width: 0; display: flex; }
+.home-start__step { flex: 1; min-width: 0; display: flex; align-items: center; gap: 6px; padding: 4px 10px; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--text); font: inherit; font-weight: 600; text-align: left; cursor: pointer; }
+.home-start__step:hover { background: rgba(0, 0, 0, 0.07); }
+.home-start__step.is-shown { background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong); box-shadow: inset 0 -3px 0 var(--accent); }
+.home-start__step.is-done { color: var(--text-dim); font-weight: 500; }
+.home-start__num { flex: 0 0 auto; width: 20px; height: 20px; border-radius: 50%; border: 1px solid var(--border); display: inline-flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 600; color: var(--text-dim); background: var(--bg-elevated); }
+.home-start__step.is-next .home-start__num { border-color: var(--accent); color: var(--accent-strong); }
+.home-start__step.is-done .home-start__num { background: var(--accent); border-color: var(--accent); color: #fff; }
+.home-start__close { flex: 0 0 var(--hit); width: var(--hit); height: auto; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--text-dim); }
+.home-start__close:hover { background: rgba(0, 0, 0, 0.07); color: var(--text); }
+.home-start__detail { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
+.home-start__detail > .scn-dim.hint { flex: 1 1 auto; min-width: 0; }
+.home-start__detail > .btn { flex: 0 0 auto; }

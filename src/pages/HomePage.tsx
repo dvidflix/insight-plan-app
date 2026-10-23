@@ -12,6 +12,7 @@ import { useViewerEngine } from '../viewer/ViewerEngineContext';
 import { thumbFromFile, thumbFromView } from '../components/sceneThumb';
 import { IconCamera, IconChevronDown, IconChevronRight, IconCube, IconDownload, IconFolder, IconGantt, IconBlocksFour, IconList, IconMoreHorizontal, IconPencil, IconPlus, IconRemove, IconUpload } from '../components/icons';
 import { SceneTools } from '../components/SceneTools';
+import { GettingStarted } from '../components/GettingStarted';
 import { ListSetupButton } from '../components/ViewPicker';
 import { configFocusProps } from '../state/listConfigStore';
 import { useListQuery } from '../state/tableSearchStore';
@@ -309,6 +310,7 @@ The page reloads with its layout, lists and models and goes to your workspace. â
           }}
         />
       </div>
+      <GettingStarted />
       {error && <div className="home__error">{error}</div>}
       {store.scenes.length === 0 && <div className="home__empty">No scenes yet. New scene makes one from how the app is now.</div>}
       {store.scenes.length > 0 && listed.length === 0 && (

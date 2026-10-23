@@ -7,7 +7,7 @@ import { modelFileFor } from '../../state/modelFiles';
 import { refreshProject } from '../../state/scenarioStore';
 import { IconExpander } from '../icons';
 
-const VERDICT: Record<ModelCheck['verdict'], { label: string; cls: string }> = {
+export const MODEL_VERDICT: Record<ModelCheck['verdict'], { label: string; cls: string }> = {
   ready: { label: 'Ready to generate', cls: 'ok' },
   gaps: { label: 'Will generate, with gaps', cls: 'warn' },
   blocked: { label: 'Cannot be generated', cls: 'error' },
@@ -38,7 +38,7 @@ export function ModelCheckCard({ stem, compact }: { stem: string; compact?: bool
   const { check, show } = useModelCheck(stem);
   const [open, setOpen] = useState(!compact);
   if (!check) return null;
-  const v = VERDICT[check.verdict];
+  const v = MODEL_VERDICT[check.verdict];
   const main = check.issues.filter((i) => i.severity !== 'info');
   const minor = check.issues.filter((i) => i.severity === 'info');
   return (

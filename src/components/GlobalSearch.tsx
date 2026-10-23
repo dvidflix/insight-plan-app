@@ -21,6 +21,7 @@ import { LevelStepper } from './schedule/LevelStepper';
 import { GENERATE_TABS, useGenerateTab } from './scenarios/GenerateTabs';
 import { pickScenario, saveOrder, scenarioNamesForStems, stemsInInputs, updateFourD, useScenarioStore } from '../state/scenarioStore';
 import { resolveTheme, useThemeStore } from '../state/themeStore';
+import { useGettingStarted } from '../state/gettingStarted';
 
 type Group = 'Table' | 'Scenes' | 'Files' | 'Activities' | 'Views' | 'Panels' | 'Actions' | 'Generate';
 const GROUPS: Group[] = ['Table', 'Actions', 'Generate', 'Scenes', 'Files', 'Activities', 'Views', 'Panels'];
@@ -110,6 +111,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
       out.push({ key: 'a:win', group: 'Actions', label: 'New window', hint: 'on a second screen', run: () => openSatelliteWindow('gantt') });
     }
     out.push({ key: 'a:fit', group: 'Actions', label: 'Fit all models', hint: 'in the 3D view', run: () => void engine.fit(undefined, false) });
+    out.push({ key: 'a:start', group: 'Actions', label: 'Show getting started', hint: 'the first steps, on Home', run: () => { useGettingStarted.getState().setDismissed(false); onPage('home'); } });
     // Theme
     out.push({ key: 'a:theme', group: 'Actions', label: resolveTheme(themeChoice) === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', hint: 'appearance', run: () => setThemeChoice(resolveTheme(themeChoice) === 'dark' ? 'light' : 'dark') });
     // Generate (the page is there when Scenarios is on): its tabs, the scenarios of the project, and Update 4D / Save for the open one.
