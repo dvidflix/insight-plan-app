@@ -653,6 +653,43 @@ def build_level_links(rules, tasks, extras_acts, level_task_acts, programme_acts
     return early, late, messages
 
 
+def build_extra_attachments(rules, extras_acts, programme_acts):
+    """Links between an extra activity and the activities of the sets it is attached to. The extra's tag holds
+    attach = {groups: [the names of the sets (a folder is all the sets inside it)], type, lagHours, direction, pick, phase}:
+      direction "after" (the default): the activities precede the extra; "before": the extra precedes them
+      pick "each" (the default) / "first" / "last": every matching activity, or the first / last in the programme's order
+      phase: only the activities of this phase
+    These links are added to the generated ones (they replace none). Returns (relations, messages)."""
+    out, messages = [], []
+    pool = [a for a in programme_acts if a.get("task_id") and not a.get("extra") and not a.get("loe") and not a.get("rule_milestone")]
+    for act in extras_acts:
+        attach = _full_tag(act["task_id"], rules).get("attach")
+        if not isinstance(attach, dict):
+            continue
+        groups = [str(g).strip() for g in attach.get("groups") or [] if str(g or "").strip()]
+        if not groups:
+            continue
+        terms = {"group": groups}
+        phase = str(attach.get("phase") or "").strip()
+        if phase:
+            terms["phase"] = [phase]
+        picked = [a["task_id"] for a in pool if _matches(a, terms)]
+        pick = str(attach.get("pick") or "each").lower()
+        picked = picked[:1] if pick == "first" else picked[-1:] if pick == "last" else picked
+        if not picked:
+            messages.append(f"Extra activity {act['task_id']}: no activity of {', '.join(groups[:3])}{'...' if len(groups) > 3 else ''} to attach to")
+            continue
+        row = {"type": attach.get("type"), "lagHours": attach.get("lagHours")}
+        before = str(attach.get("direction") or "after").lower() == "before"
+        for target in picked:
+            if target == act["task_id"]:
+                continue
+            pred, succ = (act["task_id"], target) if before else (target, act["task_id"])
+            out.append(_relation(pred, succ, _type(row, "FS"), _lag(row), f"attach:{act['task_id']}"))
+        messages.append(f"Extra activity {act['task_id']}: {len(picked)} link(s) to its sets")
+    return out, messages
+
+
 def _level_relation(rule, task_id, level_task, replaces=False):
     to_task = str(rule.get("direction") or "toTask") != "fromTask"
     pred, succ = (task_id, level_task) if to_task else (level_task, task_id)

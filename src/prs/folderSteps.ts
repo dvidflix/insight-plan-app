@@ -1,15 +1,13 @@
 import type { SearchSet } from '../viewer/searchSets';
 import type { ScenarioRules, SequenceStep } from './rules';
+import { walkFolder } from '../viewer/setTree';
 
 /** A sequence may take its steps from a folder of search sets (Models > Search sets): each set is a step, in the order of the folder (by number when
     the names start with one: "1 Rafts", "2 Walls L1" ...). The set's name is the group of the step, so a set is a group like any other. */
-const numbered = (name: string) => /^\s*\d+/.test(name);
-const lead = (name: string) => Number(/^\s*(\d+)/.exec(name)?.[1] ?? 0);
-
 /** The sets of a folder as steps, in order (selection sets hold fixed objects and cannot be tested as a group, so they are not steps). */
 export function folderStepSets(sets: SearchSet[], folder: string): SearchSet[] {
-  const own = sets.filter((s) => s.group === folder && s.kind !== 'selection');
-  return own.every((s) => numbered(s.name)) ? [...own].sort((a, b) => lead(a.name) - lead(b.name) || a.name.localeCompare(b.name, undefined, { numeric: true })) : own;
+  // The tree is walked: the folder's own sets first, then each folder inside it (a folder path is written "Top / Next"), in tree order.
+  return walkFolder(sets, folder, (s) => s.kind !== 'selection');
 }
 
 /** The names of the sets that sequences take as steps (each is a group). */

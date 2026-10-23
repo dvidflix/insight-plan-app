@@ -15,6 +15,8 @@ import { useSelectionStore } from '../../../state/selectionStore';
 import { useViewerEngine } from '../../../viewer/ViewerEngineContext';
 import { useIndexTick } from '../../modelFields';
 import { countIds, runSearchSet } from '../../../viewer/searchSets';
+import { isInFolder } from '../../../viewer/setTree';
+import { recipeFolderChoices } from '../../../prs/recipeInheritance';
 import type { ScenarioRules } from '../../../prs/rules';
 import { downloadBlob } from '../../../utils/download';
 import { IconCopy, IconEye, IconEyeOff, IconDelete, IconRemove } from '../../icons';
@@ -55,7 +57,8 @@ function GroupSelect({ value, groups, setFolders, ruleGroups, hideRuleGroups, on
   const flat = uniq(groups ?? []);
   const setList = uniq((setFolders ?? []).flatMap((f) => f.names));
   const ruleList = uniq(ruleGroups ?? []).filter((g) => !setList.some((x) => x.toUpperCase() === g.toUpperCase()));
-  const known = has(flat) || has(setList) || has(ruleList);
+  const folders = recipeFolderChoices((setFolders ?? []).filter((f) => f.names.length > 0).map((f) => ({ group: f.folder })));
+  const known = has(flat) || has(setList) || has(ruleList) || has(folders);
   return (
     <select className="rel-cell" value={value} style={width ? { width } : undefined} onChange={(e) => onChange(e.target.value)} aria-label="Applies to" title="The objects the recipe applies to: a search set, or a rule group of the scenario">
       <option value="">Every object</option>
@@ -63,6 +66,7 @@ function GroupSelect({ value, groups, setFolders, ruleGroups, hideRuleGroups, on
       {value && hideRuleGroups && !has(setList) && has(ruleList) && <option value={value}>{value} (an old rule group, not a search set)</option>}
       {flat.map((g) => <option key={g} value={g}>{g}</option>)}
       {(setFolders ?? []).filter((f) => f.names.length > 0).map((f) => <optgroup key={f.folder} label={`Search sets · folder "${f.folder}"`}>{f.names.map((g) => <option key={`${f.folder}|${g}`} value={g}>{g}</option>)}</optgroup>)}
+      {folders.length > 0 && <optgroup label="Search set folders · every set inside that has no recipe of its own">{folders.map((g) => <option key={`folder|${g}`} value={g}>{g}</option>)}</optgroup>}
       {ruleList.length > 0 && !hideRuleGroups && <optgroup label="Rule groups · this scenario">{ruleList.map((g) => <option key={g} value={g}>{g}</option>)}</optgroup>}
     </select>
   );
@@ -688,6 +692,8 @@ A backup file of them is downloaded first (Import file brings them back). The se
                 const g = r.group.trim().toUpperCase();
                 if (!g) return 'Applies to every object that has no recipe of its own.';
                 const found = usableSets.find((x) => x.name.trim().toUpperCase() === g);
+                const inside = found ? [] : allSets.filter((x) => x.kind !== 'selection' && isInFolder(x.group ?? '', r.group));
+                if (inside.length) return `The folder "${r.group}" of search sets: every set inside it (${inside.length}) that has no recipe of its own, or in a folder nearer to it, gets this recipe. A recipe for a set, or for a folder inside this one, wins.`;
                 if (found) {
                   // What the generator can test of the set: a condition it cannot read is left out, and a set with none is no group (its recipe is not used).
                   const { group: made, lost } = groupFromSet(found, () => 'x');

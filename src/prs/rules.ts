@@ -338,7 +338,24 @@ export type SettingValue = number | boolean | string | string[] | undefined;
 /** wbs: empty = the Extra activities folder; "level" = on the building's level (beside the External / Internal Walls and Slabs groups);
     "slabs" = in the level's Slabs group; "path:A / B" = a folder of its own under the building's Construction node. task: the id of the one
     level task a level link ties it to (empty = every task the link names). */
+/** An extra attached to a search set, or to a folder of them (prs/extraAttach.ts): linked to the activities of the sets. `groups` is filled in for the generator. */
+export interface ExtraAttach {
+  /** A set's name or a folder's path. */
+  target: string;
+  /** After (default): the sets' activities precede the extra. Before: the extra precedes them. */
+  direction?: 'after' | 'before';
+  type?: RelType;
+  lagHours?: number;
+  /** Which of the activities: each (default), the first or the last in the programme's order. */
+  pick?: 'each' | 'first' | 'last';
+  /** Only the activities of this phase. */
+  phase?: string;
+  groups?: string[];
+}
+
 export interface ExtraTag {
+  /** The search set or folder the extra is attached to. */
+  attach?: ExtraAttach;
   building?: string;
   level?: string;
   wbs?: string;

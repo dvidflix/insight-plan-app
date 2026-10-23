@@ -43,6 +43,8 @@ import { useRecipeStore } from './recipeStore';
 import { stepSetNames, withFolderSteps } from '../prs/folderSteps';
 import { makesItems, type BreakdownDefinition, type BreakdownResult } from '../prs/workBreakdown';
 import { forGenerator } from '../prs/recipeRules';
+import { inheritRecipes, inheritingSetNames } from '../prs/recipeInheritance';
+import { attachedSetNames, resolveAttachments } from '../prs/extraAttach';
 import { useSearchSetsStore } from './searchSetsStore';
 import { groupsWithSets, uniqueGroups } from '../prs/groupSets';
 import { recipeFolder } from './recipeFolderStore';
@@ -144,7 +146,7 @@ interface ScenarioState {
   /** A saved scenario saves itself a moment after each change (order, joins, links, crews, extras, flags, rules). */
   autoSave: boolean;
   /** The order, links and crews the programme in 4D was last updated from. */
-  updatedFrom: { rows: PourRow[]; relations: ScenarioRelation[]; crews: ScenarioCrew[]; extras: ScenarioExtra[]; rules: ScenarioRules } | null;
+  updatedFrom: { rows: PourRow[]; relations: ScenarioRelation[]; crews: ScenarioCrew[]; extras: ScenarioExtra[]; rules: ScenarioRules; /** The search sets the programme was made from (they matter when a recipe is for a folder, or a sequence takes its steps from one). */ sets?: unknown } | null;
   /** The scenario's manual links and crews (saved with it), and as last
       saved (for the unsaved flag). */
   relations: ScenarioRelation[];
@@ -524,6 +526,13 @@ export function applyWorkItemLinks(built: BreakdownResult | null) {
   add({ ...emptyGroup('Work items'), id: WORK_ITEM_GROUP_ID, color: '#2f9e8f', matchRules: [{ id: 'work-item-match', taskField: WORK_ITEM_FIELD, objectPropertySet: '_workitem', objectAttribute: '', conj: 'and' }] });
 }
 
+/** The rules as sent to the generator: every set it needs is a group, folder recipes are copied to their sets, and extras attached to sets know them. */
+function sentRules(rules: ScenarioRules): ScenarioRules {
+  const sets = useSearchSetsStore.getState().sets;
+  const synced = withLibrary(rules);
+  return { ...synced, recipes: inheritRecipes(synced.recipes ?? [], sets), extraTags: resolveAttachments(synced.extraTags, sets) };
+}
+
 export const updateFourD = () =>
   run('Updating 4D…', async () => {
     const { rows, scenario, startDate, loaded, relations, crews, extras, rules, flags } = get();
@@ -537,11 +546,11 @@ export const updateFourD = () =>
       applyWorkItemLinks(built);
     }
     if (!work) applyWorkItemLinks(null);
-    const res = await updateScenario({ ...request(), rules: forGenerator(rules), startDate: startDate || null, ...(work ?? {}) });
+    const res = await updateScenario({ ...request(), rules: forGenerator(sentRules(rules)), startDate: startDate || null, ...(work ?? {}) });
     xmlCache.set(`${scenario}|${stem}`, res.xml);
     await loadIntoInputs(res.xml, stem, scenario!);
     set((s) => ({
-      updatedFrom: { rows, relations, crews, extras, rules },
+      updatedFrom: { rows, relations, crews, extras, rules, sets: useSearchSetsStore.getState().sets },
       generation: s.generation + 1,
       log: res.log || s.log,
       message: {
@@ -558,8 +567,11 @@ export const updateFourD = () =>
   });
 
 /** The order, links or crews changed since 4D was last updated. */
+/** Whether the programme depends on the search sets as they are now: a recipe is for a folder (its sets get copies), or a sequence takes its steps from a folder. */
+const readsSetTree = (rules: ScenarioRules): boolean => inheritingSetNames(rules.recipes ?? [], useSearchSetsStore.getState().sets).length > 0 || Object.values(rules.extraTags).some((t) => !!t.attach?.target) || rules.sequences.some((q) => !!q.stepsFolder);
+
 export const needsUpdate = (s: Pick<ScenarioState, 'rows' | 'relations' | 'crews' | 'extras' | 'rules' | 'updatedFrom'>) =>
-  !s.updatedFrom || s.updatedFrom.rows !== s.rows || s.updatedFrom.relations !== s.relations || s.updatedFrom.crews !== s.crews || s.updatedFrom.extras !== s.extras || s.updatedFrom.rules !== s.rules;
+  !s.updatedFrom || (readsSetTree(s.rules) && s.updatedFrom.sets !== useSearchSetsStore.getState().sets) || s.updatedFrom.rows !== s.rows || s.updatedFrom.relations !== s.relations || s.updatedFrom.crews !== s.crews || s.updatedFrom.extras !== s.extras || s.updatedFrom.rules !== s.rules;
 
 // Auto-update: one run a moment after the last change, never two at once.
 let autoTimer: ReturnType<typeof setTimeout> | null = null;
@@ -823,6 +835,8 @@ function withLibrary(rules: ScenarioRules): ScenarioRules {
   // A search set is the group of its name wherever it is used: by a recipe, a step, a level task or a limit.
   const named = [
     ...useRecipeStore.getState().recipes.map((r) => r.group),
+    ...inheritingSetNames(useRecipeStore.getState().recipes, allSets),
+    ...attachedSetNames(rules.extraTags, allSets),
     ...stepSetNames(rules, allSets),
     ...rules.levelTasks.map((t) => t.group),
     ...rules.sequences.flatMap((q) => q.steps.map((s) => s.group)),

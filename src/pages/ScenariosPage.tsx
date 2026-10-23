@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useModelsStore } from '../state/modelsStore';
 import { useOrderPreview } from '../state/orderPreviewStore';
 import { OrderPreviewEffects } from '../components/scenarios/OrderPreview';
+import { ResultSummary, SequencingPresets } from '../components/scenarios/GenerateSummary';
 import { isTableCfgTab, useScenarioStore } from '../state/scenarioStore';
 import { useScenarioView } from '../scenarios/useScenarioView';
 import { ScenarioNotice, ScenarioPanelBody, ScenarioSync, ScenarioTable, ScenarioToolbar } from '../components/scenarios/ScenarioParts';
@@ -66,6 +67,8 @@ function OrderTab() {
     <div className={`gen-order gen-order--split${show ? ' has-view' : ''}`}>
       <div className="gen-order__list">
         <ScenarioNotice />
+        <ResultSummary />
+        <SequencingPresets />
         <OrderPanel />
         <GroupingLevels />
         <BuildOrdersSection />

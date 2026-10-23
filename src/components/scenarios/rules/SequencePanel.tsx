@@ -11,6 +11,9 @@ import { ResourceCheck, StepRecipe } from './StepRecipes';
 import { useGenerateTab } from '../GenerateTabs';
 import { useOrderPreview } from '../../../state/orderPreviewStore';
 import { stepColors } from '../OrderPreview';
+import { TreeTargetPicker } from './TreeTargetPicker';
+import { ATTACH_LINKS, ATTACH_PICKS, attachSummary } from '../../../prs/extraAttach';
+import type { ExtraAttach } from '../../../prs/rules';
 import { groupsOfItems, itemsOfGroup, useWorkItems } from '../useWorkItems';
 import { levelDefinition } from '../../../prs/levelDefinition';
 import { useStepFocus } from '../../../state/resourceFocusStore';
@@ -142,6 +145,17 @@ function ExtrasGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
     ctx.change((r) => ({ ...r, extraTags: nextTags }));
   };
   const patch = (x: ExtraRow, p: Partial<ExtraRow>) => saveRows([{ was: x.id, row: { ...x, ...p } }]);
+  const allSets = useSearchSetsStore((s) => s.sets);
+  /** Attaches the extra to a set or folder (or changes how): an empty target takes the attachment away. */
+  const attach = (x: ExtraRow, p: Partial<ExtraAttach>) => ctx.change((r) => {
+    const next = { ...(r.extraTags[x.id]?.attach ?? { target: '' }), ...p };
+    const tags = { ...r.extraTags };
+    const { attach: _gone, ...rest } = tags[x.id] ?? {};
+    const kept = Object.fromEntries(Object.entries(next).filter(([, v]) => v !== undefined && v !== '')) as unknown as ExtraAttach;
+    const tag = next.target ? { ...rest, attach: kept } : rest;
+    if (Object.keys(tag).length) tags[x.id] = tag; else delete tags[x.id];
+    return { ...r, extraTags: tags };
+  });
   const FIELD: Record<string, (x: ExtraRow, t: string) => ExtraRow> = {
     id: (x, t) => ({ ...x, id: t.trim() }), name: (x, t) => ({ ...x, name: t }), days: (x, t) => ({ ...x, days: num(t) }),
     building: (x, t) => ({ ...x, building: t }), level: (x, t) => ({ ...x, level: t }), path: (x, t) => ({ ...x, path: t }), start: (x, t) => ({ ...x, start: t.trim() }), finish: (x, t) => ({ ...x, finish: t.trim() }),
@@ -189,8 +203,8 @@ function ExtrasGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
       {note && <div className={`scn-rules__note${note.ok ? '' : ' is-error'}`} role="status">{note.text}</div>}
       {rows.length === 0 ? <div className="scn-dim scn-editor__help">None yet. An extra activity is not built from the model: add one with + Extra.</div> : (
         <table className="xl xgrid" {...grid.grid}>
-          <colgroup><col style={{ width: 40 }} /><col style={{ width: 190 }} /><col style={{ width: 280 }} /><col style={{ width: 70 }} /><col style={{ width: 130 }} /><col style={{ width: 90 }} /><col style={{ width: 70 }} />{showFolder && <col style={{ width: 200 }} />}<col style={{ width: 100 }} /><col style={{ width: 100 }} /><col style={{ width: 32 }} /></colgroup>
-          <thead><tr><th className="xl__corner" aria-label="Row" /><th>ID</th><th>Name</th><th title="Working days">Days</th><th title="Where it goes in the WBS">WBS place</th><th>Building</th><th>Level</th>{showFolder && <th title="The WBS folder of the activities whose WBS place is Own folder, under the building's Construction node, e.g. Temporary / Hoarding">WBS folder</th>}<th>Start</th><th>Finish</th><th aria-label="Delete" /></tr></thead>
+          <colgroup><col style={{ width: 40 }} /><col style={{ width: 190 }} /><col style={{ width: 280 }} /><col style={{ width: 70 }} /><col style={{ width: 130 }} /><col style={{ width: 90 }} /><col style={{ width: 70 }} />{showFolder && <col style={{ width: 200 }} />}<col style={{ width: 100 }} /><col style={{ width: 100 }} /><col style={{ width: 230 }} /><col style={{ width: 200 }} /><col style={{ width: 80 }} /><col style={{ width: 70 }} /><col style={{ width: 32 }} /></colgroup>
+          <thead><tr><th className="xl__corner" aria-label="Row" /><th>ID</th><th>Name</th><th title="Working days">Days</th><th title="Where it goes in the WBS">WBS place</th><th>Building</th><th>Level</th>{showFolder && <th title="The WBS folder of the activities whose WBS place is Own folder, under the building's Construction node, e.g. Temporary / Hoarding">WBS folder</th>}<th>Start</th><th>Finish</th><th title="A search set, or a folder of them: the extra is linked to the activities of those sets">Attached to</th><th title="How the extra is linked to them">Link</th><th title="Which of their activities">Which</th><th title="Lag in working hours (negative: lead)">Lag (h)</th><th aria-label="Delete" /></tr></thead>
           <tbody>
             {rows.map((x, at) => (
               <tr key={x.id} data-line={at}>
@@ -208,10 +222,22 @@ function ExtrasGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
                 {showFolder && text(x, 'path', at, '', { disabled: x.scope !== 'folder', placeholder: x.scope === 'folder' ? 'A / B' : '', title: x.scope === 'folder' ? 'The WBS folder of this activity' : 'Only for the WBS place Own folder' })}
                 {text(x, 'start', at, '', { placeholder: 'yyyy-mm-dd' })}
                 {text(x, 'finish', at, '', { placeholder: 'yyyy-mm-dd' })}
+                {(() => {
+                  const a = tags[x.id]?.attach;
+                  const link = `${a?.direction ?? 'after'}|${a?.type ?? 'FS'}`;
+                  return (
+                    <>
+                      <td className="xl__cell" title={attachSummary(a, allSets) || 'Attach the extra to a set or a folder of sets'}><TreeTargetPicker value={a?.target ?? ''} none="Not attached" onChange={(target) => attach(x, { target })} /></td>
+                      <td className="xl__cell"><select value={link} disabled={!a?.target} aria-label="Link" onChange={(e) => { const o = ATTACH_LINKS.find((l) => l.value === e.target.value)!; attach(x, { direction: o.direction === 'after' ? undefined : o.direction, type: o.type === 'FS' ? undefined : o.type }); }}>{ATTACH_LINKS.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}</select></td>
+                      <td className="xl__cell"><select value={a?.pick ?? 'each'} disabled={!a?.target} aria-label="Which activities" onChange={(e) => attach(x, { pick: e.target.value === 'each' ? undefined : (e.target.value as ExtraAttach['pick']) })}>{ATTACH_PICKS.map((l) => <option key={l.value} value={l.value} title={l.tip}>{l.label}</option>)}</select></td>
+                      <td className="xl__cell"><input className="xl__num" type="text" inputMode="decimal" disabled={!a?.target} value={a?.lagHours ?? ''} aria-label="Lag (hours)" onChange={(e) => attach(x, { lagHours: e.target.value.trim() === '' ? undefined : num(e.target.value) })} /></td>
+                    </>
+                  );
+                })()}
                 <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete" title="Delete the extra activity" onClick={() => remove(x)}><IconRemove /></button></td>
               </tr>
             ))}
-            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={showFolder ? 10 : 9}><button type="button" onClick={add}>+ Add an extra activity</button></td></tr>
+            <tr className="xl__add"><th className="xl__row">*</th><td colSpan={showFolder ? 14 : 13}><button type="button" onClick={add}>+ Add an extra activity</button></td></tr>
           </tbody>
         </table>
       )}

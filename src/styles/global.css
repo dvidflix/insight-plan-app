@@ -14673,3 +14673,14 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 
 .rules-table .rules-table__group > td { padding: 8px 12px 4px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim); background: var(--bg-soft, var(--bg)); }
 .rules-table .rules-table__rule.is-changed > td.rules-table__name { box-shadow: inset 3px 0 0 var(--accent); }
+
+/* Generate › Work breakdown: sequencing presets and the result of the last programme. */
+.gen-presets { padding: 0 12px 6px; }
+.gen-presets .rel-bar { padding-left: 0; padding-right: 0; }
+.gen-presets select { max-width: 280px; }
+.gen-result { margin: 12px 12px 6px; border: 1px solid var(--border); background: var(--bg-panel); }
+.gen-result__cells { display: flex; flex-wrap: wrap; }
+.gen-result__cell { display: flex; flex-direction: column; gap: 2px; padding: 8px 14px; border-right: 1px solid var(--border); min-width: 110px; }
+.gen-result__cell b { font-size: 16px; font-weight: 600; color: var(--text); }
+.gen-result__cell .scn-dim { font-size: 11px; }
+.gen-result .seq__warn { margin: 0; border-width: 1px 0 0; }

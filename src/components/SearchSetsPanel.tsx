@@ -1,3 +1,6 @@
+import { useRecipeStore } from '../state/recipeStore';
+import { useScenarioStore } from '../state/scenarioStore';
+import { FOLDER_SEP, folderKey, folderParts, folderPaths, isShown, moveFolder, setsInside, walkFolder } from '../viewer/setTree';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExpandCollapseToggle } from './ExpandCollapseToggle';
 import { DockToolbar } from './Dock';
@@ -106,7 +109,17 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   const engine = useViewerEngine();
   const models = useModelsStore((s) => s.models);
   const tick = useIndexTick();
-  const { sets, save, remove, move, replaceGroup, lastGroup } = useSearchSetsStore();
+  const { sets, save, remove, move, lastGroup } = useSearchSetsStore();
+  const [dragFolder, setDragFolder] = useState<string | null>(null);
+  // What the open scenario hangs on a set or a folder (its recipes, the extra activities attached to it): a small badge, so the tree shows where the recipes and extras are.
+  const recipeGroups = useRecipeStore((st) => st.recipes);
+  const extraTags = useScenarioStore((st) => st.rules.extraTags);
+  const usesOf = (name: string): string => {
+    const key = folderKey(name).toUpperCase();
+    const r = recipeGroups.filter((x) => folderKey(x.group).toUpperCase() === key && x.enabled !== false).length;
+    const e = Object.values(extraTags ?? {}).filter((t) => t.attach?.target && folderKey(t.attach.target).toUpperCase() === key).length;
+    return [r ? `${r} recipe${r === 1 ? '' : 's'}` : '', e ? `${e} extra activit${e === 1 ? 'y' : 'ies'}` : ''].filter(Boolean).join(', ');
+  };
   const total = useTotal();
   const actions = useSetActions();
   const selection = useSelectionItems();
@@ -196,7 +209,9 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   const q = query.trim().toLowerCase();
   const hit = queryMatcher(query);
   const shown = q ? sets.filter((s) => hit(`${s.group} ${s.name}`)) : sets;
-  const groups = [...new Set(shown.map((s) => s.group))].sort((a, b) => (a === '' ? -1 : b === '' ? 1 : a.localeCompare(b)));
+  // The folders are a tree: a path is written "Top / Next". Every folder above a set is listed (even one that holds no set itself), in tree order.
+  const groups = [...(shown.some((s) => folderParts(s.group ?? '').length === 0) ? [''] : []), ...folderPaths(shown)];
+  const sameFolder = (a: string, b: string) => folderKey(a).toUpperCase() === folderKey(b).toUpperCase();
   const toggleGroup = (g: string) => setClosed((prev) => {
     const next = new Set(prev);
     if (!next.delete(g)) next.add(g);
@@ -204,12 +219,12 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   });
   // The sets as listed (folders in order, closed ones skipped): Up / Down arrows step through them.
   const inGroupOf = (g: string) => {
-    const list = shown.filter((s) => s.group === g);
+    const list = shown.filter((s) => sameFolder(s.group ?? '', g));
     if (alpha) list.sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }));
     return list;
   };
   // Play a folder like phasing (Models only): its sets, in the order listed, are the steps.
-  const folderSteps = (g: string) => sets.filter((x) => x.group === g).sort(alpha ? (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : () => 0).map((x) => results.get(x.id) ?? {}).filter((ids) => countIds(ids) > 0);
+  const folderSteps = (g: string) => (alpha ? sets.filter((x) => sameFolder(x.group ?? '', g)) : walkFolder(sets, g)).sort(alpha ? (a, b) => a.name.localeCompare(b.name, undefined, { numeric: true, sensitivity: 'base' }) : () => 0).map((x) => results.get(x.id) ?? {}).filter((ids) => countIds(ids) > 0);
   const folderPlayer = useFolderPlayer({
     steps: folderSteps,
     setShown,
@@ -219,7 +234,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
       return n;
     },
   });
-  const listed = groups.flatMap((g) => (q || !closed.has(g) ? inGroupOf(g) : []));
+  const listed = groups.flatMap((g) => (q || (isShown(g, closed) && !closed.has(g)) ? inGroupOf(g) : []));
   // The current set (arrows move it, Space toggles it) and the selected ones: click one,
   // Shift+click (or Shift+arrows) to reach down to another, Ctrl+click to add or remove one.
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -359,16 +374,39 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   }, [recording, selection]);
   /** Gives a folder another name (its sets move with it; a name that is already a folder joins the two). */
   const renameFolder = (g: string) => {
-    const next = (window.prompt(`Rename the folder “${g}” to:`, g) ?? '').trim();
-    if (!next || next === g) return;
-    if (sets.some((x) => x.group === next) && !window.confirm(`A folder “${next}” exists already: the sets of “${g}” join it?`)) return;
-    for (const x of sets.filter((y) => y.group === g)) useSearchSetsStore.getState().save({ ...x, group: next });
+    const next = folderKey(window.prompt(`Rename the folder “${g}”, or move it by giving the whole path (“Top${FOLDER_SEP}Next”):`, g) ?? '');
+    if (!next || sameFolder(next, g)) return;
+    const moved = moveFolder(sets, g, next);
+    if (moved.length === 0) { window.alert('A folder cannot go inside itself.'); return; }
+    if (sets.some((x) => sameFolder(x.group ?? '', next)) && !window.confirm(`A folder “${next}” exists already: the sets of “${g}” join it?`)) return;
+    for (const x of moved) useSearchSetsStore.getState().save(x);
+  };
+  /** A folder inside this one: the next new set goes there (a folder exists while it holds a set). */
+  const addSubfolder = (g: string) => {
+    const name = folderKey(window.prompt(`Name of the folder inside “${g || 'the list'}”:`) ?? '');
+    if (!name) return;
+    const path = g ? `${g}${FOLDER_SEP}${name}` : name;
+    useSearchSetsStore.getState().setLastGroup(path);
+    onEdit({ id: newRuleId('ss'), name: `Search set ${sets.length + 1}`, group: path, kind: 'search', match: 'all', conditions: [] });
+  };
+  /** Drops a set or a folder on a folder: it goes inside. */
+  const dropOnFolder = (g: string) => {
+    if (dragId) {
+      const x = sets.find((y) => y.id === dragId);
+      if (x && !sameFolder(x.group ?? '', g)) save({ ...x, group: g });
+    } else if (dragFolder && !sameFolder(dragFolder, g)) {
+      const name = folderParts(dragFolder).slice(-1)[0];
+      const moved = moveFolder(sets, dragFolder, g ? `${g}${FOLDER_SEP}${name}` : name);
+      for (const x of moved) save(x);
+    }
+    setDragId(null);
+    setDragFolder(null);
   };
 
   /** Renumbers a folder's sets 1, 2, 3… in the order they are kept (the manual order): the leading number of each name is
       replaced (or added), the rest of the name stays — "7 Stitch" becomes "3 Stitch". */
   const renumber = (g: string) => {
-    const list = sets.filter((x) => x.group === g);
+    const list = sets.filter((x) => sameFolder(x.group ?? '', g));
     if (list.length === 0 || !window.confirm(`Renumber the ${list.length} set${list.length === 1 ? '' : 's'} of “${g}” 1 to ${list.length}, in the order listed?`)) return;
     list.forEach((x, i) => {
       const rest = x.name.replace(/^\s*\d+\s*/, '');
@@ -435,17 +473,23 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
       {sets.length > 0 && shown.length === 0 && <div className="flt__hint">No set matches “{query}”.</div>}
 
       {groups.map((g) => {
+        if (!q && !isShown(g, closed)) return null;
         const inGroup = inGroupOf(g);
+        const inside = setsInside(sets, g);
+        const depth = Math.max(0, folderParts(g).length - 1);
         const open = q ? true : !closed.has(g);
         return (
           <div className="cols__group" key={g || '(none)'}>
             {g !== '' && (
-              <div className="cols__group-head">
-                <button type="button" className="cols__group-toggle" onClick={() => toggleGroup(g)} aria-expanded={open}>
+              <div className="cols__group-head" style={{ paddingLeft: 10 + depth * 14 }} draggable onDragStart={(e) => { setDragFolder(g); e.dataTransfer.effectAllowed = 'move'; }} onDragEnd={() => setDragFolder(null)}
+                onDragOver={(e) => { if (dragId || dragFolder) e.preventDefault(); }} onDrop={(e) => { e.preventDefault(); e.stopPropagation(); dropOnFolder(g); }}>
+                <button type="button" className="cols__group-toggle" onClick={() => toggleGroup(g)} aria-expanded={open} title={g}>
                   <IconSectionChevron className="section-chevron" />
-                  <span className="cols__group-name">{g}</span>
-                  <span className="cols__count">{inGroup.length}</span>
+                  <span className="cols__group-name">{folderParts(g).slice(-1)[0]}</span>
+                  {usesOf(g) && <span className="cols__count" title={`In this scenario: ${usesOf(g)} for this folder (its sets inherit the recipes)`} style={{ color: 'var(--accent-strong)' }}>◆</span>}
+                  <span className="cols__count" title={inGroup.length === inside.length ? undefined : `${inGroup.length} here, ${inside.length} with the folders inside`}>{inside.length}</span>
                 </button>
+                <button type="button" className="cols__icon" onClick={() => addSubfolder(g)} title="Add a folder inside this one (with a new set in it). Drag a folder or a set onto a folder to move it in" aria-label={`Add a folder inside ${g}`}>+</button>
                 <button
                   type="button"
                   className="cols__icon"
@@ -454,7 +498,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                   title={alpha ? 'Switch to Manual order to renumber' : 'Renumber the sets 1, 2, 3… in the order listed (manual order)'}
                   aria-label={`Renumber the sets of ${g}`}
                 >#</button>
-                {shownBtn('eye') && eye(mergeIds(sets.filter((x) => x.group === g).map((x) => results.get(x.id) ?? {})), `the ${sets.filter((x) => x.group === g).length} sets of “${g}”`)}
+                {shownBtn('eye') && eye(mergeIds(inside.map((x) => results.get(x.id) ?? {})), `the ${inside.length} sets of “${g}”`)}
                 {shownBtn('edit') && (
                   <button type="button" className="cols__icon" onClick={() => renameFolder(g)} title="Rename this folder" aria-label={`Rename folder ${g}`}><IconPencil width={14} height={14} /></button>
                 )}
@@ -463,8 +507,8 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                     type="button"
                     className="cols__icon cols__icon--remove"
                     onClick={() => {
-                      const n = sets.filter((x) => x.group === g).length;
-                      if (window.confirm(`Delete the folder “${g}” and its ${n} set${n === 1 ? '' : 's'}?`)) replaceGroup(g, []);
+                      const n = inside.length;
+                      if (window.confirm(`Delete the folder “${g}” and its ${n} set${n === 1 ? '' : 's'}${inside.length > inGroup.length ? ' (the folders inside it too)' : ''}?`)) inside.forEach((x) => remove(x.id));
                     }}
                     title="Delete this folder and its sets"
                     aria-label={`Delete folder ${g}`}
@@ -473,7 +517,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
               </div>
             )}
             {open && (
-              <div className="ss__table">
+              <div className="ss__table" style={depth ? { marginLeft: depth * 14 } : undefined}>
                 {inGroup.map((s) => {
                   const ids = results.get(s.id) ?? {};
                   const n = countIds(ids);
@@ -487,8 +531,8 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                       className={`ss__row${dragId === s.id ? ' dragging' : ''}${selectedSets.has(s.id) ? ' is-active' : ''}${activeId === s.id ? ' is-current' : ''}`}
                       draggable={!alpha}
                       onDragStart={(e) => { setDragId(s.id); e.dataTransfer.effectAllowed = 'move'; }}
-                      onDragOver={(e) => { if (!alpha) e.preventDefault(); }}
-                      onDrop={(e) => { e.preventDefault(); if (dragId && !alpha) move(dragId, s.id); setDragId(null); }}
+                      onDragOver={(e) => { if (!alpha || dragFolder) e.preventDefault(); }}
+                      onDrop={(e) => { e.preventDefault(); e.stopPropagation(); if (dragId && !alpha) { const x = sets.find((y) => y.id === dragId); if (x && !sameFolder(x.group ?? '', s.group ?? '')) save({ ...x, group: s.group }); move(dragId, s.id); } else if (dragFolder) dropOnFolder(s.group ?? ''); setDragId(null); }}
                       onDragEnd={() => setDragId(null)}
                     >
                       <span className={`ss__kind${saved ? ' is-selection' : ''}`} title={saved ? 'Selection set: fixed objects' : 'Search set: conditions'}>{saved ? <IconSelectionSet width={14} height={14} /> : <IconTextInputShort width={14} height={14} />}</span>
@@ -502,6 +546,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
                           : `${s.name} — ${s.conditions.length} condition${s.conditions.length === 1 ? '' : 's'}${s.conditions.length > 1 ? ` (${s.match === 'all' ? 'all' : 'any'})` : ''}${problems ? `, ${problems} incomplete` : ''}${n ? '' : ' — finds nothing in the loaded models'}`}
                       >
                         <span className="ss__label">{s.name}</span>
+                        {usesOf(s.name) && <span className="cols__count" title={`In this scenario: ${usesOf(s.name)}`} style={{ color: 'var(--accent-strong)', marginLeft: 4 }}>◆</span>}
                       </button>
                       {shownBtn('count') && <span className={`ss__count${n === 0 ? ' is-zero' : ''}${saved && stored > n ? ' is-partial' : ''}`} title={`${n} of ${total} objects${saved && stored > n ? ` · ${stored - n} saved objects not in the loaded models` : ''}`}>{n.toLocaleString()}</span>}
                       {shownBtn('eye') && eye(ids, `“${s.name}”`)}
@@ -517,7 +562,7 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
           </div>
         );
       })}
-      {withPlayer && <FolderPlayerBar player={folderPlayer} folders={[...new Set(sets.map((x) => x.group).filter(Boolean))].sort((a, b) => a.localeCompare(b))} />}
+      {withPlayer && <FolderPlayerBar player={folderPlayer} folders={folderPaths(sets)} />}
     </div>
   );
 }

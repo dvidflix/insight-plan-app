@@ -39,7 +39,7 @@ from core.cpm_apply import apply_cpm_to_xml
 from core.prs_links import merge_extras, resolve_relations
 from core.rule_logic import (
     place_extras,
-    PourTasks, build_level_tasks, build_sequences, build_contact_relations, build_recipe_links, build_limit_links, build_level_links, late_level_relations, drop_builtin,
+    PourTasks, build_level_tasks, build_sequences, build_contact_relations, build_recipe_links, build_limit_links, build_level_links, build_extra_attachments, late_level_relations, drop_builtin,
 )
 from core.adjustments import load_adjustments, drop_retired, extra_activities, extra_predecessors, apply_baselines, EXTRA_WBS_NAME
 from core.xml_builder import (
@@ -957,6 +957,8 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
         recipe_rel, recipe_msgs = recipe_rel + limit_rel, recipe_msgs + limit_msgs + [f"Note: {n}" for n in rules.formula_notes]
         first_building = str(pour_activities[0].get("rec", {}).get("building", "") or "").upper()
         link_early, link_late, link_msgs = build_level_links(rules, tasks, extras_acts, level_acts, xml_activities + level_acts, first_building)
+        attach_rel, attach_msgs = build_extra_attachments(rules, extras_acts, xml_activities + level_acts)
+        link_early, link_msgs = link_early + attach_rel, link_msgs + attach_msgs
         if level_acts or seq_acts:
             xml_activities = xml_activities + level_acts + seq_acts
         if builtin:

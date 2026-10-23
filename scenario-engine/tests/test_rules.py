@@ -621,3 +621,41 @@ def test_support_link_settings_reach_the_builder():
     assert xml_builder.SUPPORT_LINK_FF is True and xml_builder.SUPPORT_LAG_PCT == 80.0
     rules.activate({})
     assert xml_builder.SUPPORT_LINK_FF is False and xml_builder.SUPPORT_LAG_PCT == 0.0
+
+
+class _Rules:
+    def __init__(self, tags):
+        self.extra_tags = tags
+
+
+def _act(task_id, groups, phase="Concrete"):
+    return {"task_id": task_id, "phase": phase, "rec": {"_groups": groups}}
+
+
+def test_extra_attached_to_sets(monkeypatch):
+    from core import rule_logic, prs_links
+
+    def attribute(act, key):
+        if key == "group":
+            return [str(g).lower().replace(" ", "_") for g in act["rec"]["_groups"]]
+        return [act["phase"].lower()] if key == "phase" else []
+
+    monkeypatch.setattr(prs_links, "_attribute", attribute)
+    pool = [_act("A1", ["Walls"]), _act("A2", ["Walls"], "Rebar"), _act("B1", ["Slabs"])]
+    extras = [{"task_id": "X", "extra": True}]
+
+    def tag(**kw):
+        return _Rules({"X": {"attach": {"groups": ["Walls"], **kw}}})
+
+    rel, _ = rule_logic.build_extra_attachments(tag(), extras, pool)
+    assert [(r["pred"], r["succ"], r["type"]) for r in rel] == [("A1", "X", "FS"), ("A2", "X", "FS")]
+    assert not any(r["replaces"] for r in rel)
+
+    rel, _ = rule_logic.build_extra_attachments(tag(direction="before", type="SS", lagHours=8, phase="Concrete"), extras, pool)
+    assert [(r["pred"], r["succ"], r["type"], r["lag"]) for r in rel] == [("X", "A1", "SS", 8.0)]
+
+    rel, _ = rule_logic.build_extra_attachments(tag(pick="last"), extras, pool)
+    assert [(r["pred"], r["succ"]) for r in rel] == [("A2", "X")]
+
+    rel, msgs = rule_logic.build_extra_attachments(_Rules({"X": {"attach": {"groups": ["Nothing"]}}}), extras, pool)
+    assert rel == [] and "no activity" in msgs[0]
