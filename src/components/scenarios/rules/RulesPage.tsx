@@ -6,25 +6,31 @@ import { LevelLinkRowCard, addLevelLink } from './GroupsEditors';
 import { CrewOverrideRowCard, LinkRowCard, addCrewOverride, addLink } from './ManualRows';
 import { EntryKeyContext, FreshEntryContext, useRuleContext } from './RuleParts';
 import { RuleList } from './RuleList';
-import { SettingRows, resetSettings, settingsSet } from './SettingsEditor';
+import { COMMON_SETTINGS, SettingRow, SettingRows, resetSettings, settingCounts, settingsSet } from './SettingsEditor';
+import { SETTINGS_META } from '../../../prs/rules';
+import { needsUpdate, updateFourD } from '../../../state/scenarioStore';
+import { useScenarioView } from '../../../scenarios/useScenarioView';
 import type { RuleKind } from './kinds';
 
 /** The Rules tab, by what a rule is for, in plain words, instead of one mixed list with a type on each row: links between activities, crews on a phase,
     and the generator's settings (the other build orders are on the Work breakdown tab). Each part says what it does, lists its rules and adds one. (Extra activities and summary bars have their own
     tab. Every rule is still one of the scenario's rules: the old single list, with its tools, is folded at the bottom.) */
 
-/** A rule type is a row: its name, what it is for, and what to do (add one). Its rules, when there are any, are listed under it. */
-const Row = ({ id, name, count, help, action, children }: { id: string; name: string; count?: number; help: ReactNode; action?: ReactNode; children?: ReactNode }) => (
-  <>
-    <tr id={`rules-${id}`} className="rules-table__rule">
-      <td className="xl__cell xl__ro rules-table__name">{name}{count ? <span className="scn-chip"> {count}</span> : null}</td>
-      <td className="xl__cell xl__ro rules-table__help">{help}</td>
-      <td className="xl__cell xl__ro rules-table__action">{action}</td>
-    </tr>
-    {children && <tr className="rules-table__rows"><td colSpan={3}>{children}</td></tr>}
-  </>
-);
-
+/** What the tab is in the middle of, in one word, beside the primary action. */
+function UpdateBar() {
+  const busy = useScenarioStore((s) => s.busy);
+  const pending = useScenarioStore((s) => needsUpdate(s));
+  const { modelInfo } = useScenarioView();
+  const updating = !!busy && /^Updating/.test(String(busy));
+  const state = updating ? 'Updating…' : pending ? 'Changes pending' : 'Up to date';
+  return (
+    <div className="rules-bar">
+      <h3 className="gen-sec">Rules</h3>
+      <span className={`rules-bar__state${pending && !updating ? ' is-pending' : ''}`} role="status">{state}</span>
+      <button type="button" className="btn primary rules-bar__go" disabled={!!busy || !modelInfo?.hasSource} onClick={() => void updateFourD()} title="Make the programme again with these rules (about a second) and play it in 4D. Does not save the scenario."><span aria-hidden="true">⟳</span> Update 4D</button>
+    </div>
+  );
+}
 
 export function RulesPage() {
   const ctx = useRuleContext();
@@ -35,36 +41,43 @@ export function RulesPage() {
   const { byCode } = useScenarioActivities();
   const [fresh, setFresh] = useState<string | null>(null);
   const keyed = (key: string, node: ReactNode) => <EntryKeyContext.Provider key={key} value={key}>{node}</EntryKeyContext.Provider>;
+  const common = SETTINGS_META.filter((m) => COMMON_SETTINGS.includes(m.key));
+  const rest = settingCounts(ctx, true);
+  const setHere = settingsSet(ctx);
 
   return (
     <div className="rules-page gen-pad">
       <datalist id="scn-activity-codes">{[...byCode.keys()].sort().map((c) => <option key={c} value={c}>{byCode.get(c)}</option>)}</datalist>
+      <UpdateBar />
       <FreshEntryContext.Provider value={fresh}>
-        <table className="xl rules-table">
-          <colgroup><col style={{ width: 190 }} /><col /><col style={{ width: 300 }} /></colgroup>
-          <thead><tr><th>Rule</th><th>Instructions</th><th>Action</th></tr></thead>
-          <tbody>
-            <Row id="links" name="Manual link" count={relations.length}
-              help="Tie one activity to another when the order the generator gives is not what you want. It replaces the generated links into the later activity. With none, the generator links the activities itself, in the order of your work breakdown."
-              action={<button type="button" className="btn btn--small primary" onClick={() => { setFresh(`link:${relations.length}`); addLink(); }}>+ Manual link</button>}>
-              {relations.length > 0 ? relations.map((_, i) => keyed(`link:${i}`, <LinkRowCard i={i} byCode={byCode} />)) : null}
-            </Row>
-            <Row id="contacts" name="Contact link" count={rules.contacts.length}
-              help="Links made from the objects that touch each other (found by clash detection), for example slabs waiting for what is below."
-              action={<><button type="button" className="btn btn--small primary" onClick={() => { setFresh(`contact:${rules.contacts.length}`); addContact(ctx); }}>+ Contact link</button> <button type="button" className="btn btn--small" onClick={() => { setFresh(`contact:${rules.contacts.length}`); addContact(ctx, SLABS_ON_BELOW); }} title="Slabs wait for everything in contact below">Slabs on what is below</button></>}>
-              {rules.contacts.length > 0 ? rules.contacts.map((_, i) => keyed(`contact:${i}`, <ContactRowCard ctx={ctx} i={i} />)) : null}
-            </Row>
-            <Row id="crews" name="Crew override" count={crews.length}
-              help="Change how many people of a trade work on a phase (and pour type) of the programme. It replaces the default crew of that phase. With none, every phase has its default crew. The crews and productivity the recipes use are on the Labour tab."
-              action={<button type="button" className="btn btn--small primary" disabled={!crewOptions} title={crewOptions ? undefined : 'Open a scenario first'} onClick={() => { setFresh(`crewOverride:${crews.length}`); addCrewOverride(); }}>+ Crew override</button>}>
-              {crews.length > 0 ? crews.map((_, i) => keyed(`crewOverride:${i}`, <CrewOverrideRowCard i={i} />)) : null}
-            </Row>
-            <Row id="settings" name="Generator settings" count={settingsSet(ctx)}
-              help="The generator’s own switches and distances, grouped below. A setting changed here is used for this scenario only; the generator’s own value is used for the others."
-              action={<button type="button" className="btn btn--small" disabled={settingsSet(ctx) === 0} onClick={() => { if (window.confirm(`Put back the generator's value of the ${settingsSet(ctx)} setting${settingsSet(ctx) === 1 ? '' : 's'} set here?`)) resetSettings(ctx); }}>Reset all</button>} />
-            <SettingRows ctx={ctx} />
-          </tbody>
-        </table>
+        <section className="rules-sec" id="rules-common">
+          <h4 className="gen-sec2">Common adjustments</h4>
+          <div className="rules-adds">
+            <button type="button" className="btn" onClick={() => { setFresh(`link:${relations.length}`); addLink(); }} title="Tie one activity to another when the order the generator gives is not what you want. It replaces the generated links into the later activity">+ Manual link{relations.length ? ` (${relations.length})` : ''}</button>
+            <button type="button" className="btn" onClick={() => { setFresh(`contact:${rules.contacts.length}`); addContact(ctx); }} title="Links made from the objects that touch each other (found by clash detection)">+ Contact link{rules.contacts.length ? ` (${rules.contacts.length})` : ''}</button>
+            <button type="button" className="btn" disabled={!crewOptions} onClick={() => { setFresh(`crewOverride:${crews.length}`); addCrewOverride(); }} title={crewOptions ? 'Change how many people of a trade work on a phase. The crews the recipes use are on the Labour tab' : 'Open a scenario first'}>+ Crew override{crews.length ? ` (${crews.length})` : ''}</button>
+            <button type="button" className="btn btn--small" onClick={() => { setFresh(`contact:${rules.contacts.length}`); addContact(ctx, SLABS_ON_BELOW); }} title="Slabs wait for everything in contact below">Slabs on what is below</button>
+          </div>
+          <table className="xl rules-table">
+            <colgroup><col /><col style={{ width: 300 }} /></colgroup>
+            <tbody>{common.map((m) => <SettingRow key={m.key} ctx={ctx} m={m} />)}</tbody>
+          </table>
+        </section>
+
+        {relations.length > 0 && <section className="rules-sec"><h4 className="gen-sec2">Manual links <span className="scn-chip">{relations.length}</span></h4>{relations.map((_, i) => keyed(`link:${i}`, <LinkRowCard i={i} byCode={byCode} />))}</section>}
+        {rules.contacts.length > 0 && <section className="rules-sec"><h4 className="gen-sec2">Contact links <span className="scn-chip">{rules.contacts.length}</span></h4>{rules.contacts.map((_, i) => keyed(`contact:${i}`, <ContactRowCard ctx={ctx} i={i} />))}</section>}
+        {crews.length > 0 && <section className="rules-sec"><h4 className="gen-sec2">Crew overrides <span className="scn-chip">{crews.length}</span></h4>{crews.map((_, i) => keyed(`crewOverride:${i}`, <CrewOverrideRowCard i={i} />))}</section>}
+
+        <details className="rules-all rules-advanced">
+          <summary title="The generator's other switches and distances. A setting changed here is used for this scenario only; the generator's own value is used for the others">
+            Advanced generator settings ({rest.total} settings{rest.changed ? <>, <b className="rules-advanced__changed">{rest.changed} changed</b></> : ', none changed'})
+          </summary>
+          <div className="rel-bar"><button type="button" className="btn btn--small" disabled={setHere === 0} onClick={() => { if (window.confirm(`Put back the generator's value of the ${setHere} setting${setHere === 1 ? '' : 's'} set here?`)) resetSettings(ctx); }}>Reset all settings</button></div>
+          <table className="xl rules-table">
+            <colgroup><col /><col style={{ width: 300 }} /></colgroup>
+            <tbody><SettingRows ctx={ctx} /></tbody>
+          </table>
+        </details>
       </FreshEntryContext.Provider>
 
       <details className="rules-all">

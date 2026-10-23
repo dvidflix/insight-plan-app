@@ -110,7 +110,6 @@ export function RulePresets() {
           </div>
         )}
       </span>
-      <button type="button" className="btn btn--small primary" disabled={!ready || !!busy || !modelInfo?.hasSource} onClick={() => void updateFourD()} title="Regenerate the programme with these rules (about a second) and play it in 4D. Does not save the scenario.">Update 4D</button>
       {naming !== null && (
         <span className="rule-presets__name">
           <input autoFocus value={naming} onChange={(e) => setNaming(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') saveNew(naming); if (e.key === 'Escape') setNaming(null); }} placeholder="Preset name" aria-label="Preset name" spellCheck={false} />

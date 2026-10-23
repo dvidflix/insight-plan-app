@@ -87,3 +87,14 @@ def test_the_sequence_of_the_request_orders_items_by_their_id(tmp_path):
     request = work_items.with_groups({"workItems": ITEMS[:3], "rules": {}, "sequence": [{"GUID": "WI-3", "Index": 1}, {"GUID": "WI-1", "Index": 2}, {"GUID": "WI-2", "Index": 3}]})
     overrides = engine.overrides_from_scenario(request)
     assert [s["GUID"] for s in overrides["__sequence_order__"]] == ["WI-3", "WI-1", "WI-2"]
+
+
+def test_the_reason_for_every_link_is_written_next_to_the_xml(tmp_path):
+    import json
+    records, activities, xml = generate(ITEMS, {"recipes": RECIPES}, tmp_path)
+    why = json.loads((tmp_path / "wi.xml.why.json").read_text(encoding="utf-8"))
+    links = why["links"]
+    assert links and all(len(link) == 5 for link in links)
+    written = len(re.findall(r"<Relationship>", xml))
+    assert len(links) == written  # one reason per link written
+    assert {link[4] for link in links} >= {"intra"}  # the recipe's own steps

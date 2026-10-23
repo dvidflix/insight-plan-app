@@ -1038,6 +1038,12 @@ def build_schedule_xml(records, activities, clashes, overrides, xml_path, start_
             print(f"  {n} extra activit{'y' if n == 1 else 'ies'} given their baseline dates as target dates")
 
     save_p6_xml(xml_root, str(xml_path))
+    # Why each link is there, for the app's inspector (read next to the XML; a failure to write it never fails a run).
+    try:
+        with open(str(xml_path) + ".why.json", "w", encoding="utf-8") as f:
+            json.dump({"version": 1, "links": list(_xml_builder.LINK_SOURCES)}, f)
+    except OSError:
+        pass
     return {"intra_predecessors": intra_predecessors, "skipped_edges_by_source": skipped_edges_by_source, "task_start_dates": task_start_dates}
 
 

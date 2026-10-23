@@ -1819,6 +1819,11 @@ def _build_xml_wbs_manager_for_activities(activities):
     return xml_wbs
 
 
+# Why each link was written: [predecessor Task ID, successor Task ID, type, lag (hours), source], in the order written. Filled while a programme is built
+# and read once it is saved (main.py writes it next to the XML as <xml>.why.json, for the app's "why" inspector).
+LINK_SOURCES = []
+
+
 def write_activities_and_relationships(root, activity_list, resources, wbs_manager,
                                        intra_predecessors=None,
                                        sequence_ss_predecessors=None,
@@ -1835,6 +1840,7 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
     chain). These are emitted LAST and ARE the ones dropped whenever they'd
     conflict with anything emitted earlier — see the priority-order comment
     at RELATIONSHIPS below."""
+    LINK_SOURCES.clear()
     intra_predecessors = intra_predecessors or {}
     sequence_ss_predecessors = sequence_ss_predecessors or []
     custom_relations = custom_relations or []
@@ -2009,6 +2015,7 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         lag_value = _safe_float(lag_days, 0)
         if lag_value:
             ET.SubElement(rel, "Lag").text = str(lag_value)
+        LINK_SOURCES.append([pred_task_id, succ_task_id, rel_type, lag_value or 0, str(source)])
         return True
 
     def _get_or_create_activity_code(code_type_name, code_value):

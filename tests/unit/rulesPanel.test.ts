@@ -73,11 +73,13 @@ describe('the Rules list', () => {
   it('lists the rules by what they are for, with the single list folded below', () => {
     load();
     const html = renderToStaticMarkup(createElement(ScenarioRulesEditor));
-    for (const label of ['Manual link', 'Crew override', 'Generator settings', 'Contact link', 'Level gate', 'Tools: replace a group']) {
+    // The common adjustments come first, with the primary action; the other settings are folded away with a count.
+    for (const label of ['Common adjustments', 'Update 4D', '+ Manual link', '+ Contact link', '+ Crew override', 'Steps overlap', 'Level gate', 'Advanced generator settings', 'Tools: replace a group']) {
       expect(html).toContain(label);
     }
+    expect(html.indexOf('Common adjustments')).toBeLessThan(html.indexOf('Advanced generator settings'));
     expect(html).not.toContain('Extra activities'); // they have a tab of their own
-    expect(html).toContain('Reset all');
+    expect(html).toContain('Reset all settings');
   });
 
   it('opens each type of rule to its own editor', () => {

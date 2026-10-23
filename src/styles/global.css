@@ -14684,3 +14684,15 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .gen-result__cell b { font-size: 16px; font-weight: 600; color: var(--text); }
 .gen-result__cell .scn-dim { font-size: 11px; }
 .gen-result .seq__warn { margin: 0; border-width: 1px 0 0; }
+
+/* Rules tab: the primary action and its state stay in view; the common adjustments come first; the rest is folded. */
+.rules-bar { position: sticky; top: 0; z-index: 5; display: flex; align-items: center; gap: 10px; padding: 8px 0; background: var(--bg); border-bottom: 1px solid var(--border); }
+.rules-bar .gen-sec { margin: 0; margin-right: auto; }
+.rules-bar__state { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.rules-bar__state.is-pending { color: var(--warn); }
+.rules-bar__go { min-width: 120px; }
+.rules-adds { display: flex; flex-wrap: wrap; gap: var(--hit-gap); padding: 6px 0 10px; }
+.rules-advanced > summary { font-size: 14px; font-weight: 600; }
+.rules-advanced__changed { color: var(--accent-strong); }
+.rules-page .rules-sec { margin: 10px 0 0; }
+.rules-table .rules-table__name .info-tip { margin-left: 4px; vertical-align: middle; }
