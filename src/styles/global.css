@@ -14703,3 +14703,6 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .why__head { margin: 8px 0 2px; font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; color: var(--text-dim); }
 .why-list { margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 6px; }
 .why-driving { color: var(--accent-strong); font-weight: 600; }
+
+/* Work breakdown: the first-time prompt. */
+.order__first { padding: 18px 12px; font-size: 15px; font-weight: 500; color: var(--text); border: 1px dashed var(--border); margin: 12px; }

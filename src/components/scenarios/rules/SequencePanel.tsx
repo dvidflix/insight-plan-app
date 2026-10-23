@@ -12,6 +12,7 @@ import { useGenerateTab } from '../GenerateTabs';
 import { useOrderPreview } from '../../../state/orderPreviewStore';
 import { stepColors } from '../OrderPreview';
 import { TreeTargetPicker } from './TreeTargetPicker';
+import { InfoTip } from '../../InfoTip';
 import { ATTACH_LINKS, ATTACH_PICKS, attachSummary, setsOfTarget } from '../../../prs/extraAttach';
 import type { ExtraAttach } from '../../../prs/rules';
 import { groupsOfItems, itemsOfGroup, useWorkItems } from '../useWorkItems';
@@ -387,7 +388,7 @@ export function OrderPanel() {
         <span className="seq__add">
           <GroupPicker value="" none="+ Add a work item…" folders={free} title={free.length ? 'Add a work item: pick one of your search sets (made in Models › Search sets)' : 'Every search set is a work item already. Make more in Models › Search sets'} onChange={(g) => { if (g) addStep(g); }} />
         </span>
-        <span className="scn-dim hint">Your search sets, in the order they are built, top first. Drag a row number to move one. Open a work item to see what it generates.</span>
+        <InfoTip label="How the work breakdown works">Your search sets are the work items, in the order they are built, top first. Drag a row number to move one. Open a work item (the arrow) to see the activities it generates, its recipe and its resources.</InfoTip>
         {!preview.show && <button type="button" className="btn btn--small" style={{ marginLeft: 'auto' }} onClick={() => preview.setShow(true)} title="Show the model in 3D beside the list, each work item in its colour">Show 3D</button>}
         <button type="button" className="btn primary" style={preview.show ? { marginLeft: 'auto' } : undefined} disabled={busy} onClick={() => void updateFourD()} title="Generate the programme for this order and play it in 4D (Update 4D). Does not save the order."><span aria-hidden="true">⟳</span> Generate</button>
       </div>
@@ -421,7 +422,7 @@ export function OrderPanel() {
           <button type="button" className="link-btn" onClick={() => setAdvancedPart('levels')} title="Choose the property and put the levels in order">Change</button>
         </div>
       )}
-      {steps.length === 0 ? <div className="scn-dim scn-editor__help">No work items yet. Add the search sets you want built, in the order you want them. Make search sets in Models › Search sets.</div> : (
+      {steps.length === 0 ? <div className="scn-editor__help order__first"><b>Add your search sets as work items, top first. Then press Generate.</b> Use “+ Add a work item…” above. The search sets are made in Models › Search sets.</div> : (
         <table className="xl xgrid" {...grid.grid}>
           <colgroup><col style={{ width: 48 }} /><col style={{ width: 280 }} /><col style={{ width: 100 }} /><col style={{ width: 340 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>
           <thead><tr><th className="xl__corner" aria-label="Work item" /><th title="The search set built in this work item">Search set</th><th title="Built level by level, or once for the whole building">Built</th><th>Description</th><th aria-label="Show what it generates" /><th aria-label="Delete" /></tr></thead>

@@ -74,7 +74,7 @@ describe('the Rules list', () => {
     load();
     const html = renderToStaticMarkup(createElement(ScenarioRulesEditor));
     // The common adjustments come first, with the primary action; the other settings are folded away with a count.
-    for (const label of ['Common adjustments', 'Update 4D', '+ Manual link', '+ Contact link', '+ Crew override', 'Steps overlap', 'Level gate', 'Advanced generator settings', 'Tools: replace a group']) {
+    for (const label of ['Common adjustments', 'Update 4D', '+ Manual link', '+ Contact link', '+ Crew override', 'Allow the next step', 'Build one level at a time', 'Wait for concrete to cure', 'Ignore resource limits', 'Advanced generator settings', 'Tools: replace a group']) {
       expect(html).toContain(label);
     }
     expect(html.indexOf('Common adjustments')).toBeLessThan(html.indexOf('Advanced generator settings'));

@@ -56,7 +56,7 @@ function Control({ meta, shown, onChange }: { meta: SettingMeta; shown: SettingV
 }
 
 /** The settings the Rules tab shows up front: the ones a planner changes (how steps overlap, the level gate, curing, the close-out milestone). */
-export const COMMON_SETTINGS = ['sequenceFlow', 'levelGate', 'slabCuringGatesSuccessors', 'completionCloseout'];
+export const COMMON_SETTINGS = ['levelGate', 'sequenceFlow', 'slabCuringGatesSuccessors', 'maximizeResources'];
 
 /** How many of the settings (without the common ones, when `rest`) are set here, and how many of those differ from the generator's own. */
 export function settingCounts(ctx: RuleContext, rest = false): { total: number; changed: number } {
@@ -72,7 +72,7 @@ export function SettingRow({ ctx, m }: { ctx: RuleContext; m: SettingMeta }) {
   const differs = isSet && ctx.defaults !== null && !same(value, def);
   return (
     <tr className={`rules-table__rule${differs ? ' is-changed' : ''}`}>
-      <td className="xl__cell xl__ro rules-table__name">{m.label} <InfoTip>{m.help}</InfoTip></td>
+      <td className="xl__cell xl__ro rules-table__name">{m.plain ?? m.label} <InfoTip>{m.plain ? <><b>{m.label}.</b> </> : null}{m.help}</InfoTip></td>
       <td className="xl__cell xl__ro rules-table__action">
         <Control meta={m} shown={isSet ? value : (def as SettingValue)} onChange={(v) => setSetting(ctx, m.key, v)} />
         {differs ? (

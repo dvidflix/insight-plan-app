@@ -1,6 +1,7 @@
 import { useMemo } from 'react';
 import { useSearchSetsStore } from '../../../state/searchSetsStore';
 import { useWorkItems } from '../useWorkItems';
+import { InfoTip } from '../../InfoTip';
 import { propertyLabel } from '../../../scenarios/breakdownSource';
 import { SET_FOLDER } from '../../../viewer/setFolderValues';
 import { LEVEL_ROLES, LEVEL_SORTS, freshLevelId, makesItems, type BreakdownDefinition, type GroupingLevel } from '../../../prs/workBreakdown';
@@ -43,12 +44,7 @@ export function GroupingLevels() {
 
   return (
     <section className="rules-sec gen-order__levelsdef" id="rules-grouping">
-      <div className="rules-sec__head"><h3 className="gen-sec">Grouping levels</h3><div className="rules-sec__add"><button type="button" className="btn btn--small primary" onClick={add}>+ Level</button></div></div>
-      <div className="scn-dim seq__explain">
-        <p>Group the objects into work items by one or more levels, like the Group panel: each level is a property of the objects or a folder of your search sets.</p>
-        <p>Give one level the role Work item: its value is the group a recipe is found by. The other levels order and place the work items (building, level, zone) or only structure them.</p>
-        <p>With a Work item level, Update 4D makes the programme from these work items instead of the list above. An object in several sets of a folder is in the first of them.</p>
-      </div>
+      <div className="rules-sec__head"><h3 className="gen-sec">Grouping levels <InfoTip label="How grouping levels work">Group the objects into work items by one or more levels, like the Group panel: each level is a property of the objects or a folder of your search sets. Give one level the role Work item: its value is the group a recipe is found by. The other levels order and place the work items (building, level, zone) or only structure them. With a Work item level, Update 4D makes the programme from these work items instead of the list above. An object in several sets of a folder is in the first of them.</InfoTip></h3><div className="rules-sec__add"><button type="button" className="btn btn--small primary" onClick={add}>+ Level</button></div></div>
       {def.levels.length === 0 ? <div className="scn-dim scn-editor__help">No levels: the programme is made from the list of search sets above.</div> : (
         <table className="xl">
           <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 150 }} /><col style={{ width: 120 }} /><col style={{ width: 230 }} /><col style={{ width: 130 }} /><col style={{ width: 190 }} /><col style={{ width: 200 }} /><col style={{ width: 90 }} /></colgroup>

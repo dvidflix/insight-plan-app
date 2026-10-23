@@ -551,6 +551,8 @@ export function cleanWhen(when: When): When {
 export interface SettingMeta {
   key: string;
   label: string;
+  /** The same setting as a planner's decision (shown first); `label` is the generator's own name, kept in the explanation. */
+  plain?: string;
   help: string;
   kind: 'bool' | 'number' | 'list';
   unit?: string;
@@ -558,21 +560,21 @@ export interface SettingMeta {
 }
 
 export const SETTINGS_META: SettingMeta[] = [
-  { key: 'sequenceFlow', label: 'Steps overlap (flow)', kind: 'bool', group: 'Sequence', help: "Off: each step of the scenario's order starts when the one before it has finished (a relay: a long programme). On: the order is the order the work starts and the concrete is poured: a step starts a few days after the previous step starts, its concrete follows the previous step's, and each pour's own rebar, formwork and concrete run as they can." },
+  { key: 'sequenceFlow', plain: 'Allow the next step to start before the previous one finishes', label: 'Steps overlap (flow)', kind: 'bool', group: 'Sequence', help: "Off: each step of the scenario's order starts when the one before it has finished (a relay: a long programme). On: the order is the order the work starts and the concrete is poured: a step starts a few days after the previous step starts, its concrete follows the previous step's, and each pour's own rebar, formwork and concrete run as they can." },
   { key: 'sequenceLeadDays', label: 'A step starts this long after the previous one', kind: 'number', unit: 'working days', group: 'Sequence', help: 'Only with Steps overlap. 0: every step starts with the one before (the concrete order alone sets the pace). More days: a slower build, with each step later. The default is 3.' },
   { key: 'sequenceConcreteFollows', label: "A step's concrete follows the previous step's", kind: 'bool', group: 'Sequence', help: "Only with Steps overlap. On (the default): the pours are cast in exactly the order of the steps, so a pour that is not ready yet (a slab waiting for its rebar, say) holds up every pour after it. Off: the order sets when each step starts, and a pour is cast when it is ready; the programme is shorter." },
-  { key: 'levelGate', label: 'Level gate', kind: 'bool', group: 'Level gate', help: "A slab's first task waits for the concrete of the objects on the level below that touch it." },
+  { key: 'levelGate', plain: 'Build one level at a time', label: 'Level gate', kind: 'bool', group: 'Level gate', help: "A slab's first task waits for the concrete of the objects on the level below that touch it." },
   { key: 'levelGateSlabsOnly', label: 'Slabs only', kind: 'bool', group: 'Level gate', help: 'Only slabs are tied back to the level below; walls and columns follow their own slab.' },
   { key: 'levelGateDeckingConcreteOnly', label: 'Concrete of the level below only', kind: 'bool', group: 'Level gate', help: "Only the lower level's Concrete tasks (not Stitching or Installation) and no stage-2 objects feed a slab's first task." },
   { key: 'levelGateMaxDistanceM', label: 'Reach', kind: 'number', unit: 'm', group: 'Level gate', help: 'A slab waits only for lower-level objects within this gap of it (plan gap and vertical gap). 0 = no limit: every object of the level below.' },
-  { key: 'supportLinkFinishToFinish', label: 'Supports finish-to-finish with the slab', kind: 'bool', group: 'Level gate', help: "Off: a slab's first activity starts after what supports it (the walls, columns and pedestals under or beside it) is cast. On: it only has to finish after them, so it can start earlier and overlap them (the way the programme is built by hand)." },
+  { key: 'supportLinkFinishToFinish', plain: 'Let a slab start before what supports it is finished', label: 'Supports finish-to-finish with the slab', kind: 'bool', group: 'Level gate', help: "Off: a slab's first activity starts after what supports it (the walls, columns and pedestals under or beside it) is cast. On: it only has to finish after them, so it can start earlier and overlap them (the way the programme is built by hand)." },
   { key: 'supportLagPct', label: 'Slab finishes this long after its supports', kind: 'number', unit: '% of its own duration', group: 'Level gate', help: "With finish-to-finish: the slab's first activity finishes this share of its own duration after the supports finish. Normally 80. 0: it finishes with them." },
-  { key: 'completionCloseout', label: 'Completion milestone per building', kind: 'bool', group: 'Open ends & close-out', help: 'Every activity left with no successor feeds a building completion milestone, so the programme has no open ends.' },
-  { key: 'openEndSequencing', label: 'Open-ended objects precede the slab above', kind: 'bool', group: 'Open ends & close-out', help: 'A column, wall or landing with no successor precedes the start of the slab sitting on it.' },
+  { key: 'completionCloseout', plain: 'Finish every building with a completion milestone', label: 'Completion milestone per building', kind: 'bool', group: 'Open ends & close-out', help: 'Every activity left with no successor feeds a building completion milestone, so the programme has no open ends.' },
+  { key: 'openEndSequencing', plain: 'Columns and walls finish before the slab on them', label: 'Open-ended objects precede the slab above', kind: 'bool', group: 'Open ends & close-out', help: 'A column, wall or landing with no successor precedes the start of the slab sitting on it.' },
   { key: 'openEndMaxDistanceM', label: 'Reach', kind: 'number', unit: 'm', group: 'Open ends & close-out', help: 'A slab counts as "on it" within this gap.' },
   { key: 'openEndNearestSlabFallback', label: 'Nearest slab above when none is in reach', kind: 'bool', group: 'Open ends & close-out', help: 'Only objects with no slab above them at all (the roof) then end on the completion milestone.' },
-  { key: 'slabCuringGatesSuccessors', label: 'Curing holds back what follows', kind: 'bool', group: 'Slab curing & phases', help: "Off: what follows a slab waits for its Concrete only and Curing runs alongside. On: it waits for the Curing to finish." },
-  { key: 'maximizeResources', label: 'Maximize resource availability', kind: 'bool', group: 'Resources', help: 'No labour trade, equipment, crane or material pool has a limit: the programme the logic alone allows, to see the shortest build when resources are not the constraint. Switch it off to go back to the capacities and counts of the scenario (they are kept).' },
+  { key: 'slabCuringGatesSuccessors', plain: 'Wait for concrete to cure', label: 'Curing holds back what follows', kind: 'bool', group: 'Slab curing & phases', help: "Off: what follows a slab waits for its Concrete only and Curing runs alongside. On: it waits for the Curing to finish." },
+  { key: 'maximizeResources', plain: 'Ignore resource limits (the fastest possible)', label: 'Maximize resource availability', kind: 'bool', group: 'Resources', help: 'No labour trade, equipment, crane or material pool has a limit: the programme the logic alone allows, to see the shortest build when resources are not the constraint. Switch it off to go back to the capacities and counts of the scenario (they are kept).' },
   { key: 'sideOverlapThreshold', label: 'Beside = overlap of at least', kind: 'number', group: 'Clash positions', help: "How much of the smaller object's height must overlap the other for the pair to count as beside (rather than below or above): 0 to 1." },
 ];
 
