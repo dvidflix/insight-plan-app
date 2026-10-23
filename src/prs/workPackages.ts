@@ -389,7 +389,8 @@ export interface ResolvedMethod {
   crew: string;
   /** A standard method's usual crew size (the people a package can change); null for a project recipe. */
   people: number | null;
-  activities: { phase: string; name: string; days: number; fixed: boolean; how: string }[];
+  /** `unknown`: the days cannot be worked out before Generate (the 1 shown is a stand-in). */
+  activities: { phase: string; name: string; days: number; fixed: boolean; how: string; unknown?: boolean }[];
   days: number;
   /** The days before the package's own total, if it has one. */
   estimate: number;
@@ -397,7 +398,7 @@ export interface ResolvedMethod {
 
 const round2 = (n: number) => Math.round(n * 100) / 100;
 
-export function resolveMethod(pkg: WorkPackage, objs: readonly PackageObject[], recipes: readonly Recipe[], recipeDays: (recipe: Recipe, q: ReturnType<typeof quantities>) => { phase: string; name: string; days: number; how: string; crew: string }[]): ResolvedMethod {
+export function resolveMethod(pkg: WorkPackage, objs: readonly PackageObject[], recipes: readonly Recipe[], recipeDays: (recipe: Recipe, q: ReturnType<typeof quantities>) => { phase: string; name: string; days: number; how: string; crew: string; unknown?: boolean }[]): ResolvedMethod {
   const q = quantities(objs);
   const chains = recipes.filter((r) => r.enabled !== false && r.chain !== false);
   const fixed = (phase: string) => Object.entries(pkg.days ?? {}).find(([k]) => norm(k) === norm(phase))?.[1];
@@ -417,7 +418,7 @@ export function resolveMethod(pkg: WorkPackage, objs: readonly PackageObject[], 
   };
   const fromRecipe = (r: Recipe, chosen: boolean, why: string): ResolvedMethod => {
     const planned = recipeDays(r, q);
-    const acts = planned.map((a) => { const f = fixed(a.phase); return { phase: a.phase, name: a.name, days: f ?? a.days, fixed: f !== undefined, how: f !== undefined ? 'set here' : a.how }; });
+    const acts = planned.map((a) => { const f = fixed(a.phase); return { phase: a.phase, name: a.name, days: f ?? a.days, fixed: f !== undefined, how: f !== undefined ? 'set here' : a.how, ...(a.unknown && f === undefined ? { unknown: true } : {}) }; });
     return finish({ key: `recipe:${r.id}`, name: r.name?.trim() || r.id, kind: 'recipe', chosen, why, crew: planned.map((a) => a.crew).find(Boolean) ?? '', people: null }, acts);
   };
   const fromStd = (m: StandardMethod, chosen: boolean, why: string): ResolvedMethod => {

@@ -71,7 +71,8 @@ async function call<T>(path: string, init?: RequestInit): Promise<T> {
   let res: Response;
   try {
     res = await fetch(`/api/scenarios/${path}`, init);
-  } catch {
+  } catch (e) {
+    if (init?.signal?.aborted) throw e;
     throw new Error('Could not reach the scenarios service — run the app with Autorun.bat / npm run dev.');
   }
   const body = await res.json().catch(() => null);
@@ -132,8 +133,8 @@ export const forgetBaseSequence = () => baseSequences.clear();
 
 export const fetchXml = (root: string, scenario: string, stem: string) => call<{ xml: string }>(`xml?${qs({ root, scenario, stem })}`).then((r) => r.xml);
 
-const post = <T>(path: string, body: unknown) =>
-  call<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+const post = <T>(path: string, body: unknown, signal?: AbortSignal) =>
+  call<T>(path, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body), ...(signal ? { signal } : {}) });
 
 export interface SaveRequest {
   root: string;
@@ -158,8 +159,8 @@ export const deleteScenarioOnServer = (req: { root: string; scenario: string }) 
 /** "Update 4D": the XML for the order on screen from the long-running
     generator (about a second; the order is not saved). `fast` is false when
     the scenario needed one full run first. */
-export const updateScenario = (req: SaveRequest & { startDate: string | null; /** Work items made from the grouping levels (prs/workBreakdown.ts), and their order: the generator makes the programme from them, not from the pours. */ workItems?: unknown[]; workSequence?: { GUID: string; Index: number }[] }) =>
-  post<{ xml: string; /** Why each link is there (the generator's own labels). */ why?: unknown; log: string; warning: string | null; fast: boolean; seconds: number | null }>('update', req);
+export const updateScenario = (req: SaveRequest & { startDate: string | null; /** Work items made from the grouping levels (prs/workBreakdown.ts), and their order: the generator makes the programme from them, not from the pours. */ workItems?: unknown[]; workSequence?: { GUID: string; Index: number }[] }, signal?: AbortSignal) =>
+  post<{ xml: string; /** Why each link is there (the generator's own labels). */ why?: unknown; log: string; warning: string | null; fast: boolean; seconds: number | null }>('update', req, signal);
 
 /** Loads the building's model and the scenario's workbook into the
     long-running generator ahead of the first update. */

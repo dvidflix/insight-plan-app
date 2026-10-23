@@ -19,6 +19,8 @@ import type { PageItem } from './ViewPicker';
 import { IconSearch } from './icons';
 import { LevelStepper } from './schedule/LevelStepper';
 import { GENERATE_TABS, useGenerateTab } from './scenarios/GenerateTabs';
+import { STEPS as G3_STEPS } from './scenarios/Generate3/Steps';
+import { useG3 } from './scenarios/Generate3/useWorkPackages';
 import { pickScenario, saveOrder, scenarioNamesForStems, stemsInInputs, updateFourD, useScenarioStore } from '../state/scenarioStore';
 import { resolveTheme, useThemeStore } from '../state/themeStore';
 import { useGettingStarted } from '../state/gettingStarted';
@@ -116,12 +118,17 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
     out.push({ key: 'a:theme', group: 'Actions', label: resolveTheme(themeChoice) === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', hint: 'appearance', run: () => setThemeChoice(resolveTheme(themeChoice) === 'dark' ? 'light' : 'dark') });
     // Generate (the page is there when Scenarios is on): its tabs, the scenarios of the project, and Update 4D / Save for the open one.
     if (pages.some((p) => p.id === 'scenarios')) {
-      for (const t of GENERATE_TABS) out.push({ key: `g:${t.id}`, group: 'Generate', label: `Generate › ${t.label.replace(/^\d+ - /, '')}`, hint: t.tip.split('.')[0].slice(0, 70), run: () => { useGenerateTab.getState().setTab(t.id); onPage('scenarios'); } });
+      // In Generate 3, its steps stand for the classic tabs, and a scenario or Update 4D stays in Generate 3 (classic Generate is reached from the
+      // page picker only, never from inside Generate 3).
+      const inG3 = !!document.querySelector('.g3-page');
+      const genPage = inG3 ? 'generate3' : 'scenarios';
+      if (inG3) for (const t of G3_STEPS) out.push({ key: `g3:${t.id}`, group: 'Generate', label: `Generate 3 › ${t.label.replace(/^\d+ - /, '')}`, hint: t.tip.slice(0, 70), run: () => useG3.getState().setStep(t.id) });
+      else for (const t of GENERATE_TABS) out.push({ key: `g:${t.id}`, group: 'Generate', label: `Generate › ${t.label.replace(/^\d+ - /, '')}`, hint: t.tip.split('.')[0].slice(0, 70), run: () => { useGenerateTab.getState().setTab(t.id); onPage('scenarios'); } });
       for (const name of scenarioNamesForStems(project, drafts, stemsInInputs(models))) {
-        out.push({ key: `sc:${name}`, group: 'Generate', label: `Scenario ${name}`, hint: name === scenario ? 'open' : 'open it in Generate', run: () => { pickScenario(name); onPage('scenarios'); } });
+        out.push({ key: `sc:${name}`, group: 'Generate', label: `Scenario ${name}`, hint: name === scenario ? 'open' : 'open it in Generate', run: () => { pickScenario(name); onPage(genPage); } });
       }
       if (scenario) {
-        out.push({ key: 'a:update4d', group: 'Actions', label: 'Update 4D', hint: scenarioReady ? `scenario ${scenario}` : 'open the scenario in Generate first', run: () => { onPage('scenarios'); if (scenarioReady) void updateFourD(); } });
+        out.push({ key: 'a:update4d', group: 'Actions', label: 'Update 4D', hint: scenarioReady ? `scenario ${scenario}` : 'open the scenario in Generate first', run: () => { onPage(genPage); if (scenarioReady) void updateFourD(); } });
         out.push({ key: 'a:savescn', group: 'Actions', label: 'Save scenario', hint: scenario, run: () => { if (scenarioReady) void saveOrder(); } });
       }
     }
@@ -163,7 +170,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
       if (e) out.push({ key: `pn:${e.id}`, group: 'Panels', label: e.label, hint: 'panel', run: () => useDockStore.getState().reveal(e.id) });
     }
     return out;
-  }, [pages, onPage, onTab, experimental, entries, models, hiddenModelIds, toggleModelHidden, meshes, schedules, hiddenScheduleIds, toggleScheduleHidden, dbProgrammes, storedActions.stored, sceneList, engine, project, drafts, scenario, scenarioReady, themeChoice, setThemeChoice]);
+  }, [pages, onPage, onTab, experimental, entries, models, hiddenModelIds, toggleModelHidden, meshes, schedules, hiddenScheduleIds, toggleScheduleHidden, dbProgrammes, storedActions.stored, sceneList, engine, project, drafts, scenario, scenarioReady, themeChoice, setThemeChoice, open]); // open: read again each time it opens (which Generate page is showing)
 
   const hits = useMemo(() => {
     const terms = alternatives(query);

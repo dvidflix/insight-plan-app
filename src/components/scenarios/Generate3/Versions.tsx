@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { createScenario, pickScenario, saveOrder, scenarioNamesFor, updateFourD, useScenarioStore } from '../../../state/scenarioStore';
+import { CompareDialog } from './Compare';
+import type { useWorkPackages } from './useWorkPackages';
 
 /** Versions (Generate 3): switch between the scenarios of this model, and save what is on screen as a new one. A new version is a copy of the open
     scenario (its work packages, nesting, order, methods and overrides, recipes and rules), saved to the project and generated, so its programme is
@@ -25,7 +27,8 @@ export async function saveVersion(name: string): Promise<string | null> {
   return null;
 }
 
-export function Versions() {
+export function Versions({ wp }: { wp: ReturnType<typeof useWorkPackages> }) {
+  const [compare, setCompare] = useState(false);
   const project = useScenarioStore((s) => s.project);
   const drafts = useScenarioStore((s) => s.drafts);
   const loaded = useScenarioStore((s) => s.loaded);
@@ -56,6 +59,8 @@ export function Versions() {
         {names.map((x) => <option key={x} value={x}>{x}</option>)}
       </select>
       <button type="button" className="btn" disabled={busy || working || !loaded} onClick={() => void save()} title="Save what is on screen as a new scenario, with its generated programme, to compare with this one">{working ? 'Saving the version…' : 'Save as new version…'}</button>
+      <button type="button" className="btn" disabled={!loaded || names.length < 2} onClick={() => setCompare(true)} title={names.length < 2 ? 'Save a version first: then compare it with this one' : 'This version beside another: length, activities, volume, and the packages whose method or days differ'}>Compare…</button>
+      {compare && <CompareDialog wp={wp} onClose={() => setCompare(false)} />}
     </span>
   );
 }

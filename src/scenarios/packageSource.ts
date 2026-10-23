@@ -52,7 +52,7 @@ export function recipeDays(rules: ScenarioRules, crewSheet: ScenarioCrew[]) {
       group: 'package', recipes: [{ ...recipe, group: 'package', priority: 0 }], rules, crewSheet, membership: new Map(),
       facts: [{ key: 'package', building: '', level: '', levelNumber: null, type: '', stage: '', zone: '', family: '', volume: q.volume, values: {} }],
     });
-    return plan.activities.map((a) => ({ phase: a.phase, name: a.name, days: a.days ? a.days.max : 1, how: a.days ? a.days.how : a.daysNote ?? 'the generator’s 1 day', crew: a.crew?.label ?? '' }));
+    return plan.activities.map((a) => ({ phase: a.phase, name: a.name, days: a.days ? a.days.max : 1, how: a.days ? a.days.how : a.daysNote ?? 'the generator’s 1 day', crew: a.crew?.label ?? '', ...(a.days ? {} : { unknown: true }) }));
   };
 }
 

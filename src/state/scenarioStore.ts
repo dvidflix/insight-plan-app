@@ -542,6 +542,14 @@ function sentRules(rules: ScenarioRules): ScenarioRules {
   return withBarGroups({ ...synced, recipes: inheritRecipes(synced.recipes ?? [], sets), extraTags: resolveAttachments(synced.extraTags, sets) }, sets);
 }
 
+/** The Update 4D on its way, to cancel. */
+let updating: AbortController | null = null;
+/** Stops waiting for the Update 4D on its way: the programme in 4D stays the one before. (The generator may still finish the run in the background;
+    its result is not loaded.) */
+export function cancelGenerate() {
+  updating?.abort();
+}
+
 export const updateFourD = () =>
   run('Updating 4D…', async () => {
     const { rows, scenario, startDate, loaded, relations, crews, extras, rules, flags } = get();
@@ -563,7 +571,18 @@ export const updateFourD = () =>
       applyWorkItemLinks(built);
     }
     if (!work) applyWorkItemLinks(null);
-    const res = await updateScenario({ ...request(), rules: forGenerator(sendRules(sentRules(rules))), startDate: startDate || null, ...(work ?? {}) });
+    const abort = new AbortController();
+    updating = abort;
+    let res: Awaited<ReturnType<typeof updateScenario>>;
+    try {
+      res = await updateScenario({ ...request(), rules: forGenerator(sendRules(sentRules(rules))), startDate: startDate || null, ...(work ?? {}) }, abort.signal);
+    } catch (e) {
+      if (abort.signal.aborted) { set({ message: { kind: 'warn', text: 'Generate cancelled: the programme in 4D is the one from before.' } }); return; }
+      throw e;
+    } finally {
+      if (updating === abort) updating = null;
+    }
+    if (abort.signal.aborted) { set({ message: { kind: 'warn', text: 'Generate cancelled: the programme in 4D is the one from before.' } }); return; }
     xmlCache.set(`${scenario}|${stem}`, res.xml);
     useWhyStore.getState().set(`${scenarioFileName(stem, scenario!)}.xml`, (res.why as WhyData | null | undefined) ?? null);
     await loadIntoInputs(res.xml, stem, scenario!);

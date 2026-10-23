@@ -8,7 +8,7 @@ import { useG3 } from './useWorkPackages';
 /** Renders nothing: paints Generate 3's packages in their colours on the shared 3D view (the picked package alone, the others pale), turns a click on
     an object into a pick of its package (picking a package that holds others shows all of them), and frames the camera on the page's 3D window `view`. The colours are put back when it closes. */
 
-const PALE = '#d4d8d6';
+export const PALE = '#d4d8d6';
 type Ids = Record<string, number[]>;
 
 export function PackagePreview({ view, packages, contents }: { view: React.RefObject<HTMLElement>; packages: WorkPackage[]; contents: PackageContents }) {

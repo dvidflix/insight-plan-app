@@ -15,6 +15,10 @@ import { IconChevronDown, IconChevronRight, IconDragVert } from '../../icons';
 import { MethodSelect, NumberField, StartSelect, packageAbove } from './Controls';
 import { SpoolDialog } from './Spool';
 import { ExcelButtons } from './ExcelButtons';
+import { PackageListSetup } from './ListSetup';
+import { packageWarnings } from '../../../prs/packageReadiness';
+import { G3_LIST, type usePackageListView } from './useListView';
+import { configFocusProps } from '../../../state/listConfigStore';
 import { packageColors, useG3, useWorkPackages, type G3Step } from './useWorkPackages';
 
 /** Generate 3, the guided way from a model to a programme, in three steps that are the header's tabs: 1 make work packages of the model's objects
@@ -23,6 +27,7 @@ import { packageColors, useG3, useWorkPackages, type G3Step } from './useWorkPac
     timeline on the right; Advanced (Advanced.tsx) slides over the timeline with the settings of the package picked. */
 
 type WP = ReturnType<typeof useWorkPackages>;
+type LV = ReturnType<typeof usePackageListView>;
 type Row = TreeRow<WorkPackage>;
 const n = (v: number, d = 0) => v.toLocaleString(undefined, { maximumFractionDigits: d });
 const sizeText = (q: { count: number; volume: number }) => `${n(q.count)} object${q.count === 1 ? '' : 's'}${q.volume > 0 ? ` · ${n(q.volume, q.volume < 10 ? 1 : 0)} m³` : ''}`;
@@ -176,13 +181,14 @@ function MethodTools({ wp }: { wp: WP }) {
 type Drop = { id: string; where: 'before' | 'after' | 'inside' };
 
 /** The packages as a tree, one row each; what a row shows depends on the step. */
-export function PackageList({ wp }: { wp: WP }) {
+export function PackageList({ wp, lv }: { wp: WP; lv: LV }) {
   const step = useG3((s) => s.step);
   const picked = useG3((s) => s.picked);
   const pick = useG3((s) => s.pick);
   const collapsed = useG3((s) => s.collapsed);
   const toggle = useG3((s) => s.toggle);
-  const rows = useVisibleRows(wp.rows);
+  const unfolded = useVisibleRows(wp.rows);
+  const rows = lv.visible ? unfolded.filter((r) => lv.visible!.has(r.pkg.id)) : unfolded;
   const [drag, setDrag] = useState<{ id: string; over: Drop | null } | null>(null);
   const [setOver, setSetOver] = useState<string | null>(null);
   const holds = (id: string) => (wp.contents.objects.get(id)?.length ?? 0) > 0;
@@ -215,10 +221,11 @@ export function PackageList({ wp }: { wp: WP }) {
   const title = step === 1 ? 'Work packages' : step === 2 ? 'Build order' : 'Methods';
   const works = wp.rows.filter((r) => holds(r.pkg.id)).length;
   return (
-    <div className="g3-list" onDragOver={(e) => { if (outside(e)) e.preventDefault(); }} onDrop={(e) => onDrop(e, null)}>
+    <div className="g3-list" {...configFocusProps(G3_LIST)} onDragOver={(e) => { if (outside(e)) e.preventDefault(); }} onDrop={(e) => onDrop(e, null)}>
+      <PackageListSetup facts={lv.facts} />
       <div className="g3-list__head">
         <h3>{title}</h3>
-        <span className="scn-dim">{wp.packages.length ? `${works} package${works === 1 ? '' : 's'} with objects${wp.packages.length > works ? ` in ${wp.packages.length - works} group${wp.packages.length - works === 1 ? '' : 's'}` : ''}` : ''}{wp.packages.length > 1 ? ' · drag to move or nest' : ''}</span>
+        <span className="scn-dim">{wp.packages.length ? `${works} package${works === 1 ? '' : 's'} with objects${wp.packages.length > works ? ` in ${wp.packages.length - works} group${wp.packages.length - works === 1 ? '' : 's'}` : ''}` : ''}{lv.matched ? ` · ${lv.matched.size} ${lv.matched.size === 1 ? 'matches' : 'match'} the search or filters` : wp.packages.length > 1 ? ' · drag to move or nest' : ''}</span>
         <ExcelButtons wp={wp} />
       </div>
       {wp.packages.length === 0 ? (
@@ -227,6 +234,8 @@ export function PackageList({ wp }: { wp: WP }) {
           <span>Press <i>Auto-group by storey and type</i>: every kind of object on every storey becomes a package, bottom up. Or <i>Spool from properties</i> on the left for packages inside packages, or drag one of your search sets here.</span>
           <button type="button" className="btn primary" disabled={!wp.objects.length} onClick={() => wp.save(groupByStoreyAndClass(wp.objects, packageColors))}>Auto-group by storey and type</button>
         </div>
+      ) : lv.visible && rows.length === 0 ? (
+        <div className="g3-empty"><b>No package matches</b><span>Nothing matches the search box or the filters (List setup, N). Clear them to see every package.</span></div>
       ) : rows.map((r) => {
         const p = r.pkg;
         const own = wp.contents.objects.get(p.id) ?? [];
@@ -243,7 +252,7 @@ export function PackageList({ wp }: { wp: WP }) {
         return (
           <Fragment key={p.id}>
             {step === 2 && holds(p.id) && packageAbove(wp, p.id) && <div className="g3-link" style={{ marginLeft: 18 + r.depth * 20 }}><span className="g3-link__arrow" aria-hidden="true">↓</span><span className="scn-dim">starts</span><StartSelect wp={wp} p={p} /></div>}
-            <div className={`g3-pkg${isGroup ? ' g3-pkg--group' : ''}${isPicked ? ' is-picked' : ''}${dropCls}${setOver === p.id ? ' is-drop-in' : ''}${empty ? ' is-empty' : ''}`}
+            <div className={`g3-pkg${isGroup ? ' g3-pkg--group' : ''}${lv.matched && !lv.matched.has(p.id) ? ' is-context' : ''}${isPicked ? ' is-picked' : ''}${dropCls}${setOver === p.id ? ' is-drop-in' : ''}${empty ? ' is-empty' : ''}`}
               style={{ marginLeft: r.depth * 20 }}
               onClick={() => pick(isPicked ? null : p.id)}
               draggable={step !== 3}
@@ -258,7 +267,7 @@ export function PackageList({ wp }: { wp: WP }) {
               {isGroup
                 ? <button type="button" className="g3-pkg__fold" aria-expanded={!shut} aria-label={shut ? 'Show the packages inside' : 'Fold the packages inside'} title={shut ? `Show the ${r.children} packages inside` : 'Fold the packages inside'} onClick={(e) => { e.stopPropagation(); toggle(p.id); }}>{shut ? <IconChevronRight /> : <IconChevronDown />}</button>
                 : step !== 3 ? <span className="g3-pkg__grip" aria-hidden="true"><IconDragVert /></span> : <span className="g3-pkg__fold" aria-hidden="true" />}
-              <span className="g3-pkg__strip" style={{ background: p.color }} aria-hidden="true" />
+              <span className="g3-pkg__strip" style={{ background: lv.colorOf(p.id) }} aria-hidden="true" />
               <div className="g3-pkg__main">
                 <div className="g3-pkg__line">
                   <span className="g3-pkg__code">{r.code}</span>
@@ -284,6 +293,9 @@ export function PackageList({ wp }: { wp: WP }) {
                       <NumberField value={p.totalDays} placeholder={n(m.estimate, 1)} label="Days for this package" onChange={(v) => wp.patch(p.id, { totalDays: v, ...(v ? { days: undefined } : {}) })} /> days
                     </label>
                   </div>
+                )}
+                {!isGroup && packageWarnings(p, own, m).length > 0 && (
+                  <div className="g3-pkg__warns">{packageWarnings(p, own, m).map((w) => <span key={w.text} className="scn-chip scn-chip--warn" title={w.tip}>{w.text}</span>)}</div>
                 )}
               </div>
               {step === 1 && (
@@ -336,10 +348,11 @@ function PackageMenu({ wp, r }: { wp: WP; r: Row }) {
 
 /** A rough timeline of the packages before Generate: a bar for each package with objects (its method's days, placed by its link) and a summary bar
     over each package that holds others. */
-export function Timeline({ wp }: { wp: WP }) {
+export function Timeline({ wp, lv }: { wp: WP; lv: LV }) {
   const picked = useG3((s) => s.picked);
   const pick = useG3((s) => s.pick);
-  const rows = useVisibleRows(wp.rows);
+  const unfolded = useVisibleRows(wp.rows);
+  const rows = lv.visible ? unfolded.filter((r) => lv.visible!.has(r.pkg.id)) : unfolded;
   const end = Math.max(1, ...[...wp.timeline.values()].map((t) => t.finish));
   const step = end <= 20 ? 5 : end <= 60 ? 10 : end <= 200 ? 25 : 50;
   const ticks = Array.from({ length: Math.floor(end / step) + 1 }, (_, i) => i * step);
@@ -359,7 +372,7 @@ export function Timeline({ wp }: { wp: WP }) {
                 <button type="button" key={p.id} className={`g3-time__row${picked === p.id ? ' is-picked' : ''}${shown && !shown.has(p.id) ? ' is-faded' : ''}`} onClick={() => pick(picked === p.id ? null : p.id)} title={t ? `${r.code} ${p.name}: day ${n(t.start, 1)} to day ${n(t.finish, 1)}` : `${r.code} ${p.name}: no objects, no bar`}>
                   <span className="g3-time__code" style={{ paddingLeft: r.depth * 8 }}>{r.code}</span>
                   <span className="g3-time__track">
-                    {t && <span className={`g3-time__bar${group ? ' g3-time__bar--sum' : ''}`} style={{ left: `${(t.start / end) * 100}%`, width: `${Math.max(0.8, ((t.finish - t.start) / end) * 100)}%`, ...(group ? {} : { background: p.color }) }} />}
+                    {t && <span className={`g3-time__bar${group ? ' g3-time__bar--sum' : ''}`} style={{ left: `${(t.start / end) * 100}%`, width: `${Math.max(0.8, ((t.finish - t.start) / end) * 100)}%`, ...(group ? {} : { background: lv.colorOf(p.id) }) }} />}
                   </span>
                 </button>
               );

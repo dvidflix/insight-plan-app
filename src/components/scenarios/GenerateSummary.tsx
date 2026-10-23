@@ -139,7 +139,7 @@ export function ResultSummary() {
 
 /** The one line beside Generate on the Work breakdown tab: whether the model can be generated, what the programme came to and whether it is out of
     date, and any search set names used twice. Each part says more in its tooltip; the model check's details are on tab 1. */
-export function GenerateStatus() {
+export function GenerateStatus({ noCheck = false }: { /** Leave the model check out (Generate 3 has its own readiness, and the check's details are on classic Generate's tab 1). */ noCheck?: boolean } = {}) {
   const { stem, scenario, stale, generation, busy, sum } = useResult();
   const { check } = useModelCheck(stem);
   const names = useSameNames();
@@ -149,7 +149,7 @@ export function GenerateStatus() {
   const peaks = sum ? sum.peaks.map((p) => `${p.group} peak${p.unit ? ` (${p.unit})` : ''}, ${p.name}: ${p.value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`) : [];
   return (
     <span className="gen-status" role="status">
-      {verdict && (check!.verdict !== 'ready' || !sum) && (
+      {!noCheck && verdict && (check!.verdict !== 'ready' || !sum) && (
         <button type="button" className={`scn-chip scn-chip--${verdict.cls === 'ok' ? 'ok' : 'warn'}`} onClick={() => setTab('scenario')} title={`Model check: ${verdict.label}. Click for what it found (tab 1)`}>{verdict.label}</button>
       )}
       {busy

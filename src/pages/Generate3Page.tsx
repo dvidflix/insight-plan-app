@@ -1,6 +1,6 @@
-import { useRef, type ReactNode } from 'react';
+import { useMemo, useRef, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { updateFourD, useScenarioStore } from '../state/scenarioStore';
+import { cancelGenerate, updateFourD, useScenarioStore } from '../state/scenarioStore';
 import { useModelsStore } from '../state/modelsStore';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
 import { useScenarioView } from '../scenarios/useScenarioView';
@@ -8,13 +8,15 @@ import { ScenarioNotice, ScenarioPanelBody, ScenarioSync } from '../components/s
 import { GenerateStatus } from '../components/scenarios/GenerateSummary';
 import { ModelsGanttPanel } from '../components/ModelConfigPanel';
 import { ListSetupButton } from '../components/ViewPicker';
-import { PackagePreview } from '../components/scenarios/Generate3/PackagePreview';
+import { PALE, PackagePreview } from '../components/scenarios/Generate3/PackagePreview';
 import { PackageList, STEPS, StepTools, Timeline } from '../components/scenarios/Generate3/Steps';
 import { AdvancedPanel } from '../components/scenarios/Generate3/Advanced';
 import { ObjectOrderDialog } from '../components/scenarios/Generate3/ObjectOrder';
 import { RecipeEditorDialog } from '../components/scenarios/Generate3/RecipeEditor';
 import { Versions } from '../components/scenarios/Generate3/Versions';
+import { ReadinessChip } from '../components/scenarios/Generate3/Readiness';
 import { useG3, useWorkPackages } from '../components/scenarios/Generate3/useWorkPackages';
+import { usePackageListView } from '../components/scenarios/Generate3/useListView';
 
 /** Generate 3: a schedule from the model in three guided steps (the header's tabs): work packages, sequence, methods & Generate. The model is on the
     left (the shared 3D view shows through, each package in its colour) with the step's tools under it, the packages in the middle, a rough timeline on
@@ -50,9 +52,15 @@ function Prerequisite() {
 
 function Builder() {
   const wp = useWorkPackages();
+  const lv = usePackageListView(wp);
+  // 3D draws each package in its list colour (colour rules from List setup), and the ones the search or filters leave out pale.
+  const { matched, colors } = lv;
+  const shown = useMemo(() => wp.packages.map((p) => ({ ...p, color: matched && !matched.has(p.id) ? PALE : colors.get(p.id) ?? p.color })), [wp.packages, matched, colors]);
   const step = useG3((s) => s.step);
   const setStep = useG3((s) => s.setStep);
-  const busy = useScenarioStore((s) => !!s.busy);
+  const busyText = useScenarioStore((s) => s.busy);
+  const busy = !!busyText;
+  const generating = busyText === 'Updating 4D…';
   const advanced = useG3((s) => s.advanced);
   const setAdvanced = useG3((s) => s.setAdvanced);
   const viewRef = useRef<HTMLDivElement>(null);
@@ -62,11 +70,11 @@ function Builder() {
       <ScenarioNotice />
       <div className="g3-cols">
         <section className="g3-left" aria-label="Model">
-          <div className="g3-view" ref={viewRef}><PackagePreview view={viewRef} packages={wp.packages} contents={wp.contents} /></div>
+          <div className="g3-view" ref={viewRef}><PackagePreview view={viewRef} packages={shown} contents={wp.contents} /></div>
           <StepTools wp={wp} />
         </section>
-        <section className="g3-centre" aria-label="Work packages"><PackageList wp={wp} /></section>
-        <section className="g3-right" aria-label="Timeline preview"><Timeline wp={wp} /></section>
+        <section className="g3-centre" aria-label="Work packages"><PackageList wp={wp} lv={lv} /></section>
+        <section className="g3-right" aria-label="Timeline preview"><Timeline wp={wp} lv={lv} /></section>
         <AdvancedPanel wp={wp} />
       </div>
       <ObjectOrderDialog wp={wp} />
@@ -74,10 +82,11 @@ function Builder() {
       <footer className="g3-foot">
         {step > 1 && <button type="button" className="btn" onClick={() => setStep((step - 1) as 1 | 2)}>‹ {STEPS[step - 2].label.replace(/^\d+ - /, '')}</button>}
         {step < 3 && <button type="button" className="btn" disabled={!wp.packages.length} onClick={() => setStep((step + 1) as 2 | 3)} title={wp.packages.length ? '' : 'Make work packages first'}>Next: {STEPS[step].label.replace(/^\d+ - /, '')} ›</button>}
-        <Versions />
-        <span className="g3-foot__status"><GenerateStatus /></span>
+        <Versions wp={wp} />
+        <span className="g3-foot__status"><ReadinessChip wp={wp} /><GenerateStatus noCheck /></span>
         <button type="button" className="btn primary g3-generate" disabled={busy || holding === 0} onClick={() => void updateFourD()}
-          title={holding ? `Make the schedule from the ${holding} work packages and load it into 4D and Programmes` : 'Make work packages first (step 1)'}>{busy ? 'Generating…' : 'Generate schedule'}</button>
+          title={holding ? `Make the schedule from the ${holding} work packages and load it into 4D and Programmes` : 'Make work packages first (step 1)'}>{generating ? 'Generating…' : busy ? `${busyText}` : 'Generate schedule'}</button>
+        {generating && <button type="button" className="btn" onClick={cancelGenerate} title="Stop waiting: the programme in 4D stays the one from before">Cancel</button>}
         <button type="button" className={`btn g3-foot__adv${advanced ? ' is-on' : ''}`} aria-pressed={advanced} onClick={() => setAdvanced(!advanced)} title={advanced ? 'Close Advanced' : 'Open Advanced: the settings of the package picked (method, days, crew, when it starts, extras), beside the packages'}>Advanced</button>
       </footer>
     </div>

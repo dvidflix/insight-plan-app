@@ -14800,6 +14800,18 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-pkg__fold svg { width: 14px; height: 14px; }
 .g3-pkg.is-drop-in { background: rgb(var(--accent-rgb) / 0.14); }
 .g3-pkg.is-empty { opacity: 0.6; }
+/* Holds a package that matches the search or filters, but does not match itself: kept for the tree, dimmed. */
+.g3-pkg.is-context { opacity: 0.55; }
+.g3-pkg__warns { display: flex; flex-wrap: wrap; gap: 4px; }
+/* Model readiness: the chip beside Generate and its findings. */
+.g3-ready--bad { border-color: var(--danger); color: var(--danger); }
+.g3-ready__list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 10px; }
+.g3-ready__list li { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-left: 3px solid var(--warn); background: var(--bg-soft); font-size: 13px; }
+.g3-ready__list li.is-block { border-left-color: var(--danger); }
+.g3-ready__list .g3-adv__why { grid-column: auto; }
+.g3-ready__acts { display: flex; gap: var(--hit-gap, 6px); }
+.g3-foot__status { gap: 8px; align-items: center; }
+.g3-cmp__differs td { background: rgb(var(--accent-rgb) / 0.08); }
 .g3-pkg[draggable="true"] { cursor: grab; }
 .g3-pkg__grip { display: inline-flex; align-items: center; padding-left: 4px; color: var(--text-dim); }
 .g3-pkg__grip svg { width: 16px; height: 16px; }
