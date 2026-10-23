@@ -25,7 +25,7 @@ export function parseModules(value: unknown): LicenceModule[] {
 
 /** Whether the licensed modules cover a page. Inputs, Help and the rest are open to every licence. */
 export function pageLicensed(page: string, modules: readonly LicenceModule[]): boolean {
-  const needs: LicenceModule[] = page === 'model' ? ['models'] : page === 'schedule' ? ['programmes'] : page === 'sequence' || page === 'scenarios' || page === 'generate2' ? ALL_MODULES : [];
+  const needs: LicenceModule[] = page === 'model' ? ['models'] : page === 'schedule' ? ['programmes'] : page === 'sequence' || page === 'scenarios' || page === 'generate3' ? ALL_MODULES : [];
   return needs.every((m) => modules.includes(m));
 }
 

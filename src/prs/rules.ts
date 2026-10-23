@@ -1,7 +1,6 @@
 import { normalizeRecipes, type Recipe } from './recipes';
 import { normalizeBreakdown, type BreakdownDefinition } from './workBreakdown';
-import { normalizeWbsTree, type WbsTree } from './wbsTree';
-import { normalizeItemOverrides, type ItemOverride } from './activityPlan';
+import { normalizePackages, type WorkPackage } from './workPackages';
 
 /** A scenario's programme rules, as the Rules panel edits them and the generator reads them
     (scenario-engine/core/rules.py, core/rule_logic.py; the format is described in docs/programme-rules).
@@ -435,10 +434,8 @@ export interface ScenarioRules {
   extraTags: Record<string, ExtraTag>;
   /** The work breakdown as grouping levels (prs/workBreakdown.ts): when a level makes the group of the work item, the generator is given work items made from the objects, not the pours. */
   breakdown?: BreakdownDefinition;
-  /** Generate 2's work breakdown tree (prs/wbsTree.ts): the search sets in nodes. Its sets in tree order are the steps; its nodes are summary bars. */
-  wbsTree?: WbsTree;
-  /** Generate 2's changes to one work item, by its set's name: its recipe, and per activity a crew and days (prs/activityPlan.ts). Sent as recipes for the set. */
-  itemOverrides?: Record<string, ItemOverride>;
+  /** Generate 3's work packages (prs/workPackages.ts), in build order. With packages, Update 4D builds the programme from them. */
+  packages?: WorkPackage[];
 }
 
 /** The one empty set of rules (same object each time, so "unchanged" is a plain comparison). */
@@ -481,8 +478,7 @@ export function normalizeRules(raw: unknown): ScenarioRules {
     limits: arr<LimitRow>(r.limits).filter((l) => typeof l.phase === 'string' && l.phase.trim() !== '').map((l) => ({ ...l, id: l.id || `${l.group ? `${l.group}|` : ''}${l.phase}` })),
     extraTags: r.extraTags && typeof r.extraTags === 'object' && !Array.isArray(r.extraTags) ? { ...r.extraTags } : {},
     ...(normalizeBreakdown(r.breakdown) ? { breakdown: normalizeBreakdown(r.breakdown) } : {}),
-    ...(normalizeWbsTree(r.wbsTree) ? { wbsTree: normalizeWbsTree(r.wbsTree) } : {}),
-    ...(normalizeItemOverrides(r.itemOverrides) ? { itemOverrides: normalizeItemOverrides(r.itemOverrides) } : {}),
+    ...(normalizePackages(r.packages) ? { packages: normalizePackages(r.packages) } : {}),
   };
   return isEmptyRules(out) ? NO_RULES : out;
 }
@@ -502,8 +498,7 @@ export const isEmptyRules = (r: ScenarioRules): boolean =>
   (r.parameters ?? []).length === 0 &&
   (r.limits ?? []).length === 0 &&
   !(r.breakdown?.levels.length) &&
-  !(r.wbsTree?.children.length) &&
-  !Object.keys(r.itemOverrides ?? {}).length &&
+  !(r.packages?.length) &&
   Object.keys(r.extraTags).length === 0;
 
 export const totalRules = (r: ScenarioRules): number =>

@@ -65,13 +65,10 @@ export function useShownGenerateTab(): GenerateTab {
 
 /** The editor to show on the shown tab: the chosen one if the tab holds it, else the tab's first. */
 export function useShownAdvancedTab(): AdvancedTab {
-  return partOf(useShownGenerateTab(), useGenerateTab((s) => s.advanced));
-}
-
-/** The editor a tab shows: the chosen one if the tab holds it, else the tab's first (Generate 2 shows the same tabs). */
-export function partOf(tab: GenerateTab, advanced: AdvancedTab): AdvancedTab {
+  const tab = useShownGenerateTab();
+  const advanced = useGenerateTab((s) => s.advanced) as string;
   const parts = GENERATE_TABS.find((t) => t.id === tab)?.parts ?? ['recipes'];
-  return parts.includes(advanced) ? advanced : parts[0];
+  return (parts.includes(advanced as AdvancedTab) ? advanced : parts[0]) as AdvancedTab;
 }
 
 export function GenerateTabs() {

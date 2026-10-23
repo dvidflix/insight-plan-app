@@ -1117,6 +1117,11 @@ export class ViewerEngine {
     this.gridGroups.set(modelId, group);
   }
 
+  /** The elevation of each of the model's building storeys, by name (null when the IFC leaves it out; empty before the storeys are read). */
+  getStoreyElevations(modelId: string): Map<string, number | null> {
+    return new Map((this.storeyData.get(modelId) ?? []).map((s) => [s.name, s.elevation]));
+  }
+
   /** The model's building storeys with the elements under each, in spatial-tree order. */
   getStoreys(modelId: string): { name: string; ids: number[] }[] {
     const index = this.indexes.get(modelId);

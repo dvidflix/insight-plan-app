@@ -5,8 +5,8 @@ import type { CrewTemplate, ParameterRow, RateRow, ScenarioRules, When } from '.
 import type { ScenarioCrew } from '../scenarios/api';
 import { evaluateFormula } from '../schedule/durationFormula';
 
-/** What a work item (a search set) will be generated with, activity by activity, and why: Generate 2 shows it next to the work item, so a planner sees
-    the crew and the days each activity gets without opening Recipes, Labour or Parameters. It follows the generator's own order
+/** What a work item will be generated with by a project recipe, activity by activity, and why (Generate 3 shows it as a work package's method
+    preview when the method is one of the project's recipes). It follows the generator's own order
     (scenario-engine/core/rules.py, resources.py, activity_generator.py):
 
     - the activities: the chain recipe that fits the objects best (highest priority, then the earlier recipe); none: the generator's own;
@@ -16,8 +16,8 @@ import { evaluateFormula } from '../schedule/durationFormula';
       days (a recipe task, a days rate, a duration row), else the generator's 1 day.
 
     The days are worked out per object, so a work item shows the range over its objects. A value the generator works out from the model's geometry
-    (footprint, side faces) cannot be known before Generate: the row says so. Overrides are kept per work item in `rules.itemOverrides` and reach the
-    generator as recipes for the set (`withItemOverrides`), so nothing new is asked of it. Nothing here knows what the objects or activities are called. */
+    (footprint, side faces) cannot be known before Generate: the row says so. An override (a chosen recipe, a crew, days) reaches the generator as
+    recipes for the group (`withItemOverrides`), so nothing new is asked of it. Nothing here knows what the objects or activities are called. */
 
 /** Changes to one work item (by its set's name): the recipe it is built with, and per activity a named crew and fixed days. */
 export interface ItemOverride {
@@ -61,7 +61,9 @@ export interface PlanInput {
   group: string;
   /** The recipes as the generator gets them: folder recipes already copied to their sets (prs/recipeInheritance.ts). */
   recipes: Recipe[];
-  rules: Pick<ScenarioRules, 'crews' | 'crewTemplates' | 'parameters' | 'rates' | 'limits' | 'durations' | 'productivity' | 'rebar' | 'resourcePools' | 'itemOverrides'>;
+  rules: Pick<ScenarioRules, 'crews' | 'crewTemplates' | 'parameters' | 'rates' | 'limits' | 'durations' | 'productivity' | 'rebar' | 'resourcePools'>;
+  /** The work item's override, if any. */
+  override?: ItemOverride;
   crewSheet: ScenarioCrew[];
   /** The objects of the set (the pour table's rows of it). */
   facts: PourFact[];
@@ -76,10 +78,6 @@ const isChain = (r: Recipe) => r.enabled !== false && r.chain !== false;
 const FOLDER_COPY = ' @ ';
 
 export const OVERRIDE_PRIORITY = 1000;
-
-/** The overrides of a set ({} for none). */
-export const overrideOf = (rules: Pick<ScenarioRules, 'itemOverrides'>, group: string): ItemOverride =>
-  Object.entries(rules.itemOverrides ?? {}).find(([k]) => norm(k) === norm(group))?.[1] ?? {};
 
 /** Where a recipe came from, for a set: its own, a folder's (copied as "<id> @ <set>"), or one for every object. */
 function recipeSource(r: Recipe, group: string): Source {
@@ -235,7 +233,7 @@ function limitOf(input: PlanInput, phase: string, name: string): string {
 
 /** The plan of a work item. */
 export function planWorkItem(input: PlanInput): WorkItemPlan {
-  const o = overrideOf(input.rules, input.group);
+  const o = input.override ?? {};
   const recipes = withOverride(input.recipes, input.group, o);
   const objects: (PourFact | null)[] = input.facts.length ? input.facts : [null];
   // The recipe of each object: the plan is the one most objects get; the others are named.
@@ -300,38 +298,6 @@ export const daysText = (d: { min: number; max: number }): string => {
   return d.min === d.max ? `${f(d.min)} d` : `${f(d.min)}–${f(d.max)} d`;
 };
 
-/** The rules with one work item's override changed (an empty override goes). */
-export function withItemOverride<R extends Pick<ScenarioRules, 'itemOverrides'>>(rules: R, group: string, change: (o: ItemOverride) => ItemOverride): R {
-  const all = { ...(rules.itemOverrides ?? {}) };
-  const key = Object.keys(all).find((k) => norm(k) === norm(group)) ?? group;
-  const next = change(all[key] ?? {});
-  const tasks = Object.fromEntries(Object.entries(next.tasks ?? {}).map(([p, t]) => [p, Object.fromEntries(Object.entries(t).filter(([, v]) => v !== undefined && v !== ''))] as const).filter(([, t]) => Object.keys(t).length > 0));
-  const clean: ItemOverride = { ...(next.recipe ? { recipe: next.recipe } : {}), ...(Object.keys(tasks).length ? { tasks } : {}) };
-  if (Object.keys(clean).length) all[key] = clean; else delete all[key];
-  const { itemOverrides: _old, ...rest } = rules;
-  return (Object.keys(all).length ? { ...rest, itemOverrides: all } : rest) as R;
-}
-
-/** Cleans saved overrides. */
-export function normalizeItemOverrides(raw: unknown): Record<string, ItemOverride> | undefined {
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
-  const out: Record<string, ItemOverride> = {};
-  for (const [group, v] of Object.entries(raw as Record<string, unknown>)) {
-    if (!group.trim() || !v || typeof v !== 'object') continue;
-    const o = v as ItemOverride;
-    const tasks: Record<string, { crew?: string; days?: number }> = {};
-    for (const [phase, t] of Object.entries(o.tasks ?? {})) {
-      if (!phase.trim() || !t || typeof t !== 'object') continue;
-      const crew = typeof t.crew === 'string' && t.crew.trim() ? t.crew.trim() : undefined;
-      const days = num(t.days);
-      if (crew || (days !== null && days >= 0)) tasks[phase] = { ...(crew ? { crew } : {}), ...(days !== null && days >= 0 ? { days } : {}) };
-    }
-    const recipe = typeof o.recipe === 'string' && o.recipe.trim() ? o.recipe.trim() : undefined;
-    if (recipe || Object.keys(tasks).length) out[group] = { ...(recipe ? { recipe } : {}), ...(Object.keys(tasks).length ? { tasks } : {}) };
-  }
-  return Object.keys(out).length ? out : undefined;
-}
-
 /** The recipes as the generator should read the overrides: a work item's chosen recipe becomes a copy for its set that beats every other, and its
     crews and days a values-only recipe for the set whose tasks beat every other value (days as a formula, since a formula beats fixed days and rates).
     The same list when there is no override. */
@@ -345,17 +311,4 @@ export function withItemOverrides(recipes: Recipe[], overrides: Record<string, I
     if (tasks.length) out.push({ id: `Overrides for ${group}`, group, chain: false, tasks });
   }
   return out;
-}
-
-/** The rules with the most of one activity of a work item that may run at once: a limit for the set and the activity (empty: the row goes). */
-export function withItemLimit<R extends Pick<ScenarioRules, 'limits'>>(rules: R, group: string, phase: string, max: string): R {
-  const at = rules.limits.findIndex((l) => l.group && norm(l.group) === norm(group) && norm(l.phase) === norm(phase));
-  const value = max.trim();
-  const limits = [...rules.limits];
-  if (!value) { if (at >= 0) limits.splice(at, 1); }
-  else {
-    const row = { ...(at >= 0 ? limits[at] : { id: `${group}|${phase}` }), phase, group, max: Number.isFinite(Number(value)) ? Number(value) : value };
-    if (at >= 0) limits[at] = row; else limits.push(row);
-  }
-  return { ...rules, limits };
 }

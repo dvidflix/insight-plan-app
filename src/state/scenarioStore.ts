@@ -48,8 +48,6 @@ import { forGenerator } from '../prs/recipeRules';
 import { inheritRecipes, inheritingSetNames } from '../prs/recipeInheritance';
 import { attachedSetNames, resolveAttachments } from '../prs/extraAttach';
 import { barSetNames, withBarGroups } from '../prs/summaryBars';
-import { withNodeBars } from '../prs/wbsTree';
-import { withItemOverrides } from '../prs/activityPlan';
 import { useSearchSetsStore } from './searchSetsStore';
 import { groupsWithSets, uniqueGroups } from '../prs/groupSets';
 import { recipeFolder } from './recipeFolderStore';
@@ -519,6 +517,12 @@ useScenarioStore.subscribe((s, prev) => {
 let breakdownSource: ((definition: BreakdownDefinition) => BreakdownResult) | null = null;
 export const setBreakdownSource = (fn: typeof breakdownSource) => { breakdownSource = fn; };
 
+/** Generate 3's work packages as the request: the work items, their objects (for the 4D links) and the rules as the generator should read them
+    (prs/workPackages.ts). Set by the app where the 3D models are (it needs their objects). */
+type PackagesBuilt = { workItems: unknown[]; members: { guids: string[]; item: { id: string } }[]; rules: (rules: ScenarioRules) => ScenarioRules };
+let packageSource: ((rules: ScenarioRules, building: string) => PackagesBuilt) | null = null;
+export const setPackageSource = (fn: typeof packageSource) => { packageSource = fn; };
+
 /** The link group that links a work item's activities (their "Work Item" field) to the item's objects: kept up to date, added once. */
 export const WORK_ITEM_GROUP_ID = 'work-items';
 export function applyWorkItemLinks(built: BreakdownResult | null) {
@@ -534,9 +538,8 @@ export function applyWorkItemLinks(built: BreakdownResult | null) {
 /** The rules as sent to the generator: every set it needs is a group, folder recipes are copied to their sets, and extras attached to sets know them. */
 function sentRules(rules: ScenarioRules): ScenarioRules {
   const sets = useSearchSetsStore.getState().sets;
-  // Generate 2's tree nodes are summary bars over their sets, and its work item overrides are recipes for the set; neither is sent as it is kept.
-  const { itemOverrides, ...synced } = withNodeBars(withLibrary(rules));
-  return withBarGroups({ ...synced, recipes: withItemOverrides(inheritRecipes(synced.recipes ?? [], sets), itemOverrides), extraTags: resolveAttachments(synced.extraTags, sets) }, sets);
+  const synced = withLibrary(rules);
+  return withBarGroups({ ...synced, recipes: inheritRecipes(synced.recipes ?? [], sets), extraTags: resolveAttachments(synced.extraTags, sets) }, sets);
 }
 
 export const updateFourD = () =>
@@ -545,14 +548,22 @@ export const updateFourD = () =>
     const stem = loaded!.stem;
     // Grouping levels with a level that is the work item's group: the programme is made from the work items they give, not from the pours.
     let work: { workItems: unknown[]; workSequence: { GUID: string; Index: number }[] } | null = null;
-    if (rules.breakdown && makesItems(rules.breakdown)) {
+    // Work packages (Generate 3) come first: the programme is made from them, their order and their methods.
+    let sendRules = (r: ScenarioRules) => r;
+    if (rules.packages?.length) {
+      const built = packageSource ? packageSource(rules, stem) : null;
+      if (!built || built.workItems.length === 0) throw new Error('The work packages hold no objects of the loaded model. Load the model in Models, or make the packages again (Generate 3, step 1).');
+      work = { workItems: built.workItems, workSequence: [] };
+      sendRules = built.rules;
+      applyWorkItemLinks({ leaves: built.members } as unknown as BreakdownResult);
+    } else if (rules.breakdown && makesItems(rules.breakdown)) {
       const built = breakdownSource ? breakdownSource(rules.breakdown) : null;
       if (!built || built.leaves.length === 0) throw new Error('The grouping levels (Work breakdown) give no work items. Check that a model is loaded and that each level names a property the objects have, or a folder with sets.');
       work = { workItems: built.leaves.map((l) => l.item), workSequence: built.sequence };
       applyWorkItemLinks(built);
     }
     if (!work) applyWorkItemLinks(null);
-    const res = await updateScenario({ ...request(), rules: forGenerator(sentRules(rules)), startDate: startDate || null, ...(work ?? {}) });
+    const res = await updateScenario({ ...request(), rules: forGenerator(sendRules(sentRules(rules))), startDate: startDate || null, ...(work ?? {}) });
     xmlCache.set(`${scenario}|${stem}`, res.xml);
     useWhyStore.getState().set(`${scenarioFileName(stem, scenario!)}.xml`, (res.why as WhyData | null | undefined) ?? null);
     await loadIntoInputs(res.xml, stem, scenario!);

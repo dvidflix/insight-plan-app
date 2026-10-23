@@ -1,0 +1,92 @@
+import { useRef, type ReactNode } from 'react';
+import { createPortal } from 'react-dom';
+import { updateFourD, useScenarioStore } from '../state/scenarioStore';
+import { useModelsStore } from '../state/modelsStore';
+import { useHeaderSlotStore } from '../state/headerSlotStore';
+import { useScenarioView } from '../scenarios/useScenarioView';
+import { ScenarioNotice, ScenarioPanelBody, ScenarioSync } from '../components/scenarios/ScenarioParts';
+import { GenerateStatus } from '../components/scenarios/GenerateSummary';
+import { ModelsGanttPanel } from '../components/ModelConfigPanel';
+import { ListSetupButton } from '../components/ViewPicker';
+import { PackagePreview } from '../components/scenarios/Generate3/PackagePreview';
+import { PackageList, STEPS, StepTools, Timeline } from '../components/scenarios/Generate3/Steps';
+import { useG3, useWorkPackages } from '../components/scenarios/Generate3/useWorkPackages';
+
+/** Generate 3: a schedule from the model in three guided steps (the header's tabs): work packages, sequence, methods & Generate. The model is on the
+    left (the shared 3D view shows through, each package in its colour) with the step's tools under it, the packages in the middle, a rough timeline on
+    the right, and Generate always at the bottom. Recipes, crews, rates and rules are not shown: each package's method stands for them. The full
+    editors are in the classic Generate view (the Advanced link). The packages are saved with the scenario, and Update 4D builds from them. */
+
+const goTo = (page: string) => window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: page }));
+
+function Prerequisite() {
+  const { ready } = useScenarioView();
+  const models = useModelsStore((s) => s.models.length);
+  if (!models) {
+    return (
+      <div className="g3-first">
+        <h2>Start with the model</h2>
+        <p className="scn-dim hint">Generate 3 makes a schedule from the objects of a 3D model. Load the model first.</p>
+        <button type="button" className="btn primary" onClick={() => goTo('model')}>Go to Models</button>
+      </div>
+    );
+  }
+  if (!ready) {
+    return (
+      <div className="g3-first g3-first--wide">
+        <h2>Open a scenario</h2>
+        <p className="scn-dim hint">The work packages, their order and their methods are saved with a scenario. Open one, or make a new one, then come back here.</p>
+        <div className="scn-panel scn-panel__body"><ScenarioPanelBody tab="scenario" /></div>
+      </div>
+    );
+  }
+  return null;
+}
+
+function Builder() {
+  const wp = useWorkPackages();
+  const step = useG3((s) => s.step);
+  const setStep = useG3((s) => s.setStep);
+  const busy = useScenarioStore((s) => !!s.busy);
+  const viewRef = useRef<HTMLDivElement>(null);
+  const holding = wp.packages.filter((p) => (wp.contents.objects.get(p.id)?.length ?? 0) > 0).length;
+  return (
+    <div className="g3">
+      <ScenarioNotice />
+      <div className="g3-cols">
+        <section className="g3-left" aria-label="Model">
+          <div className="g3-view" ref={viewRef}><PackagePreview view={viewRef} packages={wp.packages} contents={wp.contents} /></div>
+          <StepTools wp={wp} />
+        </section>
+        <section className="g3-centre" aria-label="Work packages"><PackageList wp={wp} /></section>
+        <section className="g3-right" aria-label="Timeline preview"><Timeline wp={wp} /></section>
+      </div>
+      <footer className="g3-foot">
+        {step > 1 && <button type="button" className="btn" onClick={() => setStep((step - 1) as 1 | 2)}>‹ {STEPS[step - 2].label.replace(/^\d+ - /, '')}</button>}
+        {step < 3 && <button type="button" className="btn" disabled={!wp.packages.length} onClick={() => setStep((step + 1) as 2 | 3)} title={wp.packages.length ? '' : 'Make work packages first'}>Next: {STEPS[step].label.replace(/^\d+ - /, '')} ›</button>}
+        <span className="g3-foot__status"><GenerateStatus /></span>
+        <button type="button" className="btn primary g3-generate" disabled={busy || holding === 0} onClick={() => void updateFourD()}
+          title={holding ? `Make the schedule from the ${holding} work packages and load it into 4D and Programmes` : 'Make work packages first (step 1)'}>{busy ? 'Generating…' : 'Generate schedule'}</button>
+        <button type="button" className="link-btn g3-foot__adv" onClick={() => goTo('scenarios')} title="The full editors (recipes, crews and rates, parameters, rules) are in the classic Generate view. Rarely needed: the methods here stand for them">Advanced</button>
+      </footer>
+    </div>
+  );
+}
+
+export function Generate3Page({ picker }: { /** The page picker with the search box and the step tabs: the page's own header. */ picker?: ReactNode }) {
+  const { ready } = useScenarioView();
+  const models = useModelsStore((s) => s.models.length);
+  const building = ready && models > 0;
+  // The header (page picker, search, steps) runs the full width in the viewer's header slot: the docks start below it.
+  const headerSlot = useHeaderSlotStore((h) => h.el);
+  const bar = <div className="filterbar schedule-toolbar gen-head"><div className="schedule-toolbar__left">{picker}</div><div className="schedule-toolbar__right"><ListSetupButton always /></div></div>;
+  return (
+    <div className={`scn-page gen-page g3-page${building ? ' gen-page--preview' : ''}`}>
+      <ScenarioSync />
+      {/* The Gantt as a dock panel here too, so choosing it in the Navigation Bar or the Panels menu docks it in this view. */}
+      <ModelsGanttPanel />
+      {headerSlot ? createPortal(bar, headerSlot) : bar}
+      <main className="gen-main g3-main">{building ? <Builder /> : <Prerequisite />}</main>
+    </div>
+  );
+}

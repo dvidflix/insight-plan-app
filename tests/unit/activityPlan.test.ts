@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { NO_RULES, normalizeRules, type ScenarioRules } from '../../src/prs/rules';
+import { NO_RULES, type ScenarioRules } from '../../src/prs/rules';
 import type { PourFact } from '../../src/prs/match';
 import type { Recipe } from '../../src/prs/recipes';
-import { daysText, planWorkItem, sourceText, withItemLimit, withItemOverride, withItemOverrides, type PlanInput } from '../../src/prs/activityPlan';
+import { daysText, planWorkItem, sourceText, withItemOverrides, type PlanInput } from '../../src/prs/activityPlan';
 
 // Neutral names: nothing here is a real trade or element.
 const fact = (key: string, type: string, volume: number): PourFact => ({ key, building: 'B', level: 'L1', levelNumber: 1, type, stage: '', zone: '', family: '', volume, values: {} });
@@ -63,15 +63,11 @@ describe('a work item’s plan', () => {
   });
 
   it('uses the overrides: another recipe, a crew and days', () => {
-    let r = withItemOverride(rules(), 'set a', () => ({ recipe: 'R-OTHER' }));
-    let p = planWorkItem(input({ rules: r }));
+    let p = planWorkItem(input({ override: { recipe: 'R-OTHER' } }));
     expect(p.recipe).toEqual({ id: 'R-OTHER', source: { kind: 'override' } });
     expect(p.activities.map((x) => x.phase)).toEqual(['Q1']);
-    r = withItemOverride(rules(), 'Set A', () => ({ tasks: { P1: { crew: 'C2', days: 7 } } }));
-    p = planWorkItem(input({ rules: r }));
+    p = planWorkItem(input({ override: { tasks: { P1: { crew: 'C2', days: 7 } } } }));
     expect(p.activities[0]).toMatchObject({ crewId: 'C2', crew: { label: 'Sub · C2', source: { kind: 'override' } }, days: { min: 7, max: 7, source: { kind: 'override' } } });
-    // Emptied, the override goes.
-    expect(withItemOverride(r, 'Set A', () => ({})).itemOverrides).toBeUndefined();
   });
 
   it('says when the days need the model’s geometry', () => {
@@ -99,15 +95,4 @@ describe('overrides for the generator', () => {
     expect(out.map((r) => r.id)).toContain('R-OTHER');
   });
 
-  it('is kept by the rules and cleaned', () => {
-    const r = normalizeRules({ itemOverrides: { 'Set A': { tasks: { P1: { crew: ' C1 ', days: '2' }, P2: {} } }, '': { recipe: 'X' } } });
-    expect(r.itemOverrides).toEqual({ 'Set A': { tasks: { P1: { crew: 'C1', days: 2 } } } });
-  });
-
-  it('sets and clears a work item’s limit', () => {
-    const r = withItemLimit(rules(), 'Set A', 'P1', '2');
-    expect(r.limits).toEqual([{ id: 'Set A|P1', phase: 'P1', group: 'Set A', max: 2 }]);
-    expect(withItemLimit(r, 'set a', 'P1', '').limits).toEqual([]);
-    expect(planWorkItem(input({ rules: r })).activities[0].limit).toBe('2');
-  });
 });

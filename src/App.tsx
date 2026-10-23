@@ -27,8 +27,8 @@ import { FourDSetupPanel } from './components/sequence/FourDSetupPanel';
 import { useSatelliteModelsStore } from './state/satelliteModels';
 import { ScenariosPage } from './pages/ScenariosPage';
 import { GenerateTabs } from './components/scenarios/GenerateTabs';
-import { Generate2Page } from './pages/Generate2Page';
-import { Generate2Tabs } from './components/scenarios/Generate2/Generate2Tabs';
+import { Generate3Page } from './pages/Generate3Page';
+import { Generate3Tabs } from './components/scenarios/Generate3/Steps';
 import { HelpPage } from './pages/HelpPage';
 
 import { ExternalPage } from './pages/ExternalPage';
@@ -104,7 +104,7 @@ const shipped = import.meta.env.VITE_EDITION === 'web' || import.meta.env.VITE_E
 const TimelinesPage = shipped ? () => null : lazy(() => import('./pages/TimelinesPage').then((m) => ({ default: m.TimelinesPage })));
 const WikiPage = shipped ? () => null : lazy(() => import('./pages/WikiPage').then((m) => ({ default: m.WikiPage })));
 
-type PageId = 'home' | 'inputs' | 'model' | 'schedule' | 'scenarios' | 'generate2' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki' | 'help';
+type PageId = 'home' | 'inputs' | 'model' | 'schedule' | 'scenarios' | 'generate3' | 'sequence' | 'timelines' | 'external' | 'dashboards' | 'wiki' | 'help';
 
 /** Ctrl+Alt + key (KeyboardEvent.code) -> the page it opens. */
 const PAGE_SHORTCUTS: Record<string, PageId> = { KeyP: 'inputs', KeyQ: 'model', KeyU: 'schedule', KeyW: 'sequence' };
@@ -115,7 +115,7 @@ const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
   { id: 'model', label: 'Models', icon: <IconCube /> },
   { id: 'schedule', label: 'Programmes', icon: <IconGantt /> },
   { id: 'scenarios', label: 'Generate', icon: <IconSplit /> },
-  { id: 'generate2', label: 'Generate 2', icon: <IconTree /> },
+  { id: 'generate3', label: 'Generate 3', icon: <IconTree /> },
   { id: 'sequence', label: '4D Sequencing', icon: <IconSchema /> },
   { id: 'timelines', label: 'Timelines', icon: <IconTimeline /> },
   { id: 'external', label: 'External data', icon: <IconExternalData /> },
@@ -226,7 +226,7 @@ export default function App() {
   const pageRef = useRef(page);
   pageRef.current = page;
   // Which page's docks (panels around the 3D view, or around the programme views) are showing.
-  useEffect(() => { setHomeDock(page === 'home'); useDockStore.getState().setHost(page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' || page === 'scenarios' || page === 'generate2' ? 'viewer' : null); }, [page]);
+  useEffect(() => { setHomeDock(page === 'home'); useDockStore.getState().setHost(page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' || page === 'scenarios' || page === 'generate3' ? 'viewer' : null); }, [page]);
   const setPage = (next: PageId | ((current: PageId) => PageId)) => {
     const from = pageRef.current;
     const to = typeof next === 'function' ? next(from) : next;
@@ -251,7 +251,7 @@ export default function App() {
     // setPage reads the current page from a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The Generate pages (ids 'scenarios' and 'generate2') show whenever Settings › Experimental features › Scenarios is on.
+  // The Generate pages (ids 'scenarios' and 'generate3') show whenever Settings › Experimental features › Scenarios is on.
   const scenariosOn = useAppPrefsStore((s) => s.experimental.scenarios);
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
@@ -259,11 +259,11 @@ export default function App() {
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => ((p.id !== 'scenarios' && p.id !== 'generate2') || scenariosOn) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    () => PAGES.filter((p) => ((p.id !== 'scenarios' && p.id !== 'generate3') || scenariosOn) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
     [scenariosOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
-    if ((!scenariosOn && (page === 'scenarios' || page === 'generate2')) || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || ((!FEATURES.help || !showHelpTab) && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
+    if ((!scenariosOn && (page === 'scenarios' || page === 'generate3')) || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || ((!FEATURES.help || !showHelpTab) && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
   }, [scenariosOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab, page]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab step through the top tabs (wrapping round).
@@ -307,7 +307,7 @@ export default function App() {
   // Programmes opens on the Gantt.
   const [scheduleTab, setScheduleTab] = useState<ScheduleTabId>((IS_SATELLITE && SATELLITE_VIEW ? SATELLITE_VIEW : initialView()?.tab ?? 'gantt') as ScheduleTabId);
   // Each view remembers which panels it had open, per workspace: entering a view puts its panels back.
-  const dockView = page === 'schedule' ? `schedule:${scheduleTab}` : page === 'model' || page === 'sequence' || page === 'scenarios' || page === 'generate2' ? page : null;
+  const dockView = page === 'schedule' ? `schedule:${scheduleTab}` : page === 'model' || page === 'sequence' || page === 'scenarios' || page === 'generate3' ? page : null;
   useEffect(() => { enterDockView(dockView); }, [dockView]);
   // The workspace keeps the page and view it is on.
   useEffect(() => { noteView(page, scheduleTab); }, [page, scheduleTab]);
@@ -320,14 +320,14 @@ export default function App() {
     if (tab) setScheduleTab(tab as ScheduleTabId);
   }, [layoutRevision]);
   // Models, 4D Sequencing and Programmes are one workspace: the 3D view's shell and docks, with the Programmes views taking the 3D view's place.
-  const viewerVisible = page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' || page === 'scenarios' || page === 'generate2';
+  const viewerVisible = page === 'model' || page === 'sequence' || page === 'schedule' || page === 'home' || page === 'scenarios' || page === 'generate3';
 
   // On the pages with docks the status bar sits under the centre only, so the docks on the sides run down to the bottom of the page.
   const footerEl = useHeaderSlotStore((h) => h.footer);
   const statusBar = (
     <div className="statusbar-host">
       <span id="rec-statusbar-needs" className="rec-statusbar-needs" />
-      {page === 'home' ? <footer className="app-statusbar app-statusbar--home"><span>The scene you are in is saved as you work.</span><HomeFilesCount /><DbStatusChip /><span className="app-statusbar__tools" /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'sequence' ? <><SequenceTimelineStatusBar /><StatusBar page={page} /></> : (page === 'scenarios' || page === 'generate2') ? <footer className="app-statusbar"><ScenarioStatusItems /><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'inputs' ? <InputsStatusBar /> : page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? <footer className="app-statusbar"><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : <StatusBar page={page} />}
+      {page === 'home' ? <footer className="app-statusbar app-statusbar--home"><span>The scene you are in is saved as you work.</span><HomeFilesCount /><DbStatusChip /><span className="app-statusbar__tools" /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'sequence' ? <><SequenceTimelineStatusBar /><StatusBar page={page} /></> : (page === 'scenarios' || page === 'generate3') ? <footer className="app-statusbar"><ScenarioStatusItems /><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : page === 'inputs' ? <InputsStatusBar /> : page === 'timelines' || page === 'wiki' || page === 'help' || page === 'external' || page === 'dashboards' ? <footer className="app-statusbar"><DbStatusChip /><WorkspaceStatus readOnly={IS_SATELLITE} /></footer> : <StatusBar page={page} />}
       <button type="button" className="statusbar-close" onClick={hideStatusBar} title="Hide the status bar (Settings brings it back)" aria-label="Hide the status bar"><IconClose width={14} height={14} /></button>
     </div>
   );
@@ -352,7 +352,7 @@ export default function App() {
         {IS_SATELLITE
           ? !viewerVisible && <header className="ws-bar"><ViewPicker pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /></header>
           // No bar along the top: Programmes, Models and 4D hold the picker in their own toolbar; the other pages get the same bar (Home, view, search) along the top.
-          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && page !== 'home' && page !== 'scenarios' && page !== 'generate2' && <header className="ws-pagebar"><ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /><div className="ws-pagebar__slot" id="ws-pagebar-slot" /></header>}
+          : page !== 'schedule' && page !== 'model' && page !== 'sequence' && page !== 'home' && page !== 'scenarios' && page !== 'generate3' && <header className="ws-pagebar"><ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} /><div className="ws-pagebar__slot" id="ws-pagebar-slot" /></header>}
         <div className="app-body">
           <div
             style={
@@ -372,18 +372,18 @@ export default function App() {
               search={<GlobalSearch pages={pages} onPage={goPage} onTab={setScheduleTab} />}
               layout={page === 'sequence' ? 'sequence' : 'model'}
               paneActive={page === 'model'}
-              backgroundPanels={page === 'schedule' || page === 'scenarios' || page === 'generate2'}
+              backgroundPanels={page === 'schedule' || page === 'scenarios' || page === 'generate3'}
               panel={page === 'sequence' ? <SequencePanel /> : <FourDSetupPanel />}
               overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
               center={
                 <>
                   {(page === 'schedule' || visited.has('schedule')) && <div style={{ display: page === 'schedule' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}><SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={goPage} /></div>}
                   {page === 'scenarios' && <ScenariosPage picker={<ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} afterSearch={<GenerateTabs />} />} />}
-                  {page === 'generate2' && <Generate2Page picker={<ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} afterSearch={<Generate2Tabs />} />} />}
+                  {page === 'generate3' && <Generate3Page picker={<ViewPicker named pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} afterSearch={<Generate3Tabs />} />} />}
                   {page === 'home' && <HomePage picker={<ViewPicker named hideView pages={pages} page={page} onPage={goPage} tab={scheduleTab} onTab={setScheduleTab} />} />}
                 </>
               }
-              centerShown={page === 'schedule' || page === 'home' || page === 'scenarios' || page === 'generate2'}
+              centerShown={page === 'schedule' || page === 'home' || page === 'scenarios' || page === 'generate3'}
             />
           </div>
           {page === 'inputs' && <InputsPage />}

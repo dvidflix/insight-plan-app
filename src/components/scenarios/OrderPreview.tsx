@@ -67,13 +67,12 @@ export function OrderPreviewEffects({ view }: { view: React.RefObject<HTMLElemen
   const objects = useStepObjects(groups);
   const current = useOrderPreview((s) => s.current);
   const setCurrent = useOrderPreview((s) => s.setCurrent);
-  const many = useOrderPreview((s) => s.many);
   const focus = useStepFocus((s) => s.focus);
   const colors = stepColors(groups.length);
   const painted = useRef<Ids>({});
 
   // Colour by step. What was painted is taken off first, so a reorder, a rename or a new current step leaves nothing behind.
-  const sig = `${current ?? ''}|${(many ?? []).join('\u0001')}|${groups.join('\u0001')}`;
+  const sig = `${current ?? ''}|${groups.join('\u0001')}`;
   useEffect(() => {
     let dead = false;
     void (async () => {
@@ -84,7 +83,7 @@ export function OrderPreviewEffects({ view }: { view: React.RefObject<HTMLElemen
       const paint = async (m: string, ids: number[], color: string) => { await engine.setColor(m, ids, color, true); (next[m] ??= []).push(...ids); };
       const taken = new Set<string>();
       for (let i = 0; i < objects.length; i++) {
-        const mine = many ? many.includes(norm(groups[i])) : current === null || norm(groups[i]) === current;
+        const mine = current === null || norm(groups[i]) === current;
         for (const [m, ids] of Object.entries(objects[i])) {
           const fresh = ids.filter((id) => !taken.has(`${m}:${id}`));
           fresh.forEach((id) => taken.add(`${m}:${id}`));

@@ -23,7 +23,7 @@ import { ModelsGanttPanel } from '../components/ModelConfigPanel';
 import { ListSetupButton } from '../components/ViewPicker';
 import { createPortal } from 'react-dom';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
-import { ADVANCED_TABS, GENERATE_TABS, type GenerateTab, partOf, useGenerateTab, useShownGenerateTab } from '../components/scenarios/GenerateTabs';
+import { ADVANCED_TABS, GENERATE_TABS, type GenerateTab, useGenerateTab, useShownAdvancedTab, useShownGenerateTab } from '../components/scenarios/GenerateTabs';
 
 /** Generate: the whole of programme generation in one view, in tabs you take in order, no panels. 1 Scenario (project, building, start date, Update 4D,
     Save), 2 Resources (equipment, cranes and materials, and how many: the one place a count is typed), 3 Recipes (how each kind of object is built),
@@ -35,7 +35,7 @@ import { ADVANCED_TABS, GENERATE_TABS, type GenerateTab, partOf, useGenerateTab,
 const CONFIG_TABS = [['columns', 'Columns'], ['filters', 'Filters'], ['group', 'Group'], ['color', 'Color']] as const;
 
 /** The strip over the 3D half: what the colours mean and how to hide it. The rest of the half lets the mouse through to the viewer. */
-export function OrderViewBar() {
+function OrderViewBar() {
   const setShow = useOrderPreview((s) => s.setShow);
   const current = useOrderPreview((s) => s.current);
   const setCurrent = useOrderPreview((s) => s.setCurrent);
@@ -65,6 +65,7 @@ export function OrderViewBar() {
 function OrderTab() {
   const { ready } = useScenarioView();
   const manual = useScenarioStore((s) => s.relations.length);
+  const packages = useScenarioStore((s) => s.rules.packages?.length ?? 0);
   const setTab = useGenerateTab((s) => s.setTab);
   const setAdvanced = useGenerateTab((s) => s.setAdvanced);
   const show = useOrderPreview((s) => s.show);
@@ -79,6 +80,7 @@ function OrderTab() {
     <div className={`gen-order gen-order--split${show ? ' has-view' : ''}`}>
       <div className="gen-order__list">
         <ScenarioNotice />
+        {packages > 0 && <div className="scn-status scn-status--warn seq__warn" role="status">This scenario has {packages} work package{packages === 1 ? '' : 's'} made in Generate 3: Update 4D builds the programme from them, not from this list. Delete them in Generate 3 to build from this list again.</div>}
         {/* The list and its bar (add, the status line, Generate) first; the rest is folded, each fold's title saying what it holds. */}
         <OrderPanel />
         <SequencingPresets />
@@ -129,14 +131,14 @@ function PoursTab() {
 }
 
 /** Labour: one table of the numbers a planner already knows: the crews, their trades, how many people and gangs, and the productivity. */
-export function LabourTab() {
+function LabourTab() {
   return <div className="gen-labour"><CrewsAndTrades /></div>;
 }
 
 /** The editors of a header tab: the one editor, or a short row of tabs when the tab holds two or three. */
-export function PartsTab({ tab }: { tab: GenerateTab }) {
+function PartsTab({ tab }: { tab: GenerateTab }) {
   const { ready } = useScenarioView();
-  const part = partOf(tab, useGenerateTab((s) => s.advanced));
+  const part = useShownAdvancedTab();
   const setAdvanced = useGenerateTab((s) => s.setAdvanced);
   const pours = useScenarioStore((s) => s.rows.length);
   const extras = useScenarioStore((s) => s.extras.length);
