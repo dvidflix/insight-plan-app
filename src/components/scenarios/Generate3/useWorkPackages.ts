@@ -9,13 +9,30 @@ import { useViewerEngine } from '../../../viewer/ViewerEngineContext';
 import { paletteColors } from '../../../viewer/colorPalettes';
 import { packageObjects, packagesView, setFinder } from '../../../scenarios/packageSource';
 import { timelineOf, type WorkPackage } from '../../../prs/workPackages';
+import { inTreeOrder, treeRows } from '../../../prs/packageTree';
 import { useRuleContext } from '../rules/RuleParts';
 import { useIndexTick } from '../../modelFields';
 
-/** Generate 3's state: the step it is on (remembered) and the package picked (not remembered). */
+/** Generate 3's state: the step it is on and the packages folded shut (remembered), the package picked and whether Advanced is open (not
+    remembered: Advanced is closed each time). */
 export type G3Step = 1 | 2 | 3;
-export const useG3 = create<{ step: G3Step; setStep: (s: G3Step) => void; picked: string | null; pick: (id: string | null) => void }>()(
-  persist((set) => ({ step: 1, setStep: (step) => set({ step }), picked: null, pick: (picked) => set({ picked }) }), { name: 'generate3.step', partialize: (s) => ({ step: s.step }) as never }),
+interface G3State {
+  step: G3Step;
+  setStep: (s: G3Step) => void;
+  picked: string | null;
+  pick: (id: string | null) => void;
+  collapsed: string[];
+  toggle: (id: string) => void;
+  advanced: boolean;
+  setAdvanced: (open: boolean) => void;
+}
+export const useG3 = create<G3State>()(
+  persist((set) => ({
+    step: 1, setStep: (step) => set({ step }),
+    picked: null, pick: (picked) => set({ picked }),
+    collapsed: [], toggle: (id) => set((s) => ({ collapsed: s.collapsed.includes(id) ? s.collapsed.filter((x) => x !== id) : [...s.collapsed, id] })),
+    advanced: false, setAdvanced: (advanced) => set({ advanced }),
+  }), { name: 'generate3.step', partialize: (s) => ({ step: s.step, collapsed: s.collapsed }) as never }),
 );
 
 /** Colours for packages, the same palette as the rest of Generate. */
@@ -34,8 +51,15 @@ export function useWorkPackages() {
   const objects = useMemo(() => packageObjects(engine), [engine, tick, models]); // eslint-disable-line react-hooks/exhaustive-deps
   const view = useMemo(() => packagesView(engine, packages, sets, recipes, ctx.rules, crewSheet, objects), [engine, packages, sets, recipes, ctx.rules, crewSheet, objects]);
   const finds = useMemo(() => setFinder(engine, sets), [engine, sets, tick]); // eslint-disable-line react-hooks/exhaustive-deps
-  const timeline = useMemo(() => timelineOf(packages, (p) => view.methods.get(p.id)?.days ?? 0), [packages, view.methods]);
-  const save = (next: WorkPackage[]) => ctx.change((r) => { const { packages: _old, ...rest } = r; return next.length ? { ...rest, packages: next } : rest; });
-  const patch = (id: string, p: Partial<WorkPackage>) => save(packages.map((x) => (x.id === id ? { ...x, ...p } : x)));
-  return { packages, ...view, timeline, save, patch, sets, finds };
+  const rows = useMemo(() => treeRows(packages), [packages]);
+  const timeline = useMemo(() => new Map(timelineOf(packages, (p) => view.methods.get(p.id)?.days ?? 0, (p) => (view.contents.objects.get(p.id)?.length ?? 0) > 0).map((t) => [t.id, t])), [packages, view.methods, view.contents]);
+  const save = (next: WorkPackage[]) => ctx.change((r) => { const { packages: _old, ...rest } = r; return next.length ? { ...rest, packages: inTreeOrder(next) } : rest; });
+  /** Changes one package; a value set to undefined is taken away. */
+  const patch = (id: string, p: Partial<WorkPackage>) => save(packages.map((x) => {
+    if (x.id !== id) return x;
+    const next = { ...x, ...p };
+    for (const k of Object.keys(next) as (keyof WorkPackage)[]) if (next[k] === undefined) delete next[k];
+    return next;
+  }));
+  return { packages, rows, ...view, timeline, save, patch, sets, finds };
 }

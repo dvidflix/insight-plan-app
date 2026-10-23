@@ -14757,10 +14757,10 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 /* ===== Generate 3 (pages/Generate3Page.tsx): the model (the shared 3D view shows through) with the step's tools, the work packages, the timeline, and Generate at the bottom ===== */
 .g3-main { display: flex; flex-direction: column; }
 .g3 { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-.g3-cols { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px, 30%) minmax(320px, 1fr) minmax(280px, 30%); }
+.g3-cols { position: relative; flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(260px, 30%) minmax(320px, 1fr) minmax(280px, 30%); }
 .g3-left { min-height: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); }
 .g3-view { flex: 1 1 45%; min-height: 180px; pointer-events: none; }
-.g3-tools, .g3-centre, .g3-right, .g3-foot, .g3 > .scn-notice, .g3 > .scn-status { pointer-events: auto; background: var(--n-ffffff, #fff); }
+.g3-tools, .g3-centre, .g3-right, .g3-foot, .g3-adv, .g3 > .scn-notice, .g3 > .scn-status { pointer-events: auto; background: var(--n-ffffff, #fff); }
 .g3-tools { flex: 1 1 55%; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
 .g3-tools__title, .g3-list__head h3 { margin: 0; font-size: 15px; font-weight: 700; color: var(--text); }
 .g3-tools .hint { margin: 0; }
@@ -14773,6 +14773,8 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-sets li { padding: 5px 8px; border-bottom: 1px solid var(--border); font-size: 13px; cursor: grab; background: var(--bg-elevated); }
 .g3-sets li:last-child { border-bottom: 0; }
 .g3-sets li:hover { background: rgb(var(--accent-rgb) / 0.08); }
+.g3-sets li.g3-sets__folder { font-weight: 600; background: var(--bg-soft); }
+.g3-sets li.g3-sets__in { padding-left: 20px; }
 .g3-counts { list-style: none; margin: 0; padding: 0; font-size: 14px; }
 .g3-counts li { padding: 4px 0; border-bottom: 1px solid var(--border); }
 .g3-centre { min-height: 0; overflow: auto; border-right: 1px solid var(--border); }
@@ -14786,7 +14788,15 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-pkg { display: flex; align-items: stretch; gap: 10px; margin-bottom: 8px; padding: 8px 6px 8px 0; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); cursor: pointer; }
 .g3-pkg:hover { border-color: var(--accent); }
 .g3-pkg.is-picked { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); background: rgb(var(--accent-rgb) / 0.06); }
-.g3-pkg.is-drop { box-shadow: 0 -3px 0 var(--accent); }
+.g3-pkg.is-drop-before { box-shadow: 0 -3px 0 var(--accent); }
+.g3-pkg.is-drop-after { box-shadow: 0 3px 0 var(--accent); }
+.g3-pkg.is-drop-inside { background: rgb(var(--accent-rgb) / 0.14); border-color: var(--accent); }
+/* A package that holds others: a heading for what it holds, with a chevron to fold it. */
+.g3-pkg--group { background: var(--bg-soft); }
+.g3-pkg--group .g3-pkg__title, .g3-pkg--group .g3-pkg__name { font-weight: 700; }
+.g3-pkg__fold { flex: none; display: inline-flex; align-items: center; justify-content: center; width: 22px; margin-left: 2px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.g3-pkg__fold:hover { background: rgba(0, 0, 0, 0.07); color: var(--text); }
+.g3-pkg__fold svg { width: 14px; height: 14px; }
 .g3-pkg.is-drop-in { background: rgb(var(--accent-rgb) / 0.14); }
 .g3-pkg.is-empty { opacity: 0.6; }
 .g3-pkg[draggable="true"] { cursor: grab; }
@@ -14806,32 +14816,97 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-pkg__method { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; cursor: default; }
 .g3-pkg__method select { max-width: 220px; }
 .g3-pkg__chain { flex: 1; min-width: 0; font-size: 12px; color: var(--text); }
+.g3-pkg__days { display: inline-flex; align-items: center; gap: 4px; font-size: 12px; color: var(--text-dim); }
+/* A number typed by hand: the estimate shows as its placeholder. */
+.g3-num { width: 56px; height: 24px; padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elevated); color: var(--text); text-align: right; font: inherit; font-size: 12px; }
+.g3-num:focus { outline: none; border-color: var(--accent); }
 .g3-days { display: flex; flex-direction: column; gap: 4px; padding: 4px 0 2px; cursor: default; }
 .g3-days__row { display: grid; grid-template-columns: 140px 64px 1fr; align-items: center; gap: 8px; font-size: 12px; }
-.g3-days__row input { height: 24px; padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elevated); color: var(--text); text-align: right; font: inherit; }
+.g3-days__row .g3-num { width: 100%; }
 .g3-days__row .scn-dim { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* Between two packages in the Sequence step: how the lower one follows. */
 .g3-link { display: flex; align-items: center; gap: 8px; margin: -2px 0 6px 18px; font-size: 12px; }
 .g3-link__arrow { color: var(--text-dim); font-size: 14px; }
-.g3-link input { width: 44px; height: 24px; padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; text-align: right; font: inherit; }
+.g3-start { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.g3-start select { max-width: 280px; }
+.g3-start--compact select { max-width: 100%; }
+.g3-start__lag { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); }
+.g3-start .g3-num { width: 44px; }
 /* The timeline: an axis of working days and a bar per package. */
 .g3-time__none { font-size: 13px; }
-.g3-time__axis { position: relative; height: 18px; margin-left: 48px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-dim); }
+.g3-time__axis { position: relative; height: 18px; margin-left: 76px; border-bottom: 1px solid var(--border); font-size: 11px; color: var(--text-dim); }
 .g3-time__axis span { position: absolute; transform: translateX(-50%); white-space: nowrap; }
 .g3-time__axis span:first-child { transform: none; }
 .g3-time__rows { display: flex; flex-direction: column; }
 .g3-time__row { display: flex; align-items: center; gap: 8px; height: 30px; padding: 0; border: 0; border-bottom: 1px solid var(--border); background: transparent; color: var(--text); font: inherit; cursor: pointer; text-align: left; }
 .g3-time__row:hover, .g3-time__row.is-picked { background: rgb(var(--accent-rgb) / 0.08); }
-.g3-time__code { flex: 0 0 40px; font-size: 11px; font-weight: 600; color: var(--text-dim); }
+.g3-time__row.is-faded .g3-time__bar { opacity: 0.35; }
+.g3-time__code { flex: 0 0 68px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; font-weight: 600; color: var(--text-dim); }
 .g3-time__track { position: relative; flex: 1; height: 100%; }
 .g3-time__bar { position: absolute; top: 8px; height: 14px; border-radius: 3px; }
+/* A package that holds others: a summary bar (thin, dark, with its ends marked). */
+.g3-time__bar--sum { top: 11px; height: 6px; border-radius: 0; background: var(--text-dim); }
+.g3-time__bar--sum::before, .g3-time__bar--sum::after { content: ''; position: absolute; top: 0; height: 10px; width: 2px; background: var(--text-dim); }
+.g3-time__bar--sum::before { left: 0; }
+.g3-time__bar--sum::after { right: 0; }
 .g3-time__total { margin-top: 10px; font-size: 13px; color: var(--text); }
 /* Generate is always there. */
 .g3-foot { flex: none; display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-top: 1px solid var(--border); }
 .g3-foot__status { flex: 1; min-width: 0; display: flex; justify-content: flex-end; }
 .g3-foot__status .gen-status { margin-left: 0; }
 .g3-generate { min-height: 40px; padding: 0 22px; font-size: 15px; font-weight: 600; }
-.g3-foot__adv { font-size: 12px; color: var(--text-dim); }
+.g3-foot__adv.is-on { border-color: var(--accent); background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong); }
+/* Advanced: a panel over the timeline column, with a panel header (its name, what it is for, the close X at the far right). */
+.g3-adv { position: absolute; top: 0; right: 0; bottom: 0; width: max(380px, 30%); max-width: 100%; z-index: 3; display: flex; flex-direction: column; border-left: 1px solid var(--border); box-shadow: -6px 0 16px rgba(0, 0, 0, 0.08); }
+.g3-adv__head { flex: none; display: flex; align-items: stretch; height: var(--header-h); border-bottom: 1px solid var(--border); background: var(--bg-panel); }
+.g3-adv__tab { display: inline-flex; align-items: center; padding: 0 12px; font-size: 12px; font-weight: 600; color: var(--accent-strong); background: var(--n-ffffff, #fff); box-shadow: inset 0 -2px 0 var(--accent); border-right: 1px solid var(--border); }
+.g3-adv__what { flex: 1; min-width: 0; display: inline-flex; align-items: center; padding: 0 12px; font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g3-adv__close, .g3-dlg__close { flex: none; display: inline-flex; align-items: center; justify-content: center; width: var(--header-h); padding: 0; border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--text-dim); cursor: pointer; }
+.g3-adv__close:hover, .g3-dlg__close:hover { background: rgba(0, 0, 0, 0.07); color: var(--text); }
+.g3-adv__close svg, .g3-dlg__close svg { width: var(--icon-row); height: var(--icon-row); }
+.g3-adv__body { flex: 1; min-height: 0; overflow: auto; padding: 12px; display: flex; flex-direction: column; gap: 14px; }
+.g3-adv__note { margin: 0; font-size: 13px; color: var(--text); }
+.g3-adv__sec { display: flex; flex-direction: column; gap: 10px; }
+.g3-adv__sec h4 { margin: 0; padding-bottom: 4px; border-bottom: 1px solid var(--border); font-size: 13px; font-weight: 700; }
+.g3-adv__field { display: grid; grid-template-columns: 96px 1fr; align-items: center; gap: 4px 10px; }
+.g3-adv__label { font-size: 13px; font-weight: 600; }
+.g3-adv__ctl { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; min-width: 0; font-size: 12px; }
+.g3-adv__ctl > select { max-width: 100%; }
+.g3-adv__why { grid-column: 2; display: block; font-size: 12px; line-height: 1.4; color: var(--text-dim); }
+.g3-adv__more { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--accent-strong); font: inherit; font-size: 12px; cursor: pointer; }
+.g3-adv__more svg { width: 14px; height: 14px; }
+.g3-adv__check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; font-weight: 600; }
+.g3-adv__check input { margin-top: 2px; }
+.g3-adv__check .g3-adv__why { font-weight: 400; }
+.g3-adv__text { width: 150px; height: 24px; padding: 0 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elevated); color: var(--text); font: inherit; font-size: 12px; }
+.g3-adv__links { margin-top: auto; padding-top: 10px; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 16px; font-size: 13px; }
+.g3-adv .g3-days__row { grid-template-columns: 1fr 64px; }
+.g3-adv .g3-days__row > .scn-dim { grid-column: 1 / -1; margin-top: -2px; }
+/* Generate 3's dialogs (Spool from properties, Methods, Crews). */
+.g3-dlg { width: min(620px, 100%); max-height: min(760px, 100%); display: flex; flex-direction: column; background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18); pointer-events: auto; }
+.g3-dlg--wide { width: min(860px, 100%); }
+.g3-dlg__head { flex: none; display: flex; align-items: stretch; height: var(--header-h); border-bottom: 1px solid var(--border); }
+.g3-dlg__head h3 { flex: 1; margin: 0; padding: 0 16px; display: flex; align-items: center; font-size: 15px; }
+.g3-dlg__close { border-top-right-radius: 8px; }
+.g3-dlg__body { flex: 1; min-height: 0; overflow: auto; padding: 12px 16px; display: flex; flex-direction: column; gap: 12px; }
+.g3-dlg__body .hint { margin: 0; }
+.g3-dlg__sub { margin: 4px 0 0; font-size: 13px; font-weight: 700; }
+.g3-dlg__body .xl { align-self: flex-start; }
+.g3-dlg__foot { flex: none; display: flex; justify-content: flex-end; gap: var(--hit-gap, 6px); padding: 10px 16px; border-top: 1px solid var(--border); }
+.g3 .project-picker__backdrop, .g3-adv .project-picker__backdrop { pointer-events: auto; }
+.g3-form { display: flex; flex-direction: column; gap: 10px; }
+.g3-form__row { display: grid; grid-template-columns: 130px 1fr; align-items: center; gap: 2px 10px; font-size: 13px; font-weight: 600; }
+.g3-form__row small { grid-column: 2; font-size: 12px; font-weight: 400; }
+.g3-form__check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; font-weight: 600; }
+.g3-form__check input { margin-top: 2px; }
+.g3-form__check small { display: block; font-size: 12px; font-weight: 400; }
+.g3-spool { border: 1px solid var(--border); }
+.g3-spool__head { padding: 6px 10px; border-bottom: 1px solid var(--border); background: var(--bg-soft); font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.g3-spool__none { padding: 10px; font-size: 13px; }
+.g3-spool__list { list-style: none; margin: 0; padding: 4px 0; max-height: 300px; overflow: auto; font-size: 13px; }
+.g3-spool__list ul { list-style: none; margin: 0; padding: 0 0 4px 22px; }
+.g3-spool__top, .g3-spool__list ul li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 10px; }
+.g3-spool__list ul li { padding-left: 0; }
 /* Before the model and a scenario are there. */
 .g3-first { margin: 32px auto; max-width: 520px; padding: 24px; border: 1px solid var(--border); background: var(--bg-panel); display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .g3-first--wide { max-width: 960px; }

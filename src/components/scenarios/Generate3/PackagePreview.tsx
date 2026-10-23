@@ -2,10 +2,11 @@ import { useEffect, useMemo, useRef } from 'react';
 import { useViewerEngine } from '../../../viewer/ViewerEngineContext';
 import { useSelectionStore } from '../../../state/selectionStore';
 import type { PackageContents, WorkPackage } from '../../../prs/workPackages';
+import { subtreeIds } from '../../../prs/packageTree';
 import { useG3 } from './useWorkPackages';
 
 /** Renders nothing: paints Generate 3's packages in their colours on the shared 3D view (the picked package alone, the others pale), turns a click on
-    an object into a pick of its package, and frames the camera on the page's 3D window `view`. The colours are put back when it closes. */
+    an object into a pick of its package (picking a package that holds others shows all of them), and frames the camera on the page's 3D window `view`. The colours are put back when it closes. */
 
 const PALE = '#d4d8d6';
 type Ids = Record<string, number[]>;
@@ -28,8 +29,9 @@ export function PackagePreview({ view, packages, contents }: { view: React.RefOb
       painted.current = {};
       if (dead) return;
       const next: Ids = {};
+      const shown = picked === null ? null : new Set(subtreeIds(packages, picked));
       for (let i = 0; i < packages.length; i++) {
-        const color = picked === null || picked === packages[i].id ? packages[i].color : PALE;
+        const color = !shown || shown.has(packages[i].id) ? packages[i].color : PALE;
         for (const [m, ids] of Object.entries(byPackage[i])) { if (!ids.length) continue; await engine.setColor(m, ids, color, true); (next[m] ??= []).push(...ids); }
       }
       painted.current = next;

@@ -136,7 +136,7 @@ describe('sequence and generate', () => {
     expect(rules.recipes[0].tasks.map((t) => [t.phase, t.formula, t.crew])).toEqual([['Rebar', '1', 'STD-CONCRETE'], ['Formwork', '1', 'STD-CONCRETE'], ['Concrete', '1', 'STD-CONCRETE']]);
     expect(rules.trades).toEqual([{ id: 'STD-CONCRETE', name: 'Concrete gang', capacity: 0 }]);
     expect(rules.crewTemplates).toEqual([{ id: 'STD-CONCRETE', trades: [{ trade: 'STD-CONCRETE', size: 6 }] }]);
-    expect(groupOf(pkgs[0], 0)).toBe('WP-01 First');
+    expect(groupOf(pkgs[0], 'WP-01')).toBe('WP-01 First');
   });
 
   it('sends a chosen project recipe as a copy for the package', () => {
