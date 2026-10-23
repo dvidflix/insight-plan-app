@@ -30,6 +30,7 @@ import { basisFinish, basisStart } from '../../schedule/linking';
 import { DEFAULT_SUB_SEQUENCE, MAX_OVERLAP_PCT, MIN_OVERLAP_PCT, slotWindow, type SubSequence } from '../../schedule/subSequence';
 import { IconCopy, IconEye, IconEyeOff, IconPencil, IconSectionChevron, IconRemove } from '../icons';
 import { usePersistedState } from '../../utils/persistedState';
+import { SuggestMatches } from './SuggestMatches';
 
 /** The section header's "New group" button asks the panel (mounted once the section is open) to start a new group. */
 export const useLinkGroupsUiStore = create<{ newRequested: boolean; requestNew: () => void; clearNew: () => void }>((set) => ({
@@ -163,6 +164,7 @@ export function LinkGroupsPanel({ model, elements, elementSets, onPreview }: Lin
 
   return (
     <div>
+      <SuggestMatches model={model} />
       {groups.length === 0 && <div style={{ padding: '8px', color: 'var(--text-dim)' }}>No groups yet. A group filters tasks and objects, then pairs them by matching field values.</div>}
       {groups.length > 0 && (
         <table className="seq-grid">

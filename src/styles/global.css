@@ -14706,3 +14706,14 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 
 /* Work breakdown: the first-time prompt. */
 .order__first { padding: 18px 12px; font-size: 15px; font-weight: 500; color: var(--text); border: 1px dashed var(--border); margin: 12px; }
+
+/* Link Groups: unlinked counts and Suggest matches. */
+.sm { border-bottom: 1px solid var(--border); }
+.sm__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 6px 8px; }
+.sm__count { font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.sm__bar .btn { margin-left: auto; }
+.sm__panel { padding: 0 8px 8px; }
+.sm__chip { font-size: 10px; font-weight: 700; padding: 1px 6px; border: 1px solid var(--border); text-transform: uppercase; }
+.sm__chip--high { color: var(--ok); border-color: var(--ok); }
+.sm__chip--medium { color: var(--warn); border-color: var(--warn); }
+.sm__chip--low { color: var(--text-dim); }

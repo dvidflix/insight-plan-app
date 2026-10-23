@@ -25,7 +25,7 @@ describe('suggested matches', () => {
     expect(best.rule).toMatchObject({ taskField: 'Pour ID', objectPropertySet: 'CWA Pour', objectAttribute: 'Pour ID' });
     expect(best.tasks).toBe(2); // P1 and P2; the task with no Pour ID and P3 (no object) are not linked
     expect(best.objects).toBe(3); // P1 twice (any case) and P2
-    expect(best.confidence).toBe('high' === confidenceOf(2 / 4) ? 'high' : 'medium');
+    expect(best.confidence).toBe('medium'); // 2 of the 4 unlinked tasks
   });
   it('is what a Link Group with that rule then links', () => {
     const gaps = unlinked(model, models, new Map(), new Set());
