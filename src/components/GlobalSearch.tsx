@@ -18,9 +18,12 @@ import { useStoredModels } from './StoredModelsPanel';
 import type { PageItem } from './ViewPicker';
 import { IconSearch } from './icons';
 import { LevelStepper } from './schedule/LevelStepper';
+import { GENERATE_TABS, useGenerateTab } from './scenarios/GenerateTabs';
+import { pickScenario, saveOrder, scenarioNamesForStems, stemsInInputs, updateFourD, useScenarioStore } from '../state/scenarioStore';
+import { resolveTheme, useThemeStore } from '../state/themeStore';
 
-type Group = 'Table' | 'Scenes' | 'Files' | 'Activities' | 'Views' | 'Panels' | 'Actions';
-const GROUPS: Group[] = ['Table', 'Actions', 'Scenes', 'Files', 'Activities', 'Views', 'Panels'];
+type Group = 'Table' | 'Scenes' | 'Files' | 'Activities' | 'Views' | 'Panels' | 'Actions' | 'Generate';
+const GROUPS: Group[] = ['Table', 'Actions', 'Generate', 'Scenes', 'Files', 'Activities', 'Views', 'Panels'];
 
 interface Hit {
   key: string;
@@ -52,6 +55,13 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
   const dbProgrammes = useProjectDbStore((s) => s.programmes);
   const storedActions = useStoredModels();
   const [query, setQuery] = useState('');
+  // Generate: the scenarios of the open project and what can be done to the open one.
+  const project = useScenarioStore((s) => s.project);
+  const drafts = useScenarioStore((s) => s.drafts);
+  const scenario = useScenarioStore((s) => s.scenario);
+  const scenarioReady = useScenarioStore((s) => !!s.loaded && !s.busy);
+  const themeChoice = useThemeStore((s) => s.choice);
+  const setThemeChoice = useThemeStore((s) => s.setChoice);
   // The list the search box works on: the one that is active (Gantt, Data table ...), when it can take words.
   const activeList = useListConfigStore((s) => { const id = activeTargetId(s); return id ? s.targets[id] ?? null : null; });
   const tableAvailable = !!activeList?.searchable;
@@ -99,6 +109,20 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
       out.push({ key: 'a:save', group: 'Actions', label: 'Save workspace', hint: workspaces.active()?.name, run: () => void workspaceActions.save() });
       out.push({ key: 'a:win', group: 'Actions', label: 'New window', hint: 'on a second screen', run: () => openSatelliteWindow('gantt') });
     }
+    out.push({ key: 'a:fit', group: 'Actions', label: 'Fit all models', hint: 'in the 3D view', run: () => void engine.fit(undefined, false) });
+    // Theme
+    out.push({ key: 'a:theme', group: 'Actions', label: resolveTheme(themeChoice) === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', hint: 'appearance', run: () => setThemeChoice(resolveTheme(themeChoice) === 'dark' ? 'light' : 'dark') });
+    // Generate (the page is there when Scenarios is on): its tabs, the scenarios of the project, and Update 4D / Save for the open one.
+    if (pages.some((p) => p.id === 'scenarios')) {
+      for (const t of GENERATE_TABS) out.push({ key: `g:${t.id}`, group: 'Generate', label: `Generate › ${t.label.replace(/^\d+ - /, '')}`, hint: t.tip.split('.')[0].slice(0, 70), run: () => { useGenerateTab.getState().setTab(t.id); onPage('scenarios'); } });
+      for (const name of scenarioNamesForStems(project, drafts, stemsInInputs(models))) {
+        out.push({ key: `sc:${name}`, group: 'Generate', label: `Scenario ${name}`, hint: name === scenario ? 'open' : 'open it in Generate', run: () => { pickScenario(name); onPage('scenarios'); } });
+      }
+      if (scenario) {
+        out.push({ key: 'a:update4d', group: 'Actions', label: 'Update 4D', hint: scenarioReady ? `scenario ${scenario}` : 'open the scenario in Generate first', run: () => { onPage('scenarios'); if (scenarioReady) void updateFourD(); } });
+        out.push({ key: 'a:savescn', group: 'Actions', label: 'Save scenario', hint: scenario, run: () => { if (scenarioReady) void saveOrder(); } });
+      }
+    }
     // Scenes
     if (!IS_SATELLITE) {
       for (const s of sceneList.scenes) {
@@ -137,11 +161,15 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
       if (e) out.push({ key: `pn:${e.id}`, group: 'Panels', label: e.label, hint: 'panel', run: () => useDockStore.getState().reveal(e.id) });
     }
     return out;
-  }, [pages, onPage, onTab, experimental, entries, models, hiddenModelIds, toggleModelHidden, meshes, schedules, hiddenScheduleIds, toggleScheduleHidden, dbProgrammes, storedActions.stored, sceneList, engine]);
+  }, [pages, onPage, onTab, experimental, entries, models, hiddenModelIds, toggleModelHidden, meshes, schedules, hiddenScheduleIds, toggleScheduleHidden, dbProgrammes, storedActions.stored, sceneList, engine, project, drafts, scenario, scenarioReady, themeChoice, setThemeChoice]);
 
   const hits = useMemo(() => {
     const terms = alternatives(query);
-    if (!terms.length) return [];
+    // Nothing typed: where to go and what to do (pages, panels, scenarios, a few actions), so the box is a palette before it is a search.
+    if (!terms.length) {
+      const take = (group: Group, n: number, keep: (h: Hit) => boolean = () => true) => all.filter((h) => h.group === group && keep(h)).slice(0, n);
+      return [...take('Views', 12), ...take('Panels', 8), ...take('Generate', 8, (h) => h.key.startsWith('sc:')), ...take('Actions', 8, (h) => !['a:scene', 'a:win', 'a:save'].includes(h.key))];
+    }
     const found = all.filter((h) => matches(h.label, terms));
     // On a table: the first row narrows the table to these words (any ID, name, code, user field or resource), as the old box did.
     if (tableAvailable) found.unshift({ key: 't:filter', group: 'Table', label: `Filter ${listName} by “${query.trim()}”`, hint: 'Enter', run: () => useTableSearchStore.getState().setListQuery(activeList!.id, query.trim()) });
@@ -167,7 +195,8 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
       }
     }
     // Names that start with the query first; then by group.
-    const rank = (h: Hit) => (terms.some((t) => h.label.toLowerCase().startsWith(t[0])) ? 0 : 1);
+    // The whole label starts with the word: first; a word of it does: next; the rest after ("4d", "gantt", "update" jump to the right item).
+    const rank = (h: Hit) => { const l = h.label.toLowerCase(); return terms.some((t) => l.startsWith(t[0])) ? 0 : terms.some((t) => l.split(/[\s›·]+/).some((w) => w.startsWith(t[0]))) ? 1 : 2; };
     return found.sort((a, b) => (a.group === 'Table' ? -1 : b.group === 'Table' ? 1 : rank(a) - rank(b) || GROUPS.indexOf(a.group) - GROUPS.indexOf(b.group))).slice(0, 40);
   }, [all, query, schedules, hiddenScheduleIds, onTab, onPage, tableAvailable]);
   useEffect(() => { setAt(0); }, [query]);
@@ -205,8 +234,8 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
         onChange={(e) => { setQuery(e.target.value); setOpen(true); if (activeList?.searchable) useTableSearchStore.getState().setListQuery(activeList.id, e.target.value.trim()); }}
         onFocus={() => setOpen(true)}
         onKeyDown={onKeyDown}
-        aria-label="Search scenes, files, views, panels and actions"
-        aria-expanded={open && query.trim() !== ''}
+        aria-label="Search or jump to scenes, files, views, panels, scenarios and actions"
+        aria-expanded={open && hits.length > 0}
         role="combobox"
         aria-controls="gs-list"
       />
@@ -215,7 +244,7 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
           {tableQuery} ×
         </button>
       )}
-      {open && query.trim() !== '' && (
+      {open && (query.trim() !== '' || hits.length > 0) && (
         <div className="gs__list" id="gs-list" role="listbox">
           {hits.length === 0 ? <div className="gs__none">Nothing matches “{query}”.</div> : rows}
         </div>
