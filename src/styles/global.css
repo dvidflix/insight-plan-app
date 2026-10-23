@@ -14753,3 +14753,80 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .rel-cell.is-bad { color: var(--danger); }
 .tree-pick__missing { padding: 2px 4px 4px; font-size: 12px; line-height: 1.4; color: var(--danger); white-space: normal; }
 .tree-pick__missing .link-btn { font-weight: 600; }
+
+/* ===== Generate 2 (pages/Generate2Page.tsx): the search sets library, the work breakdown tree, and the shared 3D viewer showing through on the right ===== */
+.g2-split.has-view .g2-left { flex: 0 0 62%; max-width: 62%; border-right: 1px solid var(--border); }
+.g2-left { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--n-ffffff, #fff); pointer-events: auto; }
+.g2-build { flex: 1; min-height: 0; display: flex; }
+.g2-first { margin: 0 0 12px; }
+/* The library: a narrow list of the sets by folder, each a drag source. */
+.g2-lib { flex: 0 0 250px; min-width: 0; display: flex; flex-direction: column; border-right: 1px solid var(--border); background: var(--bg-panel); }
+.g2-lib__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--hit-gap, 6px); padding: 6px 8px; border-bottom: 1px solid var(--border); min-height: var(--header-h); box-sizing: border-box; }
+.g2-lib__title { font-size: 13px; }
+.g2-lib__count { font-size: 11px; margin-right: auto; }
+.g2-lib__find { padding: 6px 8px; border-bottom: 1px solid var(--border); }
+.g2-lib__find input { box-sizing: border-box; width: 100%; height: 28px; padding: 0 8px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg-elevated); color: var(--text); font: inherit; font-size: 13px; }
+.g2-lib__find input:focus { outline: none; border-color: var(--accent); }
+.g2-lib__list { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; }
+.g2-lib__folder { padding: 8px 8px 2px; font-size: 11px; font-weight: 600; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g2-lib__row { display: flex; align-items: center; gap: 6px; min-height: 28px; padding: 0 4px 0 8px; font-size: 13px; color: var(--text); cursor: grab; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+.g2-lib__row:hover { background: rgb(var(--accent-rgb) / 0.08); }
+.g2-lib__row.is-used { color: var(--text-dim); background: transparent; }
+.g2-lib__row.is-twin { opacity: 0.4; cursor: not-allowed; }
+.g2-lib__name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.g2-lib__n { flex: none; font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.g2-lib__tick { flex: none; width: var(--icon-btn-w, 26px); text-align: center; color: var(--accent-strong); font-size: 12px; }
+.g2-lib__none { padding: 8px; font-size: 12px; line-height: 1.4; }
+.g2-lib__note { flex: 1 0 100%; margin: 0; font-size: 12px; cursor: pointer; }
+/* The tree: its bar (add a node, the scenario, the status, Generate), the rows, and the totals under them. */
+.g2-tree { flex: 1 1 0; min-width: 0; min-height: 0; display: flex; flex-direction: column; }
+.g2-tree__bar { flex: none; border-bottom: 1px solid var(--border); padding: 4px 8px; min-height: var(--header-h); box-sizing: border-box; flex-wrap: nowrap; }
+.g2-tree__title { font-size: 13px; white-space: nowrap; }
+.g2-tree__scn { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.g2-tree .seq__warn { margin: 6px 8px 0; }
+.g2-tree__body { flex: 1; min-height: 0; overflow: auto; padding: 4px 0 24px; outline: none; }
+.g2-tree__empty { margin: 12px; }
+.g2-tree__foot { flex: none; display: flex; align-items: center; gap: 16px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--bg-panel); font-size: 13px; color: var(--text); }
+.g2-row { display: flex; align-items: center; gap: 6px; min-height: 28px; padding-right: 4px; border-bottom: 1px solid var(--border); font-size: 13px; color: var(--text); cursor: pointer; outline: none; }
+.g2-row:hover { background: rgba(0, 0, 0, 0.035); }
+.g2-row.is-picked { background: rgb(var(--accent-rgb) / 0.14); }
+.g2-row:focus-visible { box-shadow: inset 0 0 0 1px var(--accent); }
+.g2-row--node { font-weight: 600; background: var(--bg-soft, var(--bg)); }
+.g2-row.is-drop-before { box-shadow: inset 0 2px 0 var(--accent); }
+.g2-row.is-drop-after { box-shadow: inset 0 -2px 0 var(--accent); }
+.g2-row.is-drop-inside { background: rgb(var(--accent-rgb) / 0.16); box-shadow: inset 0 0 0 1px var(--accent); }
+.g2-row__grip { flex: none; display: inline-flex; width: 20px; justify-content: center; color: var(--text-dim); cursor: grab; }
+.g2-row__grip svg { width: 16px; height: 16px; }
+.g2-row__fold { flex: none; width: 20px; }
+.g2-row__fold svg { width: 14px; height: 14px; }
+.g2-row__strip { flex: none; width: 4px; align-self: stretch; margin: 4px 0; border-radius: 2px; background: var(--border); }
+.g2-row__strip--node { background: var(--text-dim); }
+.g2-row__num { flex: none; min-width: 22px; text-align: right; font-size: 11px; font-variant-numeric: tabular-nums; }
+.g2-row__set { flex: 0 1 auto; min-width: 60px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.g2-row__set.is-bad { color: var(--danger); }
+.g2-row__name { flex: 0 1 260px; min-width: 80px; height: 24px; padding: 0 4px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); font: inherit; font-weight: 600; }
+.g2-row__name:hover { border-color: var(--border); }
+.g2-row__name:focus { outline: none; border-color: var(--accent); background: var(--bg-elevated); }
+.g2-row__meta { flex: none; font-size: 11px; white-space: nowrap; font-weight: 400; }
+.g2-row__chain { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; }
+.g2-row--node .g2-row__meta { flex: 1 1 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.g2-row .btn.btn--small { flex: none; min-width: 74px; }
+.g2-more { padding: 6px 8px 10px; border-bottom: 1px solid var(--border); border-left: 2px solid var(--border); }
+/* Generate 2 › a work item's activities: what it is built with, then the activities with their crew, days, where they come from, and the limit. */
+.g2-plan__bar { padding: 0 0 6px; flex-wrap: wrap; }
+.g2-plan__recipe { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; }
+.g2-plan__recipe select { max-width: 340px; }
+.g2-plan__qty { font-size: 12px; margin-left: auto; }
+.g2-plan__grid { margin-bottom: 4px; }
+.g2-plan__from .source-chip:first-child { margin-left: 0; }
+.source-chip--warn { border-style: dashed; border-color: var(--warn); color: var(--warn); }
+/* Generate 2 › Advanced: the scenario and the full editors, over Build, with their tabs and a close X at the far right. */
+.g2-adv { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--n-ffffff, #fff); }
+.g2-adv__tabs { flex: none; align-items: stretch; }
+.g2-adv__close { margin-left: auto; width: var(--header-h); border: 0; border-left: 1px solid var(--border); border-radius: 0; background: transparent; color: var(--text-dim); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.g2-adv__close:hover { background: rgba(0, 0, 0, 0.07); color: var(--text); }
+.g2-adv__close svg { width: var(--icon-row, 18px); height: var(--icon-row, 18px); }
+.g2-adv__body { flex: 1; min-height: 0; overflow: auto; display: flex; flex-direction: column; }
+.g2-adv__body > .scn-recipes, .g2-adv__body > .gen-advanced { flex: 1; min-height: 0; }
+.g2-adv__tabs { overflow-x: auto; overflow-y: hidden; white-space: nowrap; }
+.g2-adv__tabs > button { flex: none; }

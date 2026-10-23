@@ -48,6 +48,8 @@ import { forGenerator } from '../prs/recipeRules';
 import { inheritRecipes, inheritingSetNames } from '../prs/recipeInheritance';
 import { attachedSetNames, resolveAttachments } from '../prs/extraAttach';
 import { barSetNames, withBarGroups } from '../prs/summaryBars';
+import { withNodeBars } from '../prs/wbsTree';
+import { withItemOverrides } from '../prs/activityPlan';
 import { useSearchSetsStore } from './searchSetsStore';
 import { groupsWithSets, uniqueGroups } from '../prs/groupSets';
 import { recipeFolder } from './recipeFolderStore';
@@ -532,8 +534,9 @@ export function applyWorkItemLinks(built: BreakdownResult | null) {
 /** The rules as sent to the generator: every set it needs is a group, folder recipes are copied to their sets, and extras attached to sets know them. */
 function sentRules(rules: ScenarioRules): ScenarioRules {
   const sets = useSearchSetsStore.getState().sets;
-  const synced = withLibrary(rules);
-  return withBarGroups({ ...synced, recipes: inheritRecipes(synced.recipes ?? [], sets), extraTags: resolveAttachments(synced.extraTags, sets) }, sets);
+  // Generate 2's tree nodes are summary bars over their sets, and its work item overrides are recipes for the set; neither is sent as it is kept.
+  const { itemOverrides, ...synced } = withNodeBars(withLibrary(rules));
+  return withBarGroups({ ...synced, recipes: withItemOverrides(inheritRecipes(synced.recipes ?? [], sets), itemOverrides), extraTags: resolveAttachments(synced.extraTags, sets) }, sets);
 }
 
 export const updateFourD = () =>

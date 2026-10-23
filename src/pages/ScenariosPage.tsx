@@ -23,7 +23,7 @@ import { ModelsGanttPanel } from '../components/ModelConfigPanel';
 import { ListSetupButton } from '../components/ViewPicker';
 import { createPortal } from 'react-dom';
 import { useHeaderSlotStore } from '../state/headerSlotStore';
-import { ADVANCED_TABS, GENERATE_TABS, type GenerateTab, useGenerateTab, useShownAdvancedTab, useShownGenerateTab } from '../components/scenarios/GenerateTabs';
+import { ADVANCED_TABS, GENERATE_TABS, type GenerateTab, partOf, useGenerateTab, useShownGenerateTab } from '../components/scenarios/GenerateTabs';
 
 /** Generate: the whole of programme generation in one view, in tabs you take in order, no panels. 1 Scenario (project, building, start date, Update 4D,
     Save), 2 Resources (equipment, cranes and materials, and how many: the one place a count is typed), 3 Recipes (how each kind of object is built),
@@ -35,7 +35,7 @@ import { ADVANCED_TABS, GENERATE_TABS, type GenerateTab, useGenerateTab, useShow
 const CONFIG_TABS = [['columns', 'Columns'], ['filters', 'Filters'], ['group', 'Group'], ['color', 'Color']] as const;
 
 /** The strip over the 3D half: what the colours mean and how to hide it. The rest of the half lets the mouse through to the viewer. */
-function OrderViewBar() {
+export function OrderViewBar() {
   const setShow = useOrderPreview((s) => s.setShow);
   const current = useOrderPreview((s) => s.current);
   const setCurrent = useOrderPreview((s) => s.setCurrent);
@@ -129,14 +129,14 @@ function PoursTab() {
 }
 
 /** Labour: one table of the numbers a planner already knows: the crews, their trades, how many people and gangs, and the productivity. */
-function LabourTab() {
+export function LabourTab() {
   return <div className="gen-labour"><CrewsAndTrades /></div>;
 }
 
 /** The editors of a header tab: the one editor, or a short row of tabs when the tab holds two or three. */
-function PartsTab({ tab }: { tab: GenerateTab }) {
+export function PartsTab({ tab }: { tab: GenerateTab }) {
   const { ready } = useScenarioView();
-  const part = useShownAdvancedTab();
+  const part = partOf(tab, useGenerateTab((s) => s.advanced));
   const setAdvanced = useGenerateTab((s) => s.setAdvanced);
   const pours = useScenarioStore((s) => s.rows.length);
   const extras = useScenarioStore((s) => s.extras.length);
