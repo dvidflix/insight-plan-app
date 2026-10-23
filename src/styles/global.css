@@ -14748,3 +14748,8 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .home-start__detail { display: flex; align-items: center; gap: 12px; padding: 8px 12px; }
 .home-start__detail > .scn-dim.hint { flex: 1 1 auto; min-width: 0; }
 .home-start__detail > .btn { flex: 0 0 auto; }
+
+/* A set or folder picker whose value is no longer a set or folder: the value in red, and under it what happened and the nearest name to use */
+.rel-cell.is-bad { color: var(--danger); }
+.tree-pick__missing { padding: 2px 4px 4px; font-size: 12px; line-height: 1.4; color: var(--danger); white-space: normal; }
+.tree-pick__missing .link-btn { font-weight: 600; }

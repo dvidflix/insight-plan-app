@@ -250,6 +250,8 @@ function ExtrasGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
 /** Summary bars, as a spreadsheet: one task per building and level, from the first to the last object of its group. */
 function LevelTasksGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
   const rows = levelTaskRows(ctx.rules.levelTasks);
+  // A bar may be for a rule group of the scenario too: the generator finds it, so the picker does not call it missing.
+  const ruleGroupIds = useMemo(() => ctx.rules.groups.map((g) => g.id), [ctx.rules.groups]);
   const save = (list: LevelTaskRow[]) => ctx.change((r) => ({ ...r, levelTasks: list.reduce((tasks, row) => applyLevelTaskRow(tasks, row), r.levelTasks) }));
   const grid = useEditableGrid({ widthsKey: 'sequence.levelTasks',
     rows,
@@ -310,7 +312,7 @@ function LevelTasksGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
                   <th className="xl__row" scope="row">{at + 1}</th>
                   <td className="xl__check"><input type="checkbox" checked={t.enabled} aria-label="On" onChange={(e) => save([{ ...t, enabled: e.target.checked }])} /></td>
                   <td className={`xl__cell xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><input {...grid.cell('name', at)} value={t.name} spellCheck={false} onChange={(e) => save([{ ...t, name: e.target.value }])} />{grid.handle('name', at)}</td>
-                  <td className="xl__cell"><TreeTargetPicker value={t.group} none="Choose a set or folder…" onChange={(group) => save([{ ...t, group }])} /></td>
+                  <td className="xl__cell"><TreeTargetPicker value={t.group} none="Choose a set or folder…" ruleGroups={ruleGroupIds} onChange={(group) => save([{ ...t, group }])} /></td>
                   <td className="xl__cell xl__ro" title="One task for every building and level that has objects of this group">{!t.group.trim() ? 'pick a group' : m.pours === 0 ? `no objects of “${t.group}” in the loaded model` : m.tasks > 0 ? `${m.tasks} task${m.tasks === 1 ? '' : 's'} (one per building and level), from ${m.pours.toLocaleString()} objects` : `from ${m.pours.toLocaleString()} objects`}</td>
                   <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete" title="Delete the summary bar" onClick={() => remove(t.id)}><IconRemove /></button></td>
                 </tr>
@@ -344,6 +346,22 @@ export function OrderPanel() {
   const itemGroupKeys = useMemo(() => (built ? new Set(itemGroups.map((g) => g.trim().toUpperCase())) : null), [built, itemGroups]);
 
   const steps = ctx.rules.sequences.find((s) => s.id.toUpperCase() === STEPS_ID)?.steps ?? [];
+  // How many objects of the loaded models each row's search set finds (the Objects column; sets of the same name count once).
+  const allSets = useSearchSetsStore((st) => st.sets);
+  const engine = useViewerEngine();
+  const tick = useIndexTick();
+  const groupKey = steps.map((x) => x.group.trim().toUpperCase()).join('|');
+  const objectCounts = useMemo(() => {
+    const indexes = engine.getIndexes();
+    const out = new Map<string, number>();
+    if (indexes.size === 0) return out;
+    for (const g of new Set(groupKey.split('|').filter(Boolean))) {
+      const guids = new Set<string>();
+      for (const x of allSets) if (x.name.trim().toUpperCase() === g) for (const id of guidsOfSet(indexes, x)) guids.add(id);
+      out.set(g, guids.size);
+    }
+    return out;
+  }, [groupKey, allSets, engine, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   // A recipe's "Built in steps" link opens the step of its group.
   useEffect(() => {
     if (!stepFocus) return;
@@ -427,8 +445,8 @@ export function OrderPanel() {
       )}
       {steps.length === 0 ? <div className="scn-editor__help order__first"><b>Add your search sets as work items, top first. Then press Generate.</b> Use “+ Add a work item…” above. The search sets are made in Models › Search sets.</div> : (
         <table className="xl xgrid" {...grid.grid}>
-          <colgroup><col style={{ width: 48 }} /><col style={{ width: 280 }} /><col style={{ width: 100 }} /><col style={{ width: 340 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>
-          <thead><tr><th className="xl__corner" aria-label="Work item" /><th title="The search set built in this work item">Search set</th><th title="Built level by level, or once for the whole building">Built</th><th>Description</th><th aria-label="Show what it generates" /><th aria-label="Delete" /></tr></thead>
+          <colgroup><col style={{ width: 48 }} /><col style={{ width: 280 }} /><col style={{ width: 72 }} /><col style={{ width: 100 }} /><col style={{ width: 340 }} /><col style={{ width: 32 }} /><col style={{ width: 32 }} /></colgroup>
+          <thead><tr><th className="xl__corner" aria-label="Work item" /><th title="The search set built in this work item">Search set</th><th title="How many objects of the loaded models the search set finds">Objects</th><th title="Built level by level, or once for the whole building">Built</th><th>Description</th><th aria-label="Show what it generates" /><th aria-label="Delete" /></tr></thead>
           <tbody>
             {steps.map((s, i) => {
               const unknown = s.group.trim() !== '' && ctx.groupIds.length > 0 && !ctx.groupIds.some((g) => g.toUpperCase() === s.group.trim().toUpperCase());
@@ -446,6 +464,7 @@ export function OrderPanel() {
                     <td className={`xl__cell${unknown ? ' is-bad' : ''}`}>
                       <GroupPicker value={s.group} none="Choose a search set…" folders={ctx.groupFolders} invalid={unknown} onChange={(group) => set(i, { group })} />
                     </td>
+                    <td className="xl__cell xl__num xl__ro" title={objectCounts.get(s.group.trim().toUpperCase()) === 0 ? 'The search set finds no object in the loaded models' : undefined}>{objectCounts.get(s.group.trim().toUpperCase())?.toLocaleString() ?? ''}</td>
                     <td className="xl__check"><button type="button" className={`btn btn--small${s.perLevel ? ' primary' : ''}`} aria-pressed={!!s.perLevel} onClick={() => set(i, { perLevel: s.perLevel ? undefined : true })}
                       title={s.perLevel ? 'Built level by level. Click to build it once, for the whole building' : 'Built once. Click to build it level by level'}>{s.perLevel ? 'per level' : 'once'}</button></td>
                     <td className={`xl__cell xgrid__cell${grid.sel('note', i)}`} data-col="note" data-row={i}><input {...grid.cell('note', i)} value={s.note ?? ''} spellCheck={false} onChange={(e) => set(i, { note: e.target.value || undefined })} />{grid.handle('note', i)}</td>
@@ -453,7 +472,7 @@ export function OrderPanel() {
                     <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete work item" title="Delete the work item" onClick={() => { setOpen(i, false); setSteps(steps.filter((_, j) => j !== i)); }}><IconRemove /></button></td>
                   </tr>
                   {isOpen(i) && (
-                    <tr><th className="xl__row" /><td colSpan={5} className="seq__more">
+                    <tr><th className="xl__row" /><td colSpan={6} className="seq__more">
                       <StepRecipe group={s.group} recipes={recipes} pools={pools} rules={ctx.rules} />
                       {s.group.trim() !== '' && <PoursOf group={s.group} />}
                       {i > 0 && (
