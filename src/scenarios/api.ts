@@ -158,7 +158,7 @@ export const deleteScenarioOnServer = (req: { root: string; scenario: string }) 
 /** "Update 4D": the XML for the order on screen from the long-running
     generator (about a second; the order is not saved). `fast` is false when
     the scenario needed one full run first. */
-export const updateScenario = (req: SaveRequest & { startDate: string | null }) =>
+export const updateScenario = (req: SaveRequest & { startDate: string | null; /** Work items made from the grouping levels (prs/workBreakdown.ts), and their order: the generator makes the programme from them, not from the pours. */ workItems?: unknown[]; workSequence?: { GUID: string; Index: number }[] }) =>
   post<{ xml: string; log: string; warning: string | null; fast: boolean; seconds: number | null }>('update', req);
 
 /** Loads the building's model and the scenario's workbook into the

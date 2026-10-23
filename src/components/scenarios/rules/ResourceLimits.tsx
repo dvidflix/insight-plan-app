@@ -55,7 +55,7 @@ export function ResourceLimits() {
     <div>
       <div className="rel-bar">
         <button type="button" className="btn btn--small primary" onClick={add}>+ Limit</button>
-        <span className="scn-dim">At most this many of an activity run at the same time. Type a number, or a resource ID to use its quantity. For all the activities that use a resource, set “Max at once” on the resource instead.</span>
+        <span className="scn-dim hint">At most this many of an activity run at the same time. Type a number, or a resource ID to use its quantity. For all the activities that use a resource, set “Max at once” on the resource instead.</span>
       </div>
       {rows.length === 0 ? <div className="scn-dim scn-editor__help">No limits yet.</div> : (
         <table className="xl xgrid" {...grid.grid}>

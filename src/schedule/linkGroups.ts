@@ -67,7 +67,14 @@ export interface LinkGroup {
   subSequence?: SubSequence;
 }
 
-const OBJECT_BUILTIN_KEYS = new Set(['_category', '_name', '_guid', '_file']);
+const OBJECT_BUILTIN_KEYS = new Set(['_category', '_name', '_guid', '_file', '_workitem']);
+
+/** The work item each object belongs to (GlobalId -> item id), set after "Update 4D" makes the programme from work items. The
+    items' activities carry the id in the "Work Item" field, so a Link Group matching it to an object's "_workitem" links them. */
+export const WORK_ITEM_FIELD = 'Work Item';
+let workItemOf = new Map<string, string>();
+export const setWorkItemMembers = (next: Map<string, string>) => { workItemOf = next; };
+export const getWorkItemMembers = () => workItemOf;
 
 /** Display label for an object field key in the filter/match dropdowns. */
 export function objectFieldLabel(key: string): string {
@@ -75,6 +82,7 @@ export function objectFieldLabel(key: string): string {
   if (key === '_name') return 'Name';
   if (key === '_guid') return 'GlobalId';
   if (key === '_file') return 'File name';
+  if (key === '_workitem') return 'Work item';
   return key;
 }
 
@@ -124,6 +132,7 @@ export function objectFieldValue(el: ElementSummary, propertySet: string, attrib
   if (propertySet === '_name') return el.name;
   if (propertySet === '_guid') return el.guid;
   if (propertySet === '_file') return el.fileName;
+  if (propertySet === '_workitem') return workItemOf.get(el.guid) ?? '';
   return String(el.props[`${propertySet}.${attribute}`] ?? '');
 }
 

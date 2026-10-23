@@ -7,7 +7,7 @@ import { IconSectionChevron, IconRemove } from '../../icons';
 import { Field, NumberInput, RuleCard, type RuleContext } from './RuleParts';
 import { useSearchSetsStore } from '../../../state/searchSetsStore';
 
-/** Rule types Group, Level task, Sequence and Level link (rows of the Rules list). Groups are named selections of objects that
+/** Rule types Group, Summary bar, Sequence and Level link (rows of the Rules list). Groups are named selections of objects that
     live in the rules (they are not the 4D Link Groups) and can be far more granular; the others use them by name. */
 
 const FOR_EACH: { id: RuleGroup['forEach'][number]; label: string }[] = [
@@ -177,7 +177,7 @@ export function RuleGroupRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
   );
 }
 
-// ---------------------------------------------------------------- level tasks
+// ---------------------------------------------------------------- summary bars
 
 export function addLevelTask(ctx: RuleContext, seed?: Partial<LevelTask>) {
   ctx.change((r) => ({ ...r, levelTasks: [...r.levelTasks, { id: freshId(seed?.id ?? 'TASK', r.levelTasks.map((t) => t.id)), name: seed?.name ?? '', group: seed?.group ?? r.groups[0]?.id ?? '' }] }));
@@ -199,7 +199,7 @@ function SetOptions({ ctx, value }: { ctx: RuleContext; value: string }) {
   );
 }
 
-/** One level task for each group that is made per level (Walls, Slabs ...). */
+/** One summary bar for each group that is made per level (Walls, Slabs ...). */
 export const addStarterLevelTasks = (ctx: RuleContext) =>
   ctx.rules.groups
     .filter((g) => g.forEach.includes('level'))
@@ -373,14 +373,14 @@ export function LevelLinkRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
         </Field>
         <Field label="Direction">
           <select value={l.direction ?? 'toTask'} onChange={(e) => update({ direction: e.target.value as LevelLink['direction'] })}>
-            <option value="toTask">{l.pours ? 'activity → pour' : 'activity → level task'}</option>
-            <option value="fromTask">{l.pours ? 'pour → activity' : 'level task → activity'}</option>
+            <option value="toTask">{l.pours ? 'activity → pour' : 'activity → summary bar'}</option>
+            <option value="fromTask">{l.pours ? 'pour → activity' : 'summary bar → activity'}</option>
           </select>
         </Field>
         <Field label="Lag (hours)"><NumberInput value={l.lagHours ?? 0} min={-9999} onChange={(v) => update({ lagHours: num(v) })} /></Field>
       </div>
       <div className="rule-when">
-        <span className="rule-when__label">{l.pours ? 'Only extras tagged with' : 'To the level tasks'}</span>
+        <span className="rule-when__label">{l.pours ? 'Only extras tagged with' : 'To the summary bars'}</span>
 <div className="rule-when__items">
         {rules.levelTasks.map((t) => {
           const on = l.tasks.includes(t.id);
@@ -393,7 +393,7 @@ export function LevelLinkRowCard({ ctx, i }: { ctx: RuleContext; i: number }) {
         })}
 </div>
       </div>
-      <div className="scn-dim scn-editor__help">Ties activities to the level tasks of their own building and level. With <strong>To the pours</strong> filled in, an extra is tied to those pours of its own building and level instead (for example <code>select:{'{'}type=SLAB; phase=Concrete{'}'}</code>: the Concrete of the slabs; add a second link, with Start → Start, for both). <strong>Extra activities</strong> need a building and level. <strong>Open-ended activities</strong> are the ones left with no successor; linking them here takes the place of their close-out link. Finish → Finish to a level task means the task finishes with the activity.</div>
+      <div className="scn-dim scn-editor__help">Ties activities to the summary bars of their own building and level. With <strong>To the pours</strong> filled in, an extra is tied to those pours of its own building and level instead (for example <code>select:{'{'}type=SLAB; phase=Concrete{'}'}</code>: the Concrete of the slabs; add a second link, with Start → Start, for both). <strong>Extra activities</strong> need a building and level. <strong>Open-ended activities</strong> are the ones left with no successor; linking them here takes the place of their close-out link. Finish → Finish to a summary bar means the task finishes with the activity.</div>
     </RuleCard>
   );
 }

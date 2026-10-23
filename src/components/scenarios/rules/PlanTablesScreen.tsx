@@ -17,7 +17,7 @@ import { formulaNames } from '../../../schedule/durationFormula';
 
 export type PlanTab = 'parameters' | 'durations' | 'limits' | 'steps';
 type Tab = PlanTab;
-const TABS: { id: Tab; label: string }[] = [{ id: 'parameters', label: 'Parameters' }, { id: 'durations', label: 'Durations' }, { id: 'limits', label: 'Limits' }, { id: 'steps', label: 'Steps' }];
+const TABS: { id: Tab; label: string }[] = [{ id: 'parameters', label: 'Parameters' }, { id: 'durations', label: 'Durations' }, { id: 'limits', label: 'Limits' }, { id: 'steps', label: 'Work breakdown' }];
 /** The quantity a sample is made with until one is typed. */
 const DEFAULT_SAMPLE = 100;
 const TYPES: RelType[] = ['FS', 'SS', 'FF', 'SF'];
@@ -99,7 +99,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
   return (
     <div className="gen-panel">
       <div className="rg-full__bar gen-bar">
-        {onClose && <strong>Parameters, limits and steps</strong>}
+        {onClose && <strong>Parameters, limits and work breakdown</strong>}
         {book && <RecipeWorkbookButtons onNote={setNote} />}
         {onClose && <button type="button" className="btn btn--small primary" onClick={onClose}>Close (Esc)</button>}
       </div>
@@ -110,12 +110,12 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
         </div>
       )}
       <div className="rg-full__body gen-body">
-        {!scenarioOpen ? <div className="scn-dim scn-editor__help">Open a scenario (Scenarios panel) to edit its parameters, limits and steps: they are part of the scenario. You can still download the workbook, and upload one for the recipes and resources.</div>
+        {!scenarioOpen ? <div className="scn-dim scn-editor__help">Open a scenario (Scenarios panel) to edit its parameters, limits and work breakdown: they are part of the scenario. You can still download the workbook, and upload one for the recipes and resources.</div>
           : tab === 'parameters' ? (
             <div>
               <div className="rel-bar">
                 <button type="button" className="btn btn--small primary" onClick={() => setParameters([...parameters, { id: `Parameter_${parameters.length + 1}`, name: `Parameter_${parameters.length + 1}`, value: 0 }])}>+ Parameter</button>
-                <span className="scn-dim">A named value that duration formulas read: write its name in a recipe activity’s formula. Change a value, then Update 4D.</span>
+                <span className="scn-dim hint">A named value that duration formulas read: write its name in a recipe activity’s formula. Change a value, then Update 4D.</span>
               </div>
               {parameters.length === 0 ? <div className="scn-dim scn-editor__help">None yet.</div> : (
                 <table className="xl xgrid" {...pGrid.grid}>
@@ -146,7 +146,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
             </div>
           ) : tab === 'durations' ? (
             <div>
-              <div className="rel-bar"><span className="scn-dim">The days each duration formula gives, worked out live from the parameters. Type a typical quantity for each name the formulas read.</span></div>
+              <div className="rel-bar"><span className="scn-dim hint">The days each duration formula gives, worked out live from the parameters. Type a typical quantity for each name the formulas read.</span></div>
               {withFormula.length === 0 ? <div className="scn-dim scn-editor__help">No recipe activity has a duration formula yet.</div> : (
                 <>
                   {quantityNames.length > 0 && (
@@ -184,7 +184,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
             <div>
               <div className="rel-bar">
                 <button type="button" className="btn btn--small primary" onClick={() => setLimits([...limits, { id: `Formwork-${limits.length + 1}`, phase: 'Formwork', max: 1 }])}>+ Limit</button>
-                <span className="scn-dim">At most this many activities of the kind run at once (formwork sets, a specialist crew, a crane team). The programme is linked in lanes, in the order of the Steps. “Maximize resource availability” lifts every limit.</span>
+                <span className="scn-dim hint">At most this many activities of the kind run at once (formwork sets, a specialist crew, a crane team). The programme is linked in lanes, in the order of the work breakdown. “Maximize resource availability” lifts every limit.</span>
               </div>
               {limits.length === 0 ? <div className="scn-dim scn-editor__help">None yet: add Formwork and the number of sets you have, or name the equipment (Resources › Equipment, e.g. RES-1) so the number lives in one place.</div> : (
                 <table className="xl xgrid" {...lGrid.grid}>
@@ -214,11 +214,11 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
           ) : (
             <div>
               <div className="rel-bar">
-                <button type="button" className="btn btn--small primary" onClick={() => setSteps([...steps, { group: '' }])}>+ Step</button>
-                <span className="scn-dim">One line per group of objects, in the order they are built: for example rafts, then walls, then slabs. Each line starts when the one above it has finished, unless you change its link. Tick Per level to build that group level by level.</span>
+                <button type="button" className="btn btn--small primary" onClick={() => setSteps([...steps, { group: '' }])}>+ Work item</button>
+                <span className="scn-dim hint">One line per group of objects, in the order they are built: for example rafts, then walls, then slabs. Each line starts when the one above it has finished, unless you change its link. Tick Per level to build that group level by level.</span>
               </div>
               <ResourceCheck />
-              {steps.length === 0 ? <div className="scn-dim scn-editor__help">No steps: the pours follow the order of the scenario. Add a step for each search set (Raft, Double height walls, L01 internal walls ...).</div> : (
+              {steps.length === 0 ? <div className="scn-dim scn-editor__help">No work items: the pours follow the order of the scenario. Add a work item for each search set (Raft, Double height walls, L01 internal walls ...).</div> : (
                 <table className="rel-table">
                   <thead><tr><th aria-label="Show the activities" /><th>#</th><th>Search set / group</th><th>Per level</th><th>Link into it</th><th>Lag (h)</th><th>Notes</th><th aria-label="Move" /><th aria-label="Delete" /></tr></thead>
                   <tbody>
@@ -229,7 +229,7 @@ export function PlanTablesPanel({ only, onClose, book = true }: { only?: Tab[]; 
                       return (
                         <Fragment key={i}>
                         <tr>
-                          <td><button type="button" className="cols__icon" aria-expanded={openStep === i} onClick={() => setOpenStep(openStep === i ? null : i)} title={openStep === i ? 'Hide the activities this step generates' : 'Show the activities this step generates, their days and resources'} aria-label="Show the activities">{openStep === i ? <IconChevronDown /> : <IconChevronRight />}</button></td>
+                          <td><button type="button" className="cols__icon" aria-expanded={openStep === i} onClick={() => setOpenStep(openStep === i ? null : i)} title={openStep === i ? 'Hide the activities this work item generates' : 'Show the activities this work item generates, their days and resources'} aria-label="Show the activities">{openStep === i ? <IconChevronDown /> : <IconChevronRight />}</button></td>
                           <td>{i + 1}</td>
                           <td><input className="rel-cell" style={{ width: 280 }} list="recipe-groups" value={s.group} aria-invalid={unknown} title={unknown ? 'No search set or group has this name' : ''} onChange={(e) => set({ group: e.target.value })} /></td>
                           <td><input type="checkbox" checked={!!s.perLevel} onChange={(e) => set({ perLevel: e.target.checked || undefined })} aria-label="Per level" /></td>

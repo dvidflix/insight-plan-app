@@ -4,7 +4,7 @@ import type { CrewTemplate, LimitRow, ParameterRow, PoolKind, PoolRow, RateRow, 
 import { RATE_HEAD, crewText, parseCrewText, parseRatesPaste, parseTradesPaste, ratesToTsv } from './relational';
 
 /** The recipes as one Excel workbook, for people who would rather read a table than a graph: Recipes (a row per activity of each logical group),
-    Parameters (the named rates and limits the formulas read), Limits (how many activities of a kind run at once), Steps (the search sets in the
+    Parameters (the named rates and limits the formulas read), Limits (how many activities of a kind run at once), Work breakdown (the search sets in the
     order they are built, with the link into each) and Resources (equipment, cranes and materials, and how many there are). The tables are the
     source of truth: edit them in Excel, upload, and the recipes and the scenario follow. A sheet is the whole list for what it holds, except that a
     recipe not in the Recipes sheet is kept. Columns are matched by name (an asterisk or a bracketed note is ignored), in any order. */
@@ -21,7 +21,7 @@ export interface RecipeSheets {
   trades?: Row[];
 }
 
-export const RECIPE_SHEET_NAMES = { recipes: 'Recipes', parameters: 'Parameters', limits: 'Limits', steps: 'Steps', resources: 'Resources', rates: 'Rates', crews: 'Crews', trades: 'Trades', readme: 'Read me' } as const;
+export const RECIPE_SHEET_NAMES = { recipes: 'Recipes', parameters: 'Parameters', limits: 'Limits', steps: 'Work breakdown', resources: 'Resources', rates: 'Rates', crews: 'Crews', trades: 'Trades', readme: 'Read me' } as const;
 
 /** The quantities of each pour a formula can use, besides the parameters (worked out when the programme is generated). */
 export const QUANTITY_NAMES = ['Concrete_m3', 'Rebar_t', 'Rebar_kg', 'Footprint_m2', 'Sides_m2', 'crews'] as const;
@@ -33,8 +33,8 @@ export const RECIPE_README: string[] = [
   'Days is a fixed duration; Duration Formula is worked out for each pour from its quantities and the Parameters, e.g. Rebar_kg / Rebar_Rate or max(1, Concrete_m3 / Concrete_Rate). The formula wins when both are given.',
   `Formula names: ${QUANTITY_NAMES.join(', ')} (the pour's own quantities), and every name in Parameters (not case sensitive). Functions: min, max, abs, ceil, floor, round, sqrt.`,
   'Parameters: the sheet is the whole list for the scenario. Change a rate and update 4D: every duration that reads it follows.',
-  'Limits: at most "Max at once" activities of the Activity kind run together (Formwork, with Max at once = Formwork_Sets_Available or a number). The programme is linked in lanes, in the order of the Steps.',
-  'Steps: the search sets in the order they are built. Each step waits for the one before it (finish to start) unless Link into it says otherwise (FS, SS, FF, SF, with Lag in hours). Per level repeats the step for every level in turn.',
+  'Limits: at most "Max at once" activities of the Activity kind run together (Formwork, with Max at once = Formwork_Sets_Available or a number). The programme is linked in lanes, in the order of the Work breakdown.',
+  'Work breakdown (earlier workbooks call this sheet Steps, and both are read): the search sets in the order they are built. Each item waits for the one before it (finish to start) unless Link into it says otherwise (FS, SS, FF, SF, with Lag in hours). Per level repeats the item for every level in turn.',
   'Resources: equipment, cranes and materials (Kind = equipment, crane or material) and how many there are. A row not in the sheet is kept.',
   'Rates, Crews and Trades: each sheet is the whole list for the scenario (a rate, crew or trade not in the sheet is removed). Rates: Type is days, productivity or rebar, and only the columns of that type are read. Crews: Crew is the trades and people per day ("SF 6, CP 4"). Trades: Code, Name and People per day.',
   'A recipe not in the Recipes sheet is kept. Recipes: edit Recipe and Logical Group to make a new recipe; the activities of a recipe in the sheet are exactly the rows given.',
@@ -117,7 +117,7 @@ export function toRecipeSheets(src: BookSource): Required<RecipeSheets> {
     recipes,
     parameters: src.parameters.map((p) => ({ 'Name*': p.name, 'Value*': p.value, Unit: p.unit ?? '', Notes: p.note ?? '' })),
     limits: src.limits.map((l) => ({ 'Activity*': l.phase, 'Logical Group': l.group ?? '', 'Max at once': l.max, Notes: l.note ?? '' })),
-    steps: steps.map((s, i) => ({ Step: i + 1, 'Search set / group*': s.group, 'Per level': s.perLevel ? 'yes' : '', 'Link into it': s.type && s.type !== 'FS' ? s.type : '', 'Lag (h)': s.lagHours ?? '', Notes: s.note ?? '' })),
+    steps: steps.map((s, i) => ({ Item: i + 1, 'Search set / group*': s.group, 'Per level': s.perLevel ? 'yes' : '', 'Link into it': s.type && s.type !== 'FS' ? s.type : '', 'Lag (h)': s.lagHours ?? '', Notes: s.note ?? '' })),
     resources: src.pools.map((p) => ({ Kind: p.kind, 'ID*': p.id, Name: p.name, Quantity: p.quantity, Notes: p.note ?? '' })),
     rates: rateRows(src.rates ?? []),
     crews: (src.crews ?? []).map((c) => ({ 'ID*': c.id, Crew: crewText(c), Subcontractor: c.subcontractor ?? '', 'Crews available': c.available ?? '' })),
@@ -304,15 +304,15 @@ export function fromRecipeSheets(sheets: RecipeSheets, current: { recipes: Recip
   if (sheets.steps) {
     const rows = cells(sheets.steps);
     const groupHead = rows[0]?.has('search set / group') ? 'search set / group' : 'search set';
-    if (!missing('Steps', rows, [groupHead])) {
-      const picked = rows.map((c, at) => ({ c, at, order: numberOf(c, 'step') ?? Number.MAX_SAFE_INTEGER })).filter(({ c }) => text(c, groupHead));
+    if (!missing('Work breakdown', rows, [groupHead])) {
+      const picked = rows.map((c, at) => ({ c, at, order: numberOf(c, 'item') ?? numberOf(c, 'step') ?? Number.MAX_SAFE_INTEGER })).filter(({ c }) => text(c, groupHead));
       picked.sort((a, b) => a.order - b.order || a.at - b.at);
       const known = new Set((current.groupIds ?? []).map(upper));
       const steps = picked.map(({ c, at }): SequenceStep => {
         const group = text(c, groupHead);
-        if (known.size && !known.has(upper(group))) out.warnings.push(`Steps row ${at + 2}: no search set or group is called “${group}”.`);
+        if (known.size && !known.has(upper(group))) out.warnings.push(`Work breakdown row ${at + 2}: no search set or group is called “${group}”.`);
         const type = upper(text(c, 'link into it')) as RelType;
-        if (text(c, 'link into it') && !TYPES.includes(type)) out.warnings.push(`Steps row ${at + 2}: “${text(c, 'link into it')}” is not a link type (FS, SS, FF, SF).`);
+        if (text(c, 'link into it') && !TYPES.includes(type)) out.warnings.push(`Work breakdown row ${at + 2}: “${text(c, 'link into it')}” is not a link type (FS, SS, FF, SF).`);
         return {
           group,
           ...(yes(text(c, 'per level')) ? { perLevel: true } : {}),
@@ -322,7 +322,7 @@ export function fromRecipeSheets(sheets: RecipeSheets, current: { recipes: Recip
         };
       });
       out.steps = steps;
-      out.summary.push(`Steps: ${steps.length}`);
+      out.summary.push(`Work breakdown: ${steps.length}`);
     }
   }
 

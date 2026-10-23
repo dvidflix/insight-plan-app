@@ -1,6 +1,6 @@
 import type { Activity, ScheduleModel } from './types';
 import type { ElementSummary } from '../viewer/types';
-import { computeGroupLinks, getObjectJoins, taskFieldValue, type LinkGroup, type ObjectJoinLink } from './linkGroups';
+import { computeGroupLinks, getObjectJoins, getWorkItemMembers, taskFieldValue, type LinkGroup, type ObjectJoinLink } from './linkGroups';
 import type { ObjectsByModel } from './activityRelation';
 
 /** The activity code type or UDF that holds the element ID (e.g. "CWA-Element ID"), if the schedule has one. */
@@ -35,11 +35,11 @@ export const isWallType = (type: string) => type.includes('WALL');
 const normaliseType = (v: unknown) => String(v ?? '').trim().replace(/ /g, '_').toUpperCase();
 
 /** The last result, kept while its inputs are the same objects, so the panes showing it share one run. */
-let last: { model: ScheduleModel; models: unknown; groups: LinkGroup[]; joins: ObjectJoinLink[]; result: ActivityObjects } | null = null;
+let last: { model: ScheduleModel; models: unknown; groups: LinkGroup[]; joins: ObjectJoinLink[]; items: Map<string, string>; result: ActivityObjects } | null = null;
 export function sharedActivityObjects(model: ScheduleModel, loadedModels: { modelId: string; elements: ElementSummary[] }[], groups: LinkGroup[]): ActivityObjects {
-  if (last && last.model === model && last.models === loadedModels && last.groups === groups && last.joins === getObjectJoins()) return last.result;
+  if (last && last.model === model && last.models === loadedModels && last.groups === groups && last.joins === getObjectJoins() && last.items === getWorkItemMembers()) return last.result;
   const result = buildActivityObjects(model, loadedModels, groups);
-  last = { model, models: loadedModels, groups, joins: getObjectJoins(), result };
+  last = { model, models: loadedModels, groups, joins: getObjectJoins(), items: getWorkItemMembers(), result };
   return result;
 }
 

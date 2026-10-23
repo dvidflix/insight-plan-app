@@ -17,7 +17,7 @@ export interface KindMeta {
   family: KindFamily;
   /** One line: what the rule does (shown in the Add rule picker and on the badge). */
   tip: string;
-  /** Needs something else first (groups, level tasks, ...) and the word for it. */
+  /** Needs something else first (groups, summary bars, ...) and the word for it. */
   needs?: 'groups' | 'levelTasks' | 'calendars';
 }
 
@@ -33,9 +33,9 @@ export const KINDS: KindMeta[] = [
   { id: 'calendar', label: 'Calendar', family: 'engine', tip: 'A working week: the days, the start and the hours a day (add one by hand or import them from a P6 schedule)' },
   { id: 'setting', label: 'Setting', family: 'engine', tip: "One of the engine's switches or distances (level gate, curing, smallest object ...)" },
   { id: 'group', label: 'Group', family: 'structure', tip: 'A named selection of objects, used by name in other rules, and the way to leave objects out of the schedule (not the 4D Link Groups)' },
-  { id: 'levelTask', label: 'Level task', family: 'structure', tip: 'Per building and level, a task dated from the objects of a group', needs: 'groups' },
+  { id: 'levelTask', label: 'Summary bar', family: 'structure', tip: 'Per building and level, a task dated from the objects of a group', needs: 'groups' },
   { id: 'sequence', label: 'Sequence', family: 'logic', tip: 'Groups put in order, level by level', needs: 'groups' },
-  { id: 'levelLink', label: 'Level link', family: 'logic', tip: 'Activities tied to the level tasks of their own building and level', needs: 'levelTasks' },
+  { id: 'levelLink', label: 'Level link', family: 'logic', tip: 'Activities tied to the summary bars of their own building and level', needs: 'levelTasks' },
   { id: 'contact', label: 'Contact link', family: 'logic', tip: 'Links built from the objects the clash detection found in contact' },
 ];
 

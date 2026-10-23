@@ -37,7 +37,7 @@ const wbsFromChoice = (choice: string) => (choice === 'default' ? '' : choice ==
 
 /** All the extra activities as one table, to edit them together: tick rows and change a field for all of them at once, paste a block from a
     spreadsheet (or copy the table to one), add rows. What each one is (task, milestone, WBS summary ...), where it goes in the WBS and which
-    level task it is tied to are kept in the rules, by its ID. */
+    summary bar it is tied to are kept in the rules, by its ID. */
 export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map<string, string> }) {
   const extras = useScenarioStore((s) => s.extras);
   const tags = ctx.rules.extraTags;
@@ -204,7 +204,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
       <div className="rule-extras__bar">
         <input type="search" value={filter} onChange={(e) => setFilter(e.target.value)} placeholder="Filter…" aria-label="Filter the extra activities" />
         <button type="button" className="btn btn--small" onClick={() => { addExtra(); }}>+ Add</button>
-        <button type="button" className="btn btn--small" onClick={() => setPaste(paste === null ? '' : null)} title="Paste rows from a spreadsheet: ID, Name, Days, Baseline start, Baseline finish, and optionally Type, Building, Level, WBS, Level task">Paste from Excel…</button>
+        <button type="button" className="btn btn--small" onClick={() => setPaste(paste === null ? '' : null)} title="Paste rows from a spreadsheet: ID, Name, Days, Baseline start, Baseline finish, and optionally Type, Building, Level, WBS, Summary bar">Paste from Excel…</button>
         <button type="button" className="btn btn--small" onClick={() => void copyAll()} title="Copy the table to paste it into a spreadsheet, change it there and paste it back (rows with the same ID are replaced)">{copied ? 'Copied' : 'Copy for Excel'}</button>
       </div>
       {paste !== null && (
@@ -213,7 +213,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
           <div className="scn-row">
             <button type="button" className="btn primary" disabled={!paste.trim()} onClick={importPaste}>Add these rows</button>
             <button type="button" className="btn" onClick={() => setPaste(null)}>Cancel</button>
-            <span className="scn-dim">Columns: ID, Name, Days, Baseline start, Baseline finish, then Type, Building, Level, WBS (level, slabs or a folder), Level task. Dates as 6 Apr 2029, 29/06/2029 or 2029-06-29. A row with an ID already here replaces it.</span>
+            <span className="scn-dim hint">Columns: ID, Name, Days, Baseline start, Baseline finish, then Type, Building, Level, WBS (level, slabs or a folder), Summary bar. Dates as 6 Apr 2029, 29/06/2029 or 2029-06-29. A row with an ID already here replaces it.</span>
           </div>
         </div>
       )}
@@ -228,8 +228,8 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
             <option value="">WBS…</option>
             {WBS_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
           </select>
-          <select style={selectStyle} value="" onChange={(e) => e.target.value && bulk({ task: e.target.value === 'none' ? '' : e.target.value })} aria-label="Set the level task of the ticked rows">
-            <option value="">Level task…</option>
+          <select style={selectStyle} value="" onChange={(e) => e.target.value && bulk({ task: e.target.value === 'none' ? '' : e.target.value })} aria-label="Set the summary bar of the ticked rows">
+            <option value="">Summary bar…</option>
             <option value="none">none (every task the link names)</option>
             {tasks.map((t) => <option key={t.id} value={t.id}>{t.id}</option>)}
           </select>
@@ -253,7 +253,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
             <thead>
               <tr>
                 <th><input type="checkbox" checked={allShown} onChange={() => setPicked(allShown ? new Set() : new Set(shown.map(({ i }) => i)))} aria-label="Tick all" /></th>
-                <th>ID</th><th>Name</th><th>Type</th><th className="scn-num">Days</th><th>Building</th><th>Level</th><th>WBS</th><th>Level task</th><th>Baseline start</th><th>Baseline finish</th><th />
+                <th>ID</th><th>Name</th><th>Type</th><th className="scn-num">Days</th><th>Building</th><th>Level</th><th>WBS</th><th>Summary bar</th><th>Baseline start</th><th>Baseline finish</th><th />
               </tr>
             </thead>
             <tbody>
@@ -282,7 +282,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
                       {choice === 'path' && <input value={(t.wbs ?? '').slice(5)} onChange={(ev) => setTags([e.TaskID], { wbs: `path:${ev.target.value}` })} placeholder="Folder / Subfolder" aria-label="WBS folder" spellCheck={false} />}
                     </td>
                     <td className={`xgrid__cell${grid.sel('task', at)}`} data-col="task" data-row={at}>
-                      <select value={t.task ?? ''} onChange={(ev) => setTags([e.TaskID], { task: ev.target.value })} aria-label="Level task">
+                      <select value={t.task ?? ''} onChange={(ev) => setTags([e.TaskID], { task: ev.target.value })} aria-label="Summary bar">
                         <option value="">all the link names</option>
                         {tasks.map((x) => <option key={x.id} value={x.id}>{x.id}</option>)}
                       </select>
@@ -302,7 +302,7 @@ export function ExtrasTableCard({ ctx, byCode }: { ctx: RuleContext; byCode: Map
         </div>
       )}
       <div className="scn-dim scn-editor__help">
-        Extra activities come from a high-level programme; the baseline dates become their target dates and the activity is dated from its links. <strong>Type</strong>: automatic is a task, or a finish milestone with no days; a WBS summary spans what is under its WBS node. <strong>WBS</strong>: on its level suits walls (beside the External and Internal Walls groups); the level's Slabs for slabs. <strong>Level task</strong>: the one a Level link ties it to.
+        Extra activities come from a high-level programme; the baseline dates become their target dates and the activity is dated from its links. <strong>Type</strong>: automatic is a task, or a finish milestone with no days; a WBS summary spans what is under its WBS node. <strong>WBS</strong>: on its level suits walls (beside the External and Internal Walls groups); the level's Slabs for slabs. <strong>Summary bar</strong>: the one a Level link ties it to.
       </div>
     </RuleCard>
   );

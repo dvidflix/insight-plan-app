@@ -95,6 +95,8 @@ def get_bbox_height(element) -> float | None:
     if not GEOM_AVAILABLE:
         return None
 
+    if not hasattr(element, "id"):
+        return None  # not an object of a model (a work item, core/work_items.py)
     key = element.id()
     if key in _BBOX_HEIGHT_CACHE:
         return _BBOX_HEIGHT_CACHE[key]
@@ -132,6 +134,8 @@ def get_plan_footprint(element):
     """(footprint, z_min, z_max) of the element in world coordinates (metres): the plan outline as a
     shapely geometry (union of its upward-facing triangles, as core/element_features.py measures it)
     and its vertical extent. None when the geometry is unavailable. Cached per element."""
+    if not hasattr(element, "id"):
+        return None  # not an object of a model (a work item, core/work_items.py)
     key = element.id()
     if key in _FOOTPRINT_CACHE:
         return _FOOTPRINT_CACHE[key]
@@ -162,6 +166,8 @@ def get_measured_area(element, basis):
     """Square metres of an element for an area basis, measured from its geometry (cached per element): "footprint" is the
     plan area (the upward faces projected to plan, a slab's deck area), "sides" the area of its vertical faces (a wall's
     formwork). None when the geometry is unavailable."""
+    if not hasattr(element, "id"):
+        return None  # not an object of a model (a work item, core/work_items.py)
     key = element.id()
     if key not in _AREA_CACHE:
         try:

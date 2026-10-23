@@ -1,4 +1,5 @@
 import { normalizeRecipes, type Recipe } from './recipes';
+import { normalizeBreakdown, type BreakdownDefinition } from './workBreakdown';
 
 /** A scenario's programme rules, as the Rules panel edits them and the generator reads them
     (scenario-engine/core/rules.py, core/rule_logic.py; the format is described in docs/programme-rules).
@@ -413,6 +414,8 @@ export interface ScenarioRules {
   /** Where an extra activity belongs, by its ID: its building and level (for the level links and the WBS), where it goes in the WBS, and
       which level task it is tied to. */
   extraTags: Record<string, ExtraTag>;
+  /** The work breakdown as grouping levels (prs/workBreakdown.ts): when a level makes the group of the work item, the generator is given work items made from the objects, not the pours. */
+  breakdown?: BreakdownDefinition;
 }
 
 /** The one empty set of rules (same object each time, so "unchanged" is a plain comparison). */
@@ -454,6 +457,7 @@ export function normalizeRules(raw: unknown): ScenarioRules {
     parameters: arr<ParameterRow>(r.parameters).filter((p) => typeof p.name === 'string' && p.name.trim() !== '').map((p) => ({ ...p, id: p.id || p.name, value: Number.isFinite(Number(p.value)) ? Number(p.value) : 0 })),
     limits: arr<LimitRow>(r.limits).filter((l) => typeof l.phase === 'string' && l.phase.trim() !== '').map((l) => ({ ...l, id: l.id || `${l.group ? `${l.group}|` : ''}${l.phase}` })),
     extraTags: r.extraTags && typeof r.extraTags === 'object' && !Array.isArray(r.extraTags) ? { ...r.extraTags } : {},
+    ...(normalizeBreakdown(r.breakdown) ? { breakdown: normalizeBreakdown(r.breakdown) } : {}),
   };
   return isEmptyRules(out) ? NO_RULES : out;
 }
@@ -472,6 +476,7 @@ export const isEmptyRules = (r: ScenarioRules): boolean =>
   (r.resourcePools ?? []).length === 0 &&
   (r.parameters ?? []).length === 0 &&
   (r.limits ?? []).length === 0 &&
+  !(r.breakdown?.levels.length) &&
   Object.keys(r.extraTags).length === 0;
 
 export const totalRules = (r: ScenarioRules): number =>

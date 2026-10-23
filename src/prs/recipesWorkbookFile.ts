@@ -36,7 +36,7 @@ export async function readRecipeWorkbook(file: File): Promise<RecipeSheets> {
     if (!sheet) return undefined;
     return XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '', raw: true }).map((r) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, typeof v === 'number' ? v : String(v ?? '')])));
   };
-  const out: RecipeSheets = { recipes: rows(RECIPE_SHEET_NAMES.recipes), parameters: rows(RECIPE_SHEET_NAMES.parameters), limits: rows(RECIPE_SHEET_NAMES.limits), steps: rows(RECIPE_SHEET_NAMES.steps), resources: rows(RECIPE_SHEET_NAMES.resources), rates: rows(RECIPE_SHEET_NAMES.rates), crews: rows(RECIPE_SHEET_NAMES.crews), trades: rows(RECIPE_SHEET_NAMES.trades) };
-  if (!out.recipes && !out.parameters && !out.limits && !out.steps && !out.resources && !out.rates && !out.crews && !out.trades) throw new Error('The workbook has none of the sheets Recipes, Parameters, Limits, Steps, Resources, Rates, Crews or Trades. Use a file made with Download workbook.');
+  const out: RecipeSheets = { recipes: rows(RECIPE_SHEET_NAMES.recipes), parameters: rows(RECIPE_SHEET_NAMES.parameters), limits: rows(RECIPE_SHEET_NAMES.limits), steps: rows(RECIPE_SHEET_NAMES.steps) ?? rows('Steps'), resources: rows(RECIPE_SHEET_NAMES.resources), rates: rows(RECIPE_SHEET_NAMES.rates), crews: rows(RECIPE_SHEET_NAMES.crews), trades: rows(RECIPE_SHEET_NAMES.trades) };
+  if (!out.recipes && !out.parameters && !out.limits && !out.steps && !out.resources && !out.rates && !out.crews && !out.trades) throw new Error('The workbook has none of the sheets Recipes, Parameters, Limits, Work breakdown, Resources, Rates, Crews or Trades. Use a file made with Download workbook.');
   return out;
 }

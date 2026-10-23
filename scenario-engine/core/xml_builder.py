@@ -1250,6 +1250,7 @@ def add_udf_types(root):
         ("12", "CWA-Rate Basis", "Text"),
         ("13", "CWA-Measured", "Text"),
         ("14", "CWA-Recipe", "Text"),
+        ("15", "Work Item", "Text"),
     ]:
         udf = ET.SubElement(root, "UDFType")
         ET.SubElement(udf, "ObjectId").text = oid
@@ -2212,6 +2213,12 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
             u = ET.SubElement(act, "UDF")
             ET.SubElement(u, "TypeObjectId").text = "6"
             ET.SubElement(u, "TextValue").text = building_code
+
+        # A work item's activities carry its id, so the app links them to the item's objects (core/work_items.py).
+        if rec.get("_work_item") and getattr(rec.get("element"), "GlobalId", ""):
+            u = ET.SubElement(act, "UDF")
+            ET.SubElement(u, "TypeObjectId").text = "15"
+            ET.SubElement(u, "TextValue").text = str(rec["element"].GlobalId)
 
         # The recipe that made the activity (the Recipe column of the Gantt); the engine's own chain has none.
         recipe_id = str(act_data.get("recipe") or "").strip()

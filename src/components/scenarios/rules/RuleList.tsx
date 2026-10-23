@@ -104,7 +104,8 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
     // A group that is a set of the "Recipes sets" folder is edited there (Models > Search sets): only the others are listed.
     rules.groups.forEach((g, i) => { if (!setNames.has(g.id.toUpperCase())) out.push({ kind: 'group', i, key: `group:${i}`, text: text(g) }); });
     push('levelTask', rules.levelTasks);
-    push('sequence', rules.sequences);
+    // The work breakdown (the STEPS order) is the Work breakdown tab, not a rule of this list.
+    rules.sequences.forEach((s, i) => { if (s.id.toUpperCase() !== 'STEPS') out.push({ kind: 'sequence', i, key: `sequence:${i}`, text: text(s) }); });
     push('levelLink', rules.levelLinks);
     push('contact', rules.contacts);
     return out.filter((e) => !only || only.includes(e.kind)).sort((a, b) => KIND_ORDER.indexOf(a.kind) - KIND_ORDER.indexOf(b.kind) || a.i - b.i);
@@ -122,7 +123,7 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
   const unavailable = (kind: RuleKind): string | null => {
     const needs = KIND_BY_ID[kind].needs;
     if (needs === 'groups' && rules.groups.length === 0) return 'Add a group first';
-    if (needs === 'levelTasks' && rules.levelTasks.length === 0) return 'Add a level task first';
+    if (needs === 'levelTasks' && rules.levelTasks.length === 0) return 'Add a summary bar first';
     if (needs === 'calendars' && rules.calendars.length === 0) return 'Add a calendar first';
     if (kind === 'crewOverride') return useScenarioStore.getState().crewOptions ? null : 'Load a scenario first';
     return null;
@@ -184,8 +185,8 @@ export function RuleList({ focus, only, storeKey = 'scenarios.rulesKinds' }: { f
     <div className="rule-list-panel" {...configFocusProps('rules')}>
       <ListConfig id="rules" label="Rules" searchable panels={{}} />
       <div className="rule-toolbar">
-        <button type="button" className={`btn${picker ? '' : ' primary'}`} aria-expanded={picker} onClick={() => setPicker(!picker)}>{picker ? 'Close' : '+ Add rule'}</button>
-        <button type="button" className="btn" aria-expanded={swapping} onClick={() => setSwapping(!swapping)} title="Change the group a rule names (a step, a limit, a level task ...) to another, in every rule at once">Replace group…</button>
+        {(!only || only.length > 0) && <button type="button" className={`btn${picker ? '' : ' primary'}`} aria-expanded={picker} onClick={() => setPicker(!picker)}>{picker ? 'Close' : '+ Add rule'}</button>}
+        <button type="button" className="btn" aria-expanded={swapping} onClick={() => setSwapping(!swapping)} title="Change the group a rule names (a step, a limit, a summary bar ...) to another, in every rule at once">Replace group…</button>
       </div>
       {swapping && (
         <div className="rule-legacy" role="group" aria-label="Replace a group">
@@ -268,7 +269,7 @@ The search sets stay. Switching the recipes off later would not bring these back
 
       <FreshEntryContext.Provider value={fresh}>
         <div className="rule-rows">
-          {entries.length === 0 && (
+          {entries.length === 0 && (!only || only.length > 0) && (
             <div className="scn-dim rule-empty">
               No rules: every phase takes 1 day and there is no rebar quantity. Add rules above (groups, rates, crews ...), give the Recipes their days, or load a preset (1HDAB_TOC holds this project's as rules).
             </div>

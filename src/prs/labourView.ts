@@ -40,11 +40,12 @@ const same = (a: string | undefined, b: string | undefined) => (a ?? '').trim().
 const on = <T extends { enabled?: boolean }>(x: T) => x.enabled !== false;
 
 const crewsOf = (data: LabourData, code: string) => data.crewTemplates.filter((c) => on(c) && c.trades.some((t) => same(t.trade, code)));
+/** The rate a crew gets before it is used for anything: typing a productivity for a crew makes it, named after the crew, and it is put on an activity when "Used for" is chosen. */
+const ownRateId = (crewId: string) => `${crewId}-RATE`;
 const rateOf = (data: LabourData, id: string | undefined) => (id ? data.rates.find((r) => on(r) && r.type === 'productivity' && same(r.id, id)) : undefined);
 
-/** The recipe tasks that are this labour's work: the crew has the trade in it and the task names a productivity rate. */
-function workOf(data: LabourData, code: string) {
-  const crews = crewsOf(data, code);
+/** The recipe tasks that are the work of some crews: the task names one of them and a productivity rate. */
+function workOfCrews(data: LabourData, crews: CrewTemplate[]) {
   const out: { recipe: number; task: number; crew: string; rate: string; phase: string }[] = [];
   data.recipes.forEach((r, ri) => {
     if (!on(r) || r.chain === false) return;
@@ -56,12 +57,28 @@ function workOf(data: LabourData, code: string) {
   return out;
 }
 
+/** The recipe tasks that are this labour's work: the crew has the trade in it and the task names a productivity rate. */
+function workOf(data: LabourData, code: string) {
+  return workOfCrews(data, crewsOf(data, code));
+}
+
+/** The productivity of one crew's work (a crew table line rather than a trade): its rate, what the rate is per and the phase it is for. */
+export function crewLabour(crewId: string, data: LabourData): Pick<LabourRow, 'rateId' | 'productivity' | 'basis' | 'usedFor' | 'alsoFor'> {
+  const crew = data.crewTemplates.find((c) => same(c.id, crewId));
+  const work = crew ? workOfCrews(data, [crew]) : [];
+  const first = work[0];
+  const rate = first ? rateOf(data, first.rate) : crew ? rateOf(data, ownRateId(crew.id)) : undefined;
+  const mine = first ? work.filter((w) => same(w.rate, first.rate)) : [];
+  const phases = [...new Set(mine.map((w) => w.phase))];
+  return { rateId: rate?.id, productivity: rate?.manhoursPerUnit, basis: rate ? rate.basis ?? 'rebar' : undefined, usedFor: first?.phase ?? '', alsoFor: phases.filter((p) => !same(p, first?.phase)) };
+}
+
 export function labourRows(trades: { code: string; name: string; capacity?: number | null }[], data: LabourData): LabourRow[] {
   return trades.map((t) => {
     const work = workOf(data, t.code);
     const first = work[0];
     const crew = first ? data.crewTemplates.find((c) => same(c.id, first.crew)) : crewsOf(data, t.code)[0];
-    const rate = first ? rateOf(data, first.rate) : undefined;
+    const rate = first ? rateOf(data, first.rate) : crew ? rateOf(data, ownRateId(crew.id)) : undefined;
     const mine = first ? work.filter((w) => same(w.crew, first.crew) && same(w.rate, first.rate)) : [];
     const phases = [...new Set(mine.map((w) => w.phase))];
     return {
@@ -77,10 +94,12 @@ export function labourRows(trades: { code: string; name: string; capacity?: numb
 const attachable = (t: { crew?: string; enabled?: boolean }, crew: string) => on(t) && (!t.crew || same(t.crew, crew));
 
 /** One edit of one labour row, written to the rows it comes from. Returns new data; what it does not touch is the same objects. */
-export function applyLabourEdit(data: LabourData, trade: { code: string; name: string }, edit: LabourEdit): LabourData {
+export function applyLabourEdit(data: LabourData, trade: { code: string; name: string }, edit: LabourEdit, /** Work on this crew rather than the first crew the trade is in. */ crewOf?: string): LabourData {
   let { trades, crewTemplates, rates, recipes } = data;
   const code = trade.code;
-  const row = labourRows([{ code, name: trade.name }], data)[0];
+  const trow = labourRows([{ code, name: trade.name }], data)[0];
+  const chosen = crewOf ? data.crewTemplates.find((c) => same(c.id, crewOf)) : undefined;
+  const row = chosen ? { ...trow, crewId: chosen.id, gangs: chosen.available || undefined, ...crewLabour(chosen.id, data) } : trow;
 
   if (edit.number !== undefined) {
     const n = Math.max(0, edit.number);
@@ -109,16 +128,21 @@ export function applyLabourEdit(data: LabourData, trade: { code: string; name: s
     });
   }
 
+  let rateId = row.rateId;
   if (edit.productivity !== undefined || edit.basis !== undefined) {
-    if (row.rateId) {
-      rates = rates.map((r) => (same(r.id, row.rateId) ? { ...r, ...(edit.productivity !== undefined ? { manhoursPerUnit: edit.productivity } : {}), ...(edit.basis ? { basis: edit.basis } : {}) } : r));
+    if (!rateId && (edit.productivity !== undefined || edit.basis)) {
+      // not used for anything yet: the crew gets a rate of its own, which "Used for" puts on an activity later
+      rateId = freshId(ownRateId(needCrew()), rates.map((r) => r.id));
+      rates = [...rates, { id: rateId, type: 'productivity' }];
+    }
+    if (rateId) {
+      rates = rates.map((r) => (same(r.id, rateId) ? { ...r, ...(edit.productivity !== undefined ? { manhoursPerUnit: edit.productivity } : {}), ...(edit.basis ? { basis: edit.basis } : {}) } : r));
     }
   }
 
   if (edit.usedFor !== undefined && !same(edit.usedFor, row.usedFor)) {
     const to = edit.usedFor.trim();
     // the rate the productivity is: the one it has, or a new one for the labour
-    let rateId = row.rateId;
     if (to && !rateId) {
       rateId = freshId(`${code}-${to}`, rates.map((r) => r.id));
       rates = [...rates, { id: rateId, type: 'productivity', ...(edit.productivity !== undefined ? { manhoursPerUnit: edit.productivity } : {}), ...(edit.basis ? { basis: edit.basis } : {}) }];

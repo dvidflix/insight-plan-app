@@ -72,7 +72,7 @@ function PoolTable({ kind, one }: { kind?: PoolKind; one: string }) {
     <div>
       <div className="rel-bar">
         <button type="button" className="btn btn--small primary" onClick={add}>+ {one[0].toUpperCase() + one.slice(1)}</button>
-        <span className="scn-dim">How many of each there are: the most that can be in use at once (0: not limited). A recipe task names the ID.</span>
+        <span className="scn-dim hint">How many of each there are: the most that can be in use at once (0: not limited). A recipe task names the ID.</span>
       </div>
       {rows.length === 0 ? <div className="scn-dim scn-editor__help">None yet.</div> : (
         <table className="xl xgrid" {...grid.grid}>

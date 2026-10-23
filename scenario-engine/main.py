@@ -29,6 +29,8 @@ from core.quantities import collect_props
 from core.resources import rebar_tonnes, crew_table_with_overrides
 from core import rules as _rules
 from core import levels as _levels
+from core import zones as _zones
+from core import work_items as _work_items
 from core.helpers import extract_value, title_case, get_element_world_coordinates, get_original_building_name, get_bbox_height
 from core.wbs_manager import WBSManager
 from core.activity_generator import create_activities
@@ -527,6 +529,8 @@ def _pad_pour_id(value):
 def _include_pour(rec):
     """Whether a pour gets activities: big enough (stairs always) and not an excluded type. The minimum volume and the
     excluded types are settings of the scenario's rules (Rules > Settings), by default 0.25 m3 and config.EXCLUDED_POUR_TYPES."""
+    if rec.get("_work_item"):
+        return "YES"  # the smallest-volume and excluded-type rules are for pours; a work item is in
     return "YES" if _rules.active().is_included(rec, _rules.excluded_pour_types(EXCLUDED_POUR_TYPES)) else "NO"
 
 
@@ -535,6 +539,7 @@ def _refresh_records(records):
     generator keeps its records between requests, so this runs for every generation.)"""
     active = _rules.active()
     _levels.apply(records, active.settings, LEVEL_CODE_FALLBACK, USE_PADDED_LEVEL_CODES)  # which property is the level, and the order of the levels
+    _zones.apply(records, active.settings)  # which property is the zone, and which zones are connected or disconnected (after the levels: it works on what they made)
     active.reset_joins(records)
     for rec in records:
         rec["include"] = _include_pour(rec)
@@ -547,6 +552,180 @@ def _refresh_records(records):
     if from_rebar and records and not any(float(r.get("rebar_weight_tonnes") or 0) > 0 for r in records):
         print("  WARNING: durations are worked out from rebar tonnes, but no Rebar rate gives tonnes per m3 of concrete, so every pour has 0 t and "
               "gets the minimum days. Add a Rebar rate (Rules > Rates, and an assignment for the Rebar phase).")
+
+
+def _pour_record(element, guid, p, property_cache, building_name_map, cached_bbox_heights, geometry=None, props=None):
+    """The record of one pour (or work item) from its properties `p` (the CWA Pour property set, or what a work item stands in for it). `geometry`
+    ({coords, bbox_height, original_building_name}) is given for an object that is not in a model (core/work_items.py); `props` are its numbers."""
+    level_display = p.get("Level") or "Unknown"
+    level_int = _parse_level_int(level_display)
+    level_code = LEVEL_CODE_FALLBACK if level_int <= 0 else (f"L{level_int:02d}" if USE_PADDED_LEVEL_CODES else f"L{level_int}")
+
+    pour_type_raw = str(p.get("Pour Type") or p.get("General Pour Type") or "OTHER")
+    pour_type = pour_type_raw.replace("_", " ").strip().upper()
+    pour_type_norm = _normalized_pour_type({"pour_type": pour_type})
+    if pour_type_norm not in CONTEMPLATED_POUR_TYPES and geometry is None:
+        print(f"  Warning: unrecognized pour type '{pour_type}' on GUID {element.GlobalId}")
+
+    volume = float(p.get("Pour Volume m3", 0.0))
+
+    conc_stage = str(p.get("Concrete Stage", "")).strip()
+    conc_stage_norm = conc_stage.upper()
+
+    # Double Height Wall Detection
+    max_elevation = extract_value(p.get("Max Elevation"))
+    min_elevation = extract_value(p.get("Min Elevation"))
+    is_double_height = False
+    if "WALL" in pour_type and max_elevation is not None and min_elevation is not None:
+        try:
+            is_double_height = (float(max_elevation) - float(min_elevation)) > 6
+        except:
+            is_double_height = False
+
+    is_external = str(p.get("Is External?") or p.get("IsExternal") or "").strip().upper() in ("YES", "Y", "TRUE", "1", "EXT", "EXTERNAL")
+
+    base_building = str(p.get("Building", "UNKNOWN")).strip().upper() or "BLD"
+    unit_code = str(p.get("Unit", "") or "").strip().upper()
+    if unit_code in {"UNKNOWN", "NONE", "N/A"}:
+        unit_code = ""
+
+    # Original IfcBuilding name as authored in the source model (captured
+    # before consolidate_spatial_structure deletes/rebuilds IfcBuildings).
+    original_building_name = geometry.get("original_building_name", "") if geometry else get_original_building_name(element)
+    mapped_building = building_name_map.get(original_building_name.strip().upper(), "") if original_building_name else ""
+
+    if mapped_building:
+        unit_building = mapped_building
+    else:
+        unit_building = f"{unit_code}{base_building}" if unit_code else base_building
+    building = _standard_building_code(unit_building)
+
+    building_zone = str(p.get("Building Zone") or p.get("Zone") or "")
+    is_disconnected = "DISCONNECTED" in building_zone.upper()
+    is_connected = "CONNECTED" in building_zone.upper() and not is_disconnected
+
+
+    zone_code = _activity_zone_code(is_connected=is_connected, is_disconnected=is_disconnected)
+    type_code = _activity_type_code(pour_type, is_external=is_external)
+
+    task_project_prefix = str(PROJECT_SHORT or "").strip().upper()
+    base_task_id = f"{task_project_prefix}-{building}-{level_code}" if task_project_prefix else f"{building}-{level_code}"
+    if zone_code:
+        base_task_id += f"-{zone_code}"
+    task_id_prefix = base_task_id + f"-{type_code}"
+    base_task_id += f"-{type_code}-{str(p.get('Pour ID Number') or p.get('PourID') or '').strip()}"
+
+    lg1_base = title_case(pour_type.replace("_", " "))
+    if "WALL" in pour_type:
+        lg1_base = f"{'External' if is_external else 'Internal'} {lg1_base}"
+    if is_double_height:
+        lg1_base = f"Double Height {lg1_base}"
+    if conc_stage_norm in {"2", "STAGE 2", "2.0", "STAGE2"}:
+        lg1_base += " (stage 2)"
+
+    zone_label = "Disconnected - " if is_disconnected else "Connected - " if is_connected else ""
+
+    current_wbs_prefix = str(WBS_PREFIX or "").replace(f"-{PROJECT_SHORT}", "").replace(f"{PROJECT_SHORT}-", "").format(BUILDING_CODE=building)
+    wbs = WBSManager(current_wbs_prefix)
+    wbs.register(f"{current_wbs_prefix} - Construction")
+
+    level_wbs_name = f"{current_wbs_prefix} - {level_display}"
+    wbs.register(level_wbs_name, f"{current_wbs_prefix} - Construction")
+
+    if "WALL" in pour_type:
+        direction = "External" if is_external else "Internal"
+        wall_wbs = f"{current_wbs_prefix} - {level_display} - {direction} Walls"
+        wbs.register(wall_wbs, level_wbs_name)
+        for sub in ["Rebar", "Formwork", "Concrete"]:
+            wbs.register(f"{wall_wbs} - {sub}", wall_wbs)
+        concrete_wbs_name = wall_wbs
+        concrete_wbs_oid = wbs.get_id(concrete_wbs_name)
+    else:
+        # (One raft per building: "Raft", not "Rafts".)
+        type_name = title_case(pour_type.replace("_", " ")) + ("" if "RAFT" in pour_type.upper() or geometry is not None else "s")
+        type_wbs = f"{current_wbs_prefix} - {level_display} - {type_name}"
+        wbs.register(type_wbs, level_wbs_name)
+        concrete_wbs_name = type_wbs
+        concrete_wbs_oid = wbs.get_id(concrete_wbs_name)
+
+    coord_x, coord_y, coord_z = geometry.get("coords", (0.0, 0.0, 0.0)) if geometry else get_element_world_coordinates(element)
+
+    # As CWA Codes / General Level 3: <unit+building>/<level>/<zone>/<general pour type>.
+    general_level_3 = "/".join(
+        str(v).strip() for v in (
+            f"{unit_code}{base_building}",
+            p.get("Level") or "",
+            p.get("Building Zone") or "",
+            p.get("General Pour Type") or "",
+        )
+    )
+    bbox_height = geometry.get("bbox_height", 0.0) if geometry else (cached_bbox_heights[guid] if guid in cached_bbox_heights else get_bbox_height(element))
+
+    pour_id = _pad_pour_id(p.get("Pour ID Number") or p.get("PourID"))
+
+    rec = {
+        "element": element,
+        "level_int": level_int,
+        "level_code": level_code,
+        "level_display": level_display,
+        "pour_type": pour_type,
+        "general_pour_type": str(p.get("General Pour Type") or pour_type).replace(" ", "_").upper(),
+        "is_external": is_external,
+        "is_double_height": is_double_height,
+        "lg1": lg1_base,
+        "lg2": f"{building}-{level_code} - {zone_label}{lg1_base}".strip(" -"),
+        "lg3": f"{building}-{level_code} - {lg1_base}",
+        # As CWA Codes / Full Pour ID: <unit+building>/<alt pour ID>, as authored
+        # (the models' own CWA Codes disagree on padding it).
+        "full_pour_id": f"{unit_code}{base_building}/{str(p.get(ALT_POUR_ID_PROP) or p.get('Pour ID Number') or '').strip()}".rstrip("/"),
+        "pour_id": pour_id,
+        "original_pour_id": pour_id,
+        "alt_pour_id": pour_id,
+        "conc_stage": conc_stage,
+        "volume": volume,
+        "task_id_base": base_task_id,
+        "task_id_prefix": task_id_prefix,
+        "building": building,
+        # Unit + Building in full (9HVD), for the CWA-Unit / CWA-Building codes.
+        "unit_building": unit_building,
+        "original_building_name": original_building_name,
+        "building_mapped": bool(mapped_building),
+        "wbs_prefix": current_wbs_prefix,
+        "concrete_wbs_oid": concrete_wbs_oid,
+        "concrete_wbs_name": concrete_wbs_name,
+        "wbs_manager": wbs,
+        "building_zone": building_zone,
+        "is_connected": is_connected,
+        "is_disconnected": is_disconnected,
+        "coord_x": coord_x,
+        "coord_y": coord_y,
+        "coord_z": coord_z,
+        # Small pours are left out, except stairs (a small stair pour is a step of a flight: see core/stair_steps.py).
+        "include": "NO",  # set below, once the record exists (_include_pour)
+        "min_elevation": min_elevation,
+        "max_elevation": max_elevation,
+        "general_level_3": general_level_3,
+        "bbox_height": bbox_height,
+        # The pour's properties as read, so the rules can say which one is its level (core/levels.py) without reading the model again.
+        "pour_pset": dict(p),
+    }
+    rec["props"] = props if props is not None else collect_props(guid, property_cache)  # the model's numbers a rule can take a quantity from
+    rec["include"] = _include_pour(rec)
+    rec["rebar_weight_tonnes"] = rebar_tonnes(rec)
+    return rec
+
+
+def build_work_item_records(items):
+    """The records of a request's work items (core/work_items.py): the record a pour of the same properties would have, with no model behind it."""
+    records = []
+    for n, item in enumerate(_work_items.clean(items), 1):
+        element = _work_items.WorkItemElement(str(item["id"]).strip(), str(item.get("name") or item["group"]))
+        p = _work_items.properties_of(item, n)
+        rec = _pour_record(element, element.GlobalId, p, {}, {}, {}, geometry=_work_items.geometry_of(item), props=_work_items.numbers_of(item))
+        rec["_work_item"] = True
+        rec["include"] = "YES"
+        records.append(rec)
+    return records
 
 
 def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heights=None):
@@ -576,161 +755,7 @@ def build_pour_records(model, property_cache, source_stem=None, cached_bbox_heig
             if not p:
                 continue
 
-            level_display = p.get("Level") or "Unknown"
-            level_int = _parse_level_int(level_display)
-            level_code = LEVEL_CODE_FALLBACK if level_int <= 0 else (f"L{level_int:02d}" if USE_PADDED_LEVEL_CODES else f"L{level_int}")
-
-            pour_type_raw = str(p.get("Pour Type") or p.get("General Pour Type") or "OTHER")
-            pour_type = pour_type_raw.replace("_", " ").strip().upper()
-            pour_type_norm = _normalized_pour_type({"pour_type": pour_type})
-            if pour_type_norm not in CONTEMPLATED_POUR_TYPES:
-                print(f"  Warning: unrecognized pour type '{pour_type}' on GUID {element.GlobalId}")
-
-            volume = float(p.get("Pour Volume m3", 0.0))
-
-            conc_stage = str(p.get("Concrete Stage", "")).strip()
-            conc_stage_norm = conc_stage.upper()
-
-            # Double Height Wall Detection
-            max_elevation = extract_value(p.get("Max Elevation"))
-            min_elevation = extract_value(p.get("Min Elevation"))
-            is_double_height = False
-            if "WALL" in pour_type and max_elevation is not None and min_elevation is not None:
-                try:
-                    is_double_height = (float(max_elevation) - float(min_elevation)) > 6
-                except:
-                    is_double_height = False
-
-            is_external = str(p.get("Is External?") or p.get("IsExternal") or "").strip().upper() in ("YES", "Y", "TRUE", "1", "EXT", "EXTERNAL")
-
-            base_building = str(p.get("Building", "UNKNOWN")).strip().upper() or "BLD"
-            unit_code = str(p.get("Unit", "") or "").strip().upper()
-            if unit_code in {"UNKNOWN", "NONE", "N/A"}:
-                unit_code = ""
-
-            # Original IfcBuilding name as authored in the source model (captured
-            # before consolidate_spatial_structure deletes/rebuilds IfcBuildings).
-            original_building_name = get_original_building_name(element)
-            mapped_building = building_name_map.get(original_building_name.strip().upper(), "") if original_building_name else ""
-
-            if mapped_building:
-                unit_building = mapped_building
-            else:
-                unit_building = f"{unit_code}{base_building}" if unit_code else base_building
-            building = _standard_building_code(unit_building)
-
-            building_zone = str(p.get("Building Zone") or p.get("Zone") or "")
-            is_disconnected = "DISCONNECTED" in building_zone.upper()
-            is_connected = "CONNECTED" in building_zone.upper() and not is_disconnected
-
-
-            zone_code = _activity_zone_code(is_connected=is_connected, is_disconnected=is_disconnected)
-            type_code = _activity_type_code(pour_type, is_external=is_external)
-
-            task_project_prefix = str(PROJECT_SHORT or "").strip().upper()
-            base_task_id = f"{task_project_prefix}-{building}-{level_code}" if task_project_prefix else f"{building}-{level_code}"
-            if zone_code:
-                base_task_id += f"-{zone_code}"
-            task_id_prefix = base_task_id + f"-{type_code}"
-            base_task_id += f"-{type_code}-{str(p.get('Pour ID Number') or p.get('PourID') or '').strip()}"
-
-            lg1_base = title_case(pour_type.replace("_", " "))
-            if "WALL" in pour_type:
-                lg1_base = f"{'External' if is_external else 'Internal'} {lg1_base}"
-            if is_double_height:
-                lg1_base = f"Double Height {lg1_base}"
-            if conc_stage_norm in {"2", "STAGE 2", "2.0", "STAGE2"}:
-                lg1_base += " (stage 2)"
-
-            zone_label = "Disconnected - " if is_disconnected else "Connected - " if is_connected else ""
-
-            current_wbs_prefix = str(WBS_PREFIX or "").replace(f"-{PROJECT_SHORT}", "").replace(f"{PROJECT_SHORT}-", "").format(BUILDING_CODE=building)
-            wbs = WBSManager(current_wbs_prefix)
-            wbs.register(f"{current_wbs_prefix} - Construction")
-
-            level_wbs_name = f"{current_wbs_prefix} - {level_display}"
-            wbs.register(level_wbs_name, f"{current_wbs_prefix} - Construction")
-
-            if "WALL" in pour_type:
-                direction = "External" if is_external else "Internal"
-                wall_wbs = f"{current_wbs_prefix} - {level_display} - {direction} Walls"
-                wbs.register(wall_wbs, level_wbs_name)
-                for sub in ["Rebar", "Formwork", "Concrete"]:
-                    wbs.register(f"{wall_wbs} - {sub}", wall_wbs)
-                concrete_wbs_name = wall_wbs
-                concrete_wbs_oid = wbs.get_id(concrete_wbs_name)
-            else:
-                # (One raft per building: "Raft", not "Rafts".)
-                type_name = title_case(pour_type.replace("_", " ")) + ("" if "RAFT" in pour_type.upper() else "s")
-                type_wbs = f"{current_wbs_prefix} - {level_display} - {type_name}"
-                wbs.register(type_wbs, level_wbs_name)
-                concrete_wbs_name = type_wbs
-                concrete_wbs_oid = wbs.get_id(concrete_wbs_name)
-
-            coord_x, coord_y, coord_z = get_element_world_coordinates(element)
-
-            # As CWA Codes / General Level 3: <unit+building>/<level>/<zone>/<general pour type>.
-            general_level_3 = "/".join(
-                str(v).strip() for v in (
-                    f"{unit_code}{base_building}",
-                    p.get("Level") or "",
-                    p.get("Building Zone") or "",
-                    p.get("General Pour Type") or "",
-                )
-            )
-            bbox_height = cached_bbox_heights[guid] if guid in cached_bbox_heights else get_bbox_height(element)
-
-            pour_id = _pad_pour_id(p.get("Pour ID Number") or p.get("PourID"))
-
-            rec = {
-                "element": element,
-                "level_int": level_int,
-                "level_code": level_code,
-                "level_display": level_display,
-                "pour_type": pour_type,
-                "general_pour_type": str(p.get("General Pour Type") or pour_type).replace(" ", "_").upper(),
-                "is_external": is_external,
-                "is_double_height": is_double_height,
-                "lg1": lg1_base,
-                "lg2": f"{building}-{level_code} - {zone_label}{lg1_base}".strip(" -"),
-                "lg3": f"{building}-{level_code} - {lg1_base}",
-                # As CWA Codes / Full Pour ID: <unit+building>/<alt pour ID>, as authored
-                # (the models' own CWA Codes disagree on padding it).
-                "full_pour_id": f"{unit_code}{base_building}/{str(p.get(ALT_POUR_ID_PROP) or p.get('Pour ID Number') or '').strip()}".rstrip("/"),
-                "pour_id": pour_id,
-                "original_pour_id": pour_id,
-                "alt_pour_id": pour_id,
-                "conc_stage": conc_stage,
-                "volume": volume,
-                "task_id_base": base_task_id,
-                "task_id_prefix": task_id_prefix,
-                "building": building,
-                # Unit + Building in full (9HVD), for the CWA-Unit / CWA-Building codes.
-                "unit_building": unit_building,
-                "original_building_name": original_building_name,
-                "building_mapped": bool(mapped_building),
-                "wbs_prefix": current_wbs_prefix,
-                "concrete_wbs_oid": concrete_wbs_oid,
-                "concrete_wbs_name": concrete_wbs_name,
-                "wbs_manager": wbs,
-                "building_zone": building_zone,
-                "is_connected": is_connected,
-                "is_disconnected": is_disconnected,
-                "coord_x": coord_x,
-                "coord_y": coord_y,
-                "coord_z": coord_z,
-                # Small pours are left out, except stairs (a small stair pour is a step of a flight: see core/stair_steps.py).
-                "include": "NO",  # set below, once the record exists (_include_pour)
-                "min_elevation": min_elevation,
-                "max_elevation": max_elevation,
-                "general_level_3": general_level_3,
-                "bbox_height": bbox_height,
-                # The pour's properties as read, so the rules can say which one is its level (core/levels.py) without reading the model again.
-                "pour_pset": dict(p),
-            }
-            rec["props"] = collect_props(guid, property_cache)  # the model's numbers a rule can take a quantity from
-            rec["include"] = _include_pour(rec)
-            rec["rebar_weight_tonnes"] = rebar_tonnes(rec)
+            rec = _pour_record(element, guid, p, property_cache, building_name_map, cached_bbox_heights)
             records.append(rec)
             seen_guids.add(guid)
 

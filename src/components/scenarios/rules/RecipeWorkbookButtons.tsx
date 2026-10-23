@@ -43,7 +43,7 @@ export function RecipeWorkbookButtons({ onNote }: { onNote: (note: { ok: boolean
         if (applied.crews) setCrews(applied.crews);
         if (applied.trades) setTrades(applied.trades);
       }
-      const lines = [...applied.summary, ...(needsScenario ? ['Parameters, Limits, Steps, Rates, Crews and Trades belong to a scenario: open one (Scenarios panel) and upload again to bring them in.'] : []), ...applied.warnings.map((w) => `⚠ ${w}`)];
+      const lines = [...applied.summary, ...(needsScenario ? ['Parameters, Limits, Work breakdown, Rates, Crews and Trades belong to a scenario: open one (Scenarios panel) and upload again to bring them in.'] : []), ...applied.warnings.map((w) => `⚠ ${w}`)];
       onNote({ ok: applied.warnings.length === 0 && !needsScenario, lines: lines.length ? lines : ['Nothing in the workbook to read.'] });
     } catch (e) {
       onNote({ ok: false, lines: [e instanceof Error ? e.message : String(e)] });
@@ -52,8 +52,8 @@ export function RecipeWorkbookButtons({ onNote }: { onNote: (note: { ok: boolean
 
   return (
     <>
-      <button type="button" className="btn btn--small" onClick={download} aria-label="Download workbook" title="Download workbook: one Excel workbook with Recipes, Parameters, Limits, Steps, Resources, Rates, Crews and Trades. Edit it there and upload it again."><IconDownload width={16} height={16} /></button>
-      <button type="button" className="btn btn--small" onClick={() => fileRef.current?.click()} aria-label="Upload workbook" title="Upload workbook: read a workbook made with Download workbook; the recipes, resources and (with a scenario open) the parameters, limits, steps, rates, crews and trades follow it"><IconUpload width={16} height={16} /></button>
+      <button type="button" className="btn btn--small" onClick={download} aria-label="Download workbook" title="Download workbook: one Excel workbook with Recipes, Parameters, Limits, Work breakdown, Resources, Rates, Crews and Trades. Edit it there and upload it again."><IconDownload width={16} height={16} /></button>
+      <button type="button" className="btn btn--small" onClick={() => fileRef.current?.click()} aria-label="Upload workbook" title="Upload workbook: read a workbook made with Download workbook; the recipes, resources and (with a scenario open) the parameters, limits, work breakdown, rates, crews and trades follow it"><IconUpload width={16} height={16} /></button>
       <input ref={fileRef} type="file" accept=".xlsx,.xls" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void upload(f); }} />
     </>
   );

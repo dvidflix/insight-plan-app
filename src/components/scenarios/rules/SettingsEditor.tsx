@@ -1,3 +1,4 @@
+import { Fragment } from 'react';
 import { SETTINGS_META, type SettingMeta, type SettingValue } from '../../../prs/rules';
 import { RuleCard, type RuleContext } from './RuleParts';
 
@@ -50,6 +51,41 @@ function Control({ meta, shown, onChange }: { meta: SettingMeta; shown: SettingV
       aria-label={meta.label}
       spellCheck={false}
     />
+  );
+}
+
+/** The settings as rows of the Rules table: a heading row for each group, then a row for each setting: its name, what it does, and its value (with the generator's
+    own beside it when it differs). The same settings and controls as the single card below. */
+export function SettingRows({ ctx }: { ctx: RuleContext }) {
+  const groups = [...new Set(SETTINGS_META.map((m) => m.group))];
+  return (
+    <>
+      {groups.map((group) => (
+        <Fragment key={group}>
+          <tr className="rules-table__group"><td colSpan={3}>{group}</td></tr>
+          {SETTINGS_META.filter((m) => m.group === group).map((m) => {
+            const value = ctx.rules.settings[m.key];
+            const def = ctx.defaults?.settings[m.key];
+            const isSet = value !== undefined;
+            const differs = isSet && ctx.defaults !== null && !same(value, def);
+            return (
+              <tr key={m.key} className={`rules-table__rule${differs ? ' is-changed' : ''}`}>
+                <td className="xl__cell xl__ro rules-table__name">{m.label}</td>
+                <td className="xl__cell xl__ro rules-table__help">{m.help}</td>
+                <td className="xl__cell xl__ro rules-table__action">
+                  <Control meta={m} shown={isSet ? value : (def as SettingValue)} onChange={(v) => setSetting(ctx, m.key, v)} />
+                  {differs ? (
+                    <span className="rule-setting__was"> generator: {fmt(def)} <button type="button" className="mini-btn" onClick={() => setSetting(ctx, m.key, undefined)} title="Back to the generator's value">reset</button></span>
+                  ) : (
+                    !isSet && <span className="rule-setting__was"> generator's</span>
+                  )}
+                </td>
+              </tr>
+            );
+          })}
+        </Fragment>
+      ))}
+    </>
   );
 }
 

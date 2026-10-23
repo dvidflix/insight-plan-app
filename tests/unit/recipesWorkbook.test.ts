@@ -49,7 +49,7 @@ describe('the recipes workbook', () => {
     expect(s.recipes[2].Follows).toBe('Formwork:SS+2d');
     expect(s.parameters[0]).toMatchObject({ 'Name*': 'Rebar_Rate', 'Value*': 500 });
     expect(s.limits[0]).toMatchObject({ 'Activity*': 'Formwork', 'Max at once': 'Formwork_Sets_Available' });
-    expect(s.steps[1]).toMatchObject({ Step: 2, 'Search set / group*': 'Walls L01', 'Per level': 'yes', 'Link into it': 'SS', 'Lag (h)': 16 });
+    expect(s.steps[1]).toMatchObject({ Item: 2, 'Search set / group*': 'Walls L01', 'Per level': 'yes', 'Link into it': 'SS', 'Lag (h)': 16 });
   });
 
   it('reads back what it wrote, keeping what a sheet cannot carry', () => {

@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react';
 import type { Recipe, RecipeTask } from '../../../prs/recipes';
-import type { ScenarioRules } from '../../../prs/rules';
+import type { LimitRow, ScenarioRules } from '../../../prs/rules';
+import { useRecipeStore } from '../../../state/recipeStore';
+import { useRuleContext } from './RuleParts';
 import { useEditableGrid } from '../../useEditableGrid';
 import { useScheduleStore } from '../../../state/scheduleStore';
 import { suffixOf, templateFor } from '../../../prs/recipeMatch';
@@ -11,16 +13,19 @@ import { hoursPerDayOf } from '../../../schedule/hoursPerDay';
     a recipe the tasks of another (a slab's, a wall's), so one worked-out recipe serves every set of its kind. Durations that come from quantities
     are a Rate (output per crew per day) on the task: the cell holds the rate's name. */
 
-type Field = 'days' | 'formula' | 'rate' | 'density' | 'crew' | 'calendar';
+type Field = 'days' | 'formula' | 'rate' | 'density' | 'crew' | 'calendar' | 'max';
 
-const FIELDS: { id: Field; label: string; hint: string; numeric?: boolean; list?: 'recipe-rates' | 'recipe-crews' | 'recipe-calendars' }[] = [
+const FIELDS: { id: Field; label: string; hint: string; numeric?: boolean; list?: 'recipe-rates' | 'recipe-crews' | 'recipe-calendars' | 'recipe-limit-sizes' }[] = [
   { id: 'days', label: 'Days', hint: 'A fixed number of days', numeric: true },
   { id: 'formula', label: 'Formula', hint: 'A duration formula in working days from the pour’s quantities and the scenario’s parameters, such as max(1, Concrete_m3 / Concrete_Rate); it beats a rate' },
   { id: 'rate', label: 'Rate', hint: 'A named Rate: days from the quantity (concrete m³, rebar tonnes …) divided by the output per crew per day', list: 'recipe-rates' },
   { id: 'density', label: 'Rebar rate', hint: 'A rebar rate: tonnes of rebar per m³ of concrete, for the Rebar task', list: 'recipe-rates' },
   { id: 'crew', label: 'Crew', hint: 'The crew template doing the task', list: 'recipe-crews' },
   { id: 'calendar', label: 'Calendar', hint: 'The working calendar of the task', list: 'recipe-calendars' },
+  { id: 'max', label: 'Max at once', hint: 'How many of this activity may run at the same time, for the objects of this recipe’s group (empty: no limit). A number, or a resource ID or a parameter name to take its number. A limit for every group is under Rules & extras › All limits', list: 'recipe-limit-sizes' },
 ];
+
+const limitMax = (t: string): number | string => (t.trim() !== '' && Number.isFinite(Number(t)) ? Number(t) : t.trim());
 
 const AUTO = '__best_match__';
 const key = (s: string) => s.trim().toUpperCase();
@@ -29,6 +34,23 @@ const numOf = (v: string): number | undefined => (v.trim() === '' || !Number.isF
 export function RecipeGrid({ recipes, rules, onChange, objects }: { recipes: Recipe[]; rules: ScenarioRules; onChange: (next: Recipe[]) => void; /** Objects in the loaded models for each set (by set name, upper case). */ objects?: Map<string, number> }) {
   const [field, setField] = useState<Field>('days');
   const f = FIELDS.find((x) => x.id === field)!;
+  const ctx = useRuleContext();
+  const pools = useRecipeStore((st) => st.pools);
+  const limits = ctx.rules.limits;
+  /** The limit that is this recipe's own for an activity (same activity and group), and the one for every group it falls back on. */
+  const ownLimit = (rec: Recipe, phase: string) => limits.find((l) => key(l.phase) === key(phase) && key(l.group ?? '') === key(rec.group));
+  const sharedLimit = (rec: Recipe, phase: string) => (rec.group.trim() ? limits.find((l) => key(l.phase) === key(phase) && !(l.group ?? '').trim()) : undefined);
+  /** Sets (or, when empty, takes off) the limits typed in the grid: one row per recipe group and activity, named like the workbook's Limits sheet. */
+  const setLimits = (list: { rec: Recipe; phase: string; text: string }[]) => ctx.change((rr) => {
+    let next: LimitRow[] = rr.limits;
+    for (const { rec, phase, text } of list) {
+      const same = (l: LimitRow) => key(l.phase) === key(phase) && key(l.group ?? '') === key(rec.group);
+      if (text.trim() === '') { next = next.filter((l) => !same(l)); continue; }
+      const max = limitMax(text);
+      next = next.some(same) ? next.map((l) => (same(l) ? { ...l, max } : l)) : [...next, { id: `${rec.group.trim() ? `${rec.group.trim()}|` : ''}${phase}`, phase, ...(rec.group.trim() ? { group: rec.group.trim() } : {}), max }];
+    }
+    return { ...rr, limits: next };
+  });
 
   // The recipes that make activities, with their place in the whole list.
   const rows = useMemo(() => recipes.map((r, i) => ({ r, i })).filter(({ r }) => r.chain !== false), [recipes]);
@@ -66,11 +88,13 @@ export function RecipeGrid({ recipes, rules, onChange, objects }: { recipes: Rec
 
   const taskOf = (r: Recipe, phase: string) => r.tasks.find((t) => key(t.phase) === key(phase));
   const read = (r: Recipe, phase: string): string => {
-    const v = taskOf(r, phase)?.[field];
+    if (field === 'max') { const l = ownLimit(r, phase); return l ? String(l.max) : ''; }
+    const v = taskOf(r, phase)?.[field as Exclude<Field, 'max'>];
     return v === undefined || v === null ? '' : String(v);
   };
   /** Sets the field of a task, adding the task to the recipe when it has none for that phase and a value is given. */
   const withValue = (r: Recipe, phase: string, text: string): Recipe => {
+    if (field === 'max') return r;
     const value = f.numeric ? numOf(text) : text.trim() === '' ? undefined : text.trim();
     const at = r.tasks.findIndex((t) => key(t.phase) === key(phase));
     if (at >= 0) return { ...r, tasks: r.tasks.map((t, j) => (j === at ? { ...t, [field]: value } : t)) };
@@ -83,6 +107,7 @@ export function RecipeGrid({ recipes, rules, onChange, objects }: { recipes: Rec
     rows,
     get: (col, { r }) => read(r, col),
     write: (col, cells) => {
+      if (field === 'max') { setLimits(cells.filter(([at]) => rows[at] && taskOf(rows[at].r, col)).map(([at, text]) => ({ rec: rows[at].r, phase: col, text }))); return; }
       const next = [...recipes];
       for (const [at, text] of cells) {
         const row = rows[at];
@@ -105,9 +130,11 @@ export function RecipeGrid({ recipes, rules, onChange, objects }: { recipes: Rec
     'recipe-rates': rules.rates.map((x) => x.id),
     'recipe-crews': rules.crewTemplates.map((x) => x.id),
     'recipe-calendars': rules.calendars.map((x) => x.id),
+    'recipe-limit-sizes': [...pools.filter((p) => p.kind !== 'material').map((p) => p.id), ...ctx.rules.parameters.map((p) => p.name)],
   };
   const unknown = (v: string): boolean => {
     if (!v || !f.list) return false;
+    if (field === 'max' && Number.isFinite(Number(v))) return false;
     const have = options[f.list];
     return have.length > 0 && !have.some((o) => key(o) === key(v));
   };
@@ -158,11 +185,12 @@ export function RecipeGrid({ recipes, rules, onChange, objects }: { recipes: Rec
                         inputMode={f.numeric ? 'decimal' : undefined}
                         value={value}
                         list={f.list}
-                        placeholder={has ? '' : '+'}
-                        title={has ? (unknown(value) ? `“${value}” is not in this scenario's list` : undefined) : `${r.id} has no ${p.phase} task: a value adds it`}
+                        placeholder={field === 'max' ? (has ? (sharedLimit(r, p.phase) ? `${sharedLimit(r, p.phase)!.max} (all)` : '') : '') : has ? '' : '+'}
+                        disabled={field === 'max' && !has}
+                        title={field === 'max' ? (has ? (sharedLimit(r, p.phase) && !value ? `Every group is limited to ${sharedLimit(r, p.phase)!.max} at once (Rules & extras › All limits). A number here limits ${r.group || 'this recipe'} alone` : f.hint) : `${r.id} has no ${p.phase} task`) : has ? (unknown(value) ? `“${value}” is not in this scenario's list` : undefined) : `${r.id} has no ${p.phase} task: a value adds it`}
                         spellCheck={false}
                         style={{ width: 92, ...(unknown(value) ? { color: 'var(--danger)' } : {}) }}
-                        onChange={(e) => onChange(recipes.map((x, j) => (j === i ? withValue(x, p.phase, e.target.value) : x)))}
+                        onChange={(e) => (field === 'max' ? setLimits([{ rec: r, phase: p.phase, text: e.target.value }]) : onChange(recipes.map((x, j) => (j === i ? withValue(x, p.phase, e.target.value) : x))))}
                       />
                       {(() => {
                         const res = resultOf(r, p.phase);
@@ -177,6 +205,7 @@ export function RecipeGrid({ recipes, rules, onChange, objects }: { recipes: Rec
           </tbody>
         </table>
       </div>
+      <datalist id="recipe-limit-sizes">{options['recipe-limit-sizes'].map((n) => <option key={n} value={n} />)}</datalist>
       <datalist id="recipe-calendars">{rules.calendars.map((c) => <option key={c.id} value={c.id} />)}</datalist>
     </div>
   );

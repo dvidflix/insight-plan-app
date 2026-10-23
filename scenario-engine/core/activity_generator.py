@@ -1,5 +1,6 @@
 # core/activity_generator.py
 from core.stair_steps import stair_group_label
+from core.work_items import WORK_ITEM_CHAIN
 from core import rules as _rules
 from config import (
     PROJECT_SHORT,
@@ -76,6 +77,9 @@ def create_activities(rec, wbs_manager, overrides=None):
     conc_stage = str(rec.get("conc_stage", "")).strip().upper()
     pour_type_raw = str(rec.get("pour_type", "")).strip().upper()
     pour_type_norm = pour_type_raw.replace(" ", "_")
+    if rec.get("_work_item"):
+        # a work item's group name is for the rules to find it by: the pour code below must not read its words (a "retaining wall" is not a wall)
+        pour_type_raw, pour_type_norm = "WORK ITEM", "WORK_ITEM"
 
     # ── PRECAST ──────────────────────────────────────────────────────────────
     if conc_stage == "PRECAST":
@@ -193,7 +197,7 @@ def create_activities(rec, wbs_manager, overrides=None):
 
     # ── PHASE SEQUENCE ───────────────────────────────────────────────────────
     # The chain of the rules that fits this pour (Rules > Chains), else the engine's Rebar, Formwork and Concrete.
-    chain = _rules.active().chain_for(rec) or DEFAULT_CHAIN
+    chain = _rules.active().chain_for(rec) or (WORK_ITEM_CHAIN if rec.get("_work_item") else DEFAULT_CHAIN)
     phase_sequence = [
         {"original_name": c["phase"], "display_name": c["phase"], "suffix": c["suffix"], "short_label": c.get("label") or c["phase"], "material": c.get("material", ""),
          "follows": c.get("follows") or [], "finish_after": bool(c.get("finish_after")), "gates": bool(c.get("gates")), "recipe": c.get("recipe") or ""}

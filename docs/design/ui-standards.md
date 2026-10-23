@@ -16,6 +16,7 @@ Sources: the styles in [`src/styles/global.css`](../../src/styles/global.css), t
 - **Full height, full width.** A header's cells fill its height. A header runs the whole width; the docks start below it.
 - **Quiet colour.** One accent green; muted tones elsewhere. Colour carries meaning (selected, critical, warning), not decoration.
 - **No black boxes: intuitive without training.** (**Owner**) Every list of choices says where its values come from (group them under headings such as "Search sets · folder X" and "Rule groups · this scenario"); every warning says what is wrong, why it matters and what to do, in plain words; an empty or zero result says why. Never show a bare name list or a message that needs the developer to decode.
+- **Instructions are easy to read.** (**Owner**) Every instruction line has the "i" icon, dark text (not dim), 15px, medium weight (the `hint` class, and `scn-editor__help`, `xl__note`, `seq__explain`). Not small, not thin.
 - **Look at it.** After a UI change, load the page and check heights, alignment and spacing against a neighbouring page. Do not assume the CSS did what you meant (the stylesheet is 14,000+ lines and later rules win).
 
 ---
@@ -61,7 +62,8 @@ The `.gs` box (`GlobalSearch`): rounded pill, magnifier icon, 190px wide growing
 
 - Step tabs and view tabs go **in the header, after the search box**, not in a second bar underneath. (**Owner**: tried underneath, rejected.)
 - A tab is a header cell: full height, 13px, weight 600, `--text-dim`, a 1px line between tabs. The open tab has a white fill and a 3px `--accent` line under it, with `--accent-strong` text. Disabled tabs are 40% opaque.
-- Numbered steps read `1 · Scenario`, `2 · Order` (see `GenerateTabs.tsx`).
+- Generate (see `GenerateTabs.tsx`): every main thing is a numbered tab of the header, none is buried in a menu: `1 - Scenario` (opens first), `2 - Work breakdown`, `3 - Sequence`, `4 - Labour`, `5 - Recipes`, `6 - Parameters`, `7 - Extras`, `8 - Rules`. A tab that holds two editors shows them as one short row of tabs under the header (the only second level). Tabs 3 onward are quieter. A planner who only knows search sets must be able to order them and Generate without opening any of them. (**Owner**)
+- Text never sits on the edge of a page: a page of tables has 12px of space around it (`gen-pad`).
 - Panel tabs (docks) use `.config-tab`: 12px, 600, 2px accent underline, vertically centred.
 
 ### 3.4 Panel (dock) headers
@@ -141,7 +143,7 @@ Do not confuse these. (**Owner**, twice.)
 
 ## 8. Layout and spacing
 
-- Spacing scale: 4 · 6 · 8 · 12 px. `--hit-gap` between header controls; 12px beside the search box; 8–12px panel padding.
+- Spacing scale: 4 - 6 - 8 - 12 px. `--hit-gap` between header controls; 12px beside the search box; 8–12px panel padding.
 - Panels are resizable by a thin grip (8px); the grip has no buttons on it.
 - Pages are `display: flex; flex-direction: column` with `min-height: 0` / `min-width: 0` on every flex child that scrolls. No `height: 100vh` hacks.
 - Scroll the content, not the chrome: headers, tab bars and total rows stay put.

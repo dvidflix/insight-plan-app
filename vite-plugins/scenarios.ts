@@ -476,11 +476,13 @@ async function readSequence(root: string, stem: string, scenario: string | null)
 /** "Update 4D": the XML for the order on screen from the long-running
     generator (about a second). Not saved (Save does that). A building
     without a geometry cache gets one full run instead, which builds it. */
-async function quickGenerate(root: string, scenario: string, stem: string, content: ScenarioContent, startDate: string | null) {
+async function quickGenerate(root: string, scenario: string, stem: string, content: ScenarioContent, startDate: string | null, work?: { items: unknown[]; sequence: SequenceItem[] }) {
   checkModel(root, stem);
   const workDir = scenarioDirOf(root, scenario);
   stageInputs(root, workDir, stem);
-  const reply = await worker.request({ op: 'generate', input: path.join(modelsDir(root), `${stem}.ifc`), scenarioDir: workDir, startDate, sequence: content.sequence, relations: content.relations, crews: content.crews, extras: content.extras ?? [], rules: content.rules ?? {}, wbsOrder: content.wbsOrder });
+  // Work items (scenario-engine/core/work_items.py): the programme is made from them and their order, not from the model's pours.
+  const items = work && work.items.length ? { workItems: work.items } : {};
+  const reply = await worker.request({ op: 'generate', input: path.join(modelsDir(root), `${stem}.ifc`), scenarioDir: workDir, startDate, ...items, sequence: work && work.items.length ? work.sequence : content.sequence, relations: content.relations, crews: content.crews, extras: content.extras ?? [], rules: content.rules ?? {}, wbsOrder: content.wbsOrder });
   if (!reply.ok) {
     if (reply.needsFullRun) return { ...(await fullRun(root, scenario, stem, content, startDate)), fast: false, seconds: null };
     throw new HttpError(500, `${reply.error}\n\n${reply.trace ?? ''}${reply.log ?? ''}`);
@@ -548,7 +550,9 @@ export function scenariosPlugin(): Plugin {
               return send(res, 200, { ok: true });
             }
             const startDate = typeof body.startDate === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.startDate) ? body.startDate : null;
-            return send(res, 200, await quickGenerate(root, scenario, stem, content, startDate));
+            const workItems = Array.isArray(body.workItems) ? body.workItems : [];
+            const workSequence: SequenceItem[] = Array.isArray(body.workSequence) ? body.workSequence.map((x: { GUID: string; Index: number }) => ({ GUID: String(x.GUID), Index: Number(x.Index), Phase: '' })) : [];
+            return send(res, 200, await quickGenerate(root, scenario, stem, content, startDate, { items: workItems, sequence: workSequence }));
           }
           throw new HttpError(404, `Unknown scenarios endpoint: ${req.method} ${route}`);
         } catch (e) {

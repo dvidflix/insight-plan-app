@@ -74,7 +74,7 @@ export function RecipesFromProperty({ recipes, folder, onMake, onClose }: {
     <div className="rec-prop" style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 10, margin: 8, display: 'flex', flexDirection: 'column', gap: 8 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
         <b>Make recipes from a property</b>
-        <span className="scn-dim" style={{ flex: 1 }}>Each value of the property becomes a recipe, with the objects that have it.</span>
+        <span className="scn-dim hint" style={{ flex: 1 }}>Each value of the property becomes a recipe, with the objects that have it.</span>
         <button type="button" className="btn btn--small" onClick={onClose}>Close</button>
       </div>
       <div>
@@ -105,7 +105,7 @@ export function RecipesFromProperty({ recipes, folder, onMake, onClose }: {
             <button type="button" className="btn btn--small primary" disabled={!fresh.length} onClick={make}>
               {fresh.length ? `Make ${fresh.length} recipe${fresh.length === 1 ? '' : 's'}` : 'Every value has a recipe'}
             </button>
-            <span className="scn-dim">Then set the days, rate or crew of each in the table.</span>
+            <span className="scn-dim hint">Then set the days, rate or crew of each in the table.</span>
           </div>
         </>
       )}

@@ -45,6 +45,7 @@ import config as _config  # noqa: E402
 import main as engine  # noqa: E402
 from core.excel_exporter import _build_sequence_order_template  # noqa: E402
 from core import pours_cache  # noqa: E402
+from core import work_items as _work_items  # noqa: E402
 
 
 class NeedsFullRun(Exception):
@@ -172,6 +173,17 @@ def _handle(req):
         # (a first run may have written the geometry cache the key is made from)
         pours_cache.write(scenario_dir, stem, pours_cache.key_for(input_path, ifc_dir / f"{stem}.ifc", ifc_dir / f"{stem}.geometry_cache.json"), result)
         return result
+    if req.get("workItems"):
+        # Work items (core/work_items.py): units of work the app made from any objects, with no model behind them.
+        req = _work_items.with_groups(req)
+        overrides = engine.overrides_from_scenario(req)
+        xml_path = scenario_dir / "3-schedule-xml" / f"{stem}.xml"
+        xml_path.parent.mkdir(parents=True, exist_ok=True)
+        records, clashes = engine.build_work_item_records(req["workItems"]), []
+        engine.resolve_pour_ids(records, clashes, overrides, False)
+        activities = engine.create_all_activities(records, overrides)
+        engine.build_schedule_xml(records, activities, clashes, overrides, xml_path, start_date=_start_date(req))
+        return str(xml_path)
     session = _session(input_path, scenario_dir)
     if op == "warm":
         return None

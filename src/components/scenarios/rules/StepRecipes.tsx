@@ -58,7 +58,7 @@ export function StepsUsing({ recipe, rules }: { recipe: Recipe; rules: Pick<Scen
   const steps = (rules.sequences.find((s) => s.id.toUpperCase() === 'STEPS')?.steps ?? []).map((s, i) => ({ s, n: i + 1 })).filter(({ s }) => s.group.trim() !== '' && (recipe.group.trim() === '' || same(s.group, recipe.group)));
   return (
     <div className="scn-dim xl__note">
-      Built in steps: {steps.length === 0 ? 'none yet: add a step for this group on the Sequence tab' : steps.map(({ s, n }, k) => <span key={n}>{k > 0 && ', '}<button type="button" className="link-btn" title="Open this step on the Sequence tab" onClick={() => { focus(s.group); setTab('order'); }}>{n} · {s.group}</button></span>)}
+      Built in work items: {steps.length === 0 ? 'none yet: add a work item for this group on the Work breakdown tab' : steps.map(({ s, n }, k) => <span key={n}>{k > 0 && ', '}<button type="button" className="link-btn" title="Open this work item on the Order tab" onClick={() => { focus(s.group); setTab('order'); }}>{n} · {s.group}</button></span>)}
     </div>
   );
 }
@@ -72,7 +72,7 @@ export function ResourceLink({ type }: { type: string }) {
 export function StepRecipe({ group, recipes, pools, rules }: { group: string; recipes: Recipe[]; pools: PoolRow[]; rules: ScenarioRules }) {
   const setTab = useGenerateTab((s) => s.setTab);
   const mine = recipesOfGroup(recipes, group);
-  if (!group.trim()) return <div className="scn-dim scn-editor__help">Choose the search set or group for this step to see what it will generate.</div>;
+  if (!group.trim()) return <div className="scn-dim scn-editor__help">Choose the search set or group for this work item to see what it will generate.</div>;
   if (mine.length === 0) return <div className="scn-dim scn-editor__help">No recipe for “{group}”: its objects get the default activities. Add a recipe on the Recipes tab to change them.</div>;
   return (
     <div>

@@ -70,15 +70,14 @@ function open(card: (ctx: ReturnType<typeof useRuleContext>) => ReturnType<typeo
 }
 
 describe('the Rules list', () => {
-  it('lists every type of rule in one list, each with its type', () => {
+  it('lists the rules by what they are for, with the single list folded below', () => {
     load();
     const html = renderToStaticMarkup(createElement(ScenarioRulesEditor));
-    for (const label of ['Extra activities', 'Setting', 'Group', 'Level task', 'Sequence', 'Level link', 'Contact link']) {
+    for (const label of ['Manual link', 'Crew override', 'Generator settings', 'Contact link', 'Level gate', 'Tools: replace a group']) {
       expect(html).toContain(label);
     }
-    expect(html).toContain('1/3');
-    expect(html).toContain('Fits 1 of 3 objects');
-    expect(html).toContain('Add rule');
+    expect(html).not.toContain('Extra activities'); // they have a tab of their own
+    expect(html).toContain('Reset all');
   });
 
   it('opens each type of rule to its own editor', () => {
@@ -92,7 +91,7 @@ describe('the Rules list', () => {
     expect(group).toContain('+ condition'); // the conditions, listed as a 4D group lists them
     expect(group).toContain('Field');
     expect(open((ctx) => createElement(ContactRowCard, { ctx, i: 0 }))).toContain('Objects in contact');
-    expect(open((ctx) => createElement(LevelLinkRowCard, { ctx, i: 0 }))).toContain('To the level tasks');
+    expect(open((ctx) => createElement(LevelLinkRowCard, { ctx, i: 0 }))).toContain('To the summary bars');
     const extras = open((ctx) => createElement(ExtrasTableCard, { ctx, byCode: none }));
     expect(extras).toContain('Baseline finish'); // one table for all the extra activities
     expect(extras).toContain('Paste from Excel');
@@ -117,7 +116,7 @@ describe('the Rules list', () => {
   it('renders with nothing loaded and no rules', () => {
     put({ loaded: null, rows: [], rules: normalizeRules(undefined), savedRules: normalizeRules(undefined), engineDefaults: null, crewOptions: null, extras: [] });
     expect(() => renderToStaticMarkup(createElement(ScenarioRulesEditor))).not.toThrow();
-    expect(renderToStaticMarkup(createElement(ScenarioRulesEditor))).toContain('No rules');
+    expect(renderToStaticMarkup(createElement(ScenarioRulesEditor))).toContain('Manual link');
   });
 
   it('opens manual links and crew overrides', () => {

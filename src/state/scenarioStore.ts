@@ -1,4 +1,5 @@
-import { setObjectJoins } from '../schedule/linkGroups';
+import { setObjectJoins, setWorkItemMembers, WORK_ITEM_FIELD, emptyGroup } from '../schedule/linkGroups';
+import { useLinkGroupsStore } from './linkGroupsStore';
 import type { PresetContent } from '../prs/presets';
 import { withOwn } from '../prs/recipeRules';
 import { create } from 'zustand';
@@ -40,6 +41,7 @@ import { NO_RULES, isEmptyRules, normalizeRules, type EngineDefaults, type Scena
 import { convertLegacyRules, legacyCount } from '../prs/convert';
 import { useRecipeStore } from './recipeStore';
 import { stepSetNames, withFolderSteps } from '../prs/folderSteps';
+import { makesItems, type BreakdownDefinition, type BreakdownResult } from '../prs/workBreakdown';
 import { forGenerator } from '../prs/recipeRules';
 import { useSearchSetsStore } from './searchSetsStore';
 import { groupsWithSets, uniqueGroups } from '../prs/groupSets';
@@ -506,11 +508,36 @@ useScenarioStore.subscribe((s, prev) => {
 /** "Update 4D": the programme for the order on screen from the long-running
     generator (about a second once warm), straight into 4D. The order is not
     saved (Save does that) unless the scenario needed a full run first. */
+/** Where the work items come from: the loaded models and the search sets, which live in the viewer (registered by ScenarioSync). */
+let breakdownSource: ((definition: BreakdownDefinition) => BreakdownResult) | null = null;
+export const setBreakdownSource = (fn: typeof breakdownSource) => { breakdownSource = fn; };
+
+/** The link group that links a work item's activities (their "Work Item" field) to the item's objects: kept up to date, added once. */
+export const WORK_ITEM_GROUP_ID = 'work-items';
+export function applyWorkItemLinks(built: BreakdownResult | null) {
+  const members = new Map<string, string>();
+  for (const leaf of built?.leaves ?? []) for (const g of leaf.guids) members.set(g, leaf.item.id);
+  setWorkItemMembers(members);
+  if (members.size === 0) return;
+  const { groups, add } = useLinkGroupsStore.getState();
+  if (groups.some((g) => g.id === WORK_ITEM_GROUP_ID)) return;
+  add({ ...emptyGroup('Work items'), id: WORK_ITEM_GROUP_ID, color: '#2f9e8f', matchRules: [{ id: 'work-item-match', taskField: WORK_ITEM_FIELD, objectPropertySet: '_workitem', objectAttribute: '', conj: 'and' }] });
+}
+
 export const updateFourD = () =>
   run('Updating 4D…', async () => {
     const { rows, scenario, startDate, loaded, relations, crews, extras, rules, flags } = get();
     const stem = loaded!.stem;
-    const res = await updateScenario({ ...request(), rules: forGenerator(rules), startDate: startDate || null });
+    // Grouping levels with a level that is the work item's group: the programme is made from the work items they give, not from the pours.
+    let work: { workItems: unknown[]; workSequence: { GUID: string; Index: number }[] } | null = null;
+    if (rules.breakdown && makesItems(rules.breakdown)) {
+      const built = breakdownSource ? breakdownSource(rules.breakdown) : null;
+      if (!built || built.leaves.length === 0) throw new Error('The grouping levels (Work breakdown) give no work items. Check that a model is loaded and that each level names a property the objects have, or a folder with sets.');
+      work = { workItems: built.leaves.map((l) => l.item), workSequence: built.sequence };
+      applyWorkItemLinks(built);
+    }
+    if (!work) applyWorkItemLinks(null);
+    const res = await updateScenario({ ...request(), rules: forGenerator(rules), startDate: startDate || null, ...(work ?? {}) });
     xmlCache.set(`${scenario}|${stem}`, res.xml);
     await loadIntoInputs(res.xml, stem, scenario!);
     set((s) => ({
@@ -849,4 +876,6 @@ useSearchSetsStore.subscribe((st, prev) => {
 // Joined objects are shown with their main object's activities in 4D.
 useScenarioStore.subscribe((s, prev) => {
   if (s.rules.joins !== prev.rules.joins) setObjectJoins(s.rules.joins ?? []);
+  // The work items' objects follow the grouping levels (when models and sets are there to read).
+  if (s.rules.breakdown !== prev.rules.breakdown && breakdownSource) applyWorkItemLinks(s.rules.breakdown && makesItems(s.rules.breakdown) ? breakdownSource(s.rules.breakdown) : null);
 });

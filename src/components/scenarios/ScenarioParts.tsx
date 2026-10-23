@@ -29,6 +29,7 @@ import {
   scheduleAutoUpdate,
   setFlags,
   setRules,
+  setBreakdownSource,
   setSelected,
   stemsInInputs,
   takeOver,
@@ -39,6 +40,7 @@ import {
   useScenarioStore,
   type ScenarioCfgTab,
 } from '../../state/scenarioStore';
+import { computeBreakdown } from '../../scenarios/breakdownSource';
 import { applySteps, moveDown, moveTo, moveToStep, moveUp, orderByPicks, reorderLike, separate, startTogether, unsequence } from '../../scenarios/pourOrder';
 import { BASE_COL, rowColor, SHIFT_COL, STEP_COL } from '../../scenarios/tableView';
 import { useScenarioView } from '../../scenarios/useScenarioView';
@@ -67,6 +69,12 @@ import { usePersistedState } from '../../utils/persistedState';
     or 4D's Scenarios panel) — an order already loaded is kept. The app also mounts it once with `loadOnly` at start, so the scenario last
     used (scenarios.current) opens with its saved rules without a panel being open: it loads, but starts no generator and no auto-update. */
 export function ScenarioSync({ loadOnly = false }: { loadOnly?: boolean }) {
+  const engine = useViewerEngine();
+  // The grouping levels read the loaded models and the search sets, which live in the viewer: the store asks for them when it updates 4D.
+  useEffect(() => {
+    setBreakdownSource((definition) => computeBreakdown(definition, engine.getIndexes(), useSearchSetsStore.getState().sets));
+    return () => setBreakdownSource(null);
+  }, [engine]);
   const root = useProjectDbStore((s) => s.root);
   const project = useScenarioStore((s) => s.project);
   const scenario = useScenarioStore((s) => s.scenario);

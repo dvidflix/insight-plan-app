@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { applyLabourEdit, labourRows, type LabourData } from '../../src/prs/labourView';
+import { applyLabourEdit, crewLabour, labourRows, type LabourData } from '../../src/prs/labourView';
 import type { Recipe } from '../../src/prs/recipes';
 
 const TRADES = [{ code: 'SF', name: 'Steel fixers', capacity: 12 }, { code: 'CP', name: 'Carpenters', capacity: 14 }, { code: 'GL', name: 'Labourers', capacity: 3 }];
@@ -87,5 +87,40 @@ describe('editing a Labour row writes to the rows it came from', () => {
     const out = applyLabourEdit(base(), gl, { usedFor: 'Pour', productivity: 4, basis: 'concrete', number: 3 });
     expect(out.rates.at(-1)).toMatchObject({ type: 'productivity', manhoursPerUnit: 4, basis: 'concrete' });
     expect(rowOf(out, 'GL')).toMatchObject({ usedFor: 'Pour', productivity: 4, basis: 'concrete' });
+  });
+});
+
+describe('the Labour columns of one crew rather than a trade', () => {
+  it('reads the rate of the crew\'s own work, even when the trade is in another crew first', () => {
+    const data = base();
+    data.crewTemplates.unshift({ id: 'MIXED', trades: [{ trade: 'SF', size: 2 }, { trade: 'CP', size: 2 }] });
+    expect(crewLabour('SF-CREW', data)).toMatchObject({ rateId: 'REBAR-RATE', productivity: 75, usedFor: 'Fix' });
+    expect(crewLabour('MIXED', data)).toMatchObject({ rateId: undefined, usedFor: '' });
+  });
+  it('writes an edit to that crew, not to the first crew of the trade', () => {
+    const data = base();
+    data.crewTemplates.unshift({ id: 'MIXED', trades: [{ trade: 'SF', size: 2 }] });
+    const next = applyLabourEdit(data, { code: 'SF', name: 'Steel fixers' }, { gangs: 4 }, 'SF-CREW');
+    expect(next.crewTemplates.find((c) => c.id === 'SF-CREW')!.available).toBe(4);
+    expect(next.crewTemplates.find((c) => c.id === 'MIXED')!.available).toBeUndefined();
+  });
+});
+
+describe('a productivity typed before the crew is used for anything', () => {
+  it('is kept on a rate of the crew\'s own, and put on the activities when Used for is chosen', () => {
+    let data = base();
+    const sf = { code: 'CP', name: 'Carpenters' };
+    data = applyLabourEdit(data, sf, { productivity: 18, basis: 'concrete' }, 'CP-CREW');
+    expect(data.rates.find((r) => r.id === 'CP-CREW-RATE')).toMatchObject({ type: 'productivity', manhoursPerUnit: 18, basis: 'concrete' });
+    expect(crewLabour('CP-CREW', data)).toMatchObject({ rateId: 'CP-CREW-RATE', productivity: 18, usedFor: '' });
+    data = applyLabourEdit(data, sf, { usedFor: 'Cure' }, 'CP-CREW');
+    expect(data.recipes[1].tasks[1]).toMatchObject({ phase: 'Cure', rate: 'CP-CREW-RATE', crew: 'CP-CREW' });
+    expect(data.rates.filter((r) => r.type === 'productivity' && r.id.startsWith('CP-'))).toHaveLength(1);
+    expect(crewLabour('CP-CREW', data)).toMatchObject({ productivity: 18, usedFor: 'Cure' });
+  });
+  it('makes a crew for a trade that has none', () => {
+    const data = applyLabourEdit(base(), { code: 'GL', name: 'Labourers' }, { productivity: 5 });
+    expect(data.crewTemplates.some((c) => c.trades.some((t) => t.trade === 'GL'))).toBe(true);
+    expect(data.rates.some((r) => r.id.endsWith('-RATE') && r.manhoursPerUnit === 5)).toBe(true);
   });
 });

@@ -129,7 +129,7 @@ export function ViewerWorkspace({ layout, panel, overlay, paneActive, background
             {!centerShown && <SectionsPanel />}
             {/* The 3D view keeps its size underneath (a hidden canvas would lose its aspect ratio). */}
             {center !== undefined && (
-              <div style={centerShown ? { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', zIndex: 5 } : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
+              <div className="ws-center" style={centerShown ? { position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', background: 'var(--bg)', zIndex: 5 } : { position: 'absolute', inset: 0, visibility: 'hidden', pointerEvents: 'none', display: 'flex', flexDirection: 'column' }}>
                 {center}
               </div>
             )}
