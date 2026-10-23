@@ -7,6 +7,7 @@ import { CollapsibleSection, useOpenSections } from '../CollapsibleSection';
 import { IconRoadSurface } from '../icons';
 import { applyVirtualResources } from '../../schedule/virtualResources';
 import { ActivityNote } from './ActivityNote';
+import { ActivityWhy } from './ActivityWhy';
 import { relationDetail, sharedContactIndex } from '../../schedule/activityRelation';
 import { sharedActivityObjects } from '../../schedule/activityObjects';
 import { REASON_LABEL, proposeLinks } from '../../schedule/generateLinks';
@@ -26,8 +27,8 @@ import { useActivityOverridesStore } from '../../state/activityOverridesStore';
 import { commit } from '../../state/programmeHistory';
 import { resetEdits as resetProgrammeEdits, setEdits } from '../../state/programmeEdits';
 
-type SectionId = 'details' | 'dates' | 'cpm' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources';
-const DEFAULT_OPEN: SectionId[] = ['details', 'dates', 'cpm', 'notes', 'suggested', 'codes', 'udf', 'resources'];
+type SectionId = 'details' | 'dates' | 'cpm' | 'notes' | 'suggested' | 'codes' | 'udf' | 'resources' | 'why';
+const DEFAULT_OPEN: SectionId[] = ['details', 'dates', 'cpm', 'notes', 'suggested', 'codes', 'udf', 'resources', 'why'];
 
 /** What a resource's quantity is counted in: a unit in its name ("Concrete (m3)", "Rebar (t)"), else hours for labour and equipment, nothing for other materials. */
 function unitOf(r: ResourceAssignment): string {
@@ -340,6 +341,10 @@ export function ActivityDetails({ activity, model, drivingTarget, onDrivingTarge
           ['Primary resource', activity.primaryResource || '—'],
           ['Critical', activity.isCritical ? 'Yes' : 'No'],
         ])}
+      </CollapsibleSection>
+
+      <CollapsibleSection title="Why" flush open={sections.isOpen('why')} onToggle={() => sections.toggle('why')}>
+        <ActivityWhy activity={activity} model={model} onSelect={onSelect} />
       </CollapsibleSection>
 
       <CollapsibleSection title="Dates & constraints" flush open={sections.isOpen('dates')} onToggle={() => sections.toggle('dates')}>

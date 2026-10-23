@@ -29,6 +29,15 @@ const running = new Set<string>();
 
 /** Any existing folder is a project: its models are in models/, made
     when the first one is added from the app (POST model). */
+/** Why each link of a generated programme is there: the generator writes it next to the XML (<xml>.why.json); null when it is not there. */
+function readWhy(xmlPath: string): unknown {
+  try {
+    return JSON.parse(fs.readFileSync(`${xmlPath}.why.json`, 'utf8'));
+  } catch {
+    return null;
+  }
+}
+
 function projectRoot(raw: unknown): string {
   const root = String(raw ?? '').trim();
   if (!root) throw new HttpError(400, 'No project folder given.');
@@ -233,7 +242,7 @@ async function fullRun(root: string, scenario: string, stem: string, content: Sc
     const { code, log } = await withOverridesFile(content, stem, (file) => runEngine(root, workDir, stem, startDate, file));
     const fresh = fs.existsSync(xmlPath) && fs.statSync(xmlPath).mtimeMs > before;
     if (!fresh) throw new HttpError(500, `The generator produced no XML (exit code ${code}).\n\n${log.slice(-6000)}`);
-    return { xml: fs.readFileSync(xmlPath, 'utf8'), log, warning: code === 0 ? null : `Generator exited with code ${code} after writing the XML.` };
+    return { xml: fs.readFileSync(xmlPath, 'utf8'), why: readWhy(xmlPath), log, warning: code === 0 ? null : `Generator exited with code ${code} after writing the XML.` };
   } finally {
     running.delete(key);
   }
@@ -487,7 +496,7 @@ async function quickGenerate(root: string, scenario: string, stem: string, conte
     if (reply.needsFullRun) return { ...(await fullRun(root, scenario, stem, content, startDate)), fast: false, seconds: null };
     throw new HttpError(500, `${reply.error}\n\n${reply.trace ?? ''}${reply.log ?? ''}`);
   }
-  return { xml: fs.readFileSync(reply.xml!, 'utf8'), log: reply.log ?? '', warning: null, fast: true, seconds: reply.seconds ?? null };
+  return { xml: fs.readFileSync(reply.xml!, 'utf8'), why: readWhy(reply.xml!), log: reply.log ?? '', warning: null, fast: true, seconds: reply.seconds ?? null };
 }
 
 export function scenariosPlugin(): Plugin {

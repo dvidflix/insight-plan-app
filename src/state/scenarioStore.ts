@@ -1,5 +1,7 @@
 import { setObjectJoins, setWorkItemMembers, WORK_ITEM_FIELD, emptyGroup } from '../schedule/linkGroups';
 import { useLinkGroupsStore } from './linkGroupsStore';
+import { useWhyStore } from './whyStore';
+import type { WhyData } from '../schedule/whyText';
 import type { PresetContent } from '../prs/presets';
 import { withOwn } from '../prs/recipeRules';
 import { create } from 'zustand';
@@ -549,6 +551,7 @@ export const updateFourD = () =>
     if (!work) applyWorkItemLinks(null);
     const res = await updateScenario({ ...request(), rules: forGenerator(sentRules(rules)), startDate: startDate || null, ...(work ?? {}) });
     xmlCache.set(`${scenario}|${stem}`, res.xml);
+    useWhyStore.getState().set(`${scenarioFileName(stem, scenario!)}.xml`, (res.why as WhyData | null | undefined) ?? null);
     await loadIntoInputs(res.xml, stem, scenario!);
     set((s) => ({
       updatedFrom: { rows, relations, crews, extras, rules, sets: useSearchSetsStore.getState().sets },
