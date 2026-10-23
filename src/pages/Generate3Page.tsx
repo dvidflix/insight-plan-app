@@ -11,6 +11,9 @@ import { ListSetupButton } from '../components/ViewPicker';
 import { PackagePreview } from '../components/scenarios/Generate3/PackagePreview';
 import { PackageList, STEPS, StepTools, Timeline } from '../components/scenarios/Generate3/Steps';
 import { AdvancedPanel } from '../components/scenarios/Generate3/Advanced';
+import { ObjectOrderDialog } from '../components/scenarios/Generate3/ObjectOrder';
+import { RecipeEditorDialog } from '../components/scenarios/Generate3/RecipeEditor';
+import { Versions } from '../components/scenarios/Generate3/Versions';
 import { useG3, useWorkPackages } from '../components/scenarios/Generate3/useWorkPackages';
 
 /** Generate 3: a schedule from the model in three guided steps (the header's tabs): work packages, sequence, methods & Generate. The model is on the
@@ -66,9 +69,12 @@ function Builder() {
         <section className="g3-right" aria-label="Timeline preview"><Timeline wp={wp} /></section>
         <AdvancedPanel wp={wp} />
       </div>
+      <ObjectOrderDialog wp={wp} />
+      <RecipeEditorDialog wp={wp} />
       <footer className="g3-foot">
         {step > 1 && <button type="button" className="btn" onClick={() => setStep((step - 1) as 1 | 2)}>‹ {STEPS[step - 2].label.replace(/^\d+ - /, '')}</button>}
         {step < 3 && <button type="button" className="btn" disabled={!wp.packages.length} onClick={() => setStep((step + 1) as 2 | 3)} title={wp.packages.length ? '' : 'Make work packages first'}>Next: {STEPS[step].label.replace(/^\d+ - /, '')} ›</button>}
+        <Versions />
         <span className="g3-foot__status"><GenerateStatus /></span>
         <button type="button" className="btn primary g3-generate" disabled={busy || holding === 0} onClick={() => void updateFourD()}
           title={holding ? `Make the schedule from the ${holding} work packages and load it into 4D and Programmes` : 'Make work packages first (step 1)'}>{busy ? 'Generating…' : 'Generate schedule'}</button>

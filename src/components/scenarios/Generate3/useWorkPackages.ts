@@ -25,6 +25,12 @@ interface G3State {
   toggle: (id: string) => void;
   advanced: boolean;
   setAdvanced: (open: boolean) => void;
+  /** The object order dialog: for the package picked, for every package, or shut. */
+  orderDialog: 'picked' | 'all' | null;
+  setOrderDialog: (d: 'picked' | 'all' | null) => void;
+  /** The recipe editor, open on a recipe (or '' for the list). */
+  recipeEditor: string | null;
+  setRecipeEditor: (id: string | null) => void;
 }
 export const useG3 = create<G3State>()(
   persist((set) => ({
@@ -32,6 +38,8 @@ export const useG3 = create<G3State>()(
     picked: null, pick: (picked) => set({ picked }),
     collapsed: [], toggle: (id) => set((s) => ({ collapsed: s.collapsed.includes(id) ? s.collapsed.filter((x) => x !== id) : [...s.collapsed, id] })),
     advanced: false, setAdvanced: (advanced) => set({ advanced }),
+    orderDialog: null, setOrderDialog: (orderDialog) => set({ orderDialog }),
+    recipeEditor: null, setRecipeEditor: (recipeEditor) => set({ recipeEditor }),
   }), { name: 'generate3.step', partialize: (s) => ({ step: s.step, collapsed: s.collapsed }) as never }),
 );
 
@@ -52,7 +60,7 @@ export function useWorkPackages() {
   const view = useMemo(() => packagesView(engine, packages, sets, recipes, ctx.rules, crewSheet, objects), [engine, packages, sets, recipes, ctx.rules, crewSheet, objects]);
   const finds = useMemo(() => setFinder(engine, sets), [engine, sets, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = useMemo(() => treeRows(packages), [packages]);
-  const timeline = useMemo(() => new Map(timelineOf(packages, (p) => view.methods.get(p.id)?.days ?? 0, (p) => (view.contents.objects.get(p.id)?.length ?? 0) > 0).map((t) => [t.id, t])), [packages, view.methods, view.contents]);
+  const timeline = useMemo(() => new Map(timelineOf(packages, (p) => view.daysOf.get(p.id) ?? 0, (p) => (view.contents.objects.get(p.id)?.length ?? 0) > 0).map((t) => [t.id, t])), [packages, view.daysOf, view.contents]);
   const save = (next: WorkPackage[]) => ctx.change((r) => { const { packages: _old, ...rest } = r; return next.length ? { ...rest, packages: inTreeOrder(next) } : rest; });
   /** Changes one package; a value set to undefined is taken away. */
   const patch = (id: string, p: Partial<WorkPackage>) => save(packages.map((x) => {

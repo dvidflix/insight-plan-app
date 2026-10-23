@@ -5,7 +5,7 @@ import { useScenarioView } from '../../../scenarios/useScenarioView';
 import { FOLDER_SEP, isInFolder, walkFolder } from '../../../viewer/setTree';
 import { isSelectionSet } from '../../../viewer/searchSets';
 import {
-  appendPackages, freshId, groupByFolders, groupBySets, groupByStoreyAndClass, groupByStoreyAndProperty, mergePackages, orderBottomUp, quantities, splitPackage,
+  appendPackages, freshId, groupByFolders, isFineTuned, groupBySets, groupByStoreyAndClass, groupByStoreyAndProperty, mergePackages, orderBottomUp, quantities, splitPackage,
   type WorkPackage,
 } from '../../../prs/workPackages';
 import { indentPackage, movePackage, outdentPackage, removePackage, subtreeIds, type TreeRow } from '../../../prs/packageTree';
@@ -14,6 +14,7 @@ import { OverflowMenu } from '../../TablePopovers';
 import { IconChevronDown, IconChevronRight, IconDragVert } from '../../icons';
 import { MethodSelect, NumberField, StartSelect, packageAbove } from './Controls';
 import { SpoolDialog } from './Spool';
+import { ExcelButtons } from './ExcelButtons';
 import { packageColors, useG3, useWorkPackages, type G3Step } from './useWorkPackages';
 
 /** Generate 3, the guided way from a model to a programme, in three steps that are the header's tabs: 1 make work packages of the model's objects
@@ -152,6 +153,8 @@ function OrderTools({ wp }: { wp: WP }) {
       <p className="scn-dim hint">Top is built first. Drag a package to move it (with what it holds); drop it in the middle of another to put it inside. Each package starts when the one above finishes, unless you choose otherwise in its row.</p>
       <button type="button" className="btn primary g3-tools__main" disabled={wp.packages.length < 2} onClick={() => wp.save(orderBottomUp(wp.packages, wp.contents))} title="Lowest storey first; on a storey, the usual order of the kinds of work. Packages stay inside the packages that hold them">Auto-order by level (bottom up)</button>
       <button type="button" className="btn" disabled={wp.packages.length < 2} onClick={() => wp.save(wp.packages.map((p) => { const { link: _l, lagDays: _g, after: _a, ...rest } = p; return rest; }))} title="Every package starts when the one above it has finished, with no gap">Each after the one above</button>
+      <div className="g3-tools__sub">Optional</div>
+      <FineTuneButton wp={wp} />
     </div>
   );
 }
@@ -164,6 +167,8 @@ function MethodTools({ wp }: { wp: WP }) {
       <h3 className="g3-tools__title">Methods</h3>
       <p className="scn-dim hint">Each package already has a method, chosen from what its objects are. Change one in its row if it is wrong. The days come from rough standard rates: type a package’s own days in its row.</p>
       <ul className="g3-counts">{[...counts].map(([name, c]) => <li key={name}><b>{c}</b> {name}</li>)}</ul>
+      <div className="g3-tools__sub">Optional</div>
+      <button type="button" className="btn" onClick={() => useG3.getState().setRecipeEditor('')} title="This project’s own recipes: a chain of activities with days and crews, for packages that need their own way">Edit recipes…</button>
     </div>
   );
 }
@@ -214,6 +219,7 @@ export function PackageList({ wp }: { wp: WP }) {
       <div className="g3-list__head">
         <h3>{title}</h3>
         <span className="scn-dim">{wp.packages.length ? `${works} package${works === 1 ? '' : 's'} with objects${wp.packages.length > works ? ` in ${wp.packages.length - works} group${wp.packages.length - works === 1 ? '' : 's'}` : ''}` : ''}{wp.packages.length > 1 ? ' · drag to move or nest' : ''}</span>
+        <ExcelButtons wp={wp} />
       </div>
       {wp.packages.length === 0 ? (
         <div className="g3-empty">
@@ -267,6 +273,7 @@ export function PackageList({ wp }: { wp: WP }) {
                       : m && own.length ? `${m.name} · about ${daysText(m.days)}` : ''}
                     {taken > 0 ? ` · ${n(taken)} more objects are in another package` : ''}
                     {empty ? 'No objects of the loaded model: add a search set, or delete it' : ''}
+                    {isFineTuned(p) && own.length > 0 && <button type="button" className="source-chip g3-pkg__chip" onClick={(e) => { e.stopPropagation(); pick(p.id); useG3.getState().setOrderDialog('picked'); }} title="Its objects are built one by one in an order of their own: click to see or change it">objects in their own order</button>}
                   </div>
                 )}
                 {step === 3 && m && holds(p.id) && (
@@ -362,5 +369,20 @@ export function Timeline({ wp }: { wp: WP }) {
         </>
       )}
     </div>
+  );
+}
+
+/** Step 2's way into the object order: for the package picked, or for every package. */
+function FineTuneButton({ wp }: { wp: WP }) {
+  const picked = useG3((s) => s.picked);
+  const p = wp.packages.find((x) => x.id === picked);
+  const holds = !!p && (wp.contents.objects.get(p.id)?.length ?? 0) > 0;
+  const tuned = wp.packages.filter(isFineTuned).length;
+  return (
+    <>
+      <button type="button" className="btn" disabled={!wp.packages.length} onClick={() => useG3.getState().setOrderDialog(holds ? 'picked' : 'all')}
+        title="Build a package’s objects one by one in an order you set, typed or taken from another scenario, your sets or an Excel list. The packages keep their order">Fine-tune object order…</button>
+      <p className="scn-dim g3-tools__note">{holds ? `For “${p!.name}”, the package picked.` : 'Pick a package for its objects, or set an order for every package.'}{tuned ? ` ${tuned} package${tuned === 1 ? ' has' : 's have'} an object order.` : ''}</p>
+    </>
   );
 }

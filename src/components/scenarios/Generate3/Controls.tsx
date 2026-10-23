@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
+import { IconClose } from '../../icons';
 import { useRecipeStore } from '../../../state/recipeStore';
 import { STANDARD_METHODS } from '../../../prs/standardMethods';
 import { linkTargets, type ResolvedMethod, type WorkPackage } from '../../../prs/workPackages';
@@ -64,5 +65,23 @@ export function StartSelect({ wp, p, compact }: { wp: WP; p: WorkPackage; compac
       </select>
       <label className="g3-start__lag" title="Working days to wait before it starts (0: straight away)">+ <NumberField value={p.lagDays} placeholder="0" label="Gap in working days" onChange={(v) => wp.patch(p.id, { lagDays: v })} /> days</label>
     </span>
+  );
+}
+
+/** A Generate 3 dialog: a header with its title and the close X, Esc or a click outside closes it. */
+export function Dialog({ title, onClose, children, foot, wide = true }: { title: string; onClose: () => void; children: ReactNode; foot?: ReactNode; wide?: boolean }) {
+  useEffect(() => {
+    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    window.addEventListener('keydown', esc);
+    return () => window.removeEventListener('keydown', esc);
+  }, [onClose]);
+  return (
+    <div className="project-picker__backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
+      <div className={`g3-dlg${wide ? ' g3-dlg--wide' : ''}`} role="dialog" aria-modal="true" aria-label={title}>
+        <div className="g3-dlg__head"><h3>{title}</h3><button type="button" className="g3-dlg__close" onClick={onClose} aria-label="Close" title="Close (Esc)"><IconClose /></button></div>
+        <div className="g3-dlg__body">{children}</div>
+        {foot && <div className="g3-dlg__foot">{foot}</div>}
+      </div>
+    </div>
   );
 }

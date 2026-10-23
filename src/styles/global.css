@@ -14782,6 +14782,7 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-list, .g3-time { padding: 12px; }
 .g3-list__head { display: flex; align-items: baseline; gap: 12px; margin-bottom: 10px; }
 .g3-list__head .scn-dim { font-size: 12px; }
+.g3-list__excel { margin-left: auto; display: inline-flex; gap: var(--hit-gap, 6px); align-self: center; }
 .g3-list__drop { margin-top: 8px; padding: 10px; border: 1px dashed var(--border); text-align: center; font-size: 12px; }
 .g3-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 18px; border: 1px dashed var(--border); font-size: 14px; color: var(--text); }
 /* A package: colour strip, code, name, size; then what the step adds. */
@@ -14907,6 +14908,47 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-spool__list ul { list-style: none; margin: 0; padding: 0 0 4px 22px; }
 .g3-spool__top, .g3-spool__list ul li { display: flex; justify-content: space-between; gap: 12px; padding: 3px 10px; }
 .g3-spool__list ul li { padding-left: 0; }
+/* Versions: the scenario open, and saving what is on screen as a new one (the bottom bar). */
+.g3-versions { display: inline-flex; align-items: center; gap: var(--hit-gap, 6px); min-width: 0; }
+.g3-versions select { max-width: 220px; }
+.g3-tools__note { margin: 0; font-size: 12px; }
+.g3-pkg__chip { margin-left: 6px; cursor: pointer; background: transparent; }
+.g3-pkg__chip:hover { border-color: var(--accent); color: var(--accent-strong); }
+/* Fine-tune object order. */
+.g3-order__scope { display: flex; flex-wrap: wrap; align-items: center; gap: 16px; font-size: 13px; }
+.g3-order__scope label { display: inline-flex; align-items: center; gap: 6px; font-weight: 600; }
+.g3-order__src { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); background: var(--bg-soft); }
+.g3-order__row { display: grid; grid-template-columns: 150px minmax(0, 1fr) auto; align-items: center; gap: 8px; }
+.g3-order__row--top { align-items: start; }
+.g3-order__row select { max-width: 100%; }
+.g3-order__row textarea { width: 100%; min-height: 54px; padding: 4px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg-elevated); color: var(--text); font: inherit; font-size: 12px; resize: vertical; }
+.g3-order__btns { display: inline-flex; flex-direction: column; gap: 6px; }
+.g3-order__note { padding: 6px 10px; border-left: 3px solid var(--ok); background: var(--bg-soft); font-size: 13px; }
+.g3-order__note.is-warn { border-left-color: var(--warn); }
+.g3-order__off { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+.g3-order__grid { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.g3-order__bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 13px; }
+.g3-order__bar > .scn-dim { flex: 1; min-width: 0; }
+/* Edit recipes: the list on the left, the recipe picked on the right. */
+.g3-dlg--wide:has(.g3-rcp) { width: min(1080px, 100%); }
+.g3-rcp { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; min-height: 360px; }
+.g3-rcp__list { display: flex; flex-direction: column; gap: 6px; min-width: 0; border-right: 1px solid var(--border); padding-right: 12px; }
+.g3-rcp__list ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+.g3-rcp__head { margin-top: 8px; font-size: 12px; font-weight: 600; color: var(--text-dim); }
+.g3-rcp__item { width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 1px; padding: 5px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.g3-rcp__item .scn-dim { font-size: 11px; }
+.g3-rcp__item:hover { background: rgba(0, 0, 0, 0.07); }
+.g3-rcp__item.is-on { border-color: var(--accent); background: rgb(var(--accent-rgb) / 0.14); }
+.g3-rcp__item.is-off b { color: var(--text-dim); text-decoration: line-through; }
+.g3-rcp__main { min-width: 0; overflow: auto; }
+.g3-rcp__form { display: flex; flex-direction: column; gap: 10px; }
+.g3-rcp__wide { width: 280px; max-width: 100%; }
+.g3-rcp__facts { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+.g3-rcp__on { display: inline-flex; align-items: center; gap: 4px; margin-left: auto; color: var(--text); font-weight: 600; }
+.g3-rcp__acts { display: flex; align-items: center; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 4px; }
+.g3-rcp__acts h4 { margin: 0; font-size: 13px; }
+.g3-rcp__form .xl { align-self: flex-start; }
+.g3-rcp__tools { display: flex; gap: var(--hit-gap, 6px); }
 /* Before the model and a scenario are there. */
 .g3-first { margin: 32px auto; max-width: 520px; padding: 24px; border: 1px solid var(--border); background: var(--bg-panel); display: flex; flex-direction: column; align-items: flex-start; gap: 12px; }
 .g3-first--wide { max-width: 960px; }

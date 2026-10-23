@@ -4,6 +4,7 @@ import { STEPS_ID } from './recipesWorkbook';
 import { CLASS_ORDER, STANDARD_METHODS, chooseMethod, taskDays, type StandardMethod } from './standardMethods';
 import { OVERRIDE_PRIORITY, withItemOverrides } from './activityPlan';
 import { inTreeOrder, subtreeIds, treeRows } from './packageTree';
+import { orderRuns, type ObjectOrder } from './objectOrder';
 
 /** Generate 3's work packages: groups of model objects, in the order they are built, each built by a method. This is the only structure a planner
     manages there. A package is made of parts (a search set, a storey, an IFC class, a property value, or picked objects: within a part all must hold,
@@ -59,7 +60,12 @@ export interface WorkPackage {
   bar?: boolean;
   /** A package that holds others: at most this many of them work at once. */
   maxAtOnce?: number;
+  /** Fine-tuned object order (prs/objectOrder.ts): with one, each object is built on its own, in this order (GlobalId -> rank). */
+  objectOrder?: ObjectOrder;
 }
+
+/** Whether a package's objects are built one by one in an order of their own. */
+export const isFineTuned = (p: Pick<WorkPackage, 'objectOrder'>) => !!p.objectOrder && Object.keys(p.objectOrder).length > 0;
 
 /** One object of the models, as the packages read it. */
 export interface PackageObject {
@@ -472,12 +478,38 @@ export function timelineOf(packages: readonly WorkPackage[], days: (pkg: WorkPac
   return ordered.flatMap((p) => { const s = span(p.id); return s ? [{ id: p.id, ...s }] : []; });
 }
 
+/** The days of runs of objects built one after another (a run's objects together): the longest of each run, added up. */
+export const serialDays = (runs: readonly (readonly PackageObject[])[], methods: ReadonlyMap<string, ResolvedMethod>) =>
+  round2(runs.reduce((n, run) => n + Math.max(0, ...run.map((o) => methods.get(o.key)?.days ?? 0)), 0));
+
+/** The method of each object of a fine-tuned package (by object key), each worked out from the object's own quantities. The package's added
+    activity goes with its first object (before) or its last (after); the package's own days are shared in proportion. */
+export function objectMethodsOf(pkg: WorkPackage, objs: readonly PackageObject[], resolve: (pkg: WorkPackage, objs: PackageObject[]) => ResolvedMethod): Map<string, ResolvedMethod> {
+  const runs = orderRuns(objs, pkg.objectOrder);
+  const flat = runs.flat();
+  const { totalDays, extra, ...base } = pkg;
+  const out = new Map<string, ResolvedMethod>();
+  flat.forEach((o, i) => {
+    const own = extra && ((extra.before && i === 0) || (!extra.before && i === flat.length - 1)) ? { ...base, extra } : base;
+    out.set(o.key, resolve(own, [o]));
+  });
+  const serial = serialDays(runs, out);
+  if (totalDays && totalDays > 0 && serial > 0) {
+    const f = totalDays / serial;
+    for (const [k, m] of out) {
+      const acts = m.activities.map((a) => ({ ...a, days: round2(a.days * f), fixed: true, how: `its share of the ${totalDays} days set for the package` }));
+      out.set(k, { ...m, activities: acts, days: round2(acts.reduce((n, a) => n + a.days, 0)) });
+    }
+  }
+  return out;
+}
+
 export const HOURS_PER_DAY = 8;
 
 /** What Generate sends for the packages: the work items, the GlobalIds of each item's objects (for the 4D links), and the rules as the generator
     should read them: the sequences made from the packages' order and links, the methods as recipes for their groups (with the standard methods'
     crews), and the summary bars and limits of the packages that hold others. */
-export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string): {
+export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string, objectMethods?: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>): {
   workItems: { id: string; group: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[];
   members: { guids: string[]; item: { id: string } }[];
   rules: (rules: ScenarioRules) => ScenarioRules;
@@ -489,13 +521,44 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
   const groupFor = (id: string) => groupOf(byId.get(id)!, code.get(id)!);
   const live = rows.map((r) => ({ p: r.pkg, objs: contents.objects.get(r.pkg.id) ?? [] })).filter((x) => x.objs.length > 0);
   const liveIds = new Set(live.map((x) => x.p.id));
-  const workItems = live.map(({ p, objs }) => {
-    const q = quantities(objs);
-    const storeys = [...new Set(objs.map((o) => o.storey))];
-    return { id: `WP|${p.id}`, group: groupFor(p.id), building, level: storeys.length === 1 ? storeys[0] : '', name: groupFor(p.id), quantity: q.volume, quantities: { count: q.count, area: q.area } };
-  });
-  const members = live.map(({ p, objs }) => ({ guids: objs.map((o) => o.guid).filter(Boolean), item: { id: `WP|${p.id}` } }));
   const groups: RuleGroup[] = [];
+  // A fine-tuned package: a work item per object, in its order (a sequence of its own); the package's group includes the objects' groups.
+  const orderChains: { id: string; name: string; steps: SequenceStep[] }[] = [];
+  const objectMethodsFor = new Map<string, { group: string; m: ResolvedMethod }[]>();
+  const workItems: { id: string; group: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[] = [];
+  const members: { guids: string[]; item: { id: string } }[] = [];
+  for (const { p, objs } of live) {
+    const g = groupFor(p.id);
+    if (!isFineTuned(p) || !objectMethods) {
+      const q = quantities(objs);
+      const storeys = [...new Set(objs.map((o) => o.storey))];
+      workItems.push({ id: `WP|${p.id}`, group: g, building, level: storeys.length === 1 ? storeys[0] : '', name: g, quantity: q.volume, quantities: { count: q.count, area: q.area } });
+      members.push({ guids: objs.map((o) => o.guid).filter(Boolean), item: { id: `WP|${p.id}` } });
+      continue;
+    }
+    const runs = orderRuns(objs, p.objectOrder);
+    const per = objectMethods(p, objs);
+    const mine: { group: string; m: ResolvedMethod }[] = [];
+    const steps: SequenceStep[] = [];
+    let n = 0;
+    runs.forEach((run, k) => {
+      const runGroups = run.map((o) => {
+        n++;
+        const og = `${g} #${n}`;
+        const id = `WP|${p.id}|${o.guid || o.key}`;
+        workItems.push({ id, group: og, building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area } });
+        members.push({ guids: o.guid ? [o.guid] : [], item: { id } });
+        const m = per.get(o.key);
+        if (m) mine.push({ group: og, m });
+        return og;
+      });
+      if (runGroups.length === 1) steps.push({ group: runGroups[0] });
+      else { const rid = `${g} step ${k + 1}`; groups.push({ id: rid, name: rid, forEach: [], filters: [], include: runGroups }); steps.push({ group: rid }); }
+    });
+    objectMethodsFor.set(p.id, mine);
+    groups.push({ id: g, name: g, forEach: [], filters: [], include: Array.from({ length: n }, (_, i) => `${g} #${i + 1}`) });
+    if (steps.length > 1) orderChains.push({ id: `WPO-${code.get(p.id)}`, name: `Object order: ${g}`, steps });
+  }
   // A package that holds others is, for the generator, a group that includes the groups of every package in it with objects.
   const spanGroup = (id: string): string | null => {
     const ids = subtreeIds(ordered, id).filter((k) => liveIds.has(k));
@@ -544,10 +607,9 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
       const extras: { recipeId: string; task: RecipeTask; before: boolean }[] = [];
       const stdRecipes: Recipe[] = [];
       const crewsUsed = new Map<string, { std: StandardMethod; people: number }>();
-      for (const { p } of live) {
-        const m = methods.get(p.id);
+      const each = live.flatMap(({ p }) => objectMethodsFor.get(p.id)?.map((x) => ({ p, g: x.group, m: x.m as ResolvedMethod | undefined })) ?? [{ p, g: groupFor(p.id), m: methods.get(p.id) }]);
+      for (const { p, g, m } of each) {
         if (!m) continue;
-        const g = groupFor(p.id);
         if (m.kind === 'recipe') {
           const tasks = Object.fromEntries(m.activities.filter((a) => a.fixed && a.phase !== EXTRA_PHASE).map((a) => [a.phase, { days: a.days }]));
           overrides[g] = { recipe: m.key.slice(7), ...(Object.keys(tasks).length ? { tasks } : {}) };
@@ -562,9 +624,14 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
         const tasks: RecipeTask[] = m.activities.map((a) => ({ phase: a.phase, name: a.name, formula: String(a.days), crew: crewId, priority: OVERRIDE_PRIORITY - 1 }));
         stdRecipes.push({ id: `${std.name} for ${g}`, group: g, priority: OVERRIDE_PRIORITY, tasks });
       }
+      // A recipe made from a standard method names its crew: that crew is sent too.
+      for (const r of rules.recipes ?? []) for (const t of r.tasks) {
+        const std = t.crew ? STANDARD_METHODS.find((x) => norm(x.crew.id) === norm(t.crew!)) : undefined;
+        if (std && !crewsUsed.has(std.crew.id)) crewsUsed.set(std.crew.id, { std, people: std.crew.people });
+      }
       const trades: TradeRow[] = [...new Map([...crewsUsed.values()].map((c) => [c.std.crew.id, c.std])).values()].filter((s) => !rules.trades.some((t) => norm(t.id) === norm(s.crew.id))).map((s) => ({ id: s.crew.id, name: s.crew.name, capacity: 0 }));
       const crews: CrewTemplate[] = [...crewsUsed].filter(([id]) => !rules.crewTemplates.some((c) => norm(c.id) === norm(id))).map(([id, c]) => ({ id, trades: [{ trade: c.std.crew.id, size: c.people }] }));
-      const ownIds = new Set([STEPS_ID, ...chains.map((_, i) => `${STEPS_ID}-${i + 1}`)].map((s) => s.toUpperCase()));
+      const ownIds = new Set([STEPS_ID, ...chains.map((_, i) => `${STEPS_ID}-${i + 1}`), ...orderChains.map((c) => c.id)].map((s) => s.toUpperCase()));
       const others = rules.sequences.filter((q) => !ownIds.has(q.id.toUpperCase()));
       const sequences = chains.map((steps, i) => ({ id: i === 0 ? STEPS_ID : `${STEPS_ID}-${i + 1}`, name: i === 0 ? 'Work packages' : `Work packages: ${steps[1]?.group ?? ''} starts after ${steps[0]?.group ?? ''}`, steps })).filter((q, i) => i === 0 ? q.steps.length > 0 : q.steps.length > 1);
       const { breakdown: _b, ...rest } = rules;
@@ -575,7 +642,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
       });
       return {
         ...rest,
-        sequences: [...sequences, ...others],
+        sequences: [...sequences, ...orderChains, ...others],
         groups: [...rest.groups.filter((g) => !groups.some((x) => x.id === g.id)), ...groups],
         recipes: [...stdRecipes, ...recipes],
         trades: [...rest.trades, ...trades],
@@ -608,6 +675,7 @@ export function normalizePackages(raw: unknown): WorkPackage[] | undefined {
       ...(Array.isArray(q.guids) ? { guids: q.guids.map(text).filter(Boolean) } : {}),
     }));
     const days = p.days && typeof p.days === 'object' ? Object.fromEntries(Object.entries(p.days).filter(([, v]) => Number.isFinite(Number(v)) && Number(v) >= 0).map(([k, v]) => [k, Number(v)])) : undefined;
+    const objectOrder = p.objectOrder && typeof p.objectOrder === 'object' ? Object.fromEntries(Object.entries(p.objectOrder).filter(([k, v]) => k && Number.isFinite(Number(v))).map(([k, v]) => [k, Number(v)])) : undefined;
     const extra = p.extra && typeof p.extra === 'object' && text(p.extra.name) ? { name: text(p.extra.name), days: Number.isFinite(Number(p.extra.days)) && Number(p.extra.days) >= 0 ? Number(p.extra.days) : 1, ...(p.extra.before ? { before: true } : {}) } : undefined;
     out.push({
       id, name: text(p.name), color: text(p.color) || '#888888', parts,
@@ -622,6 +690,7 @@ export function normalizePackages(raw: unknown): WorkPackage[] | undefined {
       ...(extra ? { extra } : {}),
       ...(typeof p.bar === 'boolean' ? { bar: p.bar } : {}),
       ...(positive(p.maxAtOnce) ? { maxAtOnce: Math.round(positive(p.maxAtOnce)!) } : {}),
+      ...(objectOrder && Object.keys(objectOrder).length ? { objectOrder } : {}),
     });
   }
   const ordered = inTreeOrder(out).map((p) => { if (p.parent === undefined && 'parent' in p) { const { parent: _x, ...rest } = p; return rest; } return p; });

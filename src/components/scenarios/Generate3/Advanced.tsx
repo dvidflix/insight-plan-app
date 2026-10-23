@@ -1,11 +1,11 @@
-import { useEffect, useState, type ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { useRecipeStore } from '../../../state/recipeStore';
 import { STANDARD_METHODS } from '../../../prs/standardMethods';
-import type { WorkPackage } from '../../../prs/workPackages';
+import { isFineTuned, type WorkPackage } from '../../../prs/workPackages';
 import { subtreeIds } from '../../../prs/packageTree';
 import { useEditableGrid } from '../../useEditableGrid';
 import { IconChevronDown, IconChevronRight, IconClose } from '../../icons';
-import { MethodSelect, NumberField, StartSelect, packageAbove, parsePositive } from './Controls';
+import { Dialog, MethodSelect, NumberField, StartSelect, packageAbove, parsePositive } from './Controls';
 import { useG3, type useWorkPackages } from './useWorkPackages';
 
 /** Generate 3's Advanced: a panel that slides over the timeline, closed by default. It shows only what concerns the package picked (or, with none,
@@ -42,6 +42,7 @@ export function AdvancedPanel({ wp }: { wp: WP }) {
       <div className="g3-adv__body">
         {row ? <PackageSettings key={row.pkg.id} wp={wp} p={row.pkg} inside={row.children} /> : <EverySettings wp={wp} />}
         <div className="g3-adv__links">
+          <button type="button" className="link-btn" onClick={() => useG3.getState().setRecipeEditor('')} title="This project’s own recipes, in a focused editor">Edit recipes</button>
           <button type="button" className="link-btn" onClick={() => setDialog('methods')} title="Every standard method with its activities and rough rates, and this project’s recipes">See all methods and rates</button>
           <button type="button" className="link-btn" onClick={() => setDialog('crews')} title="How many people each method’s crew has in this scenario">Manage all crews</button>
         </div>
@@ -99,6 +100,11 @@ function PackageSettings({ wp, p, inside }: { wp: WP; p: WorkPackage; inside: nu
         {works && packageAbove(wp, p.id) ? (
           <Field label="Starts" why="Usually after the package above it in the build order. Pick another package to start after it instead; add a gap in working days if needed."><StartSelect wp={wp} p={p} compact /></Field>
         ) : works ? <p className="g3-adv__why">It is the first package: it starts at the start of the schedule.</p> : null}
+        {works && (
+          <Field label="Object order" why={isFineTuned(p) ? 'Its objects are built one by one, in an order of their own.' : 'Built as one piece. Optional: build its objects one by one in an order you set.'}>
+            <button type="button" className="btn btn--small" onClick={() => useG3.getState().setOrderDialog('picked')}>{isFineTuned(p) ? 'See or change the order…' : 'Fine-tune object order…'}</button>
+          </Field>
+        )}
         {inside > 0 && (
           <Field label="At most at once" why={`How many of the packages inside may be worked on at the same time. Empty: no limit (they follow the build order).`}>
             <NumberField value={p.maxAtOnce} placeholder="no limit" label="Most packages at once" onChange={(v) => wp.patch(p.id, { maxAtOnce: v ? Math.round(v) : undefined })} />
@@ -178,22 +184,6 @@ function EverySettings({ wp }: { wp: WP }) {
   );
 }
 
-function Dialog({ title, onClose, children }: { title: string; onClose: () => void; children: ReactNode }) {
-  useEffect(() => {
-    const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
-    window.addEventListener('keydown', esc);
-    return () => window.removeEventListener('keydown', esc);
-  }, [onClose]);
-  return (
-    <div className="project-picker__backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div className="g3-dlg g3-dlg--wide" role="dialog" aria-modal="true" aria-label={title}>
-        <div className="g3-dlg__head"><h3>{title}</h3><button type="button" className="g3-dlg__close" onClick={onClose} aria-label="Close" title="Close (Esc)"><IconClose /></button></div>
-        <div className="g3-dlg__body">{children}</div>
-      </div>
-    </div>
-  );
-}
-
 /** Every method a package can be built with: the standard ones with their activities and rough rates, and the project's own recipes. */
 function MethodsDialog({ wp, onClose }: { wp: WP; onClose: () => void }) {
   const recipes = useRecipeStore((s) => s.recipes).filter((r) => r.enabled !== false && r.chain !== false);
@@ -218,7 +208,7 @@ function MethodsDialog({ wp, onClose }: { wp: WP; onClose: () => void }) {
         </tbody>
       </table>
       <p className="scn-dim g3-adv__why">The rates are starting points. Objects without a volume or area are counted instead (so many a day).</p>
-      <h4 className="g3-dlg__sub">This project’s recipes</h4>
+      <h4 className="g3-dlg__sub">This project’s recipes <button type="button" className="link-btn" onClick={() => { onClose(); useG3.getState().setRecipeEditor(''); }}>Edit recipes</button></h4>
       {recipes.length === 0 ? <p className="scn-dim g3-adv__why">This project has no recipes of its own. The standard methods are enough to generate a schedule.</p> : (
         <table className="xl">
           <thead><tr><th className="xl__corner" aria-label="Row" /><th>Recipe</th><th>Used for</th><th>Activities</th><th>Packages</th></tr></thead>
