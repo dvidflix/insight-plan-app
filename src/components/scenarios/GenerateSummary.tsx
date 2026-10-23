@@ -10,6 +10,7 @@ import { SHIPPED_PRESETS, activePresets, applyPreset, normalizeSequencingPresets
 import { summariseProgramme } from '../../schedule/programmeSummary';
 import { useRuleContext } from './rules/RuleParts';
 import { useGenerateTab } from './GenerateTabs';
+import { duplicateSetNames } from '../../viewer/setTree';
 
 /** The top of the Work breakdown tab: how the work runs (sequencing presets: a named change to a few switches, which combine) and what the last
     generated programme came to (length, critical share, busiest day of each kind of resource). A preset only sets the engine's own switches, listed
@@ -63,6 +64,25 @@ export function SequencingPresets() {
       <div className="scn-dim xl__note">
         {chosen ? chosen.note : active.length ? `Now: ${active.map((p) => p.name).join('; ')}.` : 'Now: the generator’s own switches. Pick a way to run the work to change a few of them at once; they combine.'}
       </div>
+    </div>
+  );
+}
+
+/** A warning when search sets that the scenario uses share a name: the generator finds a set by its name, so two of the same name are one. */
+export function SameNameWarning() {
+  const sets = useSearchSetsStore((s) => s.sets);
+  const rules = useScenarioStore((s) => s.rules);
+  const names = useMemo(() => {
+    const used = new Set([
+      ...(rules.recipes ?? []).map((r) => r.group), ...rules.sequences.flatMap((q) => q.steps.map((x) => x.group)), ...rules.levelTasks.map((t) => t.group),
+      ...Object.values(rules.extraTags).map((t) => t.attach?.target ?? ''),
+    ].map((g) => g.trim().toUpperCase()).filter(Boolean));
+    return duplicateSetNames(sets).filter((d) => used.has(d.name.trim().toUpperCase()));
+  }, [sets, rules]);
+  if (!names.length) return null;
+  return (
+    <div className="scn-status scn-status--warn seq__warn" role="status" style={{ margin: '6px 12px' }}>
+      {names.length === 1 ? 'A search set name is used twice' : `${names.length} search set names are used twice`}: {names.slice(0, 3).map((d) => `“${d.name}” (in ${d.folders.join(' and ')})`).join('; ')}{names.length > 3 ? '…' : ''}. The generator finds a set by its name, so the sets of the same name are treated as one. Rename one of them in Models › Search sets.
     </div>
   );
 }

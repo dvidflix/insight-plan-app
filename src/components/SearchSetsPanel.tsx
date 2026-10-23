@@ -114,11 +114,13 @@ function SearchSetList({ onEdit, player: withPlayer }: { onEdit: (s: SearchSet) 
   // What the open scenario hangs on a set or a folder (its recipes, the extra activities attached to it): a small badge, so the tree shows where the recipes and extras are.
   const recipeGroups = useRecipeStore((st) => st.recipes);
   const extraTags = useScenarioStore((st) => st.rules.extraTags);
+  const barTasks = useScenarioStore((st) => st.rules.levelTasks);
   const usesOf = (name: string): string => {
     const key = folderKey(name).toUpperCase();
     const r = recipeGroups.filter((x) => folderKey(x.group).toUpperCase() === key && x.enabled !== false).length;
     const e = Object.values(extraTags ?? {}).filter((t) => t.attach?.target && folderKey(t.attach.target).toUpperCase() === key).length;
-    return [r ? `${r} recipe${r === 1 ? '' : 's'}` : '', e ? `${e} extra activit${e === 1 ? 'y' : 'ies'}` : ''].filter(Boolean).join(', ');
+    const b = (barTasks ?? []).filter((t) => t.enabled !== false && folderKey(t.group).toUpperCase() === key).length;
+    return [r ? `${r} recipe${r === 1 ? '' : 's'}` : '', e ? `${e} extra activit${e === 1 ? 'y' : 'ies'}` : '', b ? `${b} summary bar${b === 1 ? '' : 's'}` : ''].filter(Boolean).join(', ');
   };
   const total = useTotal();
   const actions = useSetActions();

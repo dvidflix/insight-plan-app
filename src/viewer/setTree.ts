@@ -88,3 +88,15 @@ export function moveFolder<S extends Pick<SearchSet, 'group'>>(sets: readonly S[
 
 /** Whether every folder above a folder is open (`closed` holds the paths of shut folders): a folder under a shut one is not shown. */
 export const isShown = (folder: string, closed: ReadonlySet<string>): boolean => folderAndAncestors(folder).slice(1).every((p) => !closed.has(p));
+
+/** Search sets (not selection sets) that share a name: a recipe, a step or an attachment finds a set by its name, so they are one to the generator. */
+export function duplicateSetNames<S extends Pick<SearchSet, 'name' | 'group' | 'kind'>>(sets: readonly S[]): { name: string; folders: string[] }[] {
+  const by = new Map<string, { name: string; folders: string[] }>();
+  for (const s of sets) {
+    if (s.kind === 'selection') continue;
+    const k = norm(s.name);
+    const e = by.get(k) ?? by.set(k, { name: s.name, folders: [] }).get(k)!;
+    e.folders.push(folderKey(s.group ?? '') || '(no folder)');
+  }
+  return [...by.values()].filter((e) => e.folders.length > 1);
+}

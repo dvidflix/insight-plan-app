@@ -388,3 +388,18 @@ def test_the_main_slab_chain_writes_an_ss_and_an_ff_for_every_overlap_at_80_perc
         assert (pred, succ, "FinishToFinish") in rels, (pred, succ)
         assert abs(rels[(pred, succ, "StartToStart")] - days * 8 * 0.8) < 0.5, (pred, succ, rels.get((pred, succ, "StartToStart")))
     assert ("E2", "F", "FinishToStart") in rels and ("F", "C", "FinishToStart") in rels
+
+
+def test_a_summary_bar_for_a_folder_is_one_bar_per_building_and_level_over_its_sets():
+    from core import activity_generator as gen
+    from core.rule_logic import PourTasks, build_level_tasks
+    from test_rules import FakeWbs
+    pt = lambda i, v: {"id": i, "forEach": [], "filters": [{"id": "c1", "field": "type", "op": "equals", "value": v, "conj": "and"}]}  # noqa: E731
+    groups = [pt("WALLS", "WALL"), pt("SLABS", "SLAB"), pt("OTHER", "COLUMN"),
+              {"id": "Folder (per level)", "forEach": ["building", "level"], "filters": [], "include": ["WALLS", "SLABS"]}]
+    r = rules.activate({"groups": groups, "levelTasks": [{"id": "LT-1", "name": "Bar", "group": "Folder (per level)"}]})
+    pours = [rec("W1", "WALL", level=1), rec("S1", "SLAB", level=1), rec("S2", "SLAB", level=2), rec("C1", "COLUMN", level=3)]
+    acts = [a for p in pours for a in gen.create_activities(p, FakeWbs())]
+    bars, relations, _ = build_level_tasks(r, PourTasks(acts), FakeWbs(), [])
+    assert sorted(b["level_key"] for b in bars) == [("B1", "L1"), ("B1", "L2")]  # level 3 holds only a column, which is in no set of the folder
+    assert {len(b["members"]) for b in bars} == {1, 2}

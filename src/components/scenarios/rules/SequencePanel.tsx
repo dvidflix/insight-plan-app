@@ -12,7 +12,7 @@ import { useGenerateTab } from '../GenerateTabs';
 import { useOrderPreview } from '../../../state/orderPreviewStore';
 import { stepColors } from '../OrderPreview';
 import { TreeTargetPicker } from './TreeTargetPicker';
-import { ATTACH_LINKS, ATTACH_PICKS, attachSummary } from '../../../prs/extraAttach';
+import { ATTACH_LINKS, ATTACH_PICKS, attachSummary, setsOfTarget } from '../../../prs/extraAttach';
 import type { ExtraAttach } from '../../../prs/rules';
 import { groupsOfItems, itemsOfGroup, useWorkItems } from '../useWorkItems';
 import { levelDefinition } from '../../../prs/levelDefinition';
@@ -278,7 +278,10 @@ function LevelTasksGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
     const l = loaded ? loaded.headers.indexOf('Level') : -1;
     const indexes = engine.getIndexes();
     return new Map(rows.map((t) => {
-      const mine = pourRowsOfGroup(t.group, pourRows, ctx.membership, sets, (set) => guidsOfSet(indexes, set));
+      // A folder of sets: the pours of every set inside it (a pour once).
+      const names = setsOfTarget(t.group, sets).map((x) => x.name);
+      const seen = new Set<string>();
+      const mine = (names.length > 1 ? names : [t.group]).flatMap((g) => pourRowsOfGroup(g, pourRows, ctx.membership, sets, (set) => guidsOfSet(indexes, set))).filter((r) => (seen.has(r.key) ? false : (seen.add(r.key), true)));
       const places = new Set(mine.map((r) => `${b >= 0 ? r.cells[b] : ''}|${l >= 0 ? r.cells[l] : ''}`));
       return [t.id, { pours: mine.length, tasks: b >= 0 || l >= 0 ? places.size : 0 }];
     }));
@@ -291,12 +294,12 @@ function LevelTasksGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
       </div>
       <div className="scn-dim seq__explain">
         <p><strong>What is a summary bar?</strong> One bar for each building and level. It starts with the first object of its group on that level and finishes with the last one. Other activities (an extra activity, a link) can then be tied to that whole level of the group at once.</p>
-        <p><strong>Group:</strong> the objects it spans: one of your search sets (made in Models › Search sets).</p>
+        <p><strong>Set or folder:</strong> the objects it spans: one of your search sets, or a folder of them (one bar spans every set inside it). Made in Models › Search sets.</p>
       </div>
       {rows.length === 0 ? <div className="scn-dim scn-editor__help">No summary bars yet. You only need them to tie something to a whole level; most programmes need none.</div> : (
         <table className="xl xgrid" {...grid.grid}>
           <colgroup><col style={{ width: 40 }} /><col style={{ width: 28 }} /><col style={{ width: 220 }} /><col style={{ width: 280 }} /><col style={{ width: 300 }} /><col style={{ width: 32 }} /></colgroup>
-          <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this summary bar" /><th title="The name of the task on each level">Name</th><th title="The pours it spans: a search set or a rule group">Group of pours</th><th title="What it will make from the loaded model">It makes</th><th aria-label="Delete" /></tr></thead>
+          <thead><tr><th className="xl__corner" aria-label="Row" /><th aria-label="On" title="Use this summary bar" /><th title="The name of the task on each level">Name</th><th title="The objects it spans: a search set, or a folder of them (every set inside)">Set or folder</th><th title="What it will make from the loaded model">It makes</th><th aria-label="Delete" /></tr></thead>
           <tbody>
             {rows.map((t, at) => {
               const m = made.get(t.id) ?? { pours: 0, tasks: 0 };
@@ -305,7 +308,7 @@ function LevelTasksGrid({ ctx }: { ctx: ReturnType<typeof useRuleContext> }) {
                   <th className="xl__row" scope="row">{at + 1}</th>
                   <td className="xl__check"><input type="checkbox" checked={t.enabled} aria-label="On" onChange={(e) => save([{ ...t, enabled: e.target.checked }])} /></td>
                   <td className={`xl__cell xgrid__cell${grid.sel('name', at)}`} data-col="name" data-row={at}><input {...grid.cell('name', at)} value={t.name} spellCheck={false} onChange={(e) => save([{ ...t, name: e.target.value }])} />{grid.handle('name', at)}</td>
-                  <td className="xl__cell"><GroupPicker value={t.group} none="Choose a group…" folders={ctx.groupFolders} onChange={(group) => save([{ ...t, group }])} /></td>
+                  <td className="xl__cell"><TreeTargetPicker value={t.group} none="Choose a set or folder…" onChange={(group) => save([{ ...t, group }])} /></td>
                   <td className="xl__cell xl__ro" title="One task for every building and level that has objects of this group">{!t.group.trim() ? 'pick a group' : m.pours === 0 ? `no objects of “${t.group}” in the loaded model` : m.tasks > 0 ? `${m.tasks} task${m.tasks === 1 ? '' : 's'} (one per building and level), from ${m.pours.toLocaleString()} objects` : `from ${m.pours.toLocaleString()} objects`}</td>
                   <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete" title="Delete the summary bar" onClick={() => remove(t.id)}><IconRemove /></button></td>
                 </tr>

@@ -45,6 +45,7 @@ import { makesItems, type BreakdownDefinition, type BreakdownResult } from '../p
 import { forGenerator } from '../prs/recipeRules';
 import { inheritRecipes, inheritingSetNames } from '../prs/recipeInheritance';
 import { attachedSetNames, resolveAttachments } from '../prs/extraAttach';
+import { barSetNames, withBarGroups } from '../prs/summaryBars';
 import { useSearchSetsStore } from './searchSetsStore';
 import { groupsWithSets, uniqueGroups } from '../prs/groupSets';
 import { recipeFolder } from './recipeFolderStore';
@@ -530,7 +531,7 @@ export function applyWorkItemLinks(built: BreakdownResult | null) {
 function sentRules(rules: ScenarioRules): ScenarioRules {
   const sets = useSearchSetsStore.getState().sets;
   const synced = withLibrary(rules);
-  return { ...synced, recipes: inheritRecipes(synced.recipes ?? [], sets), extraTags: resolveAttachments(synced.extraTags, sets) };
+  return withBarGroups({ ...synced, recipes: inheritRecipes(synced.recipes ?? [], sets), extraTags: resolveAttachments(synced.extraTags, sets) }, sets);
 }
 
 export const updateFourD = () =>
@@ -568,7 +569,7 @@ export const updateFourD = () =>
 
 /** The order, links or crews changed since 4D was last updated. */
 /** Whether the programme depends on the search sets as they are now: a recipe is for a folder (its sets get copies), or a sequence takes its steps from a folder. */
-const readsSetTree = (rules: ScenarioRules): boolean => inheritingSetNames(rules.recipes ?? [], useSearchSetsStore.getState().sets).length > 0 || Object.values(rules.extraTags).some((t) => !!t.attach?.target) || rules.sequences.some((q) => !!q.stepsFolder);
+const readsSetTree = (rules: ScenarioRules): boolean => inheritingSetNames(rules.recipes ?? [], useSearchSetsStore.getState().sets).length > 0 || Object.values(rules.extraTags).some((t) => !!t.attach?.target) || barSetNames(rules.levelTasks, useSearchSetsStore.getState().sets).length > 0 || rules.sequences.some((q) => !!q.stepsFolder);
 
 export const needsUpdate = (s: Pick<ScenarioState, 'rows' | 'relations' | 'crews' | 'extras' | 'rules' | 'updatedFrom'>) =>
   !s.updatedFrom || (readsSetTree(s.rules) && s.updatedFrom.sets !== useSearchSetsStore.getState().sets) || s.updatedFrom.rows !== s.rows || s.updatedFrom.relations !== s.relations || s.updatedFrom.crews !== s.crews || s.updatedFrom.extras !== s.extras || s.updatedFrom.rules !== s.rules;
@@ -837,6 +838,7 @@ function withLibrary(rules: ScenarioRules): ScenarioRules {
     ...useRecipeStore.getState().recipes.map((r) => r.group),
     ...inheritingSetNames(useRecipeStore.getState().recipes, allSets),
     ...attachedSetNames(rules.extraTags, allSets),
+    ...barSetNames(rules.levelTasks, allSets),
     ...stepSetNames(rules, allSets),
     ...rules.levelTasks.map((t) => t.group),
     ...rules.sequences.flatMap((q) => q.steps.map((s) => s.group)),
