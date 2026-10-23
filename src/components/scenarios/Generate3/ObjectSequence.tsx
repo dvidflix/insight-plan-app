@@ -3,10 +3,13 @@ import { useScenarioStore } from '../../../state/scenarioStore';
 import { usePersistedState } from '../../../utils/persistedState';
 import { isFineTuned } from '../../../prs/workPackages';
 import { ScenarioTabContent } from '../ScenarioDock';
+import { SequenceTimelineStatusBar } from '../../sequence/SequenceTimelineStatusBar';
+import { useSequenceFocusStore } from '../../../state/sequenceFocusStore';
 import { useRuleContext } from '../rules/RuleParts';
 import { useG3, type useWorkPackages } from './useWorkPackages';
 
-/** Generate's step 4, Granular sequence: the model on the left (the shared 3D view shows through, linked both ways with the list) and on the right the
+/** Generate's step 4, Granular sequence: the 4D view on the left (the shared 3D view played by the TimeLiner, its timeline under it; a row's
+    double-click moves the TimeLiner to the start of its first linked activity) and on the right the
     object-by-object sequence table (it lived in the Sequence panel before; it is only here now): steps, joins, Record picks, Sort by picks, its List
     setup and the search box. With "Use this object order in Generate" on, each package without an object order of its own builds its objects in
     the table's order (prs/objectOrder.ts withSequenceOrder); the packages keep their own order and links. The split is adjustable and remembered. */
@@ -40,10 +43,8 @@ export function ObjectSequenceStep({ wp, view }: { wp: WP; view: RefObject<HTMLD
   return (
     <div className="g3-split" ref={box} style={{ gridTemplateColumns: `${left}% 8px minmax(0, 1fr)` }}>
       <section className="g3-split__view" ref={view} aria-label="Model">
-        <div className="g3-split__viewbar">
-          <span className="scn-dim">Pick objects here or in the list: the two follow each other.</span>
-          <button type="button" className="btn btn--small" onClick={() => window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'sequence' }))} title="Open 4D Sequencing to play the generated programme over the model">Play in 4D</button>
-        </div>
+        {/* The 4D view: the model played by the TimeLiner (the same 4D driver and timeline as 4D Sequencing, mounted by App on this step). */}
+        <div className="g3-split__viewbar"><SequenceTimelineStatusBar /></div>
       </section>
       <div className="g3-split__grip" role="separator" aria-orientation="vertical" aria-valuenow={left} aria-valuemin={20} aria-valuemax={80} tabIndex={0} title="Drag to change the widths (double-click: half and half)"
         onPointerDown={drag} onDoubleClick={() => setLeft(50)} onKeyDown={(e) => { if (e.key === 'ArrowLeft') setLeft(Math.max(20, left - 5)); if (e.key === 'ArrowRight') setLeft(Math.min(80, left + 5)); }} />
@@ -62,7 +63,7 @@ export function ObjectSequenceStep({ wp, view }: { wp: WP; view: RefObject<HTMLD
         {rows.length === 0 && (
           <p className="g3-adv__note g3-seqbar__none">This model has no object sequence table: it is made for objects that carry the pour properties. To order the objects of a package, use <button type="button" className="link-btn" onClick={() => { useG3.getState().setStep(2); useG3.getState().setOrderDialog(useG3.getState().picked ? 'picked' : 'all'); }}>Fine-tune object order</button> in step 2.</p>
         )}
-        <div className="g3-split__table"><ScenarioTabContent /></div>
+        <div className="g3-split__table"><ScenarioTabContent onOpen={() => useSequenceFocusStore.getState().jumpToSelected?.()} /></div>
       </section>
     </div>
   );

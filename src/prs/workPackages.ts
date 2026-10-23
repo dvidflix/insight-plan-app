@@ -76,6 +76,8 @@ export interface PackageObject {
   /** Upper case, as the model has it. */
   cls: string;
   storey: string;
+  /** The building (IfcBuilding name) it is in; empty when the model has none. */
+  building?: string;
   /** The storey's place from the bottom (by elevation, else the model's order). */
   storeyRank: number;
   material: string;
@@ -183,6 +185,23 @@ export function freshId(packages: readonly Pick<WorkPackage, 'id'>[]): string {
   let n = packages.length + 1;
   while (ids.has(`P${n}`)) n++;
   return `P${n}`;
+}
+
+/** What the programme calls a package (activity names, its WBS, the type letter of its Activity IDs): its name, without the storey when the name
+    starts with the one storey its objects are on (the level is in the name already: "L00 Raft" on L00 is "Raft"). */
+export function labelOf(pkg: Pick<WorkPackage, 'name'>, objs: readonly Pick<PackageObject, 'storey'>[]): string {
+  const name = pkg.name.trim() || 'Package';
+  const storeys = [...new Set(objs.map((o) => o.storey).filter(Boolean))];
+  if (storeys.length !== 1) return name;
+  const st = storeys[0].trim();
+  if (!name.toUpperCase().startsWith(`${st.toUpperCase()} `)) return name;
+  return name.slice(st.length).replace(/^[\s\-–·:]+/, '').trim() || name;
+}
+
+/** The short building code the programme uses for every package: the building most of the objects are in (IfcBuilding), else `fallback`. All
+    packages share it, so the build order's links (made per building) stay as they are. */
+export function buildingCode(objs: readonly Pick<PackageObject, 'building'>[], fallback: string): string {
+  return commonest(objs.map((o) => (o.building ?? '').trim()).filter(Boolean)) || fallback;
 }
 
 /** What the generator knows a package by (its group): code and name. */
@@ -511,7 +530,7 @@ export const HOURS_PER_DAY = 8;
     should read them: the sequences made from the packages' order and links, the methods as recipes for their groups (with the standard methods'
     crews), and the summary bars and limits of the packages that hold others. */
 export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string, objectMethods?: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>): {
-  workItems: { id: string; group: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[];
+  workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[];
   members: { guids: string[]; item: { id: string } }[];
   rules: (rules: ScenarioRules) => ScenarioRules;
 } {
@@ -522,18 +541,19 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
   const groupFor = (id: string) => groupOf(byId.get(id)!, code.get(id)!);
   const live = rows.map((r) => ({ p: r.pkg, objs: contents.objects.get(r.pkg.id) ?? [] })).filter((x) => x.objs.length > 0);
   const liveIds = new Set(live.map((x) => x.p.id));
+  building = buildingCode(live.flatMap((x) => x.objs), building);
   const groups: RuleGroup[] = [];
   // A fine-tuned package: a work item per object, in its order (a sequence of its own); the package's group includes the objects' groups.
   const orderChains: { id: string; name: string; steps: SequenceStep[] }[] = [];
   const objectMethodsFor = new Map<string, { group: string; m: ResolvedMethod }[]>();
-  const workItems: { id: string; group: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[] = [];
+  const workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[] = [];
   const members: { guids: string[]; item: { id: string } }[] = [];
   for (const { p, objs } of live) {
     const g = groupFor(p.id);
     if (!isFineTuned(p) || !objectMethods) {
       const q = quantities(objs);
       const storeys = [...new Set(objs.map((o) => o.storey))];
-      workItems.push({ id: `WP|${p.id}`, group: g, building, level: storeys.length === 1 ? storeys[0] : '', name: g, quantity: q.volume, quantities: { count: q.count, area: q.area } });
+      workItems.push({ id: `WP|${p.id}`, group: g, label: labelOf(p, objs), building, level: storeys.length === 1 ? storeys[0] : '', name: g, quantity: q.volume, quantities: { count: q.count, area: q.area } });
       members.push({ guids: objs.map((o) => o.guid).filter(Boolean), item: { id: `WP|${p.id}` } });
       continue;
     }
@@ -547,7 +567,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
         n++;
         const og = `${g} #${n}`;
         const id = `WP|${p.id}|${o.guid || o.key}`;
-        workItems.push({ id, group: og, building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area } });
+        workItems.push({ id, group: og, label: labelOf(p, [o]), building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area } });
         members.push({ guids: o.guid ? [o.guid] : [], item: { id } });
         const m = per.get(o.key);
         if (m) mine.push({ group: og, m });
@@ -558,7 +578,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
     });
     objectMethodsFor.set(p.id, mine);
     groups.push({ id: g, name: g, forEach: [], filters: [], include: Array.from({ length: n }, (_, i) => `${g} #${i + 1}`) });
-    if (steps.length > 1) orderChains.push({ id: `WPO-${code.get(p.id)}`, name: `Object order: ${g}`, steps });
+    if (steps.length > 1) orderChains.push({ id: `WPO-${code.get(p.id)}`, name: 'Object order', steps });
   }
   // A package that holds others is, for the generator, a group that includes the groups of every package in it with objects.
   const spanGroup = (id: string): string | null => {
@@ -595,7 +615,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
     const wantsBar = r.children > 0 ? r.pkg.bar !== false : r.pkg.bar === true;
     const g = wantsBar || (r.children > 0 && (r.pkg.maxAtOnce ?? 0) > 0) ? spanGroup(r.pkg.id) : null;
     if (!g) continue;
-    if (wantsBar) bars.push({ id: `WPBAR-${r.code}`, name: groupFor(r.pkg.id), group: g });
+    if (wantsBar) bars.push({ id: `WPBAR-${r.code}`, name: labelOf(r.pkg, contents.all.get(r.pkg.id) ?? []), group: g });
     if (r.children > 0 && (r.pkg.maxAtOnce ?? 0) > 0) {
       const phases = [...new Set(subtreeIds(ordered, r.pkg.id).filter((k) => k !== r.pkg.id && liveIds.has(k)).flatMap((k) => methods.get(k)?.activities.map((a) => a.phase) ?? []))];
       for (const phase of phases) limits.push({ id: `WPLIM-${r.code}-${phase}`, phase, group: g, max: r.pkg.maxAtOnce! });
@@ -634,7 +654,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
       const crews: CrewTemplate[] = [...crewsUsed].filter(([id]) => !rules.crewTemplates.some((c) => norm(c.id) === norm(id))).map(([id, c]) => ({ id, trades: [{ trade: c.std.crew.id, size: c.people }] }));
       const ownIds = new Set([STEPS_ID, ...chains.map((_, i) => `${STEPS_ID}-${i + 1}`), ...orderChains.map((c) => c.id)].map((s) => s.toUpperCase()));
       const others = rules.sequences.filter((q) => !ownIds.has(q.id.toUpperCase()));
-      const sequences = chains.map((steps, i) => ({ id: i === 0 ? STEPS_ID : `${STEPS_ID}-${i + 1}`, name: i === 0 ? 'Work packages' : `Work packages: ${steps[1]?.group ?? ''} starts after ${steps[0]?.group ?? ''}`, steps })).filter((q, i) => i === 0 ? q.steps.length > 0 : q.steps.length > 1);
+      const sequences = chains.map((steps, i) => ({ id: i === 0 ? STEPS_ID : `${STEPS_ID}-${i + 1}`, name: i === 0 ? 'Order' : 'Starts after', steps })).filter((q, i) => i === 0 ? q.steps.length > 0 : q.steps.length > 1);
       const { breakdown: _b, ...rest } = rules;
       const recipes = withItemOverrides(rest.recipes ?? [], overrides).map((r) => {
         const add = extras.filter((x) => x.recipeId === r.id);

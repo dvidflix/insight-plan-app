@@ -1,3 +1,4 @@
+import { useSequenceFocusStore } from '../state/sequenceFocusStore';
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -368,6 +369,27 @@ export function SequencePanel() {
 
   const modelRef = useRef(model);
   modelRef.current = model;
+  // The lists beside this 4D view (Generate's step 4 object sequence) can move the TimeLiner to the start of the earliest activity linked to the
+  // objects selected: a row's double-click selects its objects first, and the links are worked out a moment later.
+  const focusRef = useRef(focusActivityId);
+  focusRef.current = focusActivityId;
+  useEffect(() => {
+    useSequenceFocusStore.setState({
+      jumpToSelected: () => window.setTimeout(() => {
+        const m = modelRef.current;
+        const activity = m?.activities.find((a) => a.id === focusRef.current);
+        const start = activity ? activityStartMs(activity, useSequenceTimelineStore.getState().basis) : null;
+        if (start === null || start === undefined) {
+          useScenarioStore.setState({ message: { kind: 'warn', text: 'That item has no linked activity in the 4D programme yet: Generate, and check the Link Groups.' } });
+          return;
+        }
+        const range = scheduleRange(m!, useSequenceTimelineStore.getState().basis);
+        useSequenceTimelineStore.getState().setPlaying(false);
+        useSequenceTimelineStore.getState().setDate(range ? Math.min(range.max, Math.max(range.min, start)) : start);
+      }, 250),
+    });
+    return () => useSequenceFocusStore.setState({ jumpToSelected: null });
+  }, []);
 
 
   // Double-click on an activity (Gantt or Tasks): the 4D timeline moves to its start and its linked objects are selected in 3D.

@@ -3,7 +3,7 @@ import { NO_RULES } from '../../src/prs/rules';
 import type { Recipe } from '../../src/prs/recipes';
 import { codesOf, inTreeOrder, indentPackage, movePackage, outdentPackage, removePackage, subtreeIds, treeRows } from '../../src/prs/packageTree';
 import {
-  STOREY_FIELD, appendPackages, contentsOf, groupByFolders, linkTargets, normalizePackages, orderBottomUp, packagesRequest, resolveMethod, spoolPackages,
+  STOREY_FIELD, appendPackages, buildingCode, labelOf, contentsOf, groupByFolders, linkTargets, normalizePackages, orderBottomUp, packagesRequest, resolveMethod, spoolPackages,
   spoolTree, splitPackage, timelineOf, whereParts, type PackageObject, type WorkPackage,
 } from '../../src/prs/workPackages';
 
@@ -131,7 +131,7 @@ describe('links, bars, limits and overrides', () => {
       ['STEPS-2', [{ group: 'WP-01.01 A1' }, { group: 'WP-02 B', lagHours: 16 }]],
     ]);
     expect(rules.groups).toEqual([{ id: 'WP-01 A', name: 'WP-01 A', forEach: [], filters: [], include: ['WP-01.01 A1', 'WP-01.02 A2'] }]);
-    expect(rules.levelTasks).toEqual([{ id: 'WPBAR-WP-01', name: 'WP-01 A', group: 'WP-01 A' }]);
+    expect(rules.levelTasks).toEqual([{ id: 'WPBAR-WP-01', name: 'A', group: 'WP-01 A' }]);
     expect(rules.limits.map((l) => [l.phase, l.group, l.max])).toEqual([['Rebar', 'WP-01 A', 1], ['Formwork', 'WP-01 A', 1], ['Concrete', 'WP-01 A', 1]]);
   });
 
@@ -177,5 +177,26 @@ describe('links, bars, limits and overrides', () => {
   it('keeps the new settings when saved', () => {
     const saved = normalizePackages([{ id: 'A', name: 'A', color: '#1', parts: [] }, { id: 'B', name: 'B', color: '#2', parts: [], parent: 'A', after: 'X', totalDays: '4', people: 3.4, extra: { name: ' Check ', days: 2 }, bar: true, maxAtOnce: 0 }]);
     expect(saved![1]).toEqual({ id: 'B', name: 'B', color: '#2', parts: [], parent: 'A', after: 'X', totalDays: 4, people: 3, extra: { name: 'Check', days: 2 }, bar: true });
+  });
+});
+
+describe('short names in the programme', () => {
+  it('calls a package by its name without the storey it is on, and the model by its building', () => {
+    expect(labelOf({ name: 'L00 Raft' }, [obj('a', 'L00', 0, 'IFCSLAB')])).toBe('Raft');
+    expect(labelOf({ name: 'L00 - Main Slab' }, [obj('a', 'L00', 0, 'IFCSLAB')])).toBe('Main Slab');
+    expect(labelOf({ name: 'L00 Raft' }, [obj('a', 'L00', 0, 'IFCSLAB'), obj('b', 'L01', 1, 'IFCSLAB')])).toBe('L00 Raft');
+    expect(labelOf({ name: 'L00' }, [obj('a', 'L00', 0, 'IFCSLAB')])).toBe('L00');
+    expect(buildingCode([{ building: '1HDAB' }, { building: '1HDAB' }, { building: 'X' }], 'long_model_file_name')).toBe('1HDAB');
+    expect(buildingCode([{}, { building: ' ' }], 'stem')).toBe('stem');
+  });
+
+  it('sends the short building, the label and short sequence names', () => {
+    const pkgs: WorkPackage[] = [pk('A', undefined, { name: 'L00 Walls', parts: [{ storey: 'L00', cls: 'IFCWALL' }] }), pk('B', undefined, { name: 'Slab', parts: [{ cls: 'IFCSLAB' }], after: 'A' })];
+    const objs2 = objects.map((o) => ({ ...o, building: '1HDAB' }));
+    const c = contentsOf(pkgs, objs2, noSets);
+    const m = new Map(pkgs.map((p) => [p.id, resolveMethod(p, c.objects.get(p.id)!, [], () => [])]));
+    const req = packagesRequest(pkgs, c, m, 'some_long_model_file_20261012');
+    expect(req.workItems.map((w) => [w.building, w.group, w.label])).toEqual([['1HDAB', 'WP-01 L00 Walls', 'Walls'], ['1HDAB', 'WP-02 Slab', 'Slab']]);
+    expect(req.rules({ ...NO_RULES }).sequences.map((s) => s.name)).toEqual(['Order', 'Starts after']);
   });
 });

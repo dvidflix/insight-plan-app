@@ -320,6 +320,13 @@ def _activity_type_code(pour_type, is_external=False):
     return mapping.get(norm, norm[:1] or "X")
 
 
+def _label_type_code(label):
+    """The type letter of a work item with a name of its own (Generate's packages): the first letter of its last word, as the pour codes go
+    (Main Slab -> S, External Wall -> W, Raft -> R)."""
+    words = re.findall(r"[A-Za-z0-9]+", str(label or ""))
+    return words[-1][0].upper() if words else "X"
+
+
 def _standard_building_code(unit_building):
     """The building as the standard writes it in IDs, names and WBS: Unit +
     Building, except unit 9 (site-wide buildings), which is left out:
@@ -562,6 +569,9 @@ def _pour_record(element, guid, p, property_cache, building_name_map, cached_bbo
     level_code = LEVEL_CODE_FALLBACK if level_int <= 0 else (f"L{level_int:02d}" if USE_PADDED_LEVEL_CODES else f"L{level_int}")
 
     pour_type_raw = str(p.get("Pour Type") or p.get("General Pour Type") or "OTHER")
+    # A work item with a name of its own (core/work_items.py "label"): names, the WBS and the type letter read it; its group is left for recipes
+    # and rules. It is named as typed, without the pour-type wording (walls, double height, stage 2).
+    label = str(p.get("Display Type") or "").strip()
     pour_type = pour_type_raw.replace("_", " ").strip().upper()
     pour_type_norm = _normalized_pour_type({"pour_type": pour_type})
     if pour_type_norm not in CONTEMPLATED_POUR_TYPES and geometry is None:
@@ -606,7 +616,7 @@ def _pour_record(element, guid, p, property_cache, building_name_map, cached_bbo
 
 
     zone_code = _activity_zone_code(is_connected=is_connected, is_disconnected=is_disconnected)
-    type_code = _activity_type_code(pour_type, is_external=is_external)
+    type_code = _label_type_code(label) if label else _activity_type_code(pour_type, is_external=is_external)
 
     task_project_prefix = str(PROJECT_SHORT or "").strip().upper()
     base_task_id = f"{task_project_prefix}-{building}-{level_code}" if task_project_prefix else f"{building}-{level_code}"
@@ -615,13 +625,14 @@ def _pour_record(element, guid, p, property_cache, building_name_map, cached_bbo
     task_id_prefix = base_task_id + f"-{type_code}"
     base_task_id += f"-{type_code}-{str(p.get('Pour ID Number') or p.get('PourID') or '').strip()}"
 
-    lg1_base = title_case(pour_type.replace("_", " "))
-    if "WALL" in pour_type:
-        lg1_base = f"{'External' if is_external else 'Internal'} {lg1_base}"
-    if is_double_height:
-        lg1_base = f"Double Height {lg1_base}"
-    if conc_stage_norm in {"2", "STAGE 2", "2.0", "STAGE2"}:
-        lg1_base += " (stage 2)"
+    lg1_base = label or title_case(pour_type.replace("_", " "))
+    if not label:
+        if "WALL" in pour_type:
+            lg1_base = f"{'External' if is_external else 'Internal'} {lg1_base}"
+        if is_double_height:
+            lg1_base = f"Double Height {lg1_base}"
+        if conc_stage_norm in {"2", "STAGE 2", "2.0", "STAGE2"}:
+            lg1_base += " (stage 2)"
 
     zone_label = "Disconnected - " if is_disconnected else "Connected - " if is_connected else ""
 
@@ -632,7 +643,7 @@ def _pour_record(element, guid, p, property_cache, building_name_map, cached_bbo
     level_wbs_name = f"{current_wbs_prefix} - {level_display}"
     wbs.register(level_wbs_name, f"{current_wbs_prefix} - Construction")
 
-    if "WALL" in pour_type:
+    if "WALL" in pour_type and not label:
         direction = "External" if is_external else "Internal"
         wall_wbs = f"{current_wbs_prefix} - {level_display} - {direction} Walls"
         wbs.register(wall_wbs, level_wbs_name)
@@ -642,7 +653,7 @@ def _pour_record(element, guid, p, property_cache, building_name_map, cached_bbo
         concrete_wbs_oid = wbs.get_id(concrete_wbs_name)
     else:
         # (One raft per building: "Raft", not "Rafts".)
-        type_name = title_case(pour_type.replace("_", " ")) + ("" if "RAFT" in pour_type.upper() or geometry is not None else "s")
+        type_name = label or (title_case(pour_type.replace("_", " ")) + ("" if "RAFT" in pour_type.upper() or geometry is not None else "s"))
         type_wbs = f"{current_wbs_prefix} - {level_display} - {type_name}"
         wbs.register(type_wbs, level_wbs_name)
         concrete_wbs_name = type_wbs
@@ -673,6 +684,8 @@ def _pour_record(element, guid, p, property_cache, building_name_map, cached_bbo
         "is_external": is_external,
         "is_double_height": is_double_height,
         "lg1": lg1_base,
+        # A work item's own name (Generate's package): its WBS in the XML is named after it (core/xml_builder.py).
+        "display_type": label,
         "lg2": f"{building}-{level_code} - {zone_label}{lg1_base}".strip(" -"),
         "lg3": f"{building}-{level_code} - {lg1_base}",
         # As CWA Codes / Full Pour ID: <unit+building>/<alt pour ID>, as authored

@@ -1743,6 +1743,15 @@ def _build_xml_wbs_manager_for_activities(activities):
             level_name = f"{wbs_prefix} - {level_display}"
         xml_wbs.register(level_name, level_parent)
 
+        # A work item with a name of its own (Generate's packages): one WBS under the level, named after it (building + level + package),
+        # whatever words its group has.
+        own = str(rec.get("display_type", "") or "").strip()
+        if own:
+            own_name = f"{wbs_prefix} - {zone_segment}{level_display} - {own}"
+            xml_wbs.register(own_name, level_name)
+            act["wbs_oid"] = xml_wbs.get_id(own_name)
+            continue
+
         if "WALL" in pour_type:
             direction = "External" if rec.get("is_external", False) else "Internal"
             wall_group = f"{wbs_prefix} - {zone_segment}{level_display} - {direction} Walls"

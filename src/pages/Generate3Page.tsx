@@ -70,7 +70,7 @@ function Builder() {
     <div className="g3">
       <ScenarioNotice />
       {/* The 3D view shows through the model area of the step (the camera frames the model there). */}
-      <PackagePreview key={step === 4 ? 'split' : 'cols'} view={viewRef} packages={shown} contents={wp.contents} />
+      <PackagePreview key={step === 4 ? 'split' : 'cols'} view={viewRef} packages={shown} contents={wp.contents} paint={step !== 4} />
       {step === 4 ? <ObjectSequenceStep wp={wp} view={viewRef} /> : (
         <div className="g3-cols">
           <section className="g3-left" aria-label="Model">
@@ -102,6 +102,7 @@ export function Generate3Page({ picker }: { /** The page picker with the search 
   const { ready } = useScenarioView();
   const models = useModelsStore((s) => s.models.length);
   const building = ready && models > 0;
+  const step = useG3((s) => s.step);
   // The header (page picker, search, steps) runs the full width in the viewer's header slot: the docks start below it.
   const headerSlot = useHeaderSlotStore((h) => h.el);
   const bar = <div className="filterbar schedule-toolbar gen-head"><div className="schedule-toolbar__left">{picker}</div><div className="schedule-toolbar__right"><ListSetupButton always /></div></div>;
@@ -109,7 +110,7 @@ export function Generate3Page({ picker }: { /** The page picker with the search 
     <div className={`scn-page gen-page g3-page${building ? ' gen-page--preview' : ''}`}>
       <ScenarioSync />
       {/* The Gantt as a dock panel here too, so choosing it in the Navigation Bar or the Panels menu docks it in this view. */}
-      <ModelsGanttPanel />
+      {step !== 4 && <ModelsGanttPanel />}
       {headerSlot ? createPortal(bar, headerSlot) : bar}
       <main className="gen-main g3-main">{building ? <Builder /> : <Prerequisite />}</main>
     </div>

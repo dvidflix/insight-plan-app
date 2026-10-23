@@ -11,6 +11,8 @@ An item is {id, group, building?, level?, zone?, name?, quantity?, quantities?: 
 
   id          the item's identity (the GlobalId of a pour): it must be unique, and the request's sequence names it
   group       what the item is, the name of its group: a recipe and the rules' groups find it by this
+  label       what activity names, the WBS and the type letter of Activity IDs call it (Generate's package name); the group stays the key
+              recipes and rules match
   quantity    the number the pour's volume is (0 when there is none): a duration worked out from "the pour's volume" reads it
   quantities  more numbers, as a rule can take them from a property (set "Work item")
   properties  more properties as the pour property set would hold them (a level or a zone under another name, say)
@@ -68,6 +70,8 @@ def properties_of(item, number):
     """The pour property set an item stands in for (the names the pour record is made from)."""
     p = {k: v for k, v in (item.get("properties") or {}).items() if _text(k)}
     p["Pour Type"] = _text(item.get("group"))
+    if _text(item.get("label")):
+        p["Display Type"] = _text(item.get("label"))
     p["Level"] = _text(item.get("level"))
     p["Building"] = _text(item.get("building"))
     p["Building Zone"] = _text(item.get("zone"))

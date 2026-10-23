@@ -11,7 +11,7 @@ import { useG3 } from './useWorkPackages';
 export const PALE = '#d4d8d6';
 type Ids = Record<string, number[]>;
 
-export function PackagePreview({ view, packages, contents }: { view: React.RefObject<HTMLElement>; packages: WorkPackage[]; contents: PackageContents }) {
+export function PackagePreview({ view, packages, contents, paint = true }: { view: React.RefObject<HTMLElement>; packages: WorkPackage[]; contents: PackageContents; /** Off: the 4D view colours the model (step 4), so the packages are not painted. */ paint?: boolean }) {
   const engine = useViewerEngine();
   const picked = useG3((s) => s.picked);
   const pick = useG3((s) => s.pick);
@@ -27,7 +27,7 @@ export function PackagePreview({ view, packages, contents }: { view: React.RefOb
     void (async () => {
       for (const [m, ids] of Object.entries(painted.current)) await engine.setColor(m, ids, null, true);
       painted.current = {};
-      if (dead) return;
+      if (dead || !paint) return;
       const next: Ids = {};
       const shown = picked === null ? null : new Set(subtreeIds(packages, picked));
       for (let i = 0; i < packages.length; i++) {

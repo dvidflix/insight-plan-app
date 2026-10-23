@@ -23,6 +23,7 @@ import { ViewerWorkspace } from './viewer/ViewerWorkspace';
 import { SchedulePage, type TabId as ScheduleTabId } from './pages/SchedulePage';
 import { takePendingTab, useScheduleLayoutsStore } from './state/scheduleLayoutsStore';
 import { SequencePanel } from './pages/SequencePage';
+import { useG3 } from './components/scenarios/Generate3/useWorkPackages';
 import { FourDSetupPanel } from './components/sequence/FourDSetupPanel';
 import { useSatelliteModelsStore } from './state/satelliteModels';
 import { ScenariosPage } from './pages/ScenariosPage';
@@ -257,6 +258,9 @@ export default function App() {
   // only when Classic Generate is switched on there too. Generate is the one way to generate; classic is kept for the rare old workflow.
   const scenariosOn = useAppPrefsStore((s) => s.experimental.scenarios);
   const classicOn = useAppPrefsStore((s) => s.experimental.classicGenerate);
+  // Generate's step 4 (Granular sequence) shows the 4D view: the same 4D driver as 4D Sequencing, with its panels.
+  const g3Step = useG3((s) => s.step);
+  const fourDInGenerate = page === 'generate3' && g3Step === 4;
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
   const showHelpTab = useAppPrefsStore((s) => s.showHelpTab);
@@ -377,9 +381,9 @@ export default function App() {
               search={<GlobalSearch pages={pages} onPage={goPage} onTab={setScheduleTab} />}
               layout={page === 'sequence' ? 'sequence' : 'model'}
               paneActive={page === 'model'}
-              backgroundPanels={page === 'schedule' || page === 'scenarios' || page === 'generate3'}
-              panel={page === 'sequence' ? <SequencePanel /> : <FourDSetupPanel />}
-              overlay={page === 'sequence' ? <SequenceLabelOverlay /> : undefined}
+              backgroundPanels={page === 'schedule' || page === 'scenarios' || (page === 'generate3' && !fourDInGenerate)}
+              panel={page === 'sequence' || fourDInGenerate ? <SequencePanel /> : <FourDSetupPanel />}
+              overlay={page === 'sequence' || fourDInGenerate ? <SequenceLabelOverlay /> : undefined}
               center={
                 <>
                   {(page === 'schedule' || visited.has('schedule')) && <div style={{ display: page === 'schedule' ? 'flex' : 'none', flexDirection: 'column', flex: 1, minHeight: 0 }}><SchedulePage selectedTab={scheduleTab} onTabChange={setScheduleTab} active={page === 'schedule'} pages={pages} onPage={goPage} /></div>}

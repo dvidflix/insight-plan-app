@@ -1142,6 +1142,24 @@ export class ViewerEngine {
     return out;
   }
 
+  /** The model's buildings (IfcBuilding) with the elements under each, in spatial-tree order. */
+  getBuildings(modelId: string): { name: string; ids: number[] }[] {
+    const index = this.indexes.get(modelId);
+    if (!index) return [];
+    const out: { name: string; ids: number[] }[] = [];
+    const under = (node: ModelTreeNode, acc: number[] = []) => {
+      if (node.localId !== null && index.elements.has(node.localId)) acc.push(node.localId);
+      node.children.forEach((c) => under(c, acc));
+      return acc;
+    };
+    const walk = (node: ModelTreeNode, category: string) => {
+      if (node.localId !== null && category === 'IFCBUILDING') out.push({ name: index.names.get(node.localId) || '', ids: under(node) });
+      else node.children.forEach((c) => walk(c, node.localId === null ? node.category : category));
+    };
+    walk(index.tree, index.tree.category);
+    return out;
+  }
+
   /** Once a model has been edited (see setStoreySlide) the edited elements are
       drawn by a separate "delta" model, so per-element overrides have to reach
       both it and the original. */

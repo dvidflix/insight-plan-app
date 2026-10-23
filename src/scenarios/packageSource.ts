@@ -19,11 +19,13 @@ export function packageObjects(engine: ViewerEngine): PackageObject[] {
     const rankOf = new Map(ranked.map((x, r) => [x.s.name, r]));
     const storeyOf = new Map<number, string>();
     for (const s of storeys) for (const id of s.ids) if (!storeyOf.has(id)) storeyOf.set(id, s.name);
+    const buildingOf = new Map<number, string>();
+    for (const b of engine.getBuildings(modelId)) for (const id of b.ids) if (!buildingOf.has(id) && b.name.trim()) buildingOf.set(id, b.name.trim());
     for (const [id, e] of index.elements) {
       const cls = (e.category || '').toUpperCase();
       if (!cls || NOT_WORK.test(cls)) continue;
       const storey = storeyOf.get(id) ?? '';
-      out.push({ key: `${modelId}:${id}`, guid: e.guid, name: e.name, cls, storey, storeyRank: storey ? rankOf.get(storey) ?? 0 : Number.MAX_SAFE_INTEGER, material: materialOf(e.props), props: e.props, volume: quantityOf(e.props, /Volume$/i), area: quantityOf(e.props, /(Net|Gross)?(Side|Footprint)?Area$/i) });
+      out.push({ key: `${modelId}:${id}`, guid: e.guid, name: e.name, cls, storey, building: buildingOf.get(id) ?? '', storeyRank: storey ? rankOf.get(storey) ?? 0 : Number.MAX_SAFE_INTEGER, material: materialOf(e.props), props: e.props, volume: quantityOf(e.props, /Volume$/i), area: quantityOf(e.props, /(Net|Gross)?(Side|Footprint)?Area$/i) });
     }
   }
   return out;
