@@ -1,6 +1,6 @@
 import type { ScheduleModel } from './types';
 import type { ElementSummary } from '../viewer/types';
-import { parseObjectFieldKey, taskFieldOptions, taskFieldValue, objectFieldLabel, objectFieldValue, type MatchRule } from './linkGroups';
+import { parseObjectFieldKey, taskFieldOptions, taskFieldValue, objectFieldLabel, type MatchRule } from './linkGroups';
 import type { ObjectsByModel } from './activityRelation';
 
 /** Suggested matches for the tasks and objects that no Link Group links yet. A Link Group links a task to an object when a task field and an object
@@ -116,7 +116,7 @@ export function suggestMatches(model: ScheduleModel, models: readonly LoadedObje
       }
       if (taskIds.length === 0) continue;
       const coverage = taskIds.length / tasks.length;
-      const { propertySet, attribute } = parseObjectFieldKey(objField === '_name' || objField === '_guid' ? objField : objField);
+      const { propertySet, attribute } = parseObjectFieldKey(objField);
       out.push({
         id: `${field.value}\u0001${objField}`,
         rule: { taskField: field.value, objectPropertySet: propertySet, objectAttribute: attribute, conj: 'and' },
@@ -131,4 +131,3 @@ export function suggestMatches(model: ScheduleModel, models: readonly LoadedObje
 
 /** A Link Group that links by one suggested rule (the suggestion's fields, no filters: it links wherever the two values are equal). */
 export const groupNameOf = (s: Pick<Suggestion, 'taskLabel' | 'objectLabel'>) => `Suggested: ${s.taskLabel} = ${s.objectLabel}`;
-export { objectFieldValue };
