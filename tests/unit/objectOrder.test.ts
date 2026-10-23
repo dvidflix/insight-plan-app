@@ -75,3 +75,26 @@ describe('recipes like a standard method', () => {
     expect(rules.crewTemplates).toEqual([{ id: 'STD-CONCRETE', trades: [{ trade: 'STD-CONCRETE', size: 6 }] }]);
   });
 });
+
+describe('the object sequence table (step 4)', () => {
+  it('ranks by step, rows of a step together, unsequenced rows left out', async () => {
+    const { ranksFromRows } = await import('../../src/prs/objectOrder');
+    const r = ranksFromRows([{ key: 'G3', step: 7 }, { key: 'G1', step: 7 }, { key: 'G9', step: null }, { key: 'G2#4', step: 2 }]);
+    expect([...r]).toEqual([['G3', 1], ['G1', 1], ['G2', 2]]);
+  });
+
+  it('gives its order to packages without one, and leaves a package its own', async () => {
+    const { withSequenceOrder } = await import('../../src/prs/objectOrder');
+    const pkgs: WorkPackage[] = [
+      { id: 'A', name: 'A', color: '', parts: [{ cls: 'IFCWALL' }] },
+      { id: 'B', name: 'B', color: '', parts: [{ cls: 'IFCSLAB' }], objectOrder: { G5: 1 } },
+      { id: 'C', name: 'C', color: '', parts: [{ cls: 'IFCBEAM' }] },
+    ];
+    const all = [...objs, { ...obj(5), cls: 'IFCSLAB' }, { ...obj(6), cls: 'IFCBEAM' }];
+    const c = contentsOf(pkgs, all, () => false);
+    const out = withSequenceOrder(pkgs, c, new Map([['G4', 1], ['G2', 2], ['G5', 9]]));
+    expect(out[0].objectOrder).toEqual({ G4: 1, G2: 2, G1: 3, G3: 4 });
+    expect(out[1].objectOrder).toEqual({ G5: 1 });
+    expect(out[2]).toBe(pkgs[2]);
+  });
+});

@@ -16,6 +16,7 @@ import { FEATURES } from '../features';
 
 export const EXPERIMENTAL_FEATURES = [
   { id: 'scenarios', label: 'Scenarios (pour-by-pour programme generator)', tip: 'The Scenarios generator: the Scenarios tab, the Scenarios panel in 4D Sequencing and the Generated schedules tab in Programmes. For planners who generate programmes from the model; needs the Python generator.' },
+  { id: 'classicGenerate', label: 'Classic Generate (eight tabs)', tip: 'The old Generate page with its eight tabs (recipes, crews, parameters, rules…), beside Generate. Rarely needed: Generate does everything a planner needs. Needs Scenarios on.' },
   { id: 'whyShown', label: 'Why is it shown?', tip: '4D tab: lists the tasks that link to the selected object and which one controls it.' },
   { id: 'taskFields', label: 'Task fields from search sets', tip: '4D tab: writes a task field from the search sets the tasks\' objects belong to.' },
   { id: 'navisworks', label: 'Navisworks TimeLiner export', tip: 'Views tab: exports search sets + a TimeLiner CSV for Navisworks.' },

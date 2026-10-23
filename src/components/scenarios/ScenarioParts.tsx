@@ -42,6 +42,7 @@ import {
   type ScenarioCfgTab,
 } from '../../state/scenarioStore';
 import { computeBreakdown } from '../../scenarios/breakdownSource';
+import { ranksFromRows } from '../../prs/objectOrder';
 import { buildPackagesRequest } from '../../scenarios/packageSource';
 import { useRecipeStore } from '../../state/recipeStore';
 import { applySteps, moveDown, moveTo, moveToStep, moveUp, orderByPicks, reorderLike, separate, startTogether, unsequence } from '../../scenarios/pourOrder';
@@ -76,7 +77,7 @@ export function ScenarioSync({ loadOnly = false }: { loadOnly?: boolean }) {
   // The grouping levels read the loaded models and the search sets, which live in the viewer: the store asks for them when it updates 4D.
   useEffect(() => {
     setBreakdownSource((definition) => computeBreakdown(definition, engine.getIndexes(), useSearchSetsStore.getState().sets));
-    setPackageSource((rules, building) => buildPackagesRequest(engine, rules, useSearchSetsStore.getState().sets, useRecipeStore.getState().recipes, useScenarioStore.getState().crews, building));
+    setPackageSource((rules, building) => buildPackagesRequest(engine, rules, useSearchSetsStore.getState().sets, useRecipeStore.getState().recipes, useScenarioStore.getState().crews, building, ranksFromRows(useScenarioStore.getState().rows)));
     return () => { setBreakdownSource(null); setPackageSource(null); };
   }, [engine]);
   const root = useProjectDbStore((s) => s.root);

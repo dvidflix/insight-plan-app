@@ -37,6 +37,7 @@ export const STEPS: { id: G3Step; label: string; tip: string }[] = [
   { id: 1, label: '1 - Work packages', tip: 'Group the model’s objects into work packages, and packages into larger ones: automatically, from two properties, or from your search sets' },
   { id: 2, label: '2 - Sequence', tip: 'Put the packages in the order they are built, and say what starts after what' },
   { id: 3, label: '3 - Methods & Generate', tip: 'See how each package is built (its activities, crew and days), change it if needed, and generate the schedule' },
+  { id: 4, label: '4 - Granular sequence', tip: 'Optional: the model beside the object-by-object sequence, to order objects one by one inside their packages' },
 ];
 
 /** The steps as the header's tabs, after the search box. */
@@ -46,7 +47,7 @@ export function Generate3Tabs() {
   const { ready } = useScenarioView();
   const dirty = useScenarioStore((s) => isDirty(s));
   return (
-    <div className="gen-tabs" role="tablist" aria-label="Generate 3">
+    <div className="gen-tabs" role="tablist" aria-label="Generate">
       {STEPS.map((t) => <button key={t.id} type="button" role="tab" aria-selected={step === t.id} disabled={!ready} className={step === t.id ? 'is-active' : ''} title={ready ? t.tip : 'Open a scenario first'} onClick={() => setStep(t.id)}>{t.label}</button>)}
       {dirty && <span className="scn-chip scn-chip--warn gen-tabs__dirty" title="The scenario has changes that are not saved">unsaved</span>}
     </div>

@@ -14812,6 +14812,20 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-ready__acts { display: flex; gap: var(--hit-gap, 6px); }
 .g3-foot__status { gap: 8px; align-items: center; }
 .g3-cmp__differs td { background: rgb(var(--accent-rgb) / 0.08); }
+/* Step 4, Granular sequence: the model and the object sequence side by side, with a grip between them. */
+.g3-split { flex: 1; min-height: 0; display: grid; }
+.g3-split__view { position: relative; min-width: 0; pointer-events: none; }
+.g3-split__viewbar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--border); background: var(--n-ffffff, #fff); pointer-events: auto; font-size: 12px; }
+.g3-split__viewbar .scn-dim { flex: 1; min-width: 0; }
+.g3-split__grip { cursor: col-resize; border-left: 1px solid var(--border); border-right: 1px solid var(--border); background: var(--bg-soft); pointer-events: auto; }
+.g3-split__grip:hover, .g3-split__grip:focus-visible { background: rgb(var(--accent-rgb) / 0.14); outline: none; }
+.g3-split__list { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--n-ffffff, #fff); pointer-events: auto; }
+.g3-seqbar { flex: none; display: flex; align-items: flex-start; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
+.g3-seqbar .g3-adv__check { flex: 1; min-width: 0; }
+.g3-seqbar__n { flex: none; font-size: 12px; padding-top: 2px; }
+.g3-seqbar__none { margin: 8px 12px; }
+.g3-split__table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.g3-split__table > .scn-4d { flex: 1; min-height: 0; }
 .g3-pkg[draggable="true"] { cursor: grab; }
 .g3-pkg__grip { display: inline-flex; align-items: center; padding-left: 4px; color: var(--text-dim); }
 .g3-pkg__grip svg { width: 16px; height: 16px; }

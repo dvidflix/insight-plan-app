@@ -30,7 +30,6 @@ import { SearchSetsPanel } from './SearchSetsPanel';
 import { useListConfigStore } from '../state/listConfigStore';
 import { useDataTableStore } from '../state/dataTableStore';
 import { DockPanel } from './Dock';
-import { ScenarioTabContent } from './scenarios/ScenarioDock';
 import { DockGantt } from './sequence/DockGantt';
 import { SequenceResources } from './sequence/SequenceResources';
 import { ResourceDistribution } from './schedule/ResourceDistribution';
@@ -74,7 +73,6 @@ export function ModelToolsPanel() {
   const panels = useSequenceUiStore((s) => s.modelPanels);
   // The Topics tool (BCF) is an experimental feature.
   const bcf = useAppPrefsStore((s) => s.experimental.bcf);
-  const scenarios = useAppPrefsStore((s) => s.experimental.scenarios);
   // A topic marker clicked in 3D brings the Topics tool up.
   const openRequest = useTopicsStore((st) => st.openRequest);
   const seen = useRef(openRequest);
@@ -90,7 +88,6 @@ export function ModelToolsPanel() {
       {/* Resources opens beside whatever view is showing (Generate, Models, Programmes), never by taking you to 4D Sequencing. */}
       <DockPanel id="resources" label="Resources"><ResourcesDockBody /></DockPanel>
       <DockPanel id="distribution" label="Resource distribution"><DistributionDockBody /></DockPanel>
-      {scenarios && <DockPanel id="scenarios" label="Sequence"><ScenarioTabContent /></DockPanel>}
       {bcf && <DockPanel id="topics" label="Topics">{panels ? <div className="tpc-pad"><TopicsPanel /></div> : <div className="flt__hint">Starting viewer…</div>}</DockPanel>}
     </>
   );

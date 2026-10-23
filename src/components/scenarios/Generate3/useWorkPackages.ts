@@ -10,12 +10,13 @@ import { paletteColors } from '../../../viewer/colorPalettes';
 import { packageObjects, packagesView, setFinder } from '../../../scenarios/packageSource';
 import { timelineOf, type WorkPackage } from '../../../prs/workPackages';
 import { inTreeOrder, treeRows } from '../../../prs/packageTree';
+import { ranksFromRows } from '../../../prs/objectOrder';
 import { useRuleContext } from '../rules/RuleParts';
 import { useIndexTick } from '../../modelFields';
 
 /** Generate 3's state: the step it is on and the packages folded shut (remembered), the package picked and whether Advanced is open (not
     remembered: Advanced is closed each time). */
-export type G3Step = 1 | 2 | 3;
+export type G3Step = 1 | 2 | 3 | 4;
 interface G3State {
   step: G3Step;
   setStep: (s: G3Step) => void;
@@ -57,7 +58,9 @@ export function useWorkPackages() {
   const crewSheet = useScenarioStore((s) => s.crews);
   const packages = useMemo(() => ctx.rules.packages ?? [], [ctx.rules.packages]);
   const objects = useMemo(() => packageObjects(engine), [engine, tick, models]); // eslint-disable-line react-hooks/exhaustive-deps
-  const view = useMemo(() => packagesView(engine, packages, sets, recipes, ctx.rules, crewSheet, objects), [engine, packages, sets, recipes, ctx.rules, crewSheet, objects]);
+  const tableRows = useScenarioStore((s) => s.rows);
+  const ranks = useMemo(() => (ctx.rules.objectSequence ? ranksFromRows(tableRows) : undefined), [ctx.rules.objectSequence, tableRows]);
+  const view = useMemo(() => packagesView(engine, packages, sets, recipes, ctx.rules, crewSheet, objects, ranks), [engine, packages, sets, recipes, ctx.rules, crewSheet, objects, ranks]);
   const finds = useMemo(() => setFinder(engine, sets), [engine, sets, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = useMemo(() => treeRows(packages), [packages]);
   const timeline = useMemo(() => new Map(timelineOf(packages, (p) => view.daysOf.get(p.id) ?? 0, (p) => (view.contents.objects.get(p.id)?.length ?? 0) > 0).map((t) => [t.id, t])), [packages, view.daysOf, view.contents]);
@@ -69,5 +72,7 @@ export function useWorkPackages() {
     for (const k of Object.keys(next) as (keyof WorkPackage)[]) if (next[k] === undefined) delete next[k];
     return next;
   }));
-  return { packages, rows, ...view, timeline, save, patch, sets, finds };
+  // `packages` are the saved ones (what the steps edit); `effective` are what Generate builds (with step 4's object sequence, when it is used).
+  const { packages: effective, ...rest } = view;
+  return { packages, effective, rows, ...rest, timeline, save, patch, sets, finds };
 }

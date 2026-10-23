@@ -282,7 +282,7 @@ export function panelOrder(order?: DockPanelId[]): DockPanelId[] {
 /** The names the Navigation Bar menu gives the panels the current view does not have (it lists every panel on every view). */
 export const PANEL_LABELS: Partial<Record<DockPanelId, string>> = {
   tree: 'Tree', properties: 'Properties', search: 'Sets', fourD: '4D', tasks: 'Tasks', related: '3D', clash: 'Clash', views: 'Views', colour: 'Colour',
-  resources: 'Resources', scenarios: 'Sequence', topics: 'Topics', viewpoints: 'Viewpoints', checks: 'Model checks',
+  resources: 'Resources', topics: 'Topics', viewpoints: 'Viewpoints', checks: 'Model checks',
   compare: 'Compare models', datatable: 'Data table', layouts: 'Layouts', details: 'Activity', links: 'Predecessors & successors', planning: 'Resources & codes',
   predecessors: 'Predecessors', successors: 'Successors', gantt: 'Gantt', dictionary: 'Dictionary', files: 'Files', settings: 'General settings',
 };

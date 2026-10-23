@@ -6,7 +6,7 @@ import type { ScenarioCrew } from './api';
 import { NOT_WORK } from '../prs/standardMethods';
 import { planWorkItem } from '../prs/activityPlan';
 import { contentsOf, isFineTuned, materialOf, objectMethodsOf, packagesRequest, quantityOf, resolveMethod, serialDays, type PackageContents, type PackageObject, type ResolvedMethod, type WorkPackage } from '../prs/workPackages';
-import { orderRuns } from '../prs/objectOrder';
+import { orderRuns, withSequenceOrder } from '../prs/objectOrder';
 
 /** The loaded models as Generate 3's packages read them: every object that is work (not a space, an opening or the spatial structure), with its
     storey (from the model's spatial tree, ranked from the bottom by elevation, else by the tree's order), its IFC class, material and quantities. */
@@ -57,8 +57,10 @@ export function recipeDays(rules: ScenarioRules, crewSheet: ScenarioCrew[]) {
 }
 
 /** Everything Generate 3 shows of the packages: what each holds and the method each is built with. */
-export function packagesView(engine: ViewerEngine, packages: readonly WorkPackage[], sets: readonly SearchSet[], recipes: readonly Recipe[], rules: ScenarioRules, crewSheet: ScenarioCrew[], objects = packageObjects(engine)): { objects: PackageObject[]; contents: PackageContents; methods: Map<string, ResolvedMethod>; objectMethods: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>; daysOf: Map<string, number> } {
-  const contents = contentsOf(packages, objects, setFinder(engine, sets));
+export function packagesView(engine: ViewerEngine, saved: readonly WorkPackage[], sets: readonly SearchSet[], recipes: readonly Recipe[], rules: ScenarioRules, crewSheet: ScenarioCrew[], objects = packageObjects(engine), ranks?: ReadonlyMap<string, number>): { objects: PackageObject[]; contents: PackageContents; methods: Map<string, ResolvedMethod>; objectMethods: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>; daysOf: Map<string, number>; packages: WorkPackage[] } {
+  const contents = contentsOf(saved, objects, setFinder(engine, sets));
+  // The object sequence (step 4), when used, gives each package without its own object order one.
+  const packages = ranks && ranks.size ? withSequenceOrder(saved, contents, ranks) : [...saved];
   const days = recipeDays(rules, crewSheet);
   const methods = new Map(packages.map((p) => [p.id, resolveMethod(p, contents.objects.get(p.id) ?? [], recipes, days)]));
   const objectMethods = (pkg: WorkPackage, objs: PackageObject[]) => objectMethodsOf(pkg, objs, (p, o) => resolveMethod(p, o, recipes, days));
@@ -67,12 +69,11 @@ export function packagesView(engine: ViewerEngine, packages: readonly WorkPackag
     const objs = contents.objects.get(p.id) ?? [];
     return [p.id, isFineTuned(p) && objs.length ? serialDays(orderRuns(objs, p.objectOrder), objectMethods(p, objs)) : methods.get(p.id)?.days ?? 0];
   }));
-  return { objects, contents, methods, objectMethods, daysOf };
+  return { objects, contents, methods, objectMethods, daysOf, packages };
 }
 
 /** The request Update 4D sends for the packages (see prs/workPackages.ts packagesRequest). */
-export function buildPackagesRequest(engine: ViewerEngine, rules: ScenarioRules, sets: readonly SearchSet[], recipes: Recipe[], crewSheet: ScenarioCrew[], building: string) {
-  const packages = rules.packages ?? [];
-  const view = packagesView(engine, packages, sets, recipes, rules, crewSheet);
-  return packagesRequest(packages, view.contents, view.methods, building, view.objectMethods);
+export function buildPackagesRequest(engine: ViewerEngine, rules: ScenarioRules, sets: readonly SearchSet[], recipes: Recipe[], crewSheet: ScenarioCrew[], building: string, ranks?: ReadonlyMap<string, number>) {
+  const view = packagesView(engine, rules.packages ?? [], sets, recipes, rules, crewSheet, undefined, rules.objectSequence ? ranks : undefined);
+  return packagesRequest(view.packages, view.contents, view.methods, building, view.objectMethods);
 }

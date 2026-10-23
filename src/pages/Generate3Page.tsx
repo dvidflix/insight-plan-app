@@ -15,7 +15,8 @@ import { ObjectOrderDialog } from '../components/scenarios/Generate3/ObjectOrder
 import { RecipeEditorDialog } from '../components/scenarios/Generate3/RecipeEditor';
 import { Versions } from '../components/scenarios/Generate3/Versions';
 import { ReadinessChip } from '../components/scenarios/Generate3/Readiness';
-import { useG3, useWorkPackages } from '../components/scenarios/Generate3/useWorkPackages';
+import { useG3, useWorkPackages, type G3Step } from '../components/scenarios/Generate3/useWorkPackages';
+import { ObjectSequenceStep } from '../components/scenarios/Generate3/ObjectSequence';
 import { usePackageListView } from '../components/scenarios/Generate3/useListView';
 
 /** Generate 3: a schedule from the model in three guided steps (the header's tabs): work packages, sequence, methods & Generate. The model is on the
@@ -33,7 +34,7 @@ function Prerequisite() {
     return (
       <div className="g3-first">
         <h2>Start with the model</h2>
-        <p className="scn-dim hint">Generate 3 makes a schedule from the objects of a 3D model. Load the model first.</p>
+        <p className="scn-dim hint">Generate makes a schedule from the objects of a 3D model. Load the model first.</p>
         <button type="button" className="btn primary" onClick={() => goTo('model')}>Go to Models</button>
       </div>
     );
@@ -68,20 +69,24 @@ function Builder() {
   return (
     <div className="g3">
       <ScenarioNotice />
-      <div className="g3-cols">
-        <section className="g3-left" aria-label="Model">
-          <div className="g3-view" ref={viewRef}><PackagePreview view={viewRef} packages={shown} contents={wp.contents} /></div>
-          <StepTools wp={wp} />
-        </section>
-        <section className="g3-centre" aria-label="Work packages"><PackageList wp={wp} lv={lv} /></section>
-        <section className="g3-right" aria-label="Timeline preview"><Timeline wp={wp} lv={lv} /></section>
-        <AdvancedPanel wp={wp} />
-      </div>
+      {/* The 3D view shows through the model area of the step (the camera frames the model there). */}
+      <PackagePreview key={step === 4 ? 'split' : 'cols'} view={viewRef} packages={shown} contents={wp.contents} />
+      {step === 4 ? <ObjectSequenceStep wp={wp} view={viewRef} /> : (
+        <div className="g3-cols">
+          <section className="g3-left" aria-label="Model">
+            <div className="g3-view" ref={viewRef} />
+            <StepTools wp={wp} />
+          </section>
+          <section className="g3-centre" aria-label="Work packages"><PackageList wp={wp} lv={lv} /></section>
+          <section className="g3-right" aria-label="Timeline preview"><Timeline wp={wp} lv={lv} /></section>
+          <AdvancedPanel wp={wp} />
+        </div>
+      )}
       <ObjectOrderDialog wp={wp} />
       <RecipeEditorDialog wp={wp} />
       <footer className="g3-foot">
-        {step > 1 && <button type="button" className="btn" onClick={() => setStep((step - 1) as 1 | 2)}>‹ {STEPS[step - 2].label.replace(/^\d+ - /, '')}</button>}
-        {step < 3 && <button type="button" className="btn" disabled={!wp.packages.length} onClick={() => setStep((step + 1) as 2 | 3)} title={wp.packages.length ? '' : 'Make work packages first'}>Next: {STEPS[step].label.replace(/^\d+ - /, '')} ›</button>}
+        {step > 1 && <button type="button" className="btn" onClick={() => setStep((step - 1) as G3Step)}>‹ {STEPS[step - 2].label.replace(/^\d+ - /, '')}</button>}
+        {step < STEPS.length && <button type="button" className="btn" disabled={!wp.packages.length} onClick={() => setStep((step + 1) as G3Step)} title={wp.packages.length ? (step === 3 ? 'Optional: order the objects one by one' : '') : 'Make work packages first'}>{step === 3 ? 'Optional' : 'Next'}: {STEPS[step].label.replace(/^\d+ - /, '')} ›</button>}
         <Versions wp={wp} />
         <span className="g3-foot__status"><ReadinessChip wp={wp} /><GenerateStatus noCheck /></span>
         <button type="button" className="btn primary g3-generate" disabled={busy || holding === 0} onClick={() => void updateFourD()}

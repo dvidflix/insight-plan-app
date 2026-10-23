@@ -1,4 +1,4 @@
-import type { PackageObject } from './workPackages';
+import type { PackageContents, PackageObject, WorkPackage } from './workPackages';
 
 /** Generate 3's fine-tuned object order. A package normally becomes one work item; with an object order (`objectOrder`: GlobalId -> rank) each of
     its objects becomes a work item of its own, built in that order: a lower rank first, equal ranks together, objects without a rank after the
@@ -86,3 +86,29 @@ export function ranksFromList(rows: readonly (readonly unknown[])[], objs: reado
 
 /** Text with an object per line ("rank<TAB>id", "rank;id", "rank,id" or just "id") as rows. */
 export const listRows = (text: string): string[][] => text.split(/\r?\n/).map((l) => (/\t/.test(l) ? l.split('\t') : /;/.test(l) ? l.split(';') : /^\s*-?\d+(\.\d+)?\s*,/.test(l) ? [l.slice(0, l.indexOf(',')), l.slice(l.indexOf(',') + 1)] : [l]));
+
+/** Ranks from the object sequence table (Generate's step 4: rows of the scenario's order, keyed by GlobalId, with their step): the place of each
+    row's step, rows of the same step sharing it; unsequenced rows (no step) are left out. */
+export function ranksFromRows(rows: readonly { key: string; step: number | null }[]): Map<string, number> {
+  const out = new Map<string, number>();
+  let rank = 0;
+  let last: number | null = null;
+  for (const r of rows) {
+    if (r.step === null) continue;
+    if (r.step !== last) { rank++; last = r.step; }
+    const guid = r.key.split('#')[0];
+    if (guid && !out.has(guid)) out.set(guid, rank);
+  }
+  return out;
+}
+
+/** The packages with the object sequence applied: a package with no object order of its own takes one from `ranks` when any of its objects is
+    ranked (a package's own fine-tuned order wins). */
+export function withSequenceOrder(packages: readonly WorkPackage[], contents: PackageContents, ranks: ReadonlyMap<string, number>): WorkPackage[] {
+  return packages.map((p) => {
+    if (p.objectOrder && Object.keys(p.objectOrder).length) return p;
+    const objs = contents.objects.get(p.id) ?? [];
+    const { order, found } = orderFromRanks(objs, ranks);
+    return found ? { ...p, objectOrder: compactOrder(objs, order) } : p;
+  });
+}

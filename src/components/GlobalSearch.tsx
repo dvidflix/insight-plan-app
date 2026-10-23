@@ -117,12 +117,13 @@ export function GlobalSearch({ pages, onPage, onTab }: { pages: PageItem[]; onPa
     // Theme
     out.push({ key: 'a:theme', group: 'Actions', label: resolveTheme(themeChoice) === 'dark' ? 'Switch to the light theme' : 'Switch to the dark theme', hint: 'appearance', run: () => setThemeChoice(resolveTheme(themeChoice) === 'dark' ? 'light' : 'dark') });
     // Generate (the page is there when Scenarios is on): its tabs, the scenarios of the project, and Update 4D / Save for the open one.
-    if (pages.some((p) => p.id === 'scenarios')) {
+    if (pages.some((p) => p.id === 'scenarios' || p.id === 'generate3')) {
       // In Generate 3, its steps stand for the classic tabs, and a scenario or Update 4D stays in Generate 3 (classic Generate is reached from the
       // page picker only, never from inside Generate 3).
-      const inG3 = !!document.querySelector('.g3-page');
-      const genPage = inG3 ? 'generate3' : 'scenarios';
-      if (inG3) for (const t of G3_STEPS) out.push({ key: `g3:${t.id}`, group: 'Generate', label: `Generate 3 › ${t.label.replace(/^\d+ - /, '')}`, hint: t.tip.slice(0, 70), run: () => useG3.getState().setStep(t.id) });
+      const classic = pages.some((p) => p.id === 'scenarios');
+      const inClassic = classic && !!document.querySelector('.scn-page:not(.g3-page)');
+      const genPage = inClassic ? 'scenarios' : 'generate3';
+      if (!inClassic) for (const t of G3_STEPS) out.push({ key: `g3:${t.id}`, group: 'Generate', label: `Generate › ${t.label.replace(/^\d+ - /, '')}`, hint: t.tip.slice(0, 70), run: () => { useG3.getState().setStep(t.id); onPage('generate3'); } });
       else for (const t of GENERATE_TABS) out.push({ key: `g:${t.id}`, group: 'Generate', label: `Generate › ${t.label.replace(/^\d+ - /, '')}`, hint: t.tip.split('.')[0].slice(0, 70), run: () => { useGenerateTab.getState().setTab(t.id); onPage('scenarios'); } });
       for (const name of scenarioNamesForStems(project, drafts, stemsInInputs(models))) {
         out.push({ key: `sc:${name}`, group: 'Generate', label: `Scenario ${name}`, hint: name === scenario ? 'open' : 'open it in Generate', run: () => { pickScenario(name); onPage(genPage); } });

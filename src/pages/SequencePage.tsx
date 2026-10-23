@@ -1,6 +1,5 @@
 import { useIgnoreTimelinerStore } from '../state/ignoreTimelinerStore';
 import { useOnSplit, useViewpointsToggle } from '../state/sidePaneStore';
-import { ScenarioTabContent } from '../components/scenarios/ScenarioDock';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSequenceSchedule } from '../state/scheduleStore';
 import { useModelsStore } from '../state/modelsStore';
@@ -367,27 +366,8 @@ export function SequencePanel() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
-  // Scenarios table: a double-click on a pour moves the 4D timeline to the
-  // day its (earliest linked) activity starts.
-  const focusRef = useRef(focusActivityId);
-  focusRef.current = focusActivityId;
   const modelRef = useRef(model);
   modelRef.current = model;
-  const jumpToPourStart = () => {
-    // The row's click has selected the pour in 3D; its links are worked out a moment later.
-    window.setTimeout(() => {
-      const m = modelRef.current;
-      const activity = m?.activities.find((a) => a.id === focusRef.current);
-      const start = activity ? activityStartMs(activity, useSequenceTimelineStore.getState().basis) : null;
-      if (start === null || start === undefined) {
-        useScenarioStore.setState({ message: { kind: 'warn', text: 'That item has no linked activity in the 4D programme yet (Update 4D, and check the Link Groups).' } });
-        return;
-      }
-      const range = scheduleRange(m!, useSequenceTimelineStore.getState().basis);
-      useSequenceTimelineStore.getState().setPlaying(false);
-      useSequenceTimelineStore.getState().setDate(range ? Math.min(range.max, Math.max(range.min, start)) : start);
-    }, 250);
-  };
 
 
   // Double-click on an activity (Gantt or Tasks): the 4D timeline moves to its start and its linked objects are selected in 3D.
@@ -861,7 +841,6 @@ export function SequencePanel() {
           <ModelColorPanel page="sequence" />
         </div>
       </DockPanel>
-      {experimental.scenarios && <DockPanel id="scenarios" label="Sequence"><ScenarioTabContent onOpen={jumpToPourStart} /></DockPanel>}
       {experimental.bcf && <DockPanel id="topics" label={`Topics${topicCount ? ` (${topicCount})` : ''}`}><div className="tpc-pad" style={{ overflow: 'auto', flex: 1, minHeight: 0 }}><TopicsPanel /></div></DockPanel>}
       {/* Scenarios settings (the scenarios list, New scenario, Start date) is a tab of its own whenever the scenarios are on, so it can always be opened from the navigation bar. */}
     </>

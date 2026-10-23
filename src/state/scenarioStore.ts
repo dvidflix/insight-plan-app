@@ -560,7 +560,7 @@ export const updateFourD = () =>
     let sendRules = (r: ScenarioRules) => r;
     if (rules.packages?.length) {
       const built = packageSource ? packageSource(rules, stem) : null;
-      if (!built || built.workItems.length === 0) throw new Error('The work packages hold no objects of the loaded model. Load the model in Models, or make the packages again (Generate 3, step 1).');
+      if (!built || built.workItems.length === 0) throw new Error('The work packages hold no objects of the loaded model. Load the model in Models, or make the packages again (Generate, step 1).');
       work = { workItems: built.workItems, workSequence: [] };
       sendRules = built.rules;
       applyWorkItemLinks({ leaves: built.members } as unknown as BreakdownResult);

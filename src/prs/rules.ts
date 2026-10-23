@@ -436,6 +436,8 @@ export interface ScenarioRules {
   breakdown?: BreakdownDefinition;
   /** Generate 3's work packages (prs/workPackages.ts), in build order. With packages, Update 4D builds the programme from them. */
   packages?: WorkPackage[];
+  /** Generate's step 4: the object sequence table's order is used inside the packages (prs/objectOrder.ts withSequenceOrder). */
+  objectSequence?: boolean;
 }
 
 /** The one empty set of rules (same object each time, so "unchanged" is a plain comparison). */
@@ -479,6 +481,7 @@ export function normalizeRules(raw: unknown): ScenarioRules {
     extraTags: r.extraTags && typeof r.extraTags === 'object' && !Array.isArray(r.extraTags) ? { ...r.extraTags } : {},
     ...(normalizeBreakdown(r.breakdown) ? { breakdown: normalizeBreakdown(r.breakdown) } : {}),
     ...(normalizePackages(r.packages) ? { packages: normalizePackages(r.packages) } : {}),
+    ...(r.objectSequence === true ? { objectSequence: true } : {}),
   };
   return isEmptyRules(out) ? NO_RULES : out;
 }

@@ -114,8 +114,8 @@ const PAGES: { id: PageId; label: string; icon: JSX.Element }[] = [
   { id: 'inputs', label: 'Files', icon: <IconFolder /> },
   { id: 'model', label: 'Models', icon: <IconCube /> },
   { id: 'schedule', label: 'Programmes', icon: <IconGantt /> },
-  { id: 'scenarios', label: 'Generate', icon: <IconSplit /> },
-  { id: 'generate3', label: 'Generate 3', icon: <IconTree /> },
+  { id: 'generate3', label: 'Generate', icon: <IconTree /> },
+  { id: 'scenarios', label: 'Generate (classic)', icon: <IconSplit /> },
   { id: 'sequence', label: '4D Sequencing', icon: <IconSchema /> },
   { id: 'timelines', label: 'Timelines', icon: <IconTimeline /> },
   { id: 'external', label: 'External data', icon: <IconExternalData /> },
@@ -243,7 +243,9 @@ export default function App() {
   // Other parts of the app move to a page by asking: window.dispatchEvent(new CustomEvent('ip-goto-page', { detail: 'sequence' })).
   useEffect(() => {
     const go = (e: Event) => {
-      const id = (e as CustomEvent<PageId>).detail;
+      let id = (e as CustomEvent<PageId>).detail;
+      // Classic Generate is shown only when switched on (Settings › Experimental features): otherwise a request for it opens Generate.
+      if (id === 'scenarios' && !useAppPrefsStore.getState().experimental.classicGenerate) id = 'generate3';
       if (PAGES.some((p) => p.id === id)) setPage(id);
     };
     window.addEventListener('ip-goto-page', go);
@@ -251,20 +253,23 @@ export default function App() {
     // setPage reads the current page from a ref.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-  // The Generate pages (ids 'scenarios' and 'generate3') show whenever Settings › Experimental features › Scenarios is on.
+  // Generate (id 'generate3') shows whenever Settings › Experimental features › Scenarios is on; classic Generate (id 'scenarios', the eight tabs)
+  // only when Classic Generate is switched on there too. Generate is the one way to generate; classic is kept for the rare old workflow.
   const scenariosOn = useAppPrefsStore((s) => s.experimental.scenarios);
+  const classicOn = useAppPrefsStore((s) => s.experimental.classicGenerate);
   const showTimelinesTab = useAppPrefsStore((s) => s.showTimelinesTab);
   const showWikiTab = useAppPrefsStore((s) => s.showWikiTab);
   const showHelpTab = useAppPrefsStore((s) => s.showHelpTab);
   const showExternalTab = useAppPrefsStore((s) => s.showExternalTab);
   const showDashboardsTab = useAppPrefsStore((s) => s.showDashboardsTab);
   const pages = useMemo(
-    () => PAGES.filter((p) => ((p.id !== 'scenarios' && p.id !== 'generate3') || scenariosOn) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
-    [scenariosOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
+    () => PAGES.filter((p) => ((p.id !== 'scenarios' && p.id !== 'generate3') || scenariosOn) && (p.id !== 'scenarios' || classicOn) && (p.id !== 'timelines' || (FEATURES.teamPages && showTimelinesTab)) && (p.id !== 'wiki' || (FEATURES.teamPages && showWikiTab)) && (p.id !== 'help' || (FEATURES.help && showHelpTab)) && (p.id !== 'external' || (FEATURES.externalPages && showExternalTab)) && (p.id !== 'dashboards' || (FEATURES.externalPages && showDashboardsTab))),
+    [scenariosOn, classicOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab],
   );
   useEffect(() => {
+    if (scenariosOn && !classicOn && page === 'scenarios') { setPage('generate3'); return; }
     if ((!scenariosOn && (page === 'scenarios' || page === 'generate3')) || ((!showTimelinesTab || !FEATURES.teamPages) && page === 'timelines') || ((!showWikiTab || !FEATURES.teamPages) && page === 'wiki') || ((!FEATURES.help || !showHelpTab) && page === 'help') || ((!showExternalTab || !FEATURES.externalPages) && page === 'external') || ((!showDashboardsTab || !FEATURES.externalPages) && page === 'dashboards')) setPage('sequence');
-  }, [scenariosOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab, page]);
+  }, [scenariosOn, classicOn, showTimelinesTab, showWikiTab, showHelpTab, showExternalTab, showDashboardsTab, page]);
 
   // Ctrl+Tab / Ctrl+Shift+Tab step through the top tabs (wrapping round).
   // Alt+PageDown / Alt+PageUp do the same: a normal browser tab keeps Ctrl+Tab
