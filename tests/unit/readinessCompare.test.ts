@@ -46,4 +46,22 @@ describe('comparing versions', () => {
     expect(r.figures.find((f) => f.label === 'Packages with objects')!.differs).toBe(false);
     expect(r.packages.map((d) => [d.name, d.what])).toEqual([['Walls', 'method'], ['Slabs', 'days'], ['Gone', 'only in v1'], ['New', 'only in v2']]);
   });
+
+  it('gives the change of each figure, and the packages whose critical path, objects or object order differ', () => {
+    const crit = (s: VersionSide, ids: string[]): VersionSide => ({ ...s, programme: { ...s.programme!, criticalPackages: ids } });
+    const a = crit(side('v1', [{ ...p('P1', 'One', 'M', 2), objectsKey: 'x' }, { ...p('P2', 'Two', 'M', 2, 2, 'WP-02'), orderKey: '' }, p('P3', 'Three', 'M', 2, 2, 'WP-03')], 70), ['P1']);
+    const b = crit(side('v2', [{ ...p('P1', 'One', 'M', 2), objectsKey: 'y' }, { ...p('P2', 'Two', 'M', 2, 2, 'WP-02'), orderKey: 'k' }, p('P3', 'Three', 'M', 2, 2, 'WP-03')], 84), ['P1', 'P3']);
+    const r = compareVersions(a, b);
+    expect(r.figures.find((f) => f.label === 'Length')!.delta).toBe('+2 weeks');
+    expect(r.figures.find((f) => f.label === 'Activities')!.delta).toBe('');
+    expect(r.figures.find((f) => f.label === 'Packages on the critical path')).toMatchObject({ a: '1', b: '2', delta: '+1' });
+    expect(r.packages.map((d) => [d.name, d.what])).toEqual([['One', 'objects'], ['Two', 'object order'], ['Three', 'critical only in v2']]);
+    expect(r.packages[2]).toMatchObject({ criticalA: false, criticalB: true });
+  });
+
+  it('leaves the critical-path row out when a programme does not say which packages are critical', () => {
+    const r = compareVersions(side('v1', [p('P1', 'One', 'M', 2)], 70), side('v2', [p('P1', 'One', 'M', 2)], 70));
+    expect(r.figures.some((f) => f.label === 'Packages on the critical path')).toBe(false);
+    expect(r.packages).toEqual([]);
+  });
 });

@@ -10,6 +10,7 @@ import { treeRows } from '../../../prs/packageTree';
 import { isFineTuned, quantities, type WorkPackage } from '../../../prs/workPackages';
 import { compareVersions, type VersionSide } from '../../../prs/compareVersions';
 import { summariseProgramme } from '../../../schedule/programmeSummary';
+import { WORK_ITEM_FIELD, taskFieldValue } from '../../../schedule/linkGroups';
 import { useViewerEngine } from '../../../viewer/ViewerEngineContext';
 import { Dialog } from './Controls';
 import type { useWorkPackages } from './useWorkPackages';
@@ -20,6 +21,7 @@ import type { useWorkPackages } from './useWorkPackages';
 
 type WP = ReturnType<typeof useWorkPackages>;
 const n = (v: number | null, d = 1) => (v === null ? '' : v.toLocaleString(undefined, { maximumFractionDigits: d }));
+const yes = (v: boolean | null) => (v === null ? '' : v ? 'critical' : '');
 
 /** The figures of a scenario's generated programme, when it is loaded. */
 function programmeOf(stem: string, scenario: string): VersionSide['programme'] {
@@ -30,7 +32,21 @@ function programmeOf(stem: string, scenario: string): VersionSide['programme'] {
   const model = schedules.find((s) => (p && s.dbProgrammeId === p.id) || s.sourceFileName === file);
   if (!model) return null;
   const sum = summariseProgramme(model);
-  return sum.activities > 0 ? { days: sum.days, activities: sum.activities, criticalShare: sum.criticalShare, start: sum.start, finish: sum.finish } : null;
+  // A package's activities carry its work item (WP|<package>, or WP|<package>|<object> when built object by object).
+  const critical = new Set<string>();
+  for (const a of model.activities) {
+    if (!a.isCritical) continue;
+    const item = taskFieldValue(a, WORK_ITEM_FIELD);
+    if (item.startsWith('WP|')) critical.add(item.split('|')[1]);
+  }
+  return sum.activities > 0 ? { days: sum.days, activities: sum.activities, criticalShare: sum.criticalShare, start: sum.start, finish: sum.finish, criticalPackages: [...critical] } : null;
+}
+
+/** A short stand-in for a long text, to tell whether two are the same. */
+function keyOf(text: string): string {
+  let h = 2166136261;
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619);
+  return `${text.length}:${(h >>> 0).toString(36)}`;
 }
 
 function sideOf(name: string, packages: readonly WorkPackage[], view: Pick<WP, 'contents' | 'methods' | 'daysOf'>, programme: VersionSide['programme']): VersionSide {
@@ -38,7 +54,11 @@ function sideOf(name: string, packages: readonly WorkPackage[], view: Pick<WP, '
     name, programme,
     packages: treeRows(packages).map((r) => {
       const own = view.contents.objects.get(r.pkg.id) ?? [];
-      return { id: r.pkg.id, code: r.code, name: r.pkg.name, method: own.length ? view.methods.get(r.pkg.id)?.name ?? '' : '', days: view.daysOf.get(r.pkg.id) ?? 0, objects: own.length, volume: quantities(own).volume, fineTuned: isFineTuned(r.pkg) };
+      const order = r.pkg.objectOrder ? Object.entries(r.pkg.objectOrder).sort(([x], [y]) => x.localeCompare(y)).map(([g, k]) => `${g}=${k}`).join(',') : '';
+      return {
+        id: r.pkg.id, code: r.code, name: r.pkg.name, method: own.length ? view.methods.get(r.pkg.id)?.name ?? '' : '', days: view.daysOf.get(r.pkg.id) ?? 0, objects: own.length, volume: quantities(own).volume, fineTuned: isFineTuned(r.pkg),
+        objectsKey: keyOf(own.map((o) => o.guid || o.key).sort().join(',')), orderKey: order ? keyOf(order) : '',
+      };
     }),
   };
 }
@@ -70,6 +90,8 @@ export function CompareDialog({ wp, onClose }: { wp: WP; onClose: () => void }) 
   }, [other, project, loaded, engine, sets, wp.objects]);
   const mine = loaded && scenario ? sideOf(scenario, wp.packages, wp, programmeOf(loaded.stem, scenario)) : null;
   const result = mine && theirs ? compareVersions(mine, theirs) : null;
+  // The critical columns show once either programme says which packages are critical.
+  const crit = !!(mine?.programme?.criticalPackages || theirs?.programme?.criticalPackages);
   return (
     <Dialog title="Compare versions" onClose={onClose}>
       <div className="g3-order__row">
@@ -85,7 +107,7 @@ export function CompareDialog({ wp, onClose }: { wp: WP; onClose: () => void }) 
       {result && (
         <>
           <table className="xl">
-            <thead><tr><th className="xl__corner" aria-label="Row" /><th /><th>{scenario}</th><th>{other}</th></tr></thead>
+            <thead><tr><th className="xl__corner" aria-label="Row" /><th /><th>{scenario}</th><th>{other}</th><th title={`“${other}” less “${scenario}”`}>Change</th></tr></thead>
             <tbody>
               {result.figures.map((f, i) => (
                 <tr key={f.label} className={f.differs ? 'g3-cmp__differs' : ''}>
@@ -93,15 +115,16 @@ export function CompareDialog({ wp, onClose }: { wp: WP; onClose: () => void }) 
                   <td className="xl__cell xl__ro"><b>{f.label}</b></td>
                   <td className="xl__cell xl__ro">{f.a}</td>
                   <td className="xl__cell xl__ro">{f.b}</td>
+                  <td className="xl__cell xl__num xl__ro">{f.delta}</td>
                 </tr>
               ))}
             </tbody>
           </table>
           {(!mine!.programme || !theirs!.programme) && <p className="scn-dim g3-adv__why">“Not generated”: that version has no programme loaded. Generate it (or open it in Programmes) to compare its length.</p>}
           <h4 className="g3-dlg__sub">Packages that differ ({result.packages.length})</h4>
-          {result.packages.length === 0 ? <p className="scn-dim g3-adv__why">The packages are the same: same methods, days, objects and order.</p> : (
+          {result.packages.length === 0 ? <p className="scn-dim g3-adv__why">The packages are the same: same methods, days, objects and order{crit ? ', and the same ones on the critical path' : ''}.</p> : (
             <table className="xl">
-              <thead><tr><th className="xl__corner" aria-label="Row" /><th>Package</th><th>What differs</th><th>Method · {scenario}</th><th>Method · {other}</th><th>Days · {scenario}</th><th>Days · {other}</th></tr></thead>
+              <thead><tr><th className="xl__corner" aria-label="Row" /><th>Package</th><th>What differs</th><th>Method · {scenario}</th><th>Method · {other}</th><th>Days · {scenario}</th><th>Days · {other}</th>{crit && <><th title="On the critical path">Critical · {scenario}</th><th title="On the critical path">Critical · {other}</th></>}</tr></thead>
               <tbody>
                 {result.packages.map((p, i) => (
                   <tr key={`${p.codeA}|${p.codeB}|${p.name}`}>
@@ -112,6 +135,7 @@ export function CompareDialog({ wp, onClose }: { wp: WP; onClose: () => void }) 
                     <td className="xl__cell xl__ro">{p.methodB}</td>
                     <td className="xl__cell xl__num xl__ro">{n(p.daysA)}</td>
                     <td className="xl__cell xl__num xl__ro">{n(p.daysB)}</td>
+                    {crit && <><td className="xl__cell xl__ro">{yes(p.criticalA)}</td><td className="xl__cell xl__ro">{yes(p.criticalB)}</td></>}
                   </tr>
                 ))}
               </tbody>

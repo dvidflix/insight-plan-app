@@ -32,6 +32,8 @@ interface G3State {
   /** The recipe editor, open on a recipe (or '' for the list). */
   recipeEditor: string | null;
   setRecipeEditor: (id: string | null) => void;
+  /** Set by Try the sample building: once the plan is open, Generate groups the model (when it has no packages) and generates by itself. */
+  autoRun: boolean;
 }
 export const useG3 = create<G3State>()(
   persist((set) => ({
@@ -41,7 +43,8 @@ export const useG3 = create<G3State>()(
     advanced: false, setAdvanced: (advanced) => set({ advanced }),
     orderDialog: null, setOrderDialog: (orderDialog) => set({ orderDialog }),
     recipeEditor: null, setRecipeEditor: (recipeEditor) => set({ recipeEditor }),
-  }), { name: 'generate3.step', partialize: (s) => ({ step: s.step, collapsed: s.collapsed }) as never }),
+    autoRun: false,
+  }),{ name: 'generate3.step', partialize: (s) => ({ step: s.step, collapsed: s.collapsed }) as never }),
 );
 
 /** Colours for packages, the same palette as the rest of Generate. */

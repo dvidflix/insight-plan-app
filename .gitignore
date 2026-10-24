@@ -12,6 +12,8 @@ samples/
 models/
 *.ifc
 *.ifcZIP
+# The generated sample model (scripts/make-sample-ifc.py) is the one IFC kept in git.
+!public/sample/sample-building.ifc
 *.frag
 *.xer
 *.xlsx

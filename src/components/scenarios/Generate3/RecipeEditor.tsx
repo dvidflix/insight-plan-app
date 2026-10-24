@@ -1,4 +1,6 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { downloadText } from '../../../scenarios/api';
+import { clashes, mergeRecipes, readShareFile, toShareFile } from '../../../prs/recipeShare';
 import { setRecipes, useRecipeStore } from '../../../state/recipeStore';
 import { useScenarioStore } from '../../../state/scenarioStore';
 import { edgesFromFollows, followsText, type Recipe, type RecipeTask } from '../../../prs/recipes';
@@ -13,12 +15,54 @@ import { useG3, type useWorkPackages } from './useWorkPackages';
 
 /** Edit recipes (Generate 3): the project's recipes in a focused editor that stays in Generate 3. A list on the left (the recipes your packages use
     first), and the recipe picked on the right: its name, which objects it is for, and its activities as a spreadsheet (activity, days or formula,
-    crew; what it follows, calendar and priority behind "More columns"). A new recipe can start from a standard method, so the two are easy to map.
+    crew; what it follows, calendar and priority behind "More columns"; what each row is called in the programme). A new recipe can start from a
+    standard method or one of the project's, so the two are easy to map; Export and Import share recipes as a small file (prs/recipeShare.ts).
     Every change goes to the recipe library, which the open scenario keeps in its rules (state/scenarioStore), so Generate reads it. The full graph
     editor stays in the classic view; nothing here leads there. */
 
 type WP = ReturnType<typeof useWorkPackages>;
 const isChain = (r: Recipe) => r.enabled !== false && r.chain !== false;
+
+/** A copy of `r` with a free ID, for no search set (so it is used only where it is picked). */
+function copyOf(r: Recipe, all: readonly Recipe[]): Recipe {
+  let id = `${r.id} copy`;
+  for (let k = 2; all.some((x) => x.id.toUpperCase() === id.toUpperCase()); k++) id = `${r.id} copy ${k}`;
+  return { ...r, id, name: `${r.name || r.id} copy`, group: '' };
+}
+
+const fileSafe = (s: string) => s.replace(/[<>:"/\\|?*\x00-\x1f]+/g, ' ').trim() || 'recipes';
+function exportRecipes(recipes: readonly Recipe[], name: string) {
+  downloadText(`${fileSafe(name)}.recipes.json`, JSON.stringify(toShareFile(recipes), null, 1), 'application/json');
+}
+
+/** Under the list: export every recipe to a file, or import a file of recipes (from a colleague, or another project). */
+function ShareTools({ recipes, onOpen }: { recipes: Recipe[]; onOpen: (id: string) => void }) {
+  const pickRef = useRef<HTMLInputElement>(null);
+  const [note, setNote] = useState<{ text: string; error: boolean } | null>(null);
+  const take = async (file: File) => {
+    try {
+      const incoming = readShareFile(await file.text());
+      const taken = clashes(recipes, incoming);
+      const replace = taken.length > 0 && window.confirm(`${taken.length} recipe${taken.length === 1 ? '' : 's'} in the file ${taken.length === 1 ? 'has' : 'have'} the ID of one you have already (${taken.slice(0, 3).join(', ')}${taken.length > 3 ? '…' : ''}).\n\nOK: replace yours with the file’s.\nCancel: keep yours and add the file’s as copies.`);
+      const r = mergeRecipes(recipes, incoming, replace);
+      setRecipes(r.recipes);
+      const first = r.added[0] ?? r.replaced[0] ?? r.copied[0];
+      if (first) onOpen(first);
+      const parts = [r.added.length && `${r.added.length} added`, r.replaced.length && `${r.replaced.length} replaced`, r.copied.length && `${r.copied.length} added as copies`, r.same.length && `${r.same.length} the same as yours`].filter(Boolean);
+      setNote({ text: `From ${file.name}: ${parts.join(', ')}.`, error: false });
+    } catch (e) {
+      setNote({ text: e instanceof Error ? e.message : String(e), error: true });
+    }
+  };
+  return (
+    <div className="g3-rcp__share">
+      <button type="button" className="btn btn--small" disabled={!recipes.length} onClick={() => exportRecipes(recipes, 'Recipes')} title="Save every recipe to one file, to share or to keep">Export all…</button>
+      <button type="button" className="btn btn--small" onClick={() => pickRef.current?.click()} title="Add the recipes of a file exported from Insight Plan">Import…</button>
+      <input ref={pickRef} type="file" accept=".json,application/json" hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; if (f) void take(f); }} />
+      {note && <small className={note.error ? 'scn-error' : 'scn-dim'}>{note.text}</small>}
+    </div>
+  );
+}
 
 export function RecipeEditorDialog({ wp }: { wp: WP }) {
   const open = useG3((s) => s.recipeEditor);
@@ -43,8 +87,10 @@ export function RecipeEditorDialog({ wp }: { wp: WP }) {
   const add = (from: string) => {
     const ids = recipes.map((r) => r.id);
     const std = STANDARD_METHODS.find((m) => `std:${m.id}` === from);
+    const like = from.startsWith('recipe:') ? recipes.find((r) => r.id === from.slice(7)) : undefined;
     let made: Recipe;
     if (std) made = recipeFromStandard(std, ids);
+    else if (like) made = copyOf(like, recipes);
     else {
       let id = 'New recipe';
       for (let k = 2; ids.some((t) => t.toUpperCase() === id.toUpperCase()); k++) id = `New recipe ${k}`;
@@ -71,10 +117,12 @@ export function RecipeEditorDialog({ wp }: { wp: WP }) {
             <option value="">+ New recipe…</option>
             <option value="empty">Empty</option>
             <optgroup label="Like a standard method">{STANDARD_METHODS.map((m) => <option key={m.id} value={`std:${m.id}`}>{m.name}</option>)}</optgroup>
+            {chains.length > 0 && <optgroup label="Like one of this project’s">{chains.map((r) => <option key={r.id} value={`recipe:${r.id}`}>{r.name?.trim() || r.id}</option>)}</optgroup>}
           </select>
           {used.length > 0 && <><div className="g3-rcp__head">Used by your packages</div><ul>{used.map(item)}</ul></>}
           <div className="g3-rcp__head">{used.length ? 'Other recipes' : 'Recipes'}</div>
           {rest.length ? <ul>{rest.map(item)}</ul> : <p className="scn-dim g3-adv__why">{chains.length ? 'None.' : 'No recipes yet. The standard methods are enough to generate; make a recipe when a package needs its own way.'}</p>}
+          <ShareTools recipes={recipes} onOpen={setOpen} />
         </aside>
         <section className="g3-rcp__main">
           {current ? <RecipeForm key={current.id} wp={wp} recipe={current} usedBy={usedBy.get(current.id) ?? []} /> : <p className="scn-dim g3-adv__why">Pick a recipe on the left, or make a new one.</p>}
@@ -139,11 +187,12 @@ function RecipeForm({ wp, recipe, usedBy }: { wp: WP; recipe: Recipe; usedBy: st
     setOpen('');
   };
   const copy = () => {
-    let id = `${recipe.id} copy`;
-    for (let k = 2; recipes.some((r) => r.id.toUpperCase() === id.toUpperCase()); k++) id = `${recipe.id} copy ${k}`;
-    setRecipes([...recipes, { ...recipe, id, name: `${recipe.name || recipe.id} copy`, group: '' }]);
-    setOpen(id);
+    const made = copyOf(recipe, recipes);
+    setRecipes([...recipes, made]);
+    setOpen(made.id);
   };
+  // What its activities are called in the programme, for the first package using it (the generator names them after the package).
+  const example = usedBy.length ? wp.rows.find((r) => r.code === usedBy[0]) : undefined;
   const addTask = () => {
     let k = recipe.tasks.length + 1;
     while (recipe.tasks.some((t) => t.phase.toUpperCase() === `ACTIVITY ${k}`)) k++;
@@ -169,8 +218,8 @@ function RecipeForm({ wp, recipe, usedBy }: { wp: WP; recipe: Recipe; usedBy: st
         <button type="button" className="g3-adv__more" aria-expanded={more} onClick={() => setMore(!more)}>{more ? <IconChevronDown /> : <IconChevronRight />} {more ? 'Fewer columns' : 'More columns: follows, calendar, priority'}</button>
       </div>
       <table className="xl xgrid" {...grid.grid}>
-        <colgroup><col style={{ width: 40 }} /><col style={{ width: 200 }} /><col style={{ width: 210 }} /><col style={{ width: 140 }} />{more && <><col style={{ width: 150 }} /><col style={{ width: 120 }} /><col style={{ width: 70 }} /></>}<col style={{ width: 32 }} /></colgroup>
-        <thead><tr><th className="xl__corner" aria-label="Row" /><th>Activity</th><th title="A number of working days, or a formula of the quantities and parameters">Days or formula</th><th>Crew</th>{more && <><th title="What it waits for: an activity, with a type and lag (Activity:SS+2d), or a share (Activity@80). Empty: the one above">Follows</th><th>Calendar</th><th title="When several recipes fit, the higher wins">Priority</th></>}<th aria-label="Delete" /></tr></thead>
+        <colgroup><col style={{ width: 40 }} /><col style={{ width: 200 }} /><col style={{ width: 210 }} /><col style={{ width: 140 }} />{more && <><col style={{ width: 150 }} /><col style={{ width: 120 }} /><col style={{ width: 70 }} /></>}{example && <col style={{ width: 240 }} />}<col style={{ width: 32 }} /></colgroup>
+        <thead><tr><th className="xl__corner" aria-label="Row" /><th>Activity</th><th title="A number of working days, or a formula of the quantities and parameters">Days or formula</th><th>Crew</th>{more && <><th title="What it waits for: an activity, with a type and lag (Activity:SS+2d), or a share (Activity@80). Empty: the one above">Follows</th><th>Calendar</th><th title="When several recipes fit, the higher wins">Priority</th></>}{example && <th title={`The activity this row gives in the programme, for ${example.code} (each package using the recipe gets its own)`}>In the programme, for {example.code}</th>}<th aria-label="Delete" /></tr></thead>
         <tbody>
           {rows.map(({ t }, at) => (
             <tr key={`${t.phase}:${at}`}>
@@ -179,17 +228,19 @@ function RecipeForm({ wp, recipe, usedBy }: { wp: WP; recipe: Recipe; usedBy: st
               {cell('dur', at, { placeholder: '1', title: `A number of days, or a formula such as max(1, ${QUANTITY_NAMES[0]} / 20); names: ${QUANTITY_NAMES.join(', ')} and your parameters` })}
               {cell('crew', at, { list: 'g3-rcp-crews', placeholder: 'default' })}
               {more && <>{cell('follows', at, { placeholder: at ? 'the one above' : '' })}{cell('calendar', at, { list: 'g3-rcp-cals', placeholder: 'default' })}{cell('priority', at, { num: true })}</>}
+              {example && <td className="xl__cell xl__ro" title="Its name in the programme, roughly: the package’s name, then the activity">{example.pkg.name || example.code} – {t.name || t.phase}</td>}
               <td className="xl__check"><button type="button" className="cols__icon cols__icon--remove" aria-label="Delete the activity" title="Delete the activity" onClick={() => setTasks(recipe.tasks.filter((_, j) => j !== at), (recipe.edges ?? []).filter((e) => e.to !== t.phase && e.from !== t.phase))}><IconRemove /></button></td>
             </tr>
           ))}
-          <tr className="xl__add"><th className="xl__row">*</th><td colSpan={more ? 7 : 4}><button type="button" onClick={addTask}>+ Add an activity</button></td></tr>
+          <tr className="xl__add"><th className="xl__row">*</th><td colSpan={(more ? 7 : 4) + (example ? 1 : 0)}><button type="button" onClick={addTask}>+ Add an activity</button></td></tr>
         </tbody>
       </table>
       <datalist id="g3-rcp-crews">{crews.map((c) => <option key={c} value={c} />)}</datalist>
       <datalist id="g3-rcp-cals">{calendars.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}</datalist>
-      <small className="g3-adv__why">Activities run one after another unless Follows says otherwise. Days or formula: a number of working days, or a formula worked out for each package from its quantities ({QUANTITY_NAMES.join(', ')}) and the scenario’s parameters.</small>
+      <small className="g3-adv__why">Each row is one activity of every package that uses this recipe, in this order: they run one after another unless Follows says otherwise. Days or formula: a number of working days, or a formula worked out for each package from its quantities ({QUANTITY_NAMES.join(', ')}) and the scenario’s parameters. Every version (scenario) uses the same recipes: a change here applies to each the next time it is generated. To try another way in one version only, Duplicate the recipe and pick the copy as that package’s method; Export keeps a copy of the recipe as it is now.</small>
       <div className="g3-rcp__tools">
         <button type="button" className="btn btn--small" onClick={copy}>Duplicate</button>
+        <button type="button" className="btn btn--small" onClick={() => exportRecipes([recipe], recipe.name || recipe.id)} title="Save this recipe to a file, to share it or use it in another project (Import in the list)">Export…</button>
         <button type="button" className="btn btn--small btn--danger" onClick={remove}>Delete the recipe</button>
       </div>
     </div>

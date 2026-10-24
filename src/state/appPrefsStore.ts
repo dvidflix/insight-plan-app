@@ -15,7 +15,7 @@ const DASHBOARDS_TAB_KEY = 'viewer.showDashboardsTab';
 import { FEATURES } from '../features';
 
 export const EXPERIMENTAL_FEATURES = [
-  { id: 'scenarios', label: 'Scenarios (pour-by-pour programme generator)', tip: 'The Scenarios generator: the Scenarios tab, the Scenarios panel in 4D Sequencing and the Generated schedules tab in Programmes. For planners who generate programmes from the model; needs the Python generator.' },
+  { id: 'scenarios', label: 'Generate (programmes from the model)', tip: 'On by default. Generate makes a programme from the model in four steps (work packages, sequence, methods, object order), with the Generated schedules tab in Programmes. Needs the Python generator.' },
   { id: 'classicGenerate', label: 'Classic Generate (eight tabs)', tip: 'The old Generate page with its eight tabs (recipes, crews, parameters, rules…), beside Generate. Rarely needed: Generate does everything a planner needs. Needs Scenarios on.' },
   { id: 'whyShown', label: 'Why is it shown?', tip: '4D tab: lists the tasks that link to the selected object and which one controls it.' },
   { id: 'taskFields', label: 'Task fields from search sets', tip: '4D tab: writes a task field from the search sets the tasks\' objects belong to.' },
@@ -109,7 +109,8 @@ export const useAppPrefsStore = create<AppPrefs>((set) => ({
     writeFlag(WIKI_TAB_KEY, v);
     set({ showWikiTab: v });
   },
-  experimental: Object.fromEntries(EXPERIMENTAL_FEATURES.map((f) => [f.id, readFlag(experimentalKey(f.id)) && (f.id !== 'scenarios' || FEATURES.scenarios)])) as Record<ExperimentalId, boolean>,
+  // Generate (the flag 'scenarios') is the way to make a programme from the model: on unless switched off (and only where the generator ships).
+  experimental: Object.fromEntries(EXPERIMENTAL_FEATURES.map((f) => [f.id, f.id === 'scenarios' ? readFlagOn(experimentalKey(f.id)) && FEATURES.scenarios : readFlag(experimentalKey(f.id))])) as Record<ExperimentalId, boolean>,
   setExperimental: (id, v) => {
     writeFlag(experimentalKey(id), v);
     set((s) => ({ experimental: { ...s.experimental, [id]: v } }));

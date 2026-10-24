@@ -586,8 +586,11 @@ export const updateFourD = () =>
     xmlCache.set(`${scenario}|${stem}`, res.xml);
     useWhyStore.getState().set(`${scenarioFileName(stem, scenario!)}.xml`, (res.why as WhyData | null | undefined) ?? null);
     await loadIntoInputs(res.xml, stem, scenario!);
+    // Loading the programme brings its calendars into the rules (withLibrary): that is the programme just made, not a change since.
+    const now = get().rules;
+    const made = now !== rules && JSON.stringify({ ...now, calendars: null }) === JSON.stringify({ ...rules, calendars: null }) ? now : rules;
     set((s) => ({
-      updatedFrom: { rows, relations, crews, extras, rules, sets: useSearchSetsStore.getState().sets },
+      updatedFrom: { rows, relations, crews, extras, rules: made, sets: useSearchSetsStore.getState().sets },
       generation: s.generation + 1,
       log: res.log || s.log,
       message: {
@@ -598,7 +601,7 @@ export const updateFourD = () =>
       },
     }));
     if (!res.fast) {
-      set((s) => ({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedExtras: extras, savedRules: rules, savedFlags: flags, drafts: s.drafts.filter((n) => n !== scenario) }));
+      set((s) => ({ savedRows: rows, savedRelations: relations, savedCrews: crews, savedExtras: extras, savedRules: made, savedFlags: flags, drafts: s.drafts.filter((n) => n !== scenario) }));
       await refreshProject(get().project!.root);
     }
   });

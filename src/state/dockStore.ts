@@ -201,6 +201,8 @@ interface ViewDock extends Pick<DockLayout, 'placement' | 'active' | 'size' | 'f
   full?: boolean;
 }
 const VIEWS_KEY = 'viewer.dockViews';
+/** The sides a view folds the first time it is shown. */
+const FIRST_VISIT_FOLDED: Partial<Record<string, DockSide[]>> = { generate3: ['left', 'right', 'bottom'] };
 let currentView: string | null = null;
 let pendingShown: Partial<Record<DockPanelId, boolean>> = {};
 /** The panels the view being shown has a saved side (or 'closed') for; null when the view is new or was saved before views listed them all. */
@@ -227,7 +229,13 @@ export function enterDockView(key: string | null) {
   if (!key) return;
   const st = useDockStore;
   const saved = readViews()[key];
-  if (!saved) { writeViews({ ...readViews(), [key]: viewOf(st.getState()) }); return; }
+  if (!saved) {
+    // Generate needs the room for its three columns: the first time, its panels start folded (a click on the strip opens them).
+    const fold = FIRST_VISIT_FOLDED[key];
+    if (fold) st.setState((s) => ({ folded: { ...s.folded, ...Object.fromEntries(fold.map((side) => [side, true])) } }));
+    writeViews({ ...readViews(), [key]: viewOf(st.getState()) });
+    return;
+  }
   pendingShown = { ...saved.shown };
   viewPlaced = saved.full ? new Set(Object.keys(saved.placement ?? {}) as DockPanelId[]) : null;
   st.setState({ placement: saved.placement ?? {}, active: saved.active ?? {}, size: saved.size ?? st.getState().size, folded: saved.folded ?? { left: false, bottom: false, right: false }, lastSide: saved.lastSide ?? {} });
