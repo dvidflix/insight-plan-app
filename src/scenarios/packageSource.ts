@@ -77,5 +77,6 @@ export function packagesView(engine: ViewerEngine, saved: readonly WorkPackage[]
 /** The request Update 4D sends for the packages (see prs/workPackages.ts packagesRequest). */
 export function buildPackagesRequest(engine: ViewerEngine, rules: ScenarioRules, sets: readonly SearchSet[], recipes: Recipe[], crewSheet: ScenarioCrew[], building: string, ranks?: ReadonlyMap<string, number>) {
   const view = packagesView(engine, rules.packages ?? [], sets, recipes, rules, crewSheet, undefined, rules.objectSequence ? ranks : undefined);
-  return packagesRequest(view.packages, view.contents, view.methods, building, view.objectMethods);
+  // "Follow it exactly" (step 4): the table's order is the build order, across the packages.
+  return packagesRequest(view.packages, view.contents, view.methods, building, view.objectMethods, rules.objectSequence === 'exact' && ranks?.size ? ranks : undefined);
 }

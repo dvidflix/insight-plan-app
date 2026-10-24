@@ -14823,6 +14823,7 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-seqbar { flex: none; display: flex; align-items: flex-start; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
 .g3-seqbar .g3-adv__check { flex: 1; min-width: 0; }
 .g3-seqbar__n { flex: none; font-size: 12px; padding-top: 2px; }
+.g3-seqbar__exact.is-off { opacity: 0.55; }
 .g3-seqbar__none { margin: 8px 12px; }
 .g3-split__table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .g3-split__table > .scn-4d { flex: 1; min-height: 0; }

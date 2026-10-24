@@ -528,8 +528,11 @@ export const HOURS_PER_DAY = 8;
 
 /** What Generate sends for the packages: the work items, the GlobalIds of each item's objects (for the 4D links), and the rules as the generator
     should read them: the sequences made from the packages' order and links, the methods as recipes for their groups (with the standard methods'
-    crews), and the summary bars and limits of the packages that hold others. */
-export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string, objectMethods?: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>): {
+    crews), and the summary bars and limits of the packages that hold others.
+    With `exact` (the object sequence table's rank of each GlobalId, step 4 "follow it exactly"), a package with objects in the table is sent one
+    work item per object, and the build order is the table's: one sequence of its steps across every package (objects of the same step start
+    together), then the objects and packages the table leaves out, in build order. The packages' own order, links and lags do not apply then. */
+export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string, objectMethods?: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>, exact?: ReadonlyMap<string, number>): {
   workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[];
   members: { guids: string[]; item: { id: string } }[];
   rules: (rules: ScenarioRules) => ScenarioRules;
@@ -548,8 +551,29 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
   const objectMethodsFor = new Map<string, { group: string; m: ResolvedMethod }[]>();
   const workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[] = [];
   const members: { guids: string[]; item: { id: string } }[] = [];
+  // "Follow exactly": each object's group with its rank in the table (Infinity: not in it), in build order, and the packages the table leaves out.
+  const exactItems: { rank: number; group: string }[] = [];
+  const isRanked = (o: PackageObject) => !!o.guid && !!exact?.has(o.guid);
   for (const { p, objs } of live) {
     const g = groupFor(p.id);
+    if (exact && objectMethods && objs.some(isRanked)) {
+      const sorted = [...objs].sort((a, b) => (exact.get(a.guid) ?? Infinity) - (exact.get(b.guid) ?? Infinity));
+      const per = objectMethods(p, objs);
+      const mine: { group: string; m: ResolvedMethod }[] = [];
+      sorted.forEach((o, i) => {
+        const og = `${g} #${i + 1}`;
+        const id = `WP|${p.id}|${o.guid || o.key}`;
+        workItems.push({ id, group: og, label: labelOf(p, [o]), building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area } });
+        members.push({ guids: o.guid ? [o.guid] : [], item: { id } });
+        const m = per.get(o.key);
+        if (m) mine.push({ group: og, m });
+        exactItems.push({ rank: exact.get(o.guid) ?? Infinity, group: og });
+      });
+      objectMethodsFor.set(p.id, mine);
+      groups.push({ id: g, name: g, forEach: [], filters: [], include: sorted.map((_, i) => `${g} #${i + 1}`) });
+      continue;
+    }
+    if (exact) exactItems.push({ rank: Infinity, group: g });
     if (!isFineTuned(p) || !objectMethods) {
       const q = quantities(objs);
       const storeys = [...new Set(objs.map((o) => o.storey))];
@@ -594,7 +618,19 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
   const chains: SequenceStep[][] = [[]];
   let chain = chains[0];
   const together = new Set<string>();
-  live.forEach(({ p }, k) => {
+  if (exact) {
+    // One sequence: the table's steps in order (a step of several objects is a group they start in together), then what the table leaves out.
+    const ranks = [...new Set(exactItems.filter((x) => x.rank !== Infinity).map((x) => x.rank))].sort((a, b) => a - b);
+    ranks.forEach((rank, k) => {
+      const at = exactItems.filter((x) => x.rank === rank).map((x) => x.group);
+      if (at.length === 1) { chain.push({ group: at[0] }); return; }
+      const id = `Object sequence step ${k + 1}`;
+      groups.push({ id, name: id, forEach: [], filters: [], include: at });
+      chain.push({ group: id });
+    });
+    for (const x of exactItems) if (x.rank === Infinity) chain.push({ group: x.group });
+  }
+  if (!exact) live.forEach(({ p }, k) => {
     const g = groupFor(p.id);
     const lag = k > 0 && (p.lagDays ?? 0) > 0 ? { lagHours: (p.lagDays ?? 0) * HOURS_PER_DAY } : {};
     const target = k > 0 && p.after && linkTargets(ordered, p.id).some((t) => t.id === p.after) ? spanGroup(p.after) : null;

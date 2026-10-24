@@ -97,4 +97,28 @@ describe('the object sequence table (step 4)', () => {
     expect(out[1].objectOrder).toEqual({ G5: 1 });
     expect(out[2]).toBe(pkgs[2]);
   });
+
+  it('followed exactly, is the build order across the packages, whose own order and links no longer apply', () => {
+    const pkgs: WorkPackage[] = normalizePackages([
+      { id: 'A', name: 'Walls', color: '', parts: [{ cls: 'IFCWALL' }] },
+      { id: 'B', name: 'Slab', color: '', parts: [{ cls: 'IFCSLAB' }], link: 'with', lagDays: 2 },
+      { id: 'C', name: 'Beams', color: '', parts: [{ cls: 'IFCBEAM' }] },
+    ])!;
+    const all = [...objs, { ...obj(5), cls: 'IFCSLAB' }, { ...obj(6), cls: 'IFCBEAM' }];
+    const c = contentsOf(pkgs, all, () => false);
+    const resolve = (p: WorkPackage, o: PackageObject[]) => resolveMethod(p, o, [], () => []);
+    const m = new Map(pkgs.map((p) => [p.id, resolve(p, c.objects.get(p.id)!)]));
+    // The table: the slab first, then two walls together, then a third; one wall and the beams are not in it.
+    const ranks = new Map([['G5', 1], ['G1', 2], ['G2', 2], ['G3', 3]]);
+    const req = packagesRequest(pkgs, c, m, 'B1', (p, o) => objectMethodsOf(p, o, resolve), ranks);
+    expect(req.workItems.map((w) => [w.id, w.group])).toEqual([
+      ['WP|A|G1', 'WP-01 Walls #1'], ['WP|A|G2', 'WP-01 Walls #2'], ['WP|A|G3', 'WP-01 Walls #3'], ['WP|A|G4', 'WP-01 Walls #4'], ['WP|B|G5', 'WP-02 Slab #1'], ['WP|C', 'WP-03 Beams'],
+    ]);
+    const rules = req.rules({ ...NO_RULES });
+    expect(rules.sequences.map((s) => [s.id, s.steps.map((x) => [x.group, x.lagHours ?? 0])])).toEqual([
+      ['STEPS', [['WP-02 Slab #1', 0], ['Object sequence step 2', 0], ['WP-01 Walls #3', 0], ['WP-01 Walls #4', 0], ['WP-03 Beams', 0]]],
+    ]);
+    expect(rules.groups.find((g) => g.id === 'Object sequence step 2')!.include).toEqual(['WP-01 Walls #1', 'WP-01 Walls #2']);
+    expect(rules.groups.find((g) => g.id === 'WP-01 Walls')!.include).toEqual(['WP-01 Walls #1', 'WP-01 Walls #2', 'WP-01 Walls #3', 'WP-01 Walls #4']);
+  });
 });

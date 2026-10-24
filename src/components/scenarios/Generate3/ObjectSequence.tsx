@@ -12,7 +12,8 @@ import { useG3, type useWorkPackages } from './useWorkPackages';
     double-click moves the TimeLiner to the start of its first linked activity) and on the right the
     object-by-object sequence table (it lived in the Sequence panel before; it is only here now): steps, joins, Record picks, Sort by picks, its List
     setup and the search box. With "Use this object order in Generate" on, each package without an object order of its own builds its objects in
-    the table's order (prs/objectOrder.ts withSequenceOrder); the packages keep their own order and links. The split is adjustable and remembered. */
+    the table's order (prs/objectOrder.ts withSequenceOrder); the packages keep their own order and links. With "Follow it exactly" the table's
+    steps are the build order across the packages (prs/workPackages.ts packagesRequest). The split is adjustable and remembered. */
 
 type WP = ReturnType<typeof useWorkPackages>;
 const n = (v: number) => v.toLocaleString();
@@ -22,6 +23,7 @@ export function ObjectSequenceStep({ wp, view }: { wp: WP; view: RefObject<HTMLD
   const box = useRef<HTMLDivElement>(null);
   const ctx = useRuleContext();
   const on = !!ctx.rules.objectSequence;
+  const exact = ctx.rules.objectSequence === 'exact';
   const rows = useScenarioStore((s) => s.rows);
   const sequenced = rows.filter((r) => r.step !== null).length;
   // What the table's order does to the packages (the ones with an object order of their own keep it).
@@ -39,7 +41,7 @@ export function ObjectSequenceStep({ wp, view }: { wp: WP; view: RefObject<HTMLD
     window.addEventListener('pointermove', move);
     window.addEventListener('pointerup', up);
   };
-  const setOn = (v: boolean) => ctx.change((r) => { const { objectSequence: _o, ...rest } = r; return v ? { ...rest, objectSequence: true } : rest; });
+  const setMode = (v: boolean | 'exact') => ctx.change((r) => { const { objectSequence: _o, ...rest } = r; return v ? { ...rest, objectSequence: v } : rest; });
   return (
     <div className="g3-split" ref={box} style={{ gridTemplateColumns: `${left}% 8px minmax(0, 1fr)` }}>
       <section className="g3-split__view" ref={view} aria-label="Model">
@@ -51,11 +53,21 @@ export function ObjectSequenceStep({ wp, view }: { wp: WP; view: RefObject<HTMLD
       <section className="g3-split__list" aria-label="Object sequence">
         <div className="g3-seqbar">
           <label className="g3-adv__check">
-            <input type="checkbox" checked={on} onChange={(e) => setOn(e.target.checked)} />
+            <input type="checkbox" checked={on} onChange={(e) => setMode(e.target.checked)} />
             <span>Use this object order in Generate
-              <small className="g3-adv__why">{on
-                ? `Each package builds its objects in this order (${n(effect.taken)} package${effect.taken === 1 ? '' : 's'}${effect.own ? `; ${effect.own} keep the order set for them in step 2` : ''}). The packages keep their own order and links.`
-                : 'Optional. Off: each package is built as one piece (or in the order set for it in step 2), in the order of step 2.'}</small>
+              <small className="g3-adv__why">{exact
+                ? 'The whole schedule follows this order, step by step, whatever package each object is in.'
+                : on
+                  ? `Each package builds its objects in this order (${n(effect.taken)} package${effect.taken === 1 ? '' : 's'}${effect.own ? `; ${effect.own} keep the order set for them in step 2` : ''}). The packages keep their own order and links.`
+                  : 'Optional. Off: each package is built as one piece (or in the order set for it in step 2), in the order of step 2.'}</small>
+            </span>
+          </label>
+          <label className={`g3-adv__check g3-seqbar__exact${on ? '' : ' is-off'}`}>
+            <input type="checkbox" checked={exact} disabled={!on} onChange={(e) => setMode(e.target.checked ? 'exact' : true)} />
+            <span>Follow it exactly, across the packages
+              <small className="g3-adv__why">{exact
+                ? 'The build order is this table’s: objects of the same step start together, each step after the one before. The order of the packages and their “starts after” links (step 2) are not used for the objects in this table; objects and packages not in it follow at the end, in step 2’s order.'
+                : 'Off: the packages keep the order of step 2, and this order applies inside each. On: this order overrides the packages’ order.'}</small>
             </span>
           </label>
           <span className="scn-dim g3-seqbar__n">{n(sequenced)} of {n(rows.length)} objects have a step</span>
