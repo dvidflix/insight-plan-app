@@ -75,7 +75,7 @@ export function ObjectSequenceStep({ wp, view }: { wp: WP; view: RefObject<HTMLD
             are not used for the objects in this table; objects and packages not in it follow at the end, in step 2’s order.
           </InfoTip>
           {/* What Generate does with the table now; a click turns its highlight off or on (remembered). */}
-          <button type="button" className={`source-chip g3-seqbar__mode${on && !quiet ? ' is-on' : ''}`} aria-pressed={!quiet} onClick={() => setQuiet(!quiet)}
+          <button type="button" className={`source-chip g3-seqbar__mode${quiet ? ' is-quiet' : on ? ' is-on' : ''}`} aria-pressed={!quiet} onClick={() => setQuiet(!quiet)}
             title={`What Generate does with this table now. Click to ${quiet ? 'highlight it again' : 'stop highlighting it'}`}>{exact ? 'Overrides the package order' : on ? 'Inside each package' : 'Not used'}</button>
           <span className="g3-seqbar__progress" title={`${n(sequenced)} of ${n(rows.length)} objects have a step; the rest are placed by Generate`}>
             <span className="g3-seqbar__meter" aria-hidden="true"><span style={{ width: `${rows.length ? Math.round((sequenced / rows.length) * 100) : 0}%` }} /></span>

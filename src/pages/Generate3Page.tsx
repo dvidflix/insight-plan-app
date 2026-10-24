@@ -102,7 +102,8 @@ function Builder() {
           title={holding ? `Make the schedule from the ${holding} work packages and load it into 4D and Programmes` : 'Make work packages first (step 1)'}>{generating ? `Generating… ${elapsed} s` : busy ? `${busyText}` : 'Generate schedule'}</button>
         {generating && <button type="button" className="btn" onClick={cancelGenerate} title="Stop waiting: the programme in 4D stays the one from before">Cancel</button>}
         {!busy && generated && <button type="button" className="btn" onClick={() => goTo('sequence')} title="Open 4D Sequencing: play the programme just generated on the model">Open in 4D ›</button>}
-        <button type="button" className={`btn g3-foot__adv${advanced ? ' is-on' : ''}`} aria-pressed={advanced} onClick={() => setAdvanced(!advanced)} title={advanced ? 'Close Advanced' : 'Open Advanced: the settings of the package picked (method, days, crew, when it starts, extras), beside the packages'}>Advanced</button>
+        {/* Advanced is the picked package's panel beside the packages: step 4 has no package list, so no Advanced. */}
+        {step !== 4 && <button type="button" className={`btn g3-foot__adv${advanced ? ' is-on' : ''}`} aria-pressed={advanced} onClick={() => setAdvanced(!advanced)} title={advanced ? 'Close Advanced' : 'Open Advanced: the settings of the package picked (method, days, crew, when it starts, extras), beside the packages'}>Advanced</button>}
       </footer>
     </div>
   );
