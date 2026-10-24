@@ -346,6 +346,8 @@ class Rules:
                 if name and value is not None:
                     self.parameters[name.lower()] = value
         self.limits = [r for r in data.get("limits") or [] if isinstance(r, dict) and str(r.get("phase", "")).strip() and r.get("enabled") is not False]
+        # Where each activity goes in the WBS (core/wbs_rules.py); None: the generator's default rules.
+        self.wbs = data.get("wbs") if isinstance(data.get("wbs"), dict) else None
         self.formulas = []
         self.formula_notes = []
         self.pool_rows = [r for r in data.get("resourcePools") or [] if isinstance(r, dict) and str(r.get("id", "")).strip() and r.get("enabled") is not False]

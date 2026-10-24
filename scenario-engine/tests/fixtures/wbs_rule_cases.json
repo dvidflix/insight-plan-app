@@ -1,0 +1,31 @@
+{
+  "about": "Cases for the WBS rule templates and conditions, read by both evaluators: scenario-engine/core/wbs_rules.py (tests/test_wbs_rules.py) and src/prs/wbsRules.ts (tests/unit/wbsRules.test.ts). They must agree.",
+  "fill": [
+    { "ctx": { "Level": "L1", "Package": "Columns" }, "template": "{level} - {package}", "out": "L1 - Columns" },
+    { "ctx": { "pour_type": "main_slab" }, "template": "{Pour Type:title}s", "out": "Main Slabs" },
+    { "ctx": { "pour_type": "wall" }, "template": "{POURTYPE:upper}", "out": "WALL" },
+    { "ctx": { "Name": "ABC" }, "template": "{name:lower}", "out": "abc" },
+    { "ctx": { "is_external": true }, "template": "{is_external|External|Internal} Walls", "out": "External Walls" },
+    { "ctx": { "is_external": false }, "template": "{is_external|External|Internal} Walls", "out": "Internal Walls" },
+    { "ctx": { "flag": "No" }, "template": "{flag|yes|no}", "out": "no" },
+    { "ctx": { "n": 2.0 }, "template": "Ring {n}", "out": "Ring 2" },
+    { "ctx": { "pid": "" }, "template": "Slab {pid}", "out": null },
+    { "ctx": {}, "template": "Slab {pid}", "out": null },
+    { "ctx": { "pid": "" }, "template": "Slab{pid?}", "out": "Slab" },
+    { "ctx": { "pour_type": "" }, "template": "X - {pour_type?:title}s", "out": "X - s" },
+    { "ctx": {}, "template": "Fixed text", "out": "Fixed text" }
+  ],
+  "holds": [
+    { "ctx": { "Pour Type": "WALL_EXT" }, "cond": { "field": "pour type", "op": "contains", "value": "wall" }, "out": true },
+    { "ctx": { "Pour Type": "SLAB" }, "cond": { "field": "pour_type", "op": "equals", "value": "slab" }, "out": true },
+    { "ctx": { "Pour Type": "SLAB" }, "cond": { "field": "pour_type", "op": "not equals", "value": "slab" }, "out": false },
+    { "ctx": { "Pour Type": "SLAB" }, "cond": { "field": "pour_type", "op": "in", "value": "WALL, SLAB" }, "out": true },
+    { "ctx": { "Pour Type": "BEAM" }, "cond": { "field": "pour_type", "op": "not in", "value": "WALL, SLAB" }, "out": true },
+    { "ctx": { "Ring": "R12" }, "cond": { "field": "ring", "op": "starts with", "value": "r1" }, "out": true },
+    { "ctx": { "Ring": "" }, "cond": { "field": "ring", "op": "is empty" }, "out": true },
+    { "ctx": {}, "cond": { "field": "ring", "op": "is not empty" }, "out": false },
+    { "ctx": { "external": "Yes" }, "cond": { "field": "external", "op": "is true" }, "out": true },
+    { "ctx": { "external": "no" }, "cond": { "field": "external", "op": "is false" }, "out": true },
+    { "ctx": { "Type": "Segment" }, "cond": { "field": "type", "op": "not contains", "value": "ring" }, "out": true }
+  ]
+}

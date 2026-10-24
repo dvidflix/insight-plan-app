@@ -12,7 +12,7 @@ import { configFocusProps } from '../../state/listConfigStore';
 import { ScenarioTableConfig, scnTabBadges, type ScnConfigTab } from './ScenarioTableConfig';
 import { useScenarioView } from '../../scenarios/useScenarioView';
 import { useJoinShortcut } from '../../scenarios/useJoinShortcut';
-import { ScenarioNotice, ScenarioStatus, ScenarioSync, ScenarioTable, ScenarioToolbar } from './ScenarioParts';
+import { ScenarioSync, ScenarioTable, ScenarioToolbar } from './ScenarioParts';
 
 /** Pours (rows, keyed by GlobalId) <-> elements of the scenario's building
     model in the 3D view. */
@@ -159,7 +159,6 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
       )}
       <ScenarioSync />
       <FocusColours pours={pours} />
-      <ScenarioNotice />
       {ready && (
         <>
           <ScenarioToolbar compact />
@@ -168,7 +167,7 @@ export function ScenarioTabContent({ onOpen }: { onOpen?: (key: string) => void 
           </div>
         </>
       )}
-      <ScenarioStatus className="scn-4d__status" />
+      {/* Its counts (rows, steps, not in sequence, moved) are in the main status bar. */}
     </div>
   );
 }

@@ -34,6 +34,8 @@ interface G3State {
   setRecipeEditor: (id: string | null) => void;
   /** Set by Try the sample building: once the plan is open, Generate groups the model (when it has no packages) and generates by itself. */
   autoRun: boolean;
+  /** The WBS dialog (Generate3/WbsDialog.tsx) is open. */
+  wbsDialog: boolean;
 }
 export const useG3 = create<G3State>()(
   persist((set) => ({
@@ -44,6 +46,7 @@ export const useG3 = create<G3State>()(
     orderDialog: null, setOrderDialog: (orderDialog) => set({ orderDialog }),
     recipeEditor: null, setRecipeEditor: (recipeEditor) => set({ recipeEditor }),
     autoRun: false,
+    wbsDialog: false,
   }),{ name: 'generate3.step', partialize: (s) => ({ step: s.step, collapsed: s.collapsed }) as never }),
 );
 

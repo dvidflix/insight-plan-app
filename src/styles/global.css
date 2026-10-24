@@ -10138,6 +10138,39 @@ input[type='search']::-webkit-search-cancel-button:hover { opacity: 1; }
 
 /* Review flags on pours and groups of the Scenarios table. */
 .scn-flagcol { width: 22px; padding-left: 4px; padding-right: 0; text-align: center; }
+/* The sequence table: every other step lightly banded (rows without a colour of their own), the selection clearly tinted with an accent edge,
+   and, with Step first, the flag and Step columns kept in place as a grey gutter while the table scrolls sideways. */
+.scn-tr.is-step-even:not([style]):not(.is-selected):not(:hover) td { background: var(--bg-soft); }
+.scn-tr.is-selected td { background: rgb(var(--accent-rgb) / 0.22); }
+.scn-tr.is-selected td:first-child { box-shadow: inset 4px 0 0 var(--accent-strong); }
+.scn-table--stick .scn-flagcol { position: sticky; left: 0; z-index: 1; box-sizing: border-box; width: 26px; min-width: 26px; max-width: 26px; }
+.scn-table--stick .scn-stepcol { position: sticky; left: 26px; z-index: 1; box-shadow: inset -1px 0 0 var(--border); }
+.scn-table--stick th.scn-flagcol, .scn-table--stick th.scn-stepcol { z-index: 3; }
+.scn-table--stick td.scn-flagcol, .scn-table--stick td.scn-stepcol { background: var(--bg-panel); }
+.scn-table--stick .scn-tr:hover td.scn-flagcol, .scn-table--stick .scn-tr:hover td.scn-stepcol { background: linear-gradient(var(--accent-dim), var(--accent-dim)), var(--bg-panel); }
+.scn-table--stick .scn-tr.is-selected td.scn-flagcol, .scn-table--stick .scn-tr.is-selected td.scn-stepcol { background: linear-gradient(rgb(var(--accent-rgb) / 0.22), rgb(var(--accent-rgb) / 0.22)), var(--bg-panel); }
+
+/* Generate's step 4 tools (ScenarioToolbar compact): named groups on one wrapping row, a line between groups. */
+.scn-seqtools { flex: none; display: flex; flex-wrap: wrap; align-items: flex-end; row-gap: 6px; padding: 4px 8px 6px; border-bottom: 1px solid var(--border); background: var(--bg-elevated); }
+.scn-seqtools__grp { display: flex; flex-direction: column; gap: 2px; padding: 0 10px; border-left: 1px solid var(--border); }
+.scn-seqtools__grp:first-child { padding-left: 0; border-left: 0; }
+.scn-seqtools__cap { font-size: 11px; color: var(--text-dim); }
+.scn-seqtools__ctl { display: flex; align-items: center; gap: 4px; }
+.scn-seqtools__ctl form { display: flex; align-items: center; gap: 4px; }
+.scn-seqtools .btn { min-height: 30px; padding: 0 10px; font-size: 12px; }
+.scn-seqtools .scn-icon-btn { display: inline-flex; align-items: center; gap: 4px; min-width: 32px; padding: 0 7px; }
+.scn-seqtools .scn-icon-btn svg { width: var(--icon-row); height: var(--icon-row); }
+.scn-seqtools .scn-link-btn { min-width: 38px; font-weight: 600; }
+.scn-seqtools .scn-step-input { width: 52px; min-height: 30px; box-sizing: border-box; padding: 0 6px; font-size: 12px; }
+.scn-seqtools .scn-step-folder { min-height: 30px; max-width: 160px; font-size: 12px; }
+.scn-seqtools__info { margin-left: auto; align-self: center; padding-left: 8px; }
+/* Record picks on: a strip that says so, with the picks so far and the way out. */
+.scn-recording { flex: none; display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--accent); background: rgb(var(--accent-rgb) / 0.14); color: var(--accent-strong); font-size: 13px; }
+.scn-recording > span:nth-child(2) { flex: 1; min-width: 0; }
+.scn-recording .btn { min-height: 28px; font-size: 12px; }
+.scn-recording__dot { flex: none; width: 10px; height: 10px; border-radius: 50%; background: var(--danger); animation: scn-rec 1.2s ease-in-out infinite; }
+@keyframes scn-rec { 50% { opacity: 0.35; } }
+@media (prefers-reduced-motion: reduce) { .scn-recording__dot { animation: none; } }
 .scn-flag {
   display: inline-flex;
   align-items: center;
@@ -14425,8 +14458,11 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .gen-head .gen-tabs button:hover:not(:disabled) { color: var(--text); background: rgba(0, 0, 0, 0.07); }
 .gen-head .gen-tabs button.is-active { color: var(--accent-strong); background: var(--n-ffffff, #fff); border-bottom-color: var(--accent); }
 .gen-head .gen-tabs button:disabled { opacity: 0.4; cursor: not-allowed; }
+/* Unsaved changes: a chip that saves, not a tab (both header variants). */
+.gen-head .gen-tabs button.gen-tabs__dirty, .ws-pagebar .gen-tabs button.gen-tabs__dirty { align-self: center; height: auto; margin: 0 8px; padding: 2px 10px; border: 1px solid var(--warn); border-radius: 999px; background: var(--bg); color: var(--warn); font-size: 11px; font-weight: 600; }
+.gen-head .gen-tabs button.gen-tabs__dirty:hover:not(:disabled), .ws-pagebar .gen-tabs button.gen-tabs__dirty:hover:not(:disabled) { background: var(--warn); color: var(--n-ffffff); }
 .gen-head .gen-tabs .gen-tabs__gantt { margin-left: 0; border-left: 0; }
-.gen-head .gen-tabs .gen-tabs__dirty { align-self: center; margin-left: 8px; }
+.gen-head .gen-tabs .gen-tabs__dirty { align-self: center; margin-left: 8px; cursor: pointer; }
 .gen-page { background: var(--n-ffffff, #fff); }
 
 /* The search box has the same space on both sides in every header (Home, Programmes, Models, Generate, the other pages). */
@@ -14820,11 +14856,33 @@ body.viewer-fullscreen .ws-pagebar { display: none; }
 .g3-split__grip { cursor: col-resize; border-left: 1px solid var(--border); border-right: 1px solid var(--border); background: var(--bg-soft); pointer-events: auto; }
 .g3-split__grip:hover, .g3-split__grip:focus-visible { background: rgb(var(--accent-rgb) / 0.14); outline: none; }
 .g3-split__list { min-width: 0; min-height: 0; display: flex; flex-direction: column; background: var(--n-ffffff, #fff); pointer-events: auto; }
-.g3-seqbar { flex: none; display: flex; align-items: flex-start; gap: 12px; padding: 8px 12px; border-bottom: 1px solid var(--border); }
-.g3-seqbar .g3-adv__check { flex: 1; min-width: 0; }
-.g3-seqbar__n { flex: none; font-size: 12px; padding-top: 2px; }
-.g3-seqbar__exact.is-off { opacity: 0.55; }
+/* Step 4's switches: one row, short names with their info tips, the mode in a chip, and how much has a step. */
+.g3-seqbar { flex: none; display: flex; flex-wrap: wrap; align-items: center; gap: 6px 10px; padding: 6px 12px; border-bottom: 1px solid var(--border); }
+.g3-seqbar__opt { display: inline-flex; align-items: center; gap: 6px; min-height: var(--hit); font-size: 13px; font-weight: 600; cursor: pointer; }
+.g3-seqbar__opt input { width: 16px; height: 16px; margin: 0; accent-color: var(--accent); }
+.g3-seqbar__opt.is-off { opacity: 0.4; cursor: default; }
+.g3-seqbar__mode { font: inherit; font-size: 10px; cursor: pointer; }
+.g3-seqbar__mode:hover { border-color: var(--text-dim); }
+.g3-seqbar__mode.is-on { border-color: var(--accent); color: var(--accent-strong); }
+.g3-seqbar__mode.is-on:hover { border-color: var(--accent-strong); }
+.g3-seqbar__progress { margin-left: auto; display: inline-flex; align-items: center; gap: 8px; font-size: 12px; color: var(--text-dim); }
+.g3-seqbar__progress b { color: var(--text); }
+.g3-seqbar__meter { width: 90px; height: 6px; border-radius: 3px; background: var(--bg-soft); box-shadow: inset 0 0 0 1px var(--border); overflow: hidden; }
+.g3-seqbar__meter > span { display: block; height: 100%; background: var(--accent); }
 .g3-seqbar__none { margin: 8px 12px; }
+/* The WBS dialog: the two ways, the Excel buttons, the rules grid (read-only while the package tree is used), the preview tree. */
+.g3-wbs__mode { display: flex; flex-wrap: wrap; gap: 8px 24px; margin: 4px 0 8px; }
+.g3-wbs__mode .g3-adv__check { flex: 1 1 260px; }
+.g3-wbs__grid { flex: none; max-width: 100%; overflow-x: auto; }
+.g3-wbs__grid > .xl { table-layout: fixed; }
+.g3-wbs__bar { display: flex; flex-wrap: wrap; align-items: center; gap: var(--hit-gap, 6px); margin-bottom: 8px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.xl.is-readonly .xgrid__cell input { pointer-events: none; color: var(--text-dim); }
+.xl tr.is-off .xl__cell { color: var(--text-dim); }
+.xl .g3-wbs__acts { white-space: nowrap; }
+.xl .g3-wbs__acts .cols__icon:disabled { opacity: 0.35; }
+.g3-wbs__tree { flex: none; max-height: 320px; overflow: auto; padding: 6px 8px; border: 1px solid var(--border); background: var(--n-ffffff); font-size: 12px; }
+.g3-wbs__node { display: flex; align-items: baseline; gap: 10px; min-height: 22px; }
+.g3-wbs__name { font-weight: 600; }
 .g3-split__table { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .g3-split__table > .scn-4d { flex: 1; min-height: 0; }
 .g3-pkg[draggable="true"] { cursor: grab; }

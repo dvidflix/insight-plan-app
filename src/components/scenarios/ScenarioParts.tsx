@@ -6,7 +6,6 @@ import { useFocusStore } from '../../state/focusStore';
 import { useIgnoreTimelinerStore } from '../../state/ignoreTimelinerStore';
 import { useColorModeStore } from '../../state/colorModeStore';
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { DockNavTools } from '../Dock';
 import { useModelsStore } from '../../state/modelsStore';
 import { useScheduleStore } from '../../state/scheduleStore';
 import {
@@ -118,8 +117,9 @@ export function ScenarioSync({ loadOnly = false }: { loadOnly?: boolean }) {
 }
 
 /** A group of the toolbar's icon buttons: in the 4D panel (`compact`) they go to the dock's navigation bar, under its tab icons. */
-function ToolGroup({ compact, order, className, children }: { compact?: boolean; order: number; className: string; children: ReactNode }) {
-  return compact ? <DockNavTools id="scenarios" order={order} className={className}>{children}</DockNavTools> : <div className={className}>{children}</div>;
+/** A group of the classic toolbar's tools (`order` was its place in the old Scenarios dock panel's strip, which is gone). */
+function ToolGroup({ className, children }: { order: number; className: string; children: ReactNode }) {
+  return <div className={className}>{children}</div>;
 }
 
 /** Filter and the move / step / undo buttons. `compact`: smaller, wrapping
@@ -158,157 +158,202 @@ export function ScenarioToolbar({ compact }: { compact?: boolean }) {
   const stepSets = useMemo(() => (byBaseline || stepsFolder.startsWith(SCENARIO_SOURCE) ? [] : stepSetsOf(searchSets, stepsFolder)), [searchSets, stepsFolder, byBaseline]);
   if (!loaded) return null;
   const updating = busy?.startsWith('Updating 4D') ?? false;
-  return (
-    <div className={compact ? 'scn-tools scn-tools--compact' : 'scn-tools'}>
-      <div className="scn-tools__row scn-tools__row--small">
-      {/* Docked beside the 3D view the table is searched with the main header's search box. */}
-      {!compact && (
-        <div className="scn-grp">
-        <input className="scn-filter" type="search" value={filter} onChange={(e) => useScenarioStore.setState({ filter: e.target.value })} placeholder="Filter (any column)…" />
-        </div>
-      )}
-      <div className="scn-grp scn-grp--span2">
-      <form
-        className="scn-row"
-        onSubmit={(e) => {
-          e.preventDefault();
-          const n = Number(stepInput);
-          if (hasSelection && Number.isFinite(n) && n >= 1) applyRows(moveToStep(rows, selected, n));
-        }}
-      >
-        <input className="scn-step-input" value={stepInput} onChange={(e) => setStepInput(e.target.value.replace(/\D/g, ''))} placeholder="Step" />
-        <button className="btn scn-icon-btn" type="submit" disabled={!hasSelection || !stepInput} title="Move the selection to this step (Enter)" aria-label="Move to step"><IconReroute width={16} height={16} /></button>
-      </form>
-      <select className="scn-step-folder" value={stepsFolder} onChange={(e) => setStepsFolder(e.target.value)} title="What Reorder follows: the project's baseline order, the order of another scenario of this model, or a Search sets folder (its search or selection sets, numbered 1, 2, 3…, are the steps)" aria-label="Order source">
-        <option value={BASELINE_SOURCE}>Baseline</option>
-        {otherScenarios.length > 0 && (
-          <optgroup label="Another scenario">
-            {otherScenarios.map((n) => <option key={n} value={SCENARIO_SOURCE + n}>{n}</option>)}
-          </optgroup>
-        )}
-        <optgroup label="Search sets">
-          {stepFolders.map((f) => <option key={f} value={f}>{f}</option>)}
+  // The controls, laid out below: inline for classic Generate, in named groups for Generate's step 4 (compact).
+  const filterBox = <input className="scn-filter" type="search" value={filter} onChange={(e) => useScenarioStore.setState({ filter: e.target.value })} placeholder="Filter (any column)…" />;
+  const stepForm = (
+    <form
+      className="scn-row"
+      onSubmit={(e) => {
+        e.preventDefault();
+        const n = Number(stepInput);
+        if (hasSelection && Number.isFinite(n) && n >= 1) applyRows(moveToStep(rows, selected, n));
+      }}
+    >
+      <input className="scn-step-input" value={stepInput} onChange={(e) => setStepInput(e.target.value.replace(/\D/g, ''))} placeholder="Step" aria-label="Step to move the selection to" title="Type a step number, then Move (Enter): the selected rows go to that step" />
+      <button className="btn scn-icon-btn" type="submit" disabled={!hasSelection || !stepInput} title={hasSelection ? 'Move the selected rows to this step (Enter)' : 'Select rows first, then type a step'} aria-label="Move to step"><IconReroute width={16} height={16} />{compact && <span>Move</span>}</button>
+    </form>
+  );
+  const sourceSelect = (
+    <select className="scn-step-folder" value={stepsFolder} onChange={(e) => setStepsFolder(e.target.value)} title="What Reorder follows: the project's baseline order, the order of another scenario of this model, or a Search sets folder (its search or selection sets, numbered 1, 2, 3…, are the steps)" aria-label="Order source">
+      <option value={BASELINE_SOURCE}>Baseline</option>
+      {otherScenarios.length > 0 && (
+        <optgroup label="Another scenario">
+          {otherScenarios.map((n) => <option key={n} value={SCENARIO_SOURCE + n}>{n}</option>)}
         </optgroup>
-      </select>
-      <button
-        className="btn"
-        disabled={!byBaseline && fromScenario === null && stepSets.length === 0}
-        onClick={() => {
-          if (fromScenario !== null) {
-            void orderOfScenario(fromScenario).then((order) => {
-              if (typeof order === 'string') {
-                useScenarioStore.setState({ message: { kind: 'warn', text: order } });
-              } else if (window.confirm(`Put the items in the order of “${fromScenario}”? Its ${order.count} sequenced items keep its steps (items in a step start together); the others leave the sequence. Undo (Ctrl+Z) takes it back.`)) {
-                applyRows(reorderLike(useScenarioStore.getState().rows, order.steps));
-              }
-            });
-            return;
-          }
-          if (byBaseline) {
-            applyRows(reorderLike(rows, loaded.baseStep));
-            return;
-          }
-          if (window.confirm(`Order the items by the ${stepSets.length} sets of “${stepsFolder}” (Models › Search sets)? Items in a step start together; items in no step leave the sequence.`)) {
-            applyRows(applySteps(rows, stepSets.map((s) => stepGuids(engine.getIndexes(), s))));
-          }
-        }}
-        title={fromScenario !== null
-          ? `Follow the order of the scenario “${fromScenario}”: its steps, item by item`
-          : byBaseline
-          ? 'Reset to baseline: put every item back in the project\'s baseline order'
-          : stepSets.length
-            ? `Follow the sets of “${stepsFolder}”: the items of each step start together, in step order (by the number each name starts with)`
-            : `No sets in “${stepsFolder}”: choose another source, or import steps in Models › Search sets`}
-      >
-        Reorder
-      </button>
+      )}
+      <optgroup label="Search sets">
+        {stepFolders.map((f) => <option key={f} value={f}>{f}</option>)}
+      </optgroup>
+    </select>
+  );
+  const reorderBtn = (
+    <button
+      className="btn"
+      disabled={!byBaseline && fromScenario === null && stepSets.length === 0}
+      onClick={() => {
+        if (fromScenario !== null) {
+          void orderOfScenario(fromScenario).then((order) => {
+            if (typeof order === 'string') {
+              useScenarioStore.setState({ message: { kind: 'warn', text: order } });
+            } else if (window.confirm(`Put the items in the order of “${fromScenario}”? Its ${order.count} sequenced items keep its steps (items in a step start together); the others leave the sequence. Undo (Ctrl+Z) takes it back.`)) {
+              applyRows(reorderLike(useScenarioStore.getState().rows, order.steps));
+            }
+          });
+          return;
+        }
+        if (byBaseline) {
+          applyRows(reorderLike(rows, loaded.baseStep));
+          return;
+        }
+        if (window.confirm(`Order the items by the ${stepSets.length} sets of “${stepsFolder}” (Models › Search sets)? Items in a step start together; items in no step leave the sequence.`)) {
+          applyRows(applySteps(rows, stepSets.map((s) => stepGuids(engine.getIndexes(), s))));
+        }
+      }}
+      title={fromScenario !== null
+        ? `Follow the order of the scenario “${fromScenario}”: its steps, item by item`
+        : byBaseline
+        ? 'Reset to baseline: put every item back in the project\'s baseline order'
+        : stepSets.length
+          ? `Follow the sets of “${stepsFolder}”: the items of each step start together, in step order (by the number each name starts with)`
+          : `No sets in “${stepsFolder}”: choose another source, or import steps in Models › Search sets`}
+    >
+      Reorder
+    </button>
+  );
+  const up = <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveUp(rows, selected))} title="Move the selected rows up one step (Alt+↑)" aria-label="Move up one step"><IconArrowUp width={16} height={16} /></button>;
+  const down = <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveDown(rows, selected))} title="Move the selected rows down one step (Alt+↓)" aria-label="Move down one step"><IconArrowDown width={16} height={16} /></button>;
+  const undoBtn = <button className="btn scn-icon-btn" disabled={!undo.length} onClick={undoRows} title="Undo the last change to the order (Ctrl+Z)" aria-label="Undo"><IconUndo width={16} height={16} /></button>;
+  const redoBtn = <button className="btn scn-icon-btn" disabled={!redo.length} onClick={redoRows} title="Redo (Ctrl+Y)" aria-label="Redo"><IconRedo width={16} height={16} /></button>;
+  const removeBtn = <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(unsequence(rows, selected))} title="Remove the selected rows from the sequence: they get no step, and the generator places them by its own rules" aria-label="Remove from sequence"><IconDelete /></button>;
+  const flaggedBtn = (
+    <button
+      className={`btn scn-icon-btn${flaggedOnly ? ' primary' : ''}`}
+      aria-pressed={flaggedOnly}
+      onClick={() => useScenarioStore.setState({ flaggedOnly: !flaggedOnly })}
+      title={flaggedOnly ? 'Showing only the flagged rows and groups (click to show all)' : 'Show only the flagged rows and groups'}
+      aria-label="Flagged only"
+    >
+      <IconFlag width={16} height={16} />
+    </button>
+  );
+  const expandBtn = (
+    <ExpandCollapseToggle
+      className="btn scn-icon-btn"
+      disabled={!groupKeys.length}
+      collapsed={groupKeys.length > 0 && groupKeys.every((k) => collapsedGroups.has(k))}
+      onCollapse={() => useScenarioStore.setState({ collapsedGroups: new Set(groupKeys) })}
+      onExpand={() => useScenarioStore.setState({ collapsedGroups: new Set() })}
+    />
+  );
+  const info = (
+    <InfoTip>
+      {reordered
+        ? 'Sorted / grouped view (Configuration): drag is off; the move buttons still work on the order. Clear Sort and Group to drag again.'
+        : 'Select with click / Ctrl / Shift, then drag or use the buttons (Alt+↑/↓, Alt+S / Alt+F for SS / FS, Ctrl+Z/Y). Same step = start together.'}{' '}
+      Rows in one step start together; each step waits for the previous one to finish. Dropping inside a bracketed step joins it. Highlighted Base cells moved against the baseline.
+    </InfoTip>
+  );
+  const ssBtn = <button className="btn scn-link-btn" disabled={selected.size < 2} onClick={() => applyRows(startTogether(rows, selected))} title="Start together: make the selected rows one step (Start-to-Start) (Alt+S)">SS</button>;
+  const fsBtn = <button className="btn scn-link-btn" disabled={!hasSelection} onClick={() => applyRows(separate(rows, selected))} title="One after another: give each selected row its own step (Finish-to-Start) (Alt+F)">FS</button>;
+  const recordBtn = (
+    <button className={`btn${recordPicks ? ' primary' : ''}`} aria-pressed={recordPicks} onClick={() => useScenarioStore.setState({ recordPicks: !recordPicks })} title={recordPicks ? 'Stop recording picks' : 'Record the order objects are picked in the 3D view, one at a time'}>
+      {recordPicks ? `Recording (${pickOrder.length})` : 'Record picks'}
+    </button>
+  );
+  const sortBtn = (
+    <button className="btn" disabled={pickOrder.length === 0} onClick={() => {
+        applyRows(orderByPicks(rows, pickOrder));
+        useScenarioStore.setState({ pickOrder: [] });
+      }} title={pickOrder.length ? 'Put the picked rows first, one step each, in the order they were picked' : 'Record picks first'}>Sort by picks</button>
+  );
+  const clearBtn = <button className="btn" disabled={pickOrder.length === 0} onClick={() => useScenarioStore.setState({ pickOrder: [] })} title="Forget the recorded picks">Clear picks</button>;
+  const focusBtn = (
+    <button
+      className={`btn scn-icon-btn scn-ignore-btn${focus ? ' primary' : ''}`}
+      aria-pressed={focus}
+      disabled={!hasSelection && !focus}
+      onClick={() => setFocus(!focus)}
+      title={focus ? 'Focus on: the selection is isolated and pinned (click to release)' : hasSelection ? 'Focus: isolate and pin the selected items, no ghost' : 'Focus: select rows in the table first'}
+      aria-label="Focus"
+    >
+      <IconCubeFocus width={18} height={18} />
+    </button>
+  );
+  const timelinerBtn = (
+    <button
+      className={`btn scn-icon-btn scn-ignore-btn${ignoreTimeliner ? '' : ' primary'}`}
+      aria-pressed={!ignoreTimeliner}
+      onClick={() => {
+        const on = !ignoreTimeliner;
+        setIgnoreTimeliner(on);
+        // Appearance profiles are ignored when the views' Color mode is Original colours.
+        for (const v of ['a', 'b'] as const) {
+          const cur = useColorModeStore.getState()[v].mode;
+          if (on) patchColorMode(v, { mode: 'original' });
+          else if (cur === 'original') patchColorMode(v, { mode: 'appearance' });
+        }
+      }}
+      title={ignoreTimeliner ? 'Timeliner off: the model shows its own colours. Click to colour it by the programme again' : 'Timeliner on: the model is coloured by the programme. Click to show its own colours'}
+      aria-label={ignoreTimeliner ? 'Timeliner ignored' : 'Timeliner active'}
+    >
+      {ignoreTimeliner ? <IconVideoCameraSlash width={18} height={18} /> : <IconVideoCamera width={18} height={18} />}
+    </button>
+  );
+  const autoBtn = (
+    <button
+      className={`btn scn-icon-btn scn-ignore-btn${autoUpdate ? ' primary' : ''}`}
+      aria-pressed={autoUpdate}
+      onClick={() => useScenarioStore.setState({ autoUpdate: !autoUpdate })}
+      title={autoUpdate ? 'Auto-update on: 4D follows each change' : 'Auto-update off: use Update 4D'}
+      aria-label="Auto-update 4D"
+    >
+      <IconSync width={18} height={18} />
+    </button>
+  );
+
+  // Generate's step 4: the tools in named groups on one wrapping row; Save and Generate are Generate's own (header and bottom bar).
+  if (compact) {
+    const group = (name: string, children: ReactNode) => <div className="scn-seqtools__grp" role="group" aria-label={name}><span className="scn-seqtools__cap">{name}</span><div className="scn-seqtools__ctl">{children}</div></div>;
+    return (
+      <>
+        <div className="scn-seqtools" role="toolbar" aria-label="Sequence tools">
+          {group('Order', <>{stepForm}{up}{down}{ssBtn}{fsBtn}{removeBtn}</>)}
+          {group('History', <>{undoBtn}{redoBtn}</>)}
+          {group('Follow', <>{sourceSelect}{reorderBtn}</>)}
+          {group('Picks', <>{recordBtn}{sortBtn}{clearBtn}</>)}
+          {group('Show', <>{flaggedBtn}{expandBtn}{focusBtn}{timelinerBtn}{autoBtn}</>)}
+          <span className="scn-seqtools__info">{info}</span>
+        </div>
+        {recordPicks && (
+          <div className="scn-recording" role="status">
+            <span className="scn-recording__dot" aria-hidden="true" />
+            <span>Recording picks: click objects in the 3D view one at a time, in the order they are built. <b>{pickOrder.length.toLocaleString()}</b> picked.</span>
+            {sortBtn}
+            <button type="button" className="btn" onClick={() => useScenarioStore.setState({ recordPicks: false })}>Stop</button>
+          </div>
+        )}
+      </>
+    );
+  }
+
+  return (
+    <div className="scn-tools">
+      <div className="scn-tools__row scn-tools__row--small">
+      <div className="scn-grp">{filterBox}</div>
+      <div className="scn-grp scn-grp--span2">
+      {stepForm}
+      {sourceSelect}
+      {reorderBtn}
       </div>
-      <ToolGroup compact={compact} order={5} className="scn-grp scn-grp--icons">
-      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveUp(rows, selected))} title="Move up one step (Alt+↑)" aria-label="Move up one step"><IconArrowUp width={16} height={16} /></button>
-      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(moveDown(rows, selected))} title="Move down one step (Alt+↓)" aria-label="Move down one step"><IconArrowDown width={16} height={16} /></button>
-      <button className="btn scn-icon-btn" disabled={!undo.length} onClick={undoRows} title="Undo (Ctrl+Z)" aria-label="Undo"><IconUndo width={16} height={16} /></button>
-      <button className="btn scn-icon-btn" disabled={!redo.length} onClick={redoRows} title="Redo (Ctrl+Y)" aria-label="Redo"><IconRedo width={16} height={16} /></button>
-      <button className="btn scn-icon-btn" disabled={!hasSelection} onClick={() => applyRows(unsequence(rows, selected))} title="Remove from sequence: blank the Index so the generator orders these items by its automatic rules" aria-label="Remove from sequence"><IconDelete /></button>
-      <button
-        className={`btn scn-icon-btn${flaggedOnly ? ' primary' : ''}`}
-        aria-pressed={flaggedOnly}
-        onClick={() => useScenarioStore.setState({ flaggedOnly: !flaggedOnly })}
-        title={flaggedOnly ? 'Showing only the flagged pours and groups (click to show all)' : 'Show only the flagged pours and groups'}
-        aria-label="Flagged only"
-      >
-        <IconFlag width={16} height={16} />
-      </button>
-      <ExpandCollapseToggle
-        className="btn scn-icon-btn"
-        disabled={!groupKeys.length}
-        collapsed={groupKeys.length > 0 && groupKeys.every((k) => collapsedGroups.has(k))}
-        onCollapse={() => useScenarioStore.setState({ collapsedGroups: new Set(groupKeys) })}
-        onExpand={() => useScenarioStore.setState({ collapsedGroups: new Set() })}
-      />
+      <ToolGroup order={5} className="scn-grp scn-grp--icons">
+      {up}{down}{undoBtn}{redoBtn}{removeBtn}{flaggedBtn}{expandBtn}
       </ToolGroup>
-        <span style={{ marginLeft: 'auto' }}>
-          <InfoTip>
-            {reordered
-              ? 'Sorted / grouped view (Configuration): drag is off; the move buttons still work on the order. Clear Sort and Group to drag again.'
-              : 'Select with click / Ctrl / Shift, then drag or use the buttons (Alt+↑/↓, Alt+S / Alt+F for SS / FS, Ctrl+Z/Y). Same step = start together.'}{' '}
-            Pours in one step start together; each step waits for the previous one to finish. Dropping inside a bracketed step joins it. Highlighted Base cells moved against the baseline.
-          </InfoTip>
-        </span>
+        <span style={{ marginLeft: 'auto' }}>{info}</span>
       </div>
       <div className="scn-tools__row">
-      <ToolGroup compact={compact} order={4} className="scn-grp scn-grp--fill">
-      <button className="btn scn-link-btn" disabled={selected.size < 2} onClick={() => applyRows(startTogether(rows, selected))} title="Make the selected items one step: they start together (Start-to-Start) (Alt+S)">SS</button>
-      <button className="btn scn-link-btn" disabled={!hasSelection} onClick={() => applyRows(separate(rows, selected))} title="Give each selected item its own step, one after another (Finish-to-Start) (Alt+F)">FS</button>
-      </ToolGroup>
-      <div className="scn-grp scn-grp--span2">
-      <button className={`btn${recordPicks ? ' primary' : ''}`} aria-pressed={recordPicks} onClick={() => useScenarioStore.setState({ recordPicks: !recordPicks })} title="Record the order objects are picked in the 3D view, one at a time">
-        {recordPicks ? `Recording (${pickOrder.length})` : 'Record picks'}
-      </button>
-      <button className="btn" disabled={pickOrder.length === 0} onClick={() => {
-          applyRows(orderByPicks(rows, pickOrder));
-          useScenarioStore.setState({ pickOrder: [] });
-        }} title="Put the picked items first, one step each, in the order they were picked">Sort by picks</button>
-      <button className="btn" disabled={pickOrder.length === 0} onClick={() => useScenarioStore.setState({ pickOrder: [] })} title="Forget the recorded picks">Clear picks</button>
-      </div>
-      <ToolGroup compact={compact} order={3} className="scn-grp scn-grp--icons scn-grp--icons-2">
-      <button
-        className={`btn scn-icon-btn scn-ignore-btn${focus ? ' primary' : ''}`}
-        aria-pressed={focus}
-        disabled={!hasSelection && !focus}
-        onClick={() => setFocus(!focus)}
-        title={focus ? 'Focus on: the selection is isolated and pinned (click to release)' : hasSelection ? 'Focus: isolate and pin the selected items, no ghost' : 'Focus: select rows in the table first'}
-        aria-label="Focus"
-      >
-        <IconCubeFocus width={18} height={18} />
-      </button>
-      <button
-        className={`btn scn-icon-btn scn-ignore-btn${ignoreTimeliner ? '' : ' primary'}`}
-        aria-pressed={!ignoreTimeliner}
-        onClick={() => {
-          const on = !ignoreTimeliner;
-          setIgnoreTimeliner(on);
-          // Appearance profiles are ignored when the views' Color mode is Original colours.
-          for (const v of ['a', 'b'] as const) {
-            const cur = useColorModeStore.getState()[v].mode;
-            if (on) patchColorMode(v, { mode: 'original' });
-            else if (cur === 'original') patchColorMode(v, { mode: 'appearance' });
-          }
-        }}
-        title={ignoreTimeliner ? 'Timeliner ignored' : 'Timeliner active'}
-        aria-label={ignoreTimeliner ? 'Timeliner ignored' : 'Timeliner active'}
-      >
-        {ignoreTimeliner ? <IconVideoCameraSlash width={18} height={18} /> : <IconVideoCamera width={18} height={18} />}
-      </button>
-      <button
-        className={`btn scn-icon-btn scn-ignore-btn${autoUpdate ? ' primary' : ''}`}
-        aria-pressed={autoUpdate}
-        onClick={() => useScenarioStore.setState({ autoUpdate: !autoUpdate })}
-        title={autoUpdate ? 'Auto-update on: 4D follows each change' : 'Auto-update off: use Update 4D'}
-        aria-label="Auto-update 4D"
-      >
-        <IconSync width={18} height={18} />
-      </button>
-      </ToolGroup>
+      <ToolGroup order={4} className="scn-grp scn-grp--fill">{ssBtn}{fsBtn}</ToolGroup>
+      <div className="scn-grp scn-grp--span2">{recordBtn}{sortBtn}{clearBtn}</div>
+      <ToolGroup order={3} className="scn-grp scn-grp--icons scn-grp--icons-2">{focusBtn}{timelinerBtn}{autoBtn}</ToolGroup>
       <div className="scn-grp">
       {/* Like "unsaved": only there while the order, links or crews changed since 4D was last updated (or an update is running); never with auto-update on. */}
       {!autoUpdate && (stale || updating) && (
@@ -446,14 +491,15 @@ export function ScenarioTable({ onPick, onOpen }: { onPick?: (keys: Set<string>)
   return (
     <>
       <div className="scn-table-wrap" tabIndex={0} onKeyDown={onKeyDown} ref={wrapRef}>
-        <table className="scn-table">
+        {/* With Step first, the flag and Step columns stay put while the table scrolls sideways. */}
+        <table className={`scn-table${shownColumns[0] === STEP_COL ? ' scn-table--stick' : ''}`}>
           <thead>
             <tr>
               <th className="scn-flagcol" title="Review flags" aria-label="Flag" />
               {shownColumns.map((id) => (
                 <th
                   key={id}
-                  className={id.startsWith('#') ? 'scn-num' : undefined}
+                  className={[id.startsWith('#') ? 'scn-num' : '', id === STEP_COL ? 'scn-stepcol' : ''].filter(Boolean).join(' ') || undefined}
                   title={id === STEP_COL ? 'Step (the Index written to SequenceOrder). Items sharing a step start together.' : id === BASE_COL ? "Step in the project's baseline SequenceOrder" : id === SHIFT_COL ? 'Steps moved against the baseline (- earlier, + later)' : undefined}
                 >
                   {fields.find((f) => f.id === id)?.label}
@@ -514,6 +560,8 @@ export function ScenarioTable({ onPick, onOpen }: { onPick?: (keys: Set<string>)
                 r.step === null ? 'is-unsequenced' : '',
                 groupedPrev || groupedNext ? 'is-grouped' : '',
                 groupedPrev ? '' : 'is-step-start',
+                // Every other step lightly banded, so where one step ends and the next begins reads at a glance.
+                r.step !== null && (steps[i] ?? 0) % 2 === 0 ? 'is-step-even' : '',
                 drop?.key === r.key ? (drop.after ? 'drop-after' : 'drop-before') : '',
               ].join(' ');
               const zoneHeader = !reordered && r.key === firstUnsequencedKey && (
@@ -570,7 +618,7 @@ export function ScenarioTable({ onPick, onOpen }: { onPick?: (keys: Set<string>)
                     />
                   </td>
                   {shownColumns.map((id) => {
-                    if (id === STEP_COL) return <td key={id} className="scn-num scn-step">{r.step === null ? '—' : groupedPrev && !reordered ? '' : steps[i]}</td>;
+                    if (id === STEP_COL) return <td key={id} className="scn-num scn-step scn-stepcol">{r.step === null ? '—' : groupedPrev && !reordered ? '' : steps[i]}</td>;
                     if (id === BASE_COL)
                       return (
                         <td key={id} className="scn-num scn-dim scn-base">
@@ -602,7 +650,7 @@ export function ScenarioTable({ onPick, onOpen }: { onPick?: (keys: Set<string>)
                       </button>
                     </td>
                     {shownColumns.map((id, n) => {
-                      if (id === STEP_COL) return <td key={id} className="scn-num scn-step scn-subrow__tag" title="Joined: one activity with its main object above">↳ joined</td>;
+                      if (id === STEP_COL) return <td key={id} className="scn-num scn-step scn-stepcol scn-subrow__tag" title="Joined: one activity with its main object above">↳ joined</td>;
                       if (id === BASE_COL || id === SHIFT_COL) return <td key={id} className="scn-num" />;
                       return <td key={id} className={n === 0 ? 'scn-subrow__first' : undefined}>{valueOf(sub, id)}</td>;
                     })}

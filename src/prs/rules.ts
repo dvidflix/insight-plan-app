@@ -1,6 +1,7 @@
 import { normalizeRecipes, type Recipe } from './recipes';
 import { normalizeBreakdown, type BreakdownDefinition } from './workBreakdown';
 import { normalizePackages, type WorkPackage } from './workPackages';
+import { normalizeWbs, type WbsRuleSet } from './wbsRules';
 
 /** A scenario's programme rules, as the Rules panel edits them and the generator reads them
     (scenario-engine/core/rules.py, core/rule_logic.py; the format is described in docs/programme-rules).
@@ -439,6 +440,8 @@ export interface ScenarioRules {
   /** Generate's step 4: the object sequence table's order is used inside the packages (true: prs/objectOrder.ts withSequenceOrder), or followed
       exactly ('exact': one sequence of the table's steps across the packages, whose own order and links then do not apply; prs/workPackages.ts). */
   objectSequence?: boolean | 'exact';
+  /** Where each activity goes in the WBS (prs/wbsRules.ts, Generate › WBS); none: Generate's packages make a WBS of their tree. */
+  wbs?: WbsRuleSet;
 }
 
 /** The one empty set of rules (same object each time, so "unchanged" is a plain comparison). */
@@ -483,6 +486,7 @@ export function normalizeRules(raw: unknown): ScenarioRules {
     ...(normalizeBreakdown(r.breakdown) ? { breakdown: normalizeBreakdown(r.breakdown) } : {}),
     ...(normalizePackages(r.packages) ? { packages: normalizePackages(r.packages) } : {}),
     ...(r.objectSequence === true || r.objectSequence === 'exact' ? { objectSequence: r.objectSequence } : {}),
+    ...(normalizeWbs(r.wbs) ? { wbs: normalizeWbs(r.wbs) } : {}),
   };
   return isEmptyRules(out) ? NO_RULES : out;
 }
@@ -503,6 +507,8 @@ export const isEmptyRules = (r: ScenarioRules): boolean =>
   (r.limits ?? []).length === 0 &&
   !(r.breakdown?.levels.length) &&
   !(r.packages?.length) &&
+  !r.objectSequence &&
+  !r.wbs?.rules.length &&
   Object.keys(r.extraTags).length === 0;
 
 export const totalRules = (r: ScenarioRules): number =>

@@ -5,6 +5,7 @@ import { CLASS_ORDER, STANDARD_METHODS, chooseMethod, taskDays, type StandardMet
 import { OVERRIDE_PRIORITY, withItemOverrides } from './activityPlan';
 import { inTreeOrder, subtreeIds, treeRows } from './packageTree';
 import { orderRuns, type ObjectOrder } from './objectOrder';
+import { packageTreeRules, usableRules } from './wbsRules';
 
 /** Generate 3's work packages: groups of model objects, in the order they are built, each built by a method. This is the only structure a planner
     manages there. A package is made of parts (a search set, a storey, an IFC class, a property value, or picked objects: within a part all must hold,
@@ -533,7 +534,7 @@ export const HOURS_PER_DAY = 8;
     work item per object, and the build order is the table's: one sequence of its steps across every package (objects of the same step start
     together), then the objects and packages the table leaves out, in build order. The packages' own order, links and lags do not apply then. */
 export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string, objectMethods?: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>, exact?: ReadonlyMap<string, number>): {
-  workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[];
+  workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number>; properties: Record<string, string> }[];
   members: { guids: string[]; item: { id: string } }[];
   rules: (rules: ScenarioRules) => ScenarioRules;
 } {
@@ -549,7 +550,17 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
   // A fine-tuned package: a work item per object, in its order (a sequence of its own); the package's group includes the objects' groups.
   const orderChains: { id: string; name: string; steps: SequenceStep[] }[] = [];
   const objectMethodsFor = new Map<string, { group: string; m: ResolvedMethod }[]>();
-  const workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number> }[] = [];
+  const workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number>; properties: Record<string, string> }[] = [];
+  // What the WBS rules read of an item (prs/wbsRules.ts PACKAGE_FIELDS): its package, the packages it is in (Package level 1 = the outermost),
+  // and, when all its objects share one, their storey and IFC class.
+  const chainOf = (p: WorkPackage): WorkPackage[] => { const out: WorkPackage[] = []; for (let x: WorkPackage | undefined = p; x && !out.includes(x); x = x.parent ? byId.get(x.parent) : undefined) out.unshift(x); return out; };
+  const one = (values: string[]) => { const u = [...new Set(values.filter(Boolean))]; return u.length === 1 ? u[0] : ''; };
+  const fieldsOf = (p: WorkPackage, objs: readonly PackageObject[]): Record<string, string> => ({
+    ...Object.fromEntries(chainOf(p).map((x, i) => [`Package level ${i + 1}`, x.name])),
+    Package: p.name, 'Package code': code.get(p.id) ?? '', Storey: one(objs.map((o) => o.storey)), 'IFC class': one(objs.map((o) => o.cls)), Method: methods.get(p.id)?.name ?? '', Building: building,
+    ...(objs.length === 1 ? { Object: objs[0].name || objs[0].guid } : {}),
+  });
+  const depth = Math.max(1, ...live.map((x) => chainOf(x.p).length));
   const members: { guids: string[]; item: { id: string } }[] = [];
   // "Follow exactly": each object's group with its rank in the table (Infinity: not in it), in build order, and the packages the table leaves out.
   const exactItems: { rank: number; group: string }[] = [];
@@ -563,7 +574,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
       sorted.forEach((o, i) => {
         const og = `${g} #${i + 1}`;
         const id = `WP|${p.id}|${o.guid || o.key}`;
-        workItems.push({ id, group: og, label: labelOf(p, [o]), building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area } });
+        workItems.push({ id, group: og, label: labelOf(p, [o]), building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area }, properties: fieldsOf(p, [o]) });
         members.push({ guids: o.guid ? [o.guid] : [], item: { id } });
         const m = per.get(o.key);
         if (m) mine.push({ group: og, m });
@@ -577,7 +588,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
     if (!isFineTuned(p) || !objectMethods) {
       const q = quantities(objs);
       const storeys = [...new Set(objs.map((o) => o.storey))];
-      workItems.push({ id: `WP|${p.id}`, group: g, label: labelOf(p, objs), building, level: storeys.length === 1 ? storeys[0] : '', name: g, quantity: q.volume, quantities: { count: q.count, area: q.area } });
+      workItems.push({ id: `WP|${p.id}`, group: g, label: labelOf(p, objs), building, level: storeys.length === 1 ? storeys[0] : '', name: g, quantity: q.volume, quantities: { count: q.count, area: q.area }, properties: fieldsOf(p, objs) });
       members.push({ guids: objs.map((o) => o.guid).filter(Boolean), item: { id: `WP|${p.id}` } });
       continue;
     }
@@ -591,7 +602,7 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
         n++;
         const og = `${g} #${n}`;
         const id = `WP|${p.id}|${o.guid || o.key}`;
-        workItems.push({ id, group: og, label: labelOf(p, [o]), building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area } });
+        workItems.push({ id, group: og, label: labelOf(p, [o]), building, level: o.storey, name: `${g} - ${o.name || o.guid}`, quantity: o.volume, quantities: { count: 1, area: o.area }, properties: fieldsOf(p, [o]) });
         members.push({ guids: o.guid ? [o.guid] : [], item: { id } });
         const m = per.get(o.key);
         if (m) mine.push({ group: og, m });
@@ -706,6 +717,8 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
         crewTemplates: [...rest.crewTemplates, ...crews],
         levelTasks: [...rest.levelTasks, ...bars],
         limits: [...rest.limits, ...limits],
+        // The WBS: the user's rules (Generate › WBS), else a node per package, nested as the packages are.
+        wbs: usableRules(rest.wbs).length ? rest.wbs : packageTreeRules(depth),
       };
     },
   };

@@ -1,0 +1,65 @@
+{
+  "about": "The generator's WBS when a scenario sets no WBS rules (core/wbs_rules.py explains the format). Each activity goes under its building's level node, then the path of the first rule that fits. This is the WBS the generator made for pour models before rules existed; edit a copy in Generate > WBS rather than this file.",
+  "rules": [
+    {
+      "id": "own-name",
+      "name": "Work items with a name of their own",
+      "when": [{ "field": "display_type", "op": "is not empty" }],
+      "path": [{ "name": "{level_node} - {display_type}" }]
+    },
+    {
+      "id": "walls",
+      "name": "Walls: internal or external, then by phase",
+      "when": [{ "field": "pour_type_norm", "op": "contains", "value": "WALL" }],
+      "path": [
+        { "name": "{level_node} - {is_external|External|Internal} Walls" },
+        { "name": "{parent} - {phase}", "phases": ["Rebar", "Formwork", "Concrete"], "always": true }
+      ]
+    },
+    {
+      "id": "landings",
+      "name": "Landings, one node each",
+      "when": [{ "field": "pour_type_norm", "op": "contains", "value": "LANDING" }],
+      "path": [{ "name": "{level_node} - Landings" }, { "name": "{level_node} - Landing {pid}" }]
+    },
+    {
+      "id": "stairs",
+      "name": "In-situ stairs, then by phase",
+      "when": [{ "field": "insitu_stair", "op": "is true" }],
+      "path": [
+        { "name": "{level_node} - {stair_label}" },
+        { "name": "{parent} - {phase}", "phases": ["Rebar", "Formwork", "Concrete"], "always": true }
+      ]
+    },
+    {
+      "id": "slabs",
+      "name": "Slabs, one node each",
+      "when": [{ "field": "pour_type_norm", "op": "contains", "value": "SLAB" }],
+      "path": [{ "name": "{level_node} - Slabs" }, { "name": "{level_node} - Slab {pid}" }]
+    },
+    {
+      "id": "heavy-precast",
+      "name": "Heavy precast, one node each",
+      "when": [{ "field": "pour_type_norm", "op": "equals", "value": "HEAVY_PRECAST" }],
+      "path": [{ "name": "{level_node} - Heavy Precast" }, { "name": "{level_node} - Heavy Precast {pid}" }]
+    },
+    {
+      "id": "heavy-precast-general",
+      "name": "Heavy precast by its general type",
+      "when": [{ "field": "general_pour_type_norm", "op": "equals", "value": "HEAVY_PRECAST" }],
+      "path": [{ "name": "{level_node} - Heavy Precast" }, { "name": "{level_node} - Heavy Precast {pid}" }]
+    },
+    {
+      "id": "raft",
+      "name": "The raft (one per building, so not plural)",
+      "when": [{ "field": "pour_type", "op": "contains", "value": "RAFT" }],
+      "path": [{ "name": "{level_node} - {pour_type?:title}" }]
+    },
+    {
+      "id": "other",
+      "name": "Anything else: one node per type",
+      "when": [],
+      "path": [{ "name": "{level_node} - {pour_type?:title}s" }]
+    }
+  ]
+}

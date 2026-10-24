@@ -6,6 +6,8 @@ class WBSManager:
         self.map = {}           # name -> ObjectId
         self.parent_map = {}    # name -> parent_name
         self.order = []
+        # A node's name in the programme when its key is not its name (core/wbs_rules.py: two nodes of one name under different parents).
+        self.labels = {}
 
     def register(self, name, parent_name=None):
         if name not in self.map:
@@ -35,8 +37,8 @@ class WBSManager:
         ranks = {(last(parent) if parent else ""): {last(c): i for i, c in enumerate(children)} for parent, children in order.items()}
 
         def sort(names, key):
-            rank = ranks.get(key)
-            return sorted(names, key=lambda n: rank.get(n, len(rank))) if rank else names
+            rank = ranks.get(self.label(key)) if key else ranks.get(key)
+            return sorted(names, key=lambda n: rank.get(self.label(n), len(rank))) if rank else names
 
         new = []
 
@@ -52,6 +54,10 @@ class WBSManager:
         self.order = new
         self.reordered = self.reordered or moved
         return moved
+
+    def label(self, name):
+        """The node's name in the programme."""
+        return self.labels.get(name, name)
 
     def get_id(self, name):
         return self.map.get(name)

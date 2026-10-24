@@ -1,5 +1,5 @@
 import { Fragment, useMemo, useState } from 'react';
-import { useScenarioStore, isDirty } from '../../../state/scenarioStore';
+import { useScenarioStore, isDirty, saveOrder } from '../../../state/scenarioStore';
 import { useSelectionStore } from '../../../state/selectionStore';
 import { useScenarioView } from '../../../scenarios/useScenarioView';
 import { FOLDER_SEP, isInFolder, walkFolder } from '../../../viewer/setTree';
@@ -46,10 +46,12 @@ export function Generate3Tabs() {
   const setStep = useG3((s) => s.setStep);
   const { ready } = useScenarioView();
   const dirty = useScenarioStore((s) => isDirty(s));
+  const busy = useScenarioStore((s) => !!s.busy);
   return (
     <div className="gen-tabs" role="tablist" aria-label="Generate">
       {STEPS.map((t) => <button key={t.id} type="button" role="tab" aria-selected={step === t.id} disabled={!ready} className={step === t.id ? 'is-active' : ''} title={ready ? t.tip : 'Open a scenario first'} onClick={() => setStep(t.id)}>{t.label}</button>)}
-      {dirty && <span className="scn-chip scn-chip--warn gen-tabs__dirty" title="The scenario has changes that are not saved">unsaved</span>}
+      {/* The one sign of unsaved changes in Generate, and the way to save them (so does the status bar's Save). */}
+      {dirty && <button type="button" className="scn-chip scn-chip--warn gen-tabs__dirty" disabled={busy} onClick={() => void saveOrder()} title="This plan has changes that are not saved: click to save them">Unsaved · Save</button>}
     </div>
   );
 }
@@ -175,6 +177,7 @@ function MethodTools({ wp }: { wp: WP }) {
       <ul className="g3-counts">{[...counts].map(([name, c]) => <li key={name}><b>{c}</b> {name}</li>)}</ul>
       <div className="g3-tools__sub">Optional</div>
       <button type="button" className="btn" onClick={() => useG3.getState().setRecipeEditor('')} title="This project’s own recipes: a chain of activities with days and crews, for packages that need their own way">Edit recipes…</button>
+      <button type="button" className="btn" onClick={() => useG3.setState({ wbsDialog: true })} title="How the programme’s WBS is laid out: a node per work package by default, or your own rules">WBS…</button>
     </div>
   );
 }

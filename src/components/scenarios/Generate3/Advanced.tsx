@@ -45,6 +45,7 @@ export function AdvancedPanel({ wp }: { wp: WP }) {
           <button type="button" className="link-btn" onClick={() => useG3.getState().setRecipeEditor('')} title="This project’s own recipes, in a focused editor">Edit recipes</button>
           <button type="button" className="link-btn" onClick={() => setDialog('methods')} title="Every standard method with its activities and rough rates, and this project’s recipes">See all methods and rates</button>
           <button type="button" className="link-btn" onClick={() => setDialog('crews')} title="How many people each method’s crew has in this scenario">Manage all crews</button>
+          <button type="button" className="link-btn" onClick={() => useG3.setState({ wbsDialog: true })} title="How the programme’s WBS is laid out: a node per work package, or your own rules">Set the WBS</button>
         </div>
       </div>
       {dialog === 'methods' && <MethodsDialog wp={wp} onClose={() => setDialog(null)} />}

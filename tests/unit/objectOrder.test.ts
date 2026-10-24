@@ -98,6 +98,13 @@ describe('the object sequence table (step 4)', () => {
     expect(out[2]).toBe(pkgs[2]);
   });
 
+  it('is kept with a plan that has nothing else yet (a plan with only the switch on is not "no rules")', async () => {
+    const { normalizeRules } = await import('../../src/prs/rules');
+    expect(normalizeRules({ objectSequence: true }).objectSequence).toBe(true);
+    expect(normalizeRules({ objectSequence: 'exact' }).objectSequence).toBe('exact');
+    expect(normalizeRules({ objectSequence: 'other' }).objectSequence).toBeUndefined();
+  });
+
   it('followed exactly, is the build order across the packages, whose own order and links no longer apply', () => {
     const pkgs: WorkPackage[] = normalizePackages([
       { id: 'A', name: 'Walls', color: '', parts: [{ cls: 'IFCWALL' }] },

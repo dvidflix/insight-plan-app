@@ -15,6 +15,7 @@ from core.clash_position import classify_vertical_position, DEFINITELY_BELOW, MA
 from core.resources import POOL_P6_TYPE, crew_pool_for, crew_pool_resource_id, crews_for, labour_resource_id, labour_trades, pool_resource_id, pools, rebar_tonnes, uses_for
 from core import calendars as _calendars
 from core import rules as _rules_module
+from core import wbs_rules as _wbs_rules
 from core.rates_info import rate_fields
 from config import PROJECT_SHORT, ALT_POUR_ID_PROP
 
@@ -1693,7 +1694,12 @@ def _build_xml_wbs_manager_for_activities(activities):
     # WBSManager increments before assign, so start one lower to make first WBS exactly root_obj_id.
     xml_wbs = WBSManager("XML", start_counter=root_obj_id - 1)
 
-    ordered_activities = sorted(
+    own_rules = _wbs_rules.usable(getattr(_rules_module.active(), "wbs", None))
+    # Work items placed by the plan's own rules (Generate's packages) keep their order, the build order, so the WBS lists the packages as the plan
+    # does; pours are sorted by building, zone, level and type as always.
+    keep_order = bool(own_rules) and bool(activities) and all(a.get("rec", {}).get("_work_item") for a in activities)
+    item_index = lambda a: int(_wbs_rules._text((a.get("rec", {}).get("pour_pset") or {}).get("Pour ID Number")) or 0)  # noqa: E731 (its place in the request)
+    ordered_activities = sorted(activities, key=item_index) if keep_order else sorted(
         activities,
         key=lambda a: (
             str(a.get("rec", {}).get("building", "BLD")),
@@ -1714,6 +1720,8 @@ def _build_xml_wbs_manager_for_activities(activities):
         if zone_label in {"Connected Zone", "Disconnected Zone"}:
             building_zone_modes[building].add(zone_label)
 
+    rule_list = own_rules or _wbs_rules.default_rules()["rules"]
+    registry = _wbs_rules.Registry(xml_wbs)
     for act in ordered_activities:
         rec = act.get("rec", {})
         # A step cast with a stair flight is placed where that flight is (core/stair_steps.py).
@@ -1733,97 +1741,28 @@ def _build_xml_wbs_manager_for_activities(activities):
         has_split_zones = building_zone_modes.get(building, set()) == {"Connected Zone", "Disconnected Zone"}
         zone_segment = f"{zone_label} - " if has_split_zones else ""
 
-        if has_split_zones:
-            zone_name = f"{wbs_prefix} - {zone_label}"
+        zone_name = f"{wbs_prefix} - {zone_label}" if has_split_zones else None
+        level_name = f"{wbs_prefix} - {zone_label} - {level_display}" if has_split_zones else f"{wbs_prefix} - {level_display}"
+
+        # The rest of the path comes from the WBS rules (core/wbs_rules.py): the scenario's own (Generate > WBS), else the generator's default
+        # (wbs_default_rules.json, the WBS it has always made for pour models). The first rule that fits places the activity.
+        ctx = _wbs_rules.context(rec.get("pour_pset"), rec, {
+            "prefix": wbs_prefix, "level": level_display, "zone": zone_label, "zone_segment": zone_segment, "phase": act.get("phase", ""),
+            "pid": str(rec.get("planning_proposed_pour_id", "") or "").strip(),
+            "pour_type_norm": pour_type,
+            "general_pour_type_norm": str(rec.get("general_pour_type", "") or "").replace(" ", "_").upper(),
+            "insitu_stair": bool(_is_insitu_stair(rec)),
+            "stair_label": stair_group_label(rec) if _is_insitu_stair(rec) else "",
+        })
+        rule = _wbs_rules.first_match(rule_list, ctx)
+        if rule is not None and rule.get("under") == "root":
+            act["wbs_oid"] = xml_wbs.get_id(_wbs_rules.place(registry, rule, ctx, root_name, act.get("phase", "")))
+            continue
+        # Under the level: the zone (when the building is split into zones) and the level node, then the rule's path.
+        if zone_name:
             xml_wbs.register(zone_name, root_name)
-            level_parent = zone_name
-            level_name = f"{wbs_prefix} - {zone_label} - {level_display}"
-        else:
-            level_parent = root_name
-            level_name = f"{wbs_prefix} - {level_display}"
-        xml_wbs.register(level_name, level_parent)
-
-        # A work item with a name of its own (Generate's packages): one WBS under the level, named after it (building + level + package),
-        # whatever words its group has.
-        own = str(rec.get("display_type", "") or "").strip()
-        if own:
-            own_name = f"{wbs_prefix} - {zone_segment}{level_display} - {own}"
-            xml_wbs.register(own_name, level_name)
-            act["wbs_oid"] = xml_wbs.get_id(own_name)
-            continue
-
-        if "WALL" in pour_type:
-            direction = "External" if rec.get("is_external", False) else "Internal"
-            wall_group = f"{wbs_prefix} - {zone_segment}{level_display} - {direction} Walls"
-            xml_wbs.register(wall_group, level_name)
-            for sub in ["Rebar", "Formwork", "Concrete"]:
-                xml_wbs.register(f"{wall_group} - {sub}", wall_group)
-
-            phase = act.get("phase", "")
-            if phase in ["Rebar", "Formwork", "Concrete"]:
-                act["wbs_oid"] = xml_wbs.get_id(f"{wall_group} - {phase}")
-            else:
-                act["wbs_oid"] = xml_wbs.get_id(wall_group)
-            continue
-
-        if "LANDING" in pour_type:
-            # Like a slab: Landings -> Landing <pour id>
-            landing_group = f"{wbs_prefix} - {zone_segment}{level_display} - Landings"
-            xml_wbs.register(landing_group, level_name)
-            pid = str(rec.get("planning_proposed_pour_id", "") or "").strip()
-            if pid:
-                landing_leaf = f"{wbs_prefix} - {zone_segment}{level_display} - Landing {pid}"
-                xml_wbs.register(landing_leaf, landing_group)
-                act["wbs_oid"] = xml_wbs.get_id(landing_leaf)
-            else:
-                act["wbs_oid"] = xml_wbs.get_id(landing_group)
-            continue
-
-        if _is_insitu_stair(rec):
-            # Its own group, split by phase like the walls: In-situ Stairs (or In-situ Stair Steps) -> Rebar / Formwork / Concrete
-            stair_group = f"{wbs_prefix} - {zone_segment}{level_display} - {stair_group_label(rec)}"
-            xml_wbs.register(stair_group, level_name)
-            for sub in ["Rebar", "Formwork", "Concrete"]:
-                xml_wbs.register(f"{stair_group} - {sub}", stair_group)
-            phase = act.get("phase", "")
-            if phase in ["Rebar", "Formwork", "Concrete"]:
-                act["wbs_oid"] = xml_wbs.get_id(f"{stair_group} - {phase}")
-            else:
-                act["wbs_oid"] = xml_wbs.get_id(stair_group)
-            continue
-
-        if "SLAB" in pour_type or "MAIN_SLAB" in pour_type:
-            slab_group = f"{wbs_prefix} - {zone_segment}{level_display} - Slabs"
-            xml_wbs.register(slab_group, level_name)
-            pid = str(rec.get("planning_proposed_pour_id", "") or "").strip()
-            if pid:
-                slab_leaf = f"{wbs_prefix} - {zone_segment}{level_display} - Slab {pid}"
-                xml_wbs.register(slab_leaf, slab_group)
-                act["wbs_oid"] = xml_wbs.get_id(slab_leaf)
-            else:
-                act["wbs_oid"] = xml_wbs.get_id(slab_group)
-            continue
-
-        if pour_type == "HEAVY_PRECAST" or str(rec.get("general_pour_type", "") or "").replace(" ", "_").upper() == "HEAVY_PRECAST":
-            # Its own group, one WBS per pour like the slabs: Heavy Precast -> Heavy Precast <pour id>
-            # (Propping / Installation / Stitching / Curing / Propping Removal all sit in the pour's own WBS)
-            precast_group = f"{wbs_prefix} - {zone_segment}{level_display} - Heavy Precast"
-            xml_wbs.register(precast_group, level_name)
-            pid = str(rec.get("planning_proposed_pour_id", "") or "").strip()
-            if pid:
-                precast_leaf = f"{wbs_prefix} - {zone_segment}{level_display} - Heavy Precast {pid}"
-                xml_wbs.register(precast_leaf, precast_group)
-                act["wbs_oid"] = xml_wbs.get_id(precast_leaf)
-            else:
-                act["wbs_oid"] = xml_wbs.get_id(precast_group)
-            continue
-
-        # (One raft per building: "Raft", not "Rafts".)
-        raw_type = str(rec.get("pour_type", "") or "")
-        type_name = title_case(raw_type.replace("_", " ")) + ("" if "RAFT" in raw_type.upper() else "s")
-        group_name = f"{wbs_prefix} - {zone_segment}{level_display} - {type_name}"
-        xml_wbs.register(group_name, level_name)
-        act["wbs_oid"] = xml_wbs.get_id(group_name)
+        xml_wbs.register(level_name, zone_name or root_name)
+        act["wbs_oid"] = xml_wbs.get_id(_wbs_rules.place(registry, rule, ctx, level_name, act.get("phase", "")) if rule is not None else level_name)
 
     return xml_wbs
 
@@ -2508,7 +2447,7 @@ def write_activities_and_relationships(root, activity_list, resources, wbs_manag
         ET.SubElement(w, "ObjectId").text = wid
         # With a user-set WBS order the code follows it too, so a reader that sorts the WBS by code (the app) shows the same order.
         ET.SubElement(w, "Code").text = str(seq + 1) if getattr(wbs_manager, "reordered", False) else wid
-        ET.SubElement(w, "Name").text = name
+        ET.SubElement(w, "Name").text = wbs_manager.label(name) if hasattr(wbs_manager, "label") else name
         ET.SubElement(w, "ProjectObjectId").text = "1"
         ET.SubElement(w, "SequenceNumber").text = str(seq)
         ET.SubElement(w, "Status").text = "Active"

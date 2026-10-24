@@ -14,6 +14,7 @@ import { PackageList, STEPS, StepTools, Timeline } from '../components/scenarios
 import { AdvancedPanel } from '../components/scenarios/Generate3/Advanced';
 import { ObjectOrderDialog } from '../components/scenarios/Generate3/ObjectOrder';
 import { RecipeEditorDialog } from '../components/scenarios/Generate3/RecipeEditor';
+import { WbsDialog } from '../components/scenarios/Generate3/WbsDialog';
 import { Versions } from '../components/scenarios/Generate3/Versions';
 import { ReadinessChip } from '../components/scenarios/Generate3/Readiness';
 import { packageColors, useG3, useWorkPackages, type G3Step } from '../components/scenarios/Generate3/useWorkPackages';
@@ -91,6 +92,7 @@ function Builder() {
       )}
       <ObjectOrderDialog wp={wp} />
       <RecipeEditorDialog wp={wp} />
+      <WbsDialog wp={wp} />
       <footer className="g3-foot">
         {step > 1 && <button type="button" className="btn" onClick={() => setStep((step - 1) as G3Step)}>‹ {STEPS[step - 2].label.replace(/^\d+ - /, '')}</button>}
         {step < STEPS.length && <button type="button" className="btn" disabled={!wp.packages.length} onClick={() => setStep((step + 1) as G3Step)} title={wp.packages.length ? (step === 3 ? 'Optional: order the objects one by one' : '') : 'Make work packages first'}>{step === 3 ? 'Optional' : 'Next'}: {STEPS[step].label.replace(/^\d+ - /, '')} ›</button>}
