@@ -1722,6 +1722,12 @@ def _build_xml_wbs_manager_for_activities(activities):
 
     rule_list = own_rules or _wbs_rules.default_rules()["rules"]
     registry = _wbs_rules.Registry(xml_wbs)
+    # Each item's phases in the order its activities were made (its recipe's), for a rule's "phases" step.
+    phases_of = defaultdict(list)
+    for act in activities:
+        ph = str(act.get("phase", "") or "").strip()
+        if ph and ph not in phases_of[id(act.get("rec"))]:
+            phases_of[id(act.get("rec"))].append(ph)
     for act in ordered_activities:
         rec = act.get("rec", {})
         # A step cast with a stair flight is placed where that flight is (core/stair_steps.py).
@@ -1749,20 +1755,22 @@ def _build_xml_wbs_manager_for_activities(activities):
         ctx = _wbs_rules.context(rec.get("pour_pset"), rec, {
             "prefix": wbs_prefix, "level": level_display, "zone": zone_label, "zone_segment": zone_segment, "phase": act.get("phase", ""),
             "pid": str(rec.get("planning_proposed_pour_id", "") or "").strip(),
+            "item_id": str(rec.get("planning_proposed_pour_id", "") or "").strip(),
             "pour_type_norm": pour_type,
             "general_pour_type_norm": str(rec.get("general_pour_type", "") or "").replace(" ", "_").upper(),
             "insitu_stair": bool(_is_insitu_stair(rec)),
             "stair_label": stair_group_label(rec) if _is_insitu_stair(rec) else "",
         })
         rule = _wbs_rules.first_match(rule_list, ctx)
+        own_phases = phases_of.get(id(rec))
         if rule is not None and rule.get("under") == "root":
-            act["wbs_oid"] = xml_wbs.get_id(_wbs_rules.place(registry, rule, ctx, root_name, act.get("phase", "")))
+            act["wbs_oid"] = xml_wbs.get_id(_wbs_rules.place(registry, rule, ctx, root_name, act.get("phase", ""), own_phases))
             continue
         # Under the level: the zone (when the building is split into zones) and the level node, then the rule's path.
         if zone_name:
             xml_wbs.register(zone_name, root_name)
         xml_wbs.register(level_name, zone_name or root_name)
-        act["wbs_oid"] = xml_wbs.get_id(_wbs_rules.place(registry, rule, ctx, level_name, act.get("phase", "")) if rule is not None else level_name)
+        act["wbs_oid"] = xml_wbs.get_id(_wbs_rules.place(registry, rule, ctx, level_name, act.get("phase", ""), own_phases) if rule is not None else level_name)
 
     return xml_wbs
 

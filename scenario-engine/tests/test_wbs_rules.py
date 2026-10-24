@@ -145,3 +145,44 @@ def test_an_activity_no_rule_fits_goes_under_its_level():
     items = acts((rec("Y", 4), ("Work",)))
     m = _build_xml_wbs_manager_for_activities(items)
     assert m.label(next(n for n in m.order if m.get_id(n) == items[0]["wbs_oid"])) == "B1 - Level 4"
+
+
+@pytest.mark.parametrize("case", CASES["path"], ids=lambda c: c["about"])
+def test_paths(case):
+    from core.wbs_manager import WBSManager
+    m = WBSManager("T")
+    m.register("START")
+    at = wbs_rules.place(wbs_rules.Registry(m), {"path": case["path"]}, wbs_rules.context(case["ctx"]), "START", case["phase"], case["phases"])
+    names = []
+    while at != "START":
+        names.insert(0, m.label(at))
+        at = m.parent_map[at]
+    assert names == case["out"]
+
+
+def test_phases_from_recipe_and_per_item_from_rules_alone():
+    """The example rules (all data): walls by level, internal or external, then a node per phase their recipe made; slabs and landings by level,
+    type and item, then phases; anything else by level and type."""
+    _rules.activate({"wbs": {"rules": [
+        {"id": "walls", "under": "root", "when": [{"field": "Pour Type", "op": "equals", "value": "WALL"}],
+         "path": [{"name": "{level}"}, {"name": "{is_external|External|Internal}"}, {"kind": "phases"}]},
+        {"id": "flat", "under": "root", "when": [{"field": "Pour Type", "op": "in", "value": "SLAB, LANDING"}],
+         "path": [{"name": "{level}"}, {"name": "{Pour Type}"}, {"kind": "each"}, {"kind": "phases"}]},
+        {"id": "fallback", "under": "root", "when": [], "path": [{"name": "{level}"}, {"name": "{Pour Type}"}]},
+    ]}})
+    items = acts(
+        (rec("WALL", 1, is_external=True, pour_pset={"Pour Type": "WALL"}), ("Rebar", "Formwork", "Concrete")),
+        (rec("SLAB", 1, planning_proposed_pour_id="0003", pour_pset={"Pour Type": "SLAB"}), ("Decking", "Concrete")),
+        (rec("BEAM", 1, pour_pset={"Pour Type": "BEAM"}), ("Concrete",)),
+    )
+    m = _build_xml_wbs_manager_for_activities(items)
+    path = lambda k: ([*path(m.parent_map[k]), m.label(k)] if k in m.parent_map else [])  # noqa: E731 (below the Construction node)
+    placed = [path(next(n for n in m.order if m.get_id(n) == a["wbs_oid"])) for a in items]
+    assert placed == [
+        ["Level 1", "External", "Rebar"], ["Level 1", "External", "Formwork"], ["Level 1", "External", "Concrete"],
+        ["Level 1", "SLAB", "0003", "Decking"], ["Level 1", "SLAB", "0003", "Concrete"],
+        ["Level 1", "BEAM"],
+    ]
+    # The phase nodes come in the recipe's order, whatever order the activities are sorted in.
+    ext = next(n for n in m.order if m.label(n) == "External")
+    assert [m.label(n) for n in m.order if m.parent_map.get(n) == ext] == ["Rebar", "Formwork", "Concrete"]

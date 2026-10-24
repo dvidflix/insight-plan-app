@@ -6,7 +6,7 @@ conditions always holds (put it last, as the fallback). A rule is
 
   {"id", "name"?, "enabled"?: bool, "when": [{"field", "op", "value"}], "under"?: "level" | "root", "path": [level, ...]}
 
-and each level of its path is {"name": template, "phases"?: [phase, ...], "always"?: bool}:
+and each level of its path is {"name": template, "phases"?: [phase, ...], "always"?: bool, "kind"?: "phases" | "each"}:
 
   name      the WBS node's name, a template: {field} is the activity's value of that field, {field:title} / {field:upper} / {field:lower} formats
             it, {field|yes text|no text} picks a text by whether the value is set (true, a number other than 0, a word other than no / false).
@@ -14,12 +14,14 @@ and each level of its path is {"name": template, "phases"?: [phase, ...], "alway
             ({field?}), which may be empty. {parent} is the name of the node above, {level_node} the name of the node the path starts under.
   phases    the level is only for the activities of these phases (others stay at the level above)
   always    with phases: a node for each of them is made with the level above, used or not
+  kind      "phases": a node for each phase the item's own activities have (what its recipe made, in the recipe's order), each activity in its
+            phase's node; the name defaults to {phase}. "each": a node per item, named by default by its ID ({item_id}, the ID in its activity IDs).
 
 `under` says where the path starts: under the building's level node (the default; the level node is "<prefix> - <level>", with the building's
 Construction node above it) or under the Construction node itself.
 
 The fields are the activity's record (its properties as read: every property of the pour property set or work item, and the generator's own
-values) and a few made here: prefix, level, zone, zone_segment, phase, pid, pour_type_norm, general_pour_type_norm, insitu_stair, stair_label.
+values) and a few made here: prefix, level, zone, zone_segment, phase, pid (= item_id), pour_type_norm, general_pour_type_norm, insitu_stair, stair_label.
 Field names match whatever their case, spaces or underscores ("Pour Type" = pour_type = POURTYPE).
 
 Nothing here knows any kind of object, phase or project: the generator's own WBS for pour models is the rule set in wbs_default_rules.json.
@@ -179,8 +181,13 @@ class Registry:
         return k
 
 
-def place(registry, rule, ctx, start, phase):
-    """Registers the rule's path for one activity under `start` (a node key) and returns the key of the node the activity goes in."""
+# A step's name when it has none of its own.
+DEFAULT_NAMES = {"phases": "{phase}", "each": "{item_id}"}
+
+
+def place(registry, rule, ctx, start, phase, phases_of=None):
+    """Registers the rule's path for one activity under `start` (a node key) and returns the key of the node the activity goes in. `phases_of` is
+    the phases of the item's activities in their order (for a "phases" step; the activity's own phase when not given)."""
     parent = start
     label = {start: registry.m.labels.get(start, start)}
     ctx = dict(ctx)
@@ -189,6 +196,22 @@ def place(registry, rule, ctx, start, phase):
         if not isinstance(level, dict):
             level = {"name": str(level)}
         ctx[key("parent")] = label.get(parent, registry.m.labels.get(parent, parent))
+        kind = str(level.get("kind") or "").strip().lower()
+        template = level.get("name") or DEFAULT_NAMES.get(kind, "")
+        if kind == "phases":
+            # A node for each of the item's phases, in its activities' order; the activity goes in its own.
+            at = None
+            for ph in dict.fromkeys(str(p).strip() for p in (phases_of or [phase]) if str(p).strip()):
+                n = fill(template, {**ctx, key("phase"): ph})
+                if n:
+                    k = registry.node(n, parent)
+                    label[k] = n
+                    if ph.lower() == str(phase or "").strip().lower():
+                        at = k
+            if at is None:
+                break
+            parent = at
+            continue
         phases = [str(p).strip() for p in level.get("phases") or [] if str(p).strip()]
         if phases and level.get("always"):
             for ph in phases:
@@ -197,7 +220,7 @@ def place(registry, rule, ctx, start, phase):
                     label[registry.node(n, parent)] = n
         if phases and str(phase or "").strip().lower() not in {p.lower() for p in phases}:
             break
-        name = fill(level.get("name"), ctx)
+        name = fill(template, ctx)
         if name is None:
             if phases:
                 break

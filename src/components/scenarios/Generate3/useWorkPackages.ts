@@ -7,7 +7,7 @@ import { useSearchSetsStore } from '../../../state/searchSetsStore';
 import { useModelsStore } from '../../../state/modelsStore';
 import { useViewerEngine } from '../../../viewer/ViewerEngineContext';
 import { paletteColors } from '../../../viewer/colorPalettes';
-import { packageObjects, packagesView, setFinder } from '../../../scenarios/packageSource';
+import { firstSetFinder, packageObjects, packagesView, setFinder } from '../../../scenarios/packageSource';
 import { timelineOf, type WorkPackage } from '../../../prs/workPackages';
 import { inTreeOrder, treeRows } from '../../../prs/packageTree';
 import { ranksFromRows } from '../../../prs/objectOrder';
@@ -68,6 +68,7 @@ export function useWorkPackages() {
   const ranks = useMemo(() => (ctx.rules.objectSequence ? ranksFromRows(tableRows) : undefined), [ctx.rules.objectSequence, tableRows]);
   const view = useMemo(() => packagesView(engine, packages, sets, recipes, ctx.rules, crewSheet, objects, ranks), [engine, packages, sets, recipes, ctx.rules, crewSheet, objects, ranks]);
   const finds = useMemo(() => setFinder(engine, sets), [engine, sets, tick]); // eslint-disable-line react-hooks/exhaustive-deps
+  const firstSet = useMemo(() => firstSetFinder(engine, sets), [engine, sets, tick]); // eslint-disable-line react-hooks/exhaustive-deps
   const rows = useMemo(() => treeRows(packages), [packages]);
   const timeline = useMemo(() => new Map(timelineOf(packages, (p) => view.daysOf.get(p.id) ?? 0, (p) => (view.contents.objects.get(p.id)?.length ?? 0) > 0).map((t) => [t.id, t])), [packages, view.daysOf, view.contents]);
   const save = (next: WorkPackage[]) => ctx.change((r) => { const { packages: _old, ...rest } = r; return next.length ? { ...rest, packages: inTreeOrder(next) } : rest; });
@@ -80,5 +81,5 @@ export function useWorkPackages() {
   }));
   // `packages` are the saved ones (what the steps edit); `effective` are what Generate builds (with step 4's object sequence, when it is used).
   const { packages: effective, ...rest } = view;
-  return { packages, effective, rows, ...rest, timeline, save, patch, sets, finds };
+  return { packages, effective, rows, ...rest, timeline, save, patch, sets, finds, firstSet };
 }

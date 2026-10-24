@@ -1,5 +1,5 @@
 {
-  "about": "Cases for the WBS rule templates and conditions, read by both evaluators: scenario-engine/core/wbs_rules.py (tests/test_wbs_rules.py) and src/prs/wbsRules.ts (tests/unit/wbsRules.test.ts). They must agree.",
+  "about": "Cases for the WBS rule templates and conditions, read by both evaluators: scenario-engine/core/wbs_rules.py (tests/test_wbs_rules.py) and src/prs/wbsRules.ts (tests/unit/wbsRules.test.ts). They must agree. \"path\": the node names one activity is placed in under the start node, top first (phases: its item's phases in order).",
   "fill": [
     { "ctx": { "Level": "L1", "Package": "Columns" }, "template": "{level} - {package}", "out": "L1 - Columns" },
     { "ctx": { "pour_type": "main_slab" }, "template": "{Pour Type:title}s", "out": "Main Slabs" },
@@ -27,5 +27,12 @@
     { "ctx": { "external": "Yes" }, "cond": { "field": "external", "op": "is true" }, "out": true },
     { "ctx": { "external": "no" }, "cond": { "field": "external", "op": "is false" }, "out": true },
     { "ctx": { "Type": "Segment" }, "cond": { "field": "type", "op": "not contains", "value": "ring" }, "out": true }
+  ],
+  "path": [
+    { "about": "phases from recipe", "ctx": { "level": "L1", "is_external": false }, "phase": "Formwork", "phases": ["Rebar", "Formwork", "Concrete"], "path": [{ "name": "{level}" }, { "name": "{is_external|External|Internal}" }, { "kind": "phases" }], "out": ["L1", "Internal", "Formwork"] },
+    { "about": "per item ID, then phases", "ctx": { "level": "L2", "Pour Type": "SLAB", "item_id": "0007" }, "phase": "Concrete", "phases": ["Decking", "Concrete"], "path": [{ "name": "{level}" }, { "name": "{Pour Type}" }, { "kind": "each" }, { "kind": "phases" }], "out": ["L2", "SLAB", "0007", "Concrete"] },
+    { "about": "steps named their own way", "ctx": { "item_id": "0007" }, "phase": "Build", "phases": ["Build"], "path": [{ "kind": "each", "name": "Item {item_id}" }, { "kind": "phases", "name": "{parent} - {phase}" }], "out": ["Item 0007", "Item 0007 - Build"] },
+    { "about": "no ID: the step is left out", "ctx": { "item_id": "" }, "phase": "Build", "phases": ["Build"], "path": [{ "name": "Fixed" }, { "kind": "each" }], "out": ["Fixed"] },
+    { "about": "a phase the item does not list stays above", "ctx": {}, "phase": "Extra", "phases": ["Build"], "path": [{ "name": "Top" }, { "kind": "phases" }, { "name": "Never" }], "out": ["Top"] }
   ]
 }

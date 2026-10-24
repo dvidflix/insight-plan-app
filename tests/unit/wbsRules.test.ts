@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { context, fill, holds, normalizeWbs, packageTreeRules, previewTree, rowsToRules, rulesToRows, type WbsCondition, type WbsRuleSet } from '../../src/prs/wbsRules';
+import { context, fill, holds, levelText, normalizeWbs, packageTreeRules, parseLevel, pathOf, previewTree, readsSets, rowsToRules, rulesToRows, type WbsCondition, type WbsLevel, type WbsRuleSet } from '../../src/prs/wbsRules';
 
 /** The app's WBS rule evaluator: the same answers as the generator's (the shared cases), the Excel sheet round trip, Generate's default (the
     package tree) and the preview. */
@@ -9,11 +9,61 @@ import { context, fill, holds, normalizeWbs, packageTreeRules, previewTree, rows
 const cases = JSON.parse(readFileSync(join(__dirname, '..', '..', 'scenario-engine', 'tests', 'fixtures', 'wbs_rule_cases.json'), 'utf8')) as {
   fill: { ctx: Record<string, unknown>; template: string; out: string | null }[];
   holds: { ctx: Record<string, unknown>; cond: WbsCondition; out: boolean }[];
+  path: { about: string; ctx: Record<string, unknown>; phase: string; phases: string[]; path: WbsLevel[]; out: string[] }[];
 };
 
 describe('the same answers as the generator', () => {
   it.each(cases.fill)('fills $template', (c) => expect(fill(c.template, context(c.ctx))).toBe(c.out));
   it.each(cases.holds)('$cond.op $cond.value', (c) => expect(holds(c.cond, context(c.ctx))).toBe(c.out));
+  it.each(cases.path)('places: $about', (c) => expect(pathOf({ id: 'x', when: [], path: c.path.map((l) => ({ ...l, name: l.name ?? '' })) }, context(c.ctx), 'START', c.phase, undefined, c.phases)).toEqual(c.out));
+});
+
+describe('steps of their own', () => {
+  it('are written as words in a level cell, and read back', () => {
+    expect(levelText({ name: '', kind: 'phases' })).toBe('phases from recipe');
+    expect(levelText({ name: 'Item {item_id}', kind: 'each' })).toBe('per item ID: Item {item_id}');
+    expect(parseLevel('Phases from recipe')).toEqual({ name: '', kind: 'phases' });
+    expect(parseLevel('per item ID: Item {item_id}')).toEqual({ name: 'Item {item_id}', kind: 'each' });
+    expect(parseLevel('{Pour Type}')).toEqual({ name: '{Pour Type}' });
+  });
+
+  // The request's example, all as rules: walls by level, internal or external, then the recipe's phases; two kinds by level, kind and item, then
+  // phases; anything else by level and kind.
+  const example: WbsRuleSet = {
+    rules: [
+      { id: 'w', under: 'root', when: [{ field: 'Kind', op: 'equals', value: 'A' }], path: [{ name: '{level}' }, { name: '{outside|External|Internal}' }, { name: '', kind: 'phases' }] },
+      { id: 'f', under: 'root', when: [{ field: 'Kind', op: 'in', value: 'B, C' }], path: [{ name: '{level}' }, { name: '{Kind}' }, { name: '', kind: 'each' }, { name: '', kind: 'phases' }] },
+      { id: 'z', name: 'Otherwise', under: 'root', when: [], path: [{ name: '{level}' }, { name: '{Kind}' }] },
+    ],
+  };
+
+  it('go through the Excel sheet', () => {
+    const rows = rulesToRows(example);
+    expect(rows[1]).toMatchObject({ 'Level 3': 'per item ID', 'Level 4': 'phases from recipe', 'Last level for phases': '' });
+    const back = rowsToRules(rows);
+    expect(back.warnings).toEqual([]);
+    expect(back.set.rules.map((r) => ({ ...r, id: '' }))).toEqual(example.rules.map((r) => ({ ...r, id: '' })));
+  });
+
+  it('show in the preview with the recipe’s phases and the item IDs', () => {
+    const items = [
+      { fields: { Kind: 'A', Storey: 'L1', outside: 'yes' }, phases: ['P1', 'P2'], objects: 1, id: '0001' },
+      { fields: { Kind: 'B', Storey: 'L1' }, phases: ['P3'], objects: 1, id: '0002' },
+      { fields: { Kind: 'D', Storey: 'L1' }, phases: ['P3'], objects: 1, id: '0003' },
+    ];
+    const { tree } = previewTree(example, items);
+    const show = (n: typeof tree, depth = 0): string[] => [`${'  '.repeat(depth)}${n.name}`, ...n.children.flatMap((c) => show(c, depth + 1))];
+    expect(show(tree)).toEqual(['Construction', '  L1', '    External', '      P1', '      P2', '    B', '      0002', '        P3', '    D']);
+  });
+});
+
+describe('the set fields', () => {
+  it('are read only when a rule uses them', () => {
+    expect(readsSets(example2([{ field: 'Set folder 1', op: 'equals', value: 'X' }], '{Package}'))).toBe(true);
+    expect(readsSets(example2([], '{Set}'))).toBe(true);
+    expect(readsSets(example2([{ field: 'Storey', op: 'equals', value: 'X' }], '{Package}'))).toBe(false);
+  });
+  const example2 = (when: WbsCondition[], name: string): WbsRuleSet => ({ rules: [{ id: 'a', when, path: [{ name }] }] });
 });
 
 const set: WbsRuleSet = {

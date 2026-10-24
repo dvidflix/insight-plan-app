@@ -532,8 +532,9 @@ export const HOURS_PER_DAY = 8;
     crews), and the summary bars and limits of the packages that hold others.
     With `exact` (the object sequence table's rank of each GlobalId, step 4 "follow it exactly"), a package with objects in the table is sent one
     work item per object, and the build order is the table's: one sequence of its steps across every package (objects of the same step start
-    together), then the objects and packages the table leaves out, in build order. The packages' own order, links and lags do not apply then. */
-export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string, objectMethods?: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>, exact?: ReadonlyMap<string, number>): {
+    together), then the objects and packages the table leaves out, in build order. The packages' own order, links and lags do not apply then.
+    With `setOf` (an object's first search set, by its key), each item also carries Set and Set folder fields for the WBS rules. */
+export function packagesRequest(packages: readonly WorkPackage[], contents: PackageContents, methods: Map<string, ResolvedMethod>, building: string, objectMethods?: (pkg: WorkPackage, objs: PackageObject[]) => Map<string, ResolvedMethod>, exact?: ReadonlyMap<string, number>, setOf?: (key: string) => { name: string; folder: string } | undefined): {
   workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number>; properties: Record<string, string> }[];
   members: { guids: string[]; item: { id: string } }[];
   rules: (rules: ScenarioRules) => ScenarioRules;
@@ -552,13 +553,21 @@ export function packagesRequest(packages: readonly WorkPackage[], contents: Pack
   const objectMethodsFor = new Map<string, { group: string; m: ResolvedMethod }[]>();
   const workItems: { id: string; group: string; label: string; building: string; level: string; name: string; quantity: number; quantities: Record<string, number>; properties: Record<string, string> }[] = [];
   // What the WBS rules read of an item (prs/wbsRules.ts PACKAGE_FIELDS): its package, the packages it is in (Package level 1 = the outermost),
-  // and, when all its objects share one, their storey and IFC class.
+  // and, when all its objects share one, their storey and IFC class, and their first search set with its folder (Set folder 1 = the top one).
+  const setFieldsOf = (objs: readonly PackageObject[]): Record<string, string> => {
+    const found = setOf && objs.length ? objs.map((o) => setOf(o.key)) : [];
+    const s = found[0];
+    if (!s || found.some((x) => x?.name !== s.name || x?.folder !== s.folder)) return {};
+    const parts = s.folder.split('/').map((p) => p.trim()).filter(Boolean);
+    return { Set: s.name, ...(parts.length ? { 'Set folder': parts.join(' / ') } : {}), ...Object.fromEntries(parts.map((p, i) => [`Set folder ${i + 1}`, p])) };
+  };
   const chainOf = (p: WorkPackage): WorkPackage[] => { const out: WorkPackage[] = []; for (let x: WorkPackage | undefined = p; x && !out.includes(x); x = x.parent ? byId.get(x.parent) : undefined) out.unshift(x); return out; };
   const one = (values: string[]) => { const u = [...new Set(values.filter(Boolean))]; return u.length === 1 ? u[0] : ''; };
   const fieldsOf = (p: WorkPackage, objs: readonly PackageObject[]): Record<string, string> => ({
     ...Object.fromEntries(chainOf(p).map((x, i) => [`Package level ${i + 1}`, x.name])),
     Package: p.name, 'Package code': code.get(p.id) ?? '', Storey: one(objs.map((o) => o.storey)), 'IFC class': one(objs.map((o) => o.cls)), Method: methods.get(p.id)?.name ?? '', Building: building,
     ...(objs.length === 1 ? { Object: objs[0].name || objs[0].guid } : {}),
+    ...setFieldsOf(objs),
   });
   const depth = Math.max(1, ...live.map((x) => chainOf(x.p).length));
   const members: { guids: string[]; item: { id: string } }[] = [];

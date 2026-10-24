@@ -7,6 +7,8 @@ import { NOT_WORK } from '../prs/standardMethods';
 import { planWorkItem } from '../prs/activityPlan';
 import { contentsOf, isFineTuned, materialOf, objectMethodsOf, packagesRequest, quantityOf, resolveMethod, serialDays, type PackageContents, type PackageObject, type ResolvedMethod, type WorkPackage } from '../prs/workPackages';
 import { orderRuns, withSequenceOrder } from '../prs/objectOrder';
+import { readsSets } from '../prs/wbsRules';
+import { childFolders, folderKey, walkFolder } from '../viewer/setTree';
 
 /** The loaded models as Generate 3's packages read them: every object that is work (not a space, an opening or the spatial structure), with its
     storey (from the model's spatial tree, ranked from the bottom by elevation, else by the tree's order), its IFC class, material and quantities. */
@@ -46,6 +48,20 @@ export function setFinder(engine: ViewerEngine, sets: readonly SearchSet[]): (se
   };
 }
 
+/** The first search set that finds each object, in the Search sets tree's order (each top folder walked in turn, then the sets in no folder), with
+    its folder; the sets are run the first time it is asked. */
+export function firstSetFinder(engine: ViewerEngine, sets: readonly SearchSet[]): (key: string) => { name: string; folder: string } | undefined {
+  let owner: Map<string, { name: string; folder: string }> | null = null;
+  return (key) => {
+    if (!owner) {
+      owner = new Map();
+      for (const s of [...childFolders(sets, '').flatMap((f) => walkFolder(sets, f)), ...walkFolder(sets, '')])
+        for (const [m, ids] of Object.entries(runSearchSet(engine.getIndexes(), s))) for (const id of ids) if (!owner.has(`${m}:${id}`)) owner.set(`${m}:${id}`, { name: s.name, folder: folderKey(s.group ?? '') });
+    }
+    return owner.get(key);
+  };
+}
+
 /** The activities a project recipe would give a package, with their days and crews, as the generator would work them out for a work item with the
     package's volume (prs/activityPlan.ts). */
 export function recipeDays(rules: ScenarioRules, crewSheet: ScenarioCrew[]) {
@@ -78,5 +94,6 @@ export function packagesView(engine: ViewerEngine, saved: readonly WorkPackage[]
 export function buildPackagesRequest(engine: ViewerEngine, rules: ScenarioRules, sets: readonly SearchSet[], recipes: Recipe[], crewSheet: ScenarioCrew[], building: string, ranks?: ReadonlyMap<string, number>) {
   const view = packagesView(engine, rules.packages ?? [], sets, recipes, rules, crewSheet, undefined, rules.objectSequence ? ranks : undefined);
   // "Follow it exactly" (step 4): the table's order is the build order, across the packages.
-  return packagesRequest(view.packages, view.contents, view.methods, building, view.objectMethods, rules.objectSequence === 'exact' && ranks?.size ? ranks : undefined);
+  // The set fields only when the WBS rules read them (running every search set is not free).
+  return packagesRequest(view.packages, view.contents, view.methods, building, view.objectMethods, rules.objectSequence === 'exact' && ranks?.size ? ranks : undefined, readsSets(rules.wbs) ? firstSetFinder(engine, sets) : undefined);
 }
